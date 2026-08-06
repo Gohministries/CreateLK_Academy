@@ -1,0 +1,252 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Payments | CreateLK Academy</title><style>
+
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+font-family:Arial,sans-serif;
+background:#f3f6fa;
+color:#172033;
+}
+
+header{
+background:#123b70;
+color:white;
+padding:16px 20px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+.container{
+max-width:900px;
+margin:auto;
+padding:20px;
+}
+
+.card{
+background:white;
+border-radius:16px;
+padding:20px;
+margin-bottom:16px;
+box-shadow:0 5px 20px #0001;
+}
+
+h1{
+color:#123b70;
+}
+
+input{
+width:100%;
+padding:13px;
+border:1px solid #ccd3df;
+border-radius:9px;
+margin:8px 0;
+font-size:16px;
+}
+
+button{
+padding:13px 18px;
+border:0;
+border-radius:9px;
+background:#1769e0;
+color:white;
+font-weight:bold;
+cursor:pointer;
+}
+
+button:disabled{
+opacity:.5;
+}
+
+.approve{
+background:#16a34a;
+}
+
+.message{
+margin-top:15px;
+font-weight:bold;
+}
+
+.info{
+background:#f8fafc;
+padding:15px;
+border-radius:10px;
+line-height:1.7;
+margin:15px 0;
+}
+
+.slip{
+max-width:100%;
+border-radius:10px;
+margin-top:10px;
+}
+
+</style></head><body><header><strong>
+📚 CreateLK Academy — Admin
+</strong><a
+href="index.html"
+style="color:white;text-decoration:none">
+Home
+</a>
+
+</header><div class="container"><div class="card"><h1>🔐 Admin Payment Approval</h1><p>
+Enter the payment ID from the user's payment request.
+</p><input
+id="paymentId"
+placeholder="Payment ID">
+
+<input
+id="adminKey"
+type="password"
+placeholder="Admin key">
+
+<button
+onclick="approvePayment()"
+class="approve">
+
+✅ Approve Payment
+
+</button><div
+id="message"
+class="message">
+</div></div><div
+id="result"
+class="card"
+style="display:none"><h2>Payment Result</h2><div
+id="details"
+class="info">
+</div></div></div><script>
+
+const WORKER_URL =
+"https://createlk-academy-api.createlk.workers.dev";
+
+
+async function approvePayment(){
+
+const paymentId =
+document.getElementById(
+"paymentId"
+).value.trim();
+
+const adminKey =
+document.getElementById(
+"adminKey"
+).value.trim();
+
+const message =
+document.getElementById(
+"message"
+);
+
+
+if(!paymentId){
+
+message.textContent =
+"Please enter the payment ID.";
+
+return;
+
+}
+
+
+if(!adminKey){
+
+message.textContent =
+"Please enter the admin key.";
+
+return;
+
+}
+
+
+message.textContent =
+"Approving payment...";
+
+
+try{
+
+const response =
+await fetch(
+WORKER_URL+
+"/api/admin/approve",
+{
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json"
+},
+
+body:JSON.stringify({
+
+paymentId:
+paymentId,
+
+adminKey:
+adminKey
+
+})
+}
+);
+
+
+const data =
+await response.json();
+
+
+if(!response.ok ||
+!data.success){
+
+message.textContent =
+data.message ||
+"Approval failed.";
+
+return;
+
+}
+
+
+message.textContent =
+"✅ Payment approved successfully.";
+
+
+document.getElementById(
+"result"
+).style.display="block";
+
+
+document.getElementById(
+"details"
+).innerHTML =
+
+"👤 User ID: <b>"+
+(data.user_id || "—")+
+"</b><br><br>"+
+
+"💰 Amount: <b>LKR 1,500</b><br><br>"+
+
+"🟢 Status: <b>Approved</b><br><br>"+
+
+"⏳ Premium expires: <b>"+
+(data.expires_at || "30 days")+
+"</b>";
+
+}catch(error){
+
+console.error(error);
+
+message.textContent =
+"Connection error.";
+
+}
+
+}
+
+</script></body>
+</html>
