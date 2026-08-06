@@ -102,6 +102,24 @@ input:focus{
 border-color:#1769e0;
 }
 
+.remember{
+display:flex;
+align-items:center;
+gap:8px;
+font-weight:normal;
+font-size:14px;
+color:#667085;
+margin-top:14px;
+cursor:pointer;
+}
+
+.remember input{
+width:auto;
+margin:0;
+padding:0;
+cursor:pointer;
+}
+
 .mainbtn{
 width:100%;
 padding:14px;
@@ -210,6 +228,14 @@ placeholder="Enter your password"
 required
 >
 
+<label class="remember">
+<input
+id="stayLogin"
+type="checkbox"
+>
+Stay logged in
+</label>
+
 <button
 class="mainbtn"
 id="loginBtn"
@@ -303,10 +329,6 @@ Create Account
 
 <script>
 
-/* =========================================
-   CLOUDFLARE WORKER
-========================================= */
-
 const WORKER_URL =
 "https://createlk-academy-api.createlk.workers.dev";
 
@@ -364,6 +386,9 @@ document.getElementById("loginBtn");
 const message =
 document.getElementById("loginMessage");
 
+const stayLogin =
+document.getElementById("stayLogin").checked;
+
 btn.disabled=true;
 btn.textContent="Logging in...";
 message.textContent="";
@@ -376,6 +401,8 @@ WORKER_URL+"/api/login",
 {
 method:"POST",
 
+credentials:"include",
+
 headers:{
 "Content-Type":"application/json"
 },
@@ -383,11 +410,14 @@ headers:{
 body:JSON.stringify({
 
 email:
-document.getElementById("loginEmail").value
-.trim(),
+document.getElementById("loginEmail")
+.value.trim(),
 
 password:
-document.getElementById("loginPassword").value
+document.getElementById("loginPassword")
+.value,
+
+stayLogin:stayLogin
 
 })
 }
@@ -410,37 +440,28 @@ return;
 }
 
 
-/* SAVE LOGIN */
+/* =========================================
+   CHECK MEMBERSHIP
+========================================= */
 
-localStorage.setItem(
-"createlk_token",
-data.token
-);
-
-localStorage.setItem(
-"createlk_user",
-JSON.stringify(data.user)
-);
-
-
-/* CHECK PREMIUM */
-
-const status =
+const membershipResponse =
 await fetch(
 WORKER_URL+"/api/membership",
 {
-headers:{
-"Authorization":
-"Bearer "+data.token
-}
+method:"GET",
+credentials:"include"
 }
 );
 
 const membership =
-await status.json();
+await membershipResponse.json();
 
 
-if(membership.active){
+/* =========================================
+   NAVIGATION
+========================================= */
+
+if(membership.active === true){
 
 window.location.href =
 "premium-course.html";
@@ -540,14 +561,18 @@ WORKER_URL+"/api/register",
 {
 method:"POST",
 
+credentials:"include",
+
 headers:{
 "Content-Type":"application/json"
 },
 
 body:JSON.stringify({
+
 name:name,
 email:email,
 password:password
+
 })
 }
 );
