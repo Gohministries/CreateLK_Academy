@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Premium | CreateLK Academy</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+margin:0;
+font-family:Arial,sans-serif;
+background:#f4f7fb;
+color:#172033;
+}
+
+header{
+background:#123b70;
+color:white;
+padding:16px 20px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+header a{
+color:white;
+text-decoration:none;
+font-weight:bold;
+}
+
+.container{
+max-width:500px;
+margin:30px auto;
+padding:18px;
+}
+
+.card{
+background:white;
+padding:28px;
+border-radius:18px;
+box-shadow:0 6px 25px #0002;
+}
+
+.logo{
+text-align:center;
+font-size:25px;
+font-weight:bold;
+color:#123b70;
+}
+
+.price{
+text-align:center;
+font-size:30px;
+font-weight:bold;
+margin:20px 0 5px;
+}
+
+.duration{
+text-align:center;
+color:#667085;
+}
+
+.status{
+padding:14px;
+border-radius:10px;
+margin:20px 0;
+text-align:center;
+font-weight:bold;
+}
+
+.pending{
+background:#fff4d6;
+color:#8a6100;
+}
+
+.active{
+background:#dcfce7;
+color:#166534;
+}
+
+.inactive{
+background:#f1f5f9;
+color:#475569;
+}
+
+.info{
+background:#f8fafc;
+padding:16px;
+border-radius:10px;
+line-height:1.7;
+}
+
+.pay{
+width:100%;
+padding:15px;
+border:0;
+border-radius:9px;
+background:#1769e0;
+color:white;
+font-size:17px;
+font-weight:bold;
+cursor:pointer;
+margin-top:18px;
+}
+
+.ai{
+background:#16a34a;
+}
+
+button:disabled{
+opacity:.6;
+}
+
+.message{
+text-align:center;
+margin-top:15px;
+font-weight:bold;
+}
+
+.logout{
+display:block;
+text-align:center;
+margin-top:20px;
+color:#1769e0;
+cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<a href="index.html">📚 CreateLK Academy</a>
+<a href="#" onclick="logout()">Logout</a>
+</header>
+
+<div class="container">
+
+<div class="card">
+
+<div class="logo">
+⭐ Premium Membership
+</div>
+
+<div class="price">
+LKR 1,500
+</div>
+
+<div class="duration">
+30 Days Premium
+</div>
+
+<div id="status" class="status inactive">
+Checking membership...
+</div>
+
+<div id="details" class="info">
+Loading...
+</div>
+
+<button
+id="paymentBtn"
+class="pay"
+onclick="createPayment()">
+💳 Start Payment
+</button>
+
+<button
+id="aiBtn"
+class="pay ai"
+style="display:none"
+onclick="goAI()">
+🤖 Go to AI MCQs
+</button>
+
+<div id="message" class="message"></div>
+
+</div>
+
+<a
+class="logout"
+onclick="logout()">
+🚪 Logout
+</a>
+
+</div>
+
+<script>
+
+const WORKER_URL =
+"https://createlk-academy-api.createlk.workers.dev";
+
+const token =
+localStorage.getItem("createlk_token");
+
+const statusBox =
+document.getElementById("status");
+
+const details =
+document.getElementById("details");
+
+const paymentBtn =
+document.getElementById("paymentBtn");
+
+const aiBtn =
+document.getElementById("aiBtn");
+
+const message =
+document.getElementById("message");
+
+
+/* LOGIN CHECK */
+
+if(!token){
+
+location.href="login.html";
+
+}
+
+
+/* CHECK MEMBERSHIP */
+
+async function checkMembership(){
+
+try{
+
+const response =
+await fetch(
+WORKER_URL+"/api/membership",
+{
+headers:{
+"Authorization":
+"Bearer "+token
+}
+}
+);
+
+const data =
+await response.json();
+
+if(!data.loggedIn){
+
+location.href="login.html";
+return;
+
+}
+
+
+/* ACTIVE */
+
+if(data.active){
+
+statusBox.className="status active";
+
+statusBox.innerHTML =
+"🟢 Premium Membership Active";
+
+let days =
+data.daysRemaining || 0;
+
+details.innerHTML =
+"⭐ Premium access is active.<br><br>"+
+"⏳ Expires in: <b>"+
+days+
+" days</b><br><br>"+
+"📚 Subject: General English<br>"+
+"🤖 Up to 100 AI MCQs per day";
+
+paymentBtn.style.display="none";
+
+aiBtn.style.display="block";
+
+return;
+
+}
+
+
+/* NOT ACTIVE */
+
+statusBox.className="status pending";
+
+statusBox.innerHTML =
+"🟡 Premium Not Active";
+
+details.innerHTML =
+"<b>CreateLK Academy Premium</b><br><br>"+
+"💰 Price: LKR 1,500<br>"+
+"📅 Duration: 30 Days<br>"+
+"📚 AI-generated General English MCQs<br>"+
+"📝 Exactly 100 questions per generation<br>"+
+"🔢 Maximum 100 questions per day<br>"+
+"💡 Answers and explanations included";
+
+paymentBtn.style.display="block";
+
+}catch(error){
+
+statusBox.className="status inactive";
+
+statusBox.innerHTML =
+"⚠️ Connection Error";
+
+details.innerHTML =
+"Unable to contact the CreateLK Academy server.";
+
+}
+
+}
+
+
+/* CREATE PAYMENT */
+
+async function createPayment(){
+
+paymentBtn.disabled=true;
+paymentBtn.textContent="Creating...";
+
+message.textContent="";
+
+try{
+
+const response =
+await fetch(
+WORKER_URL+"/api/payment",
+{
+method:"POST",
+
+headers:{
+"Authorization":
+"Bearer "+token,
+"Content-Type":
+"application/json"
+}
+}
+);
+
+const data =
+await response.json();
+
+if(!data.success){
+
+message.textContent =
+data.message ||
+"Unable to create payment.";
+
+paymentBtn.disabled=false;
+paymentBtn.textContent="💳 Start Payment";
+
+return;
+
+}
+
+
+/*
+IMPORTANT:
+This only creates the payment
+record in D1.
+
+Actual PayHere checkout
+will be connected after
+your real PayHere credentials
+are added.
+*/
+
+message.innerHTML =
+"✅ Payment request created.<br>"+
+"Payment ID: <b>"+
+data.paymentId+
+"</b><br><br>"+
+"Complete your PayHere payment and wait for admin approval.";
+
+paymentBtn.textContent =
+"🟡 Payment Pending";
+
+paymentBtn.disabled=true;
+
+statusBox.className="status pending";
+
+statusBox.innerHTML =
+"🟡 Waiting for Admin Approval";
+
+}catch(error){
+
+message.textContent =
+"Connection error.";
+
+paymentBtn.disabled=false;
+paymentBtn.textContent="💳 Start Payment";
+
+}
+
+}
+
+
+/* GO AI */
+
+function goAI(){
+
+location.href="premium-course.html";
+
+}
+
+
+/* LOGOUT */
+
+function logout(){
+
+localStorage.removeItem("createlk_token");
+localStorage.removeItem("createlk_user");
+
+location.href="login.html";
+
+}
+
+
+/* INITIAL CHECK */
+
+checkMembership();
+
+/* Check again every 15 seconds */
+
+setInterval(
+checkMembership,
+15000
+);
+
+</script>
+
+</body>
+</html>
