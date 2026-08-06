@@ -1,12 +1,8 @@
 <!DOCTYPE html><html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport"
-content="width=device-width,initial-scale=1">
+<head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Premium Payment | CreateLK Academy</title><style>
 
-<title>Premium Payment | CreateLK Academy</title><style>
-
-*{
-box-sizing:border-box;
-}
+*{box-sizing:border-box}
 
 body{
 margin:0;
@@ -41,6 +37,7 @@ background:white;
 padding:28px;
 border-radius:20px;
 box-shadow:0 8px 30px #0002;
+margin-bottom:20px;
 }
 
 .logo{
@@ -87,17 +84,43 @@ background:#dcfce7;
 color:#166534;
 }
 
-.info{
-background:#f8fafc;
-padding:16px;
+.bank{
+background:#eef5ff;
+padding:18px;
 border-radius:12px;
-line-height:1.8;
+line-height:1.9;
+margin-top:20px;
 }
 
-.pay{
+.bank strong{
+color:#123b70;
+}
+
+label{
+display:block;
+font-weight:bold;
+margin-top:16px;
+}
+
+input[type="email"],
+input[type="file"]{
+width:100%;
+padding:13px;
+margin-top:7px;
+border:1px solid #ccd3df;
+border-radius:9px;
+font-size:15px;
+background:white;
+}
+
+input[type="email"]{
+background:#f1f5f9;
+}
+
+.upload{
 width:100%;
 padding:15px;
-margin-top:20px;
+margin-top:22px;
 border:0;
 border-radius:10px;
 background:#1769e0;
@@ -107,7 +130,7 @@ font-weight:bold;
 cursor:pointer;
 }
 
-.pay:disabled{
+.upload:disabled{
 opacity:.6;
 }
 
@@ -127,10 +150,6 @@ text-decoration:none;
 font-weight:bold;
 }
 
-.hidden{
-display:none;
-}
-
 </style></head><body><header><a href="index.html">
 📚 CreateLK Academy
 </a><a href="#" onclick="logout()">
@@ -138,41 +157,78 @@ Logout
 </a></header><div class="container"><div class="card"><div class="logo">
 ⭐ Premium Membership
 </div><p class="subtitle">
-Unlock AI English MCQ Practice
+30 Days Premium AI English Learning
 </p><div class="price">
 LKR 1,500
 </div><div class="duration">
 30 Days Premium Membership
 </div><div
 id="status"
-class="status pending">Checking your account...
+class="status pending">Checking account...
 
-</div><div
-id="details"
-class="info">Please wait...
+</div><div class="bank"><strong>🏦 Bank Payment Details</strong>
 
-</div><button
-id="paymentBtn"
-class="pay"
-onclick="createPayment()">
+<br><br>
 
-💳 Create Payment Request
+<strong>Bank:</strong>
+People's Bank
 
-</button><div
+<br><strong>Branch:</strong>
+Udapussellawa
+
+<br><strong>Account No:</strong>
+292200280023178
+
+<br><strong>Customer Name:</strong>
+Thinarathnam Saththiyanadan
+
+<br><br>
+
+<strong>Amount:</strong>
+LKR 1,500
+
+</div></div><!-- RECEIPT UPLOAD --><div class="card"><h2>
+📤 Upload Payment Slip
+</h2><p>
+After depositing <strong>LKR 1,500</strong>, upload your payment slip below.
+</p><form id="receiptForm"><label>
+Email Address
+</label><input
+id="email"
+type="email"
+readonly
+placeholder="Loading email..."
+
+«»
+
+<label>
+Payment Slip
+</label><input
+id="receipt"
+type="file"
+accept=".jpg,.jpeg,.png,.webp,.pdf"
+required
+
+«»
+
+<button
+class="upload"
+id="uploadBtn"
+type="submit">
+
+📤 Submit Payment Slip
+
+</button></form><div
 id="message"
 class="message">
-</div><a
+</div></div><a
 class="back"
 href="index.html">
 
 🏠 Back to CreateLK Academy
 
-</a></div></div><script>
+</a></div><script>
 
-
-/* =====================================
-   CLOUDFLARE WORKER
-===================================== */
 
 const WORKER_URL =
 "https://createlk-academy-api.createlk.workers.dev";
@@ -181,18 +237,21 @@ const WORKER_URL =
 const statusBox =
 document.getElementById("status");
 
-const details =
-document.getElementById("details");
+const emailBox =
+document.getElementById("email");
 
-const paymentBtn =
-document.getElementById("paymentBtn");
+const receipt =
+document.getElementById("receipt");
+
+const uploadBtn =
+document.getElementById("uploadBtn");
 
 const message =
 document.getElementById("message");
 
 
 /* =====================================
-   CHECK CLOUDFLARE SESSION
+   CHECK LOGIN + MEMBERSHIP
 ===================================== */
 
 async function checkAccount(){
@@ -208,15 +267,10 @@ credentials:"include"
 }
 );
 
-
 const data =
 await response.json();
 
-
-console.log(
-"Membership:",
-data
-);
+console.log(data);
 
 
 /* NOT LOGGED IN */
@@ -231,9 +285,18 @@ return;
 }
 
 
-/* =====================================
-   ALREADY APPROVED
-===================================== */
+/* PREFILL EMAIL */
+
+if(data.user &&
+data.user.email){
+
+emailBox.value =
+data.user.email;
+
+}
+
+
+/* ACTIVE */
 
 if(data.active){
 
@@ -243,19 +306,6 @@ statusBox.className =
 statusBox.innerHTML =
 "🟢 Premium Membership Active";
 
-
-details.innerHTML =
-"⭐ Your Premium Membership is already active.<br><br>"+
-"⏳ Days remaining: <strong>"+
-(data.daysRemaining || 0)+
-"</strong><br><br>"+
-"🤖 You can access AI English MCQs now.";
-
-
-paymentBtn.style.display =
-"none";
-
-
 setTimeout(function(){
 
 window.location.href =
@@ -263,51 +313,26 @@ window.location.href =
 
 },1200);
 
-
 return;
 
 }
 
 
-/* =====================================
-   NOT APPROVED
-===================================== */
+/* NOT ACTIVE */
 
 statusBox.className =
 "status pending";
 
 statusBox.innerHTML =
-"🟡 Premium Membership Not Active";
-
-
-details.innerHTML =
-"<strong>CreateLK Academy Premium</strong><br><br>"+
-"💰 Price: LKR 1,500<br>"+
-"📅 Duration: 30 Days<br>"+
-"🤖 AI English MCQ Practice<br>"+
-"📝 One question at a time<br>"+
-"🎯 Maximum 100 questions per day<br>"+
-"✅ Admin approval required";
-
-
-paymentBtn.style.display =
-"block";
-
+"🟡 Payment Required";
 
 }
 catch(error){
 
 console.error(error);
 
-statusBox.className =
-"status pending";
-
 statusBox.innerHTML =
-"⚠️ Connection Error";
-
-
-details.innerHTML =
-"Unable to connect to CreateLK Academy. Please refresh and try again.";
+"⚠️ Unable to check account.";
 
 }
 
@@ -315,33 +340,76 @@ details.innerHTML =
 
 
 /* =====================================
-   CREATE PAYMENT
+   UPLOAD RECEIPT
 ===================================== */
 
-async function createPayment(){
+document.getElementById("receiptForm")
+.addEventListener(
+"submit",
+async function(e){
 
-paymentBtn.disabled=true;
+e.preventDefault();
 
-paymentBtn.textContent =
-"Creating Payment...";
+
+const file =
+receipt.files[0];
+
+
+if(!file){
+
+message.textContent =
+"Please select your payment slip.";
+
+return;
+
+}
+
+
+/* MAX 10 MB */
+
+if(file.size > 10 * 1024 * 1024){
+
+message.textContent =
+"Payment slip must be less than 10 MB.";
+
+return;
+
+}
+
+
+uploadBtn.disabled=true;
+
+uploadBtn.textContent =
+"📤 Uploading...";
 
 message.textContent="";
 
 
 try{
 
+
+const formData =
+new FormData();
+
+
+formData.append(
+"email",
+emailBox.value
+);
+
+formData.append(
+"receipt",
+file
+);
+
+
 const response =
 await fetch(
-WORKER_URL+"/api/payment",
+WORKER_URL+"/api/upload-receipt",
 {
 method:"POST",
-
 credentials:"include",
-
-headers:{
-"Content-Type":
-"application/json"
-}
+body:formData
 }
 );
 
@@ -350,10 +418,7 @@ const data =
 await response.json();
 
 
-console.log(
-"Payment:",
-data
-);
+console.log(data);
 
 
 if(!response.ok ||
@@ -361,12 +426,12 @@ if(!response.ok ||
 
 message.textContent =
 data.message ||
-"Unable to create payment.";
+"Unable to upload payment slip.";
 
-paymentBtn.disabled=false;
+uploadBtn.disabled=false;
 
-paymentBtn.textContent =
-"💳 Create Payment Request";
+uploadBtn.textContent =
+"📤 Submit Payment Slip";
 
 return;
 
@@ -374,24 +439,22 @@ return;
 
 
 message.innerHTML =
-"✅ Payment request created.<br><br>"+
-"Payment ID: <strong>"+
-(data.paymentId || "")+
-"</strong><br><br>"+
-"Complete your payment and wait for admin approval.";
+"✅ Payment slip submitted successfully.<br><br>"+
+"🟡 Waiting for admin approval.";
 
 
-paymentBtn.disabled=true;
+uploadBtn.textContent =
+"✅ Slip Submitted";
 
-paymentBtn.textContent =
-"🟡 Payment Pending";
+uploadBtn.disabled=true;
 
 
-statusBox.className =
-"status pending";
+/* CHECK AGAIN */
 
-statusBox.innerHTML =
-"🟡 Waiting for Admin Approval";
+setTimeout(
+checkAccount,
+5000
+);
 
 
 }
@@ -402,14 +465,14 @@ console.error(error);
 message.textContent =
 "Connection error. Please try again.";
 
-paymentBtn.disabled=false;
+uploadBtn.disabled=false;
 
-paymentBtn.textContent =
-"💳 Create Payment Request";
-
-}
+uploadBtn.textContent =
+"📤 Submit Payment Slip";
 
 }
+
+});
 
 
 /* =====================================
@@ -429,11 +492,7 @@ credentials:"include"
 );
 
 }
-catch(error){
-
-console.error(error);
-
-}
+catch(error){}
 
 window.location.href =
 "login.html";
@@ -441,23 +500,9 @@ window.location.href =
 }
 
 
-/* =====================================
-   START
-===================================== */
+/* START */
 
 checkAccount();
-
-
-/*
-Check membership again every 15 seconds.
-If admin approves payment, the page
-will automatically detect it.
-*/
-
-setInterval(
-checkAccount,
-15000
-);
 
 </script></body>
 </html>
