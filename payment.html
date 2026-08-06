@@ -125,6 +125,7 @@ text-align:center;
 margin-top:20px;
 color:#1769e0;
 cursor:pointer;
+font-weight:bold;
 }
 </style>
 </head>
@@ -132,9 +133,17 @@ cursor:pointer;
 <body>
 
 <header>
-<a href="index.html">📚 CreateLK Academy</a>
-<a href="#" onclick="logout()">Logout</a>
+
+<a href="index.html">
+📚 CreateLK Academy
+</a>
+
+<a href="#" onclick="logout();return false;">
+Logout
+</a>
+
 </header>
+
 
 <div class="container">
 
@@ -152,13 +161,20 @@ LKR 1,500
 30 Days Premium
 </div>
 
-<div id="status" class="status inactive">
+
+<div
+id="status"
+class="status inactive">
 Checking membership...
 </div>
 
-<div id="details" class="info">
-Loading...
+
+<div
+id="details"
+class="info">
+Checking your membership...
 </div>
+
 
 <button
 id="paymentBtn"
@@ -166,6 +182,7 @@ class="pay"
 onclick="createPayment()">
 💳 Start Payment
 </button>
+
 
 <button
 id="aiBtn"
@@ -175,25 +192,38 @@ onclick="goAI()">
 🤖 Go to AI MCQs
 </button>
 
-<div id="message" class="message"></div>
+
+<div
+id="message"
+class="message">
+</div>
 
 </div>
 
+
 <a
 class="logout"
-onclick="logout()">
+href="#"
+onclick="logout();return false;">
 🚪 Logout
 </a>
 
 </div>
 
+
 <script>
+
+/* =========================================
+   CLOUDFLARE WORKER
+========================================= */
 
 const WORKER_URL =
 "https://createlk-academy-api.createlk.workers.dev";
 
-const token =
-localStorage.getItem("createlk_token");
+
+/* =========================================
+   ELEMENTS
+========================================= */
 
 const statusBox =
 document.getElementById("status");
@@ -211,18 +241,40 @@ const message =
 document.getElementById("message");
 
 
-/* LOGIN CHECK */
+/* =========================================
+   GET LOGIN TOKEN
+========================================= */
 
-if(!token){
+function getToken(){
 
-location.href="login.html";
+return localStorage.getItem(
+"createlk_token"
+);
 
 }
 
 
-/* CHECK MEMBERSHIP */
+/* =========================================
+   CHECK MEMBERSHIP
+========================================= */
 
 async function checkMembership(){
+
+const token =
+getToken();
+
+
+/* NOT LOGGED IN */
+
+if(!token){
+
+window.location.href =
+"login.html";
+
+return;
+
+}
+
 
 try{
 
@@ -230,6 +282,8 @@ const response =
 await fetch(
 WORKER_URL+"/api/membership",
 {
+method:"GET",
+
 headers:{
 "Authorization":
 "Bearer "+token
@@ -237,67 +291,139 @@ headers:{
 }
 );
 
+
 const data =
 await response.json();
 
-if(!data.loggedIn){
 
-location.href="login.html";
+console.log(
+"Membership response:",
+data
+);
+
+
+/* TOKEN INVALID */
+
+if(
+response.status === 401 ||
+data.loggedIn === false ||
+data.authenticated === false
+){
+
+localStorage.removeItem(
+"createlk_token"
+);
+
+localStorage.removeItem(
+"createlk_user"
+);
+
+window.location.href =
+"login.html";
+
 return;
 
 }
 
 
-/* ACTIVE */
+/* =========================================
+   ACTIVE MEMBERSHIP
+========================================= */
 
-if(data.active){
+if(data.active === true){
 
-statusBox.className="status active";
+statusBox.className =
+"status active";
 
 statusBox.innerHTML =
 "🟢 Premium Membership Active";
 
-let days =
-data.daysRemaining || 0;
+
+const days =
+data.daysRemaining ??
+data.days_remaining ??
+0;
+
 
 details.innerHTML =
 "⭐ Premium access is active.<br><br>"+
 "⏳ Expires in: <b>"+
 days+
 " days</b><br><br>"+
-"📚 Subject: General English<br>"+
-"🤖 Up to 100 AI MCQs per day";
+"📚 Choose Subject on the AI page<br>"+
+"🤖 Exactly 100 AI MCQs per generation<br>"+
+"📅 Maximum 100 questions per day";
 
-paymentBtn.style.display="none";
 
-aiBtn.style.display="block";
+paymentBtn.style.display =
+"none";
+
+aiBtn.style.display =
+"block";
+
+message.textContent =
+"";
+
 
 return;
 
 }
 
 
-/* NOT ACTIVE */
+/* =========================================
+   NOT ACTIVE
+========================================= */
 
-statusBox.className="status pending";
+statusBox.className =
+"status pending";
 
 statusBox.innerHTML =
 "🟡 Premium Not Active";
+
 
 details.innerHTML =
 "<b>CreateLK Academy Premium</b><br><br>"+
 "💰 Price: LKR 1,500<br>"+
 "📅 Duration: 30 Days<br>"+
-"📚 AI-generated General English MCQs<br>"+
+"📚 AI-generated English MCQs<br>"+
 "📝 Exactly 100 questions per generation<br>"+
 "🔢 Maximum 100 questions per day<br>"+
 "💡 Answers and explanations included";
 
-paymentBtn.style.display="block";
+
+paymentBtn.style.display =
+"block";
+
+aiBtn.style.display =
+"none";
+
+
+/* CHECK IF PAYMENT IS PENDING */
+
+if(
+data.paymentStatus === "pending" ||
+data.payment_status === "pending"
+){
+
+statusBox.innerHTML =
+"🟡 Payment Waiting for Approval";
+
+message.textContent =
+"Your payment is waiting for admin approval.";
+
+paymentBtn.textContent =
+"🟡 Payment Pending";
+
+paymentBtn.disabled=true;
+
+}
 
 }catch(error){
 
-statusBox.className="status inactive";
+console.error(error);
+
+statusBox.className =
+"status inactive";
 
 statusBox.innerHTML =
 "⚠️ Connection Error";
@@ -310,14 +436,34 @@ details.innerHTML =
 }
 
 
-/* CREATE PAYMENT */
+/* =========================================
+   CREATE PAYMENT
+========================================= */
 
 async function createPayment(){
 
-paymentBtn.disabled=true;
-paymentBtn.textContent="Creating...";
+const token =
+getToken();
 
-message.textContent="";
+
+if(!token){
+
+window.location.href =
+"login.html";
+
+return;
+
+}
+
+
+paymentBtn.disabled=true;
+
+paymentBtn.textContent =
+"Creating...";
+
+message.textContent =
+"";
+
 
 try{
 
@@ -330,96 +476,131 @@ method:"POST",
 headers:{
 "Authorization":
 "Bearer "+token,
+
 "Content-Type":
 "application/json"
-}
+},
+
+body:JSON.stringify({
+amount:1500,
+currency:"LKR",
+payment_method:"payhere"
+})
 }
 );
+
 
 const data =
 await response.json();
 
-if(!data.success){
+
+console.log(
+"Payment response:",
+data
+);
+
+
+if(!response.ok ||
+!data.success){
 
 message.textContent =
 data.message ||
 "Unable to create payment.";
 
 paymentBtn.disabled=false;
-paymentBtn.textContent="💳 Start Payment";
+
+paymentBtn.textContent =
+"💳 Start Payment";
 
 return;
 
 }
 
 
-/*
-IMPORTANT:
-This only creates the payment
-record in D1.
-
-Actual PayHere checkout
-will be connected after
-your real PayHere credentials
-are added.
-*/
+/* =========================================
+   PAYMENT CREATED
+========================================= */
 
 message.innerHTML =
-"✅ Payment request created.<br>"+
+"✅ Payment request created.<br><br>"+
 "Payment ID: <b>"+
-data.paymentId+
+(data.paymentId ||
+data.payment_id ||
+"Created")+
 "</b><br><br>"+
 "Complete your PayHere payment and wait for admin approval.";
+
 
 paymentBtn.textContent =
 "🟡 Payment Pending";
 
 paymentBtn.disabled=true;
 
-statusBox.className="status pending";
+
+statusBox.className =
+"status pending";
 
 statusBox.innerHTML =
 "🟡 Waiting for Admin Approval";
 
+
 }catch(error){
 
+console.error(error);
+
 message.textContent =
-"Connection error.";
+"Unable to connect to CreateLK Academy.";
 
 paymentBtn.disabled=false;
-paymentBtn.textContent="💳 Start Payment";
+
+paymentBtn.textContent =
+"💳 Start Payment";
 
 }
 
 }
 
 
-/* GO AI */
+/* =========================================
+   GO TO AI
+========================================= */
 
 function goAI(){
 
-location.href="premium-course.html";
+window.location.href =
+"premium-course.html";
 
 }
 
 
-/* LOGOUT */
+/* =========================================
+   LOGOUT
+========================================= */
 
 function logout(){
 
-localStorage.removeItem("createlk_token");
-localStorage.removeItem("createlk_user");
+localStorage.removeItem(
+"createlk_token"
+);
 
-location.href="login.html";
+localStorage.removeItem(
+"createlk_user"
+);
+
+window.location.href =
+"login.html";
 
 }
 
 
-/* INITIAL CHECK */
+/* =========================================
+   START
+========================================= */
 
 checkMembership();
 
-/* Check again every 15 seconds */
+
+/* Re-check every 15 seconds */
 
 setInterval(
 checkMembership,
