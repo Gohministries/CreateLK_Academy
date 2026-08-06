@@ -115,6 +115,7 @@ cursor:pointer;
 .remember input{
 width:auto;
 margin:0;
+padding:0;
 }
 
 .mainbtn{
@@ -232,8 +233,7 @@ required
 <label class="remember">
 <input
 id="stayLogin"
-type="checkbox"
->
+type="checkbox">
 Stay logged in
 </label>
 
@@ -410,6 +410,8 @@ message.textContent="";
 
 try{
 
+/* LOGIN REQUEST */
+
 const response =
 await fetch(
 WORKER_URL+"/api/login",
@@ -423,14 +425,12 @@ headers:{
 body:JSON.stringify({
 
 email:
-document.getElementById(
-"loginEmail"
-).value.trim(),
+document.getElementById("loginEmail")
+.value.trim(),
 
 password:
-document.getElementById(
-"loginPassword"
-).value
+document.getElementById("loginPassword")
+.value
 
 })
 }
@@ -441,7 +441,9 @@ const data =
 await response.json();
 
 
-if(!data.success){
+/* LOGIN FAILED */
+
+if(!response.ok || !data.success){
 
 message.textContent =
 data.message ||
@@ -457,8 +459,7 @@ return;
 
 
 /* =========================================
-   SAVE LOGIN
-   SAME AS YOUR WORKING SYSTEM
+   SAVE LOGIN TOKEN
 ========================================= */
 
 localStorage.setItem(
@@ -466,20 +467,30 @@ localStorage.setItem(
 data.token
 );
 
+if(data.user){
+
 localStorage.setItem(
 "createlk_user",
 JSON.stringify(data.user)
 );
 
+}
+
 
 /* =========================================
-   CHECK PREMIUM
+   CHECK MEMBERSHIP
 ========================================= */
 
-const status =
+message.textContent =
+"Checking membership...";
+
+
+const membershipResponse =
 await fetch(
 WORKER_URL+"/api/membership",
 {
+method:"GET",
+
 headers:{
 "Authorization":
 "Bearer "+data.token
@@ -489,26 +500,52 @@ headers:{
 
 
 const membership =
-await status.json();
+await membershipResponse.json();
+
+
+console.log(
+"Membership:",
+membership
+);
 
 
 /* =========================================
-   AFTER LOGIN NAVIGATION
+   APPROVED + ACTIVE
 ========================================= */
 
-if(membership.active === true){
+if(
+membership.success === true &&
+membership.active === true
+){
 
-/* APPROVED */
+message.textContent =
+"✅ Premium membership active.";
+
+setTimeout(function(){
 
 window.location.href =
 "premium-course.html";
 
-}else{
+},300);
 
-/* NOT APPROVED */
+}
+
+
+/* =========================================
+   NOT APPROVED / EXPIRED
+========================================= */
+
+else{
+
+message.textContent =
+"Payment required.";
+
+setTimeout(function(){
 
 window.location.href =
 "payment.html";
+
+},300);
 
 }
 
@@ -544,18 +581,15 @@ document.getElementById(
 "registerName"
 ).value.trim();
 
-
 const email =
 document.getElementById(
 "registerEmail"
 ).value.trim();
 
-
 const password =
 document.getElementById(
 "registerPassword"
 ).value;
-
 
 const confirm =
 document.getElementById(
@@ -568,12 +602,13 @@ document.getElementById(
 "registerMessage"
 );
 
-
 const btn =
 document.getElementById(
 "registerBtn"
 );
 
+
+/* PASSWORD CHECK */
 
 if(password.length < 8){
 
@@ -604,6 +639,9 @@ message.textContent="";
 
 try{
 
+
+/* REGISTER REQUEST */
+
 const response =
 await fetch(
 WORKER_URL+"/api/register",
@@ -632,7 +670,9 @@ const data =
 await response.json();
 
 
-if(!data.success){
+/* REGISTER FAILED */
+
+if(!response.ok || !data.success){
 
 message.textContent =
 data.message ||
@@ -647,6 +687,8 @@ return;
 }
 
 
+/* SUCCESS */
+
 message.textContent =
 "✅ Account created successfully!";
 
@@ -656,6 +698,8 @@ document.getElementById(
 ).reset();
 
 
+/* GO TO LOGIN */
+
 setTimeout(function(){
 
 showLogin();
@@ -664,7 +708,7 @@ document.getElementById(
 "loginEmail"
 ).value=email;
 
-},1200);
+},1000);
 
 
 }catch(error){
