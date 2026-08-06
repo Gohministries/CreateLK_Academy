@@ -219,19 +219,14 @@ Login
 
 </form>
 
-<div
-id="loginMessage"
-class="message">
-</div>
+<div id="loginMessage" class="message"></div>
 
 </div>
 
 
 <!-- REGISTER -->
 
-<div
-id="registerBox"
-class="hidden">
+<div id="registerBox" class="hidden">
 
 <h2>Create Account</h2>
 
@@ -288,17 +283,12 @@ Create Account
 
 </form>
 
-<div
-id="registerMessage"
-class="message">
-</div>
+<div id="registerMessage" class="message"></div>
 
 </div>
 
 
-<a
-class="back"
-href="index.html">
+<a class="back" href="index.html">
 🏠 Back to CreateLK Academy
 </a>
 
@@ -314,11 +304,11 @@ href="index.html">
 <script>
 
 /* =========================================
-   YOUR CLOUDFLARE WORKER URL
+   CLOUDFLARE WORKER
 ========================================= */
 
 const WORKER_URL =
-"https://YOUR-WORKER.workers.dev";
+"https://createlk-academy-api.createlk.workers.dev";
 
 
 /* =========================================
@@ -378,7 +368,6 @@ btn.disabled=true;
 btn.textContent="Logging in...";
 message.textContent="";
 
-
 try{
 
 const response =
@@ -394,7 +383,8 @@ headers:{
 body:JSON.stringify({
 
 email:
-document.getElementById("loginEmail").value,
+document.getElementById("loginEmail").value
+.trim(),
 
 password:
 document.getElementById("loginPassword").value
@@ -403,16 +393,14 @@ document.getElementById("loginPassword").value
 }
 );
 
-
 const data =
 await response.json();
-
 
 if(!data.success){
 
 message.textContent =
 data.message ||
-"Invalid login.";
+"Invalid email or password.";
 
 btn.disabled=false;
 btn.textContent="Login";
@@ -435,7 +423,7 @@ JSON.stringify(data.user)
 );
 
 
-/* CHECK MEMBERSHIP */
+/* CHECK PREMIUM */
 
 const status =
 await fetch(
@@ -464,11 +452,12 @@ window.location.href =
 
 }
 
-
 }catch(error){
 
+console.error(error);
+
 message.textContent =
-"Connection error. Check your Worker URL.";
+"Unable to connect to CreateLK Academy.";
 
 btn.disabled=false;
 btn.textContent="Login";
@@ -486,6 +475,16 @@ document.getElementById("registerForm")
 .addEventListener("submit",async function(e){
 
 e.preventDefault();
+
+const name =
+document.getElementById(
+"registerName"
+).value.trim();
+
+const email =
+document.getElementById(
+"registerEmail"
+).value.trim();
 
 const password =
 document.getElementById(
@@ -508,6 +507,16 @@ document.getElementById(
 );
 
 
+if(password.length < 8){
+
+message.textContent =
+"Password must contain at least 8 characters.";
+
+return;
+
+}
+
+
 if(password !== confirm){
 
 message.textContent =
@@ -519,7 +528,7 @@ return;
 
 
 btn.disabled=true;
-btn.textContent="Creating...";
+btn.textContent="Creating Account...";
 message.textContent="";
 
 
@@ -536,19 +545,9 @@ headers:{
 },
 
 body:JSON.stringify({
-
-name:
-document.getElementById(
-"registerName"
-).value,
-
-email:
-document.getElementById(
-"registerEmail"
-).value,
-
+name:name,
+email:email,
 password:password
-
 })
 }
 );
@@ -573,26 +572,30 @@ return;
 
 
 message.textContent =
-"✅ Account created! Please login.";
-
-
-/* CLEAR FORM */
+"✅ Account created successfully!";
 
 document.getElementById(
 "registerForm"
 ).reset();
 
 
-setTimeout(
-showLogin,
-1200
-);
+setTimeout(function(){
+
+showLogin();
+
+document.getElementById(
+"loginEmail"
+).value=email;
+
+},1200);
 
 
 }catch(error){
 
+console.error(error);
+
 message.textContent =
-"Connection error. Check your Worker URL.";
+"Unable to connect to CreateLK Academy.";
 
 btn.disabled=false;
 btn.textContent="Create Account";
