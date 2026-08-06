@@ -1,9 +1,11 @@
 <!DOCTYPE html><html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Login | CreateLK Academy</title><style>
-*{box-sizing:border-box}
+<head><meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1"><title>Login | CreateLK Academy</title><style>
+
+*{
+box-sizing:border-box
+}
 
 body{
 margin:0;
@@ -156,6 +158,7 @@ margin-top:20px;
 .hidden{
 display:none;
 }
+
 </style></head><body><header>
 <a href="index.html">← Home</a>
 </header><div class="container"><div class="card"><div class="logo">
@@ -165,21 +168,23 @@ Learn English. Build Your Future.
 </p><div class="switch"><button
 id="loginTab"
 class="active"
+type="button"
 onclick="showLogin()">
 🔐 Login
 </button>
 
 <button
 id="registerTab"
+type="button"
 onclick="showRegister()">
 📝 Register
 </button>
 
 </div><!-- LOGIN --><div id="loginBox"><h2>Welcome Back</h2><p class="subtitle">
 Login to your account
-</p><form id="loginForm"><label>Email Address</label>
-
-<input
+</p><form id="loginForm"><label>
+Email Address
+</label><input
 id="loginEmail"
 type="email"
 placeholder="Enter your email"
@@ -187,9 +192,9 @@ required
 
 «»
 
-<label>Password</label>
-
-<input
+<label>
+Password
+</label><input
 id="loginPassword"
 type="password"
 placeholder="Enter your password"
@@ -220,9 +225,9 @@ class="message">
 id="registerBox"
 class="hidden"><h2>Create Account</h2><p class="subtitle">
 Join CreateLK Academy
-</p><form id="registerForm"><label>Full Name</label>
-
-<input
+</p><form id="registerForm"><label>
+Full Name
+</label><input
 id="registerName"
 type="text"
 placeholder="Enter your name"
@@ -230,9 +235,9 @@ required
 
 «»
 
-<label>Email Address</label>
-
-<input
+<label>
+Email Address
+</label><input
 id="registerEmail"
 type="email"
 placeholder="Enter your email"
@@ -240,9 +245,9 @@ required
 
 «»
 
-<label>Password</label>
-
-<input
+<label>
+Password
+</label><input
 id="registerPassword"
 type="password"
 placeholder="Minimum 8 characters"
@@ -251,9 +256,9 @@ required
 
 «»
 
-<label>Confirm Password</label>
-
-<input
+<label>
+Confirm Password
+</label><input
 id="registerConfirm"
 type="password"
 placeholder="Confirm password"
@@ -286,22 +291,26 @@ const WORKER_URL =
 "https://createlk-academy-api.createlk.workers.dev";
 
 
-/* ================================
+/* =========================================
    SWITCH
-================================ */
+========================================= */
 
 function showLogin(){
 
-document.getElementById("loginBox")
+document
+.getElementById("loginBox")
 .classList.remove("hidden");
 
-document.getElementById("registerBox")
+document
+.getElementById("registerBox")
 .classList.add("hidden");
 
-document.getElementById("loginTab")
+document
+.getElementById("loginTab")
 .classList.add("active");
 
-document.getElementById("registerTab")
+document
+.getElementById("registerTab")
 .classList.remove("active");
 
 }
@@ -309,46 +318,61 @@ document.getElementById("registerTab")
 
 function showRegister(){
 
-document.getElementById("loginBox")
+document
+.getElementById("loginBox")
 .classList.add("hidden");
 
-document.getElementById("registerBox")
+document
+.getElementById("registerBox")
 .classList.remove("hidden");
 
-document.getElementById("loginTab")
+document
+.getElementById("loginTab")
 .classList.remove("active");
 
-document.getElementById("registerTab")
+document
+.getElementById("registerTab")
 .classList.add("active");
 
 }
 
 
-/* ================================
+/* =========================================
    LOGIN
-================================ */
+========================================= */
 
-document.getElementById("loginForm")
+document
+.getElementById("loginForm")
 .addEventListener(
 "submit",
 async function(e){
 
 e.preventDefault();
 
+
 const btn =
-document.getElementById("loginBtn");
+document.getElementById(
+"loginBtn"
+);
 
 const message =
-document.getElementById("loginMessage");
+document.getElementById(
+"loginMessage"
+);
 
 const email =
-document.getElementById("loginEmail")
+document.getElementById(
+"loginEmail"
+)
 .value
-.trim();
+.trim()
+.toLowerCase();
 
 const password =
-document.getElementById("loginPassword")
-.value;
+document.getElementById(
+"loginPassword"
+).value;
+
 
 btn.disabled=true;
 btn.textContent="Logging in...";
@@ -359,14 +383,15 @@ try{
 
 const response =
 await fetch(
-WORKER_URL+"/api/login",
+WORKER_URL + "/api/login",
 {
 method:"POST",
 
 credentials:"include",
 
 headers:{
-"Content-Type":"application/json"
+"Content-Type":
+"application/json"
 },
 
 body:JSON.stringify({
@@ -381,8 +406,10 @@ const data =
 await response.json();
 
 
-if(!response.ok ||
-!data.success){
+if(
+!response.ok ||
+!data.success
+){
 
 message.textContent =
 data.message ||
@@ -396,24 +423,66 @@ return;
 }
 
 
-/* ================================
-   LOGIN SUCCESS
-================================ */
+/*
+IMPORTANT:
+Store the Worker token too.
+
+This allows premium-course.html
+and payment.html to authenticate
+even if the browser does not send
+the cookie as expected.
+*/
+
+if(data.token){
+
+localStorage.setItem(
+"createlk_token",
+data.token
+);
+
+}
+
+
+if(data.user){
+
+localStorage.setItem(
+"createlk_user",
+JSON.stringify(
+data.user
+)
+);
+
+}
+
 
 message.textContent =
 "✅ Login successful. Checking membership...";
 
 
-/* ================================
-   CHECK MEMBERSHIP
-================================ */
+/* =========================================
+   MEMBERSHIP CHECK
+========================================= */
+
+const headers = {};
+
+if(data.token){
+
+headers.Authorization =
+"Bearer " + data.token;
+
+}
+
 
 const membershipResponse =
 await fetch(
-WORKER_URL+"/api/membership",
+WORKER_URL +
+"/api/membership",
 {
 method:"GET",
-credentials:"include"
+
+credentials:"include",
+
+headers:headers
 }
 );
 
@@ -427,17 +496,23 @@ membership.loggedIn &&
 membership.active
 ){
 
-/* APPROVED */
+/*
+APPROVED PREMIUM USER
+*/
 
-window.location.href =
-"premium-course.html";
+window.location.replace(
+"premium-course.html"
+);
 
 }else{
 
-/* NOT APPROVED */
+/*
+LOGGED IN BUT NOT PREMIUM
+*/
 
-window.location.href =
-"payment.html";
+window.location.replace(
+"payment.html"
+);
 
 }
 
@@ -458,28 +533,33 @@ btn.textContent="Login";
 });
 
 
-/* ================================
+/* =========================================
    REGISTER
-================================ */
+========================================= */
 
-document.getElementById("registerForm")
+document
+.getElementById("registerForm")
 .addEventListener(
 "submit",
 async function(e){
 
 e.preventDefault();
 
+
 const name =
 document.getElementById(
 "registerName"
-).value
+)
+.value
 .trim();
 
 const email =
 document.getElementById(
 "registerEmail"
-).value
-.trim();
+)
+.value
+.trim()
+.toLowerCase();
 
 const password =
 document.getElementById(
@@ -531,14 +611,16 @@ try{
 
 const response =
 await fetch(
-WORKER_URL+"/api/register",
+WORKER_URL +
+"/api/register",
 {
 method:"POST",
 
 credentials:"include",
 
 headers:{
-"Content-Type":"application/json"
+"Content-Type":
+"application/json"
 },
 
 body:JSON.stringify({
@@ -554,15 +636,18 @@ const data =
 await response.json();
 
 
-if(!response.ok ||
-!data.success){
+if(
+!response.ok ||
+!data.success
+){
 
 message.textContent =
 data.message ||
 "Registration failed.";
 
 btn.disabled=false;
-btn.textContent="Create Account";
+btn.textContent=
+"Create Account";
 
 return;
 
@@ -573,9 +658,9 @@ message.textContent =
 "✅ Account created successfully!";
 
 
-document.getElementById(
-"registerForm"
-).reset();
+document
+.getElementById("registerForm")
+.reset();
 
 
 setTimeout(
@@ -583,12 +668,12 @@ function(){
 
 showLogin();
 
-document.getElementById(
-"loginEmail"
-).value=email;
+document
+.getElementById("loginEmail")
+.value=email;
 
 },
-1200
+1000
 );
 
 
@@ -601,7 +686,8 @@ message.textContent =
 "Unable to connect to CreateLK Academy.";
 
 btn.disabled=false;
-btn.textContent="Create Account";
+btn.textContent=
+"Create Account";
 
 }
 
