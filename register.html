@@ -46,6 +46,10 @@ header{
     font-weight:600;
 }
 
+.home:hover{
+    color:#155eef;
+}
+
 main{
     min-height:calc(100vh - 70px);
     display:flex;
@@ -130,6 +134,13 @@ input:focus{
     width:16px;
     height:16px;
     margin-top:2px;
+    flex-shrink:0;
+}
+
+.terms label{
+    font-size:12px;
+    font-weight:normal;
+    margin:0;
 }
 
 .terms a{
@@ -152,6 +163,11 @@ input:focus{
     background:#0d4dcc;
 }
 
+.register-btn:disabled{
+    opacity:.65;
+    cursor:not-allowed;
+}
+
 .message{
     display:none;
     padding:12px;
@@ -166,6 +182,13 @@ input:focus{
     background:#fff1f2;
     color:#be123c;
     border:1px solid #fecdd3;
+}
+
+.message.success{
+    display:block;
+    background:#ecfdf3;
+    color:#027a48;
+    border:1px solid #abefc6;
 }
 
 .login-link{
@@ -198,6 +221,10 @@ footer{
         gap:0;
     }
 
+    .register-header h1{
+        font-size:25px;
+    }
+
 }
 
 </style></head><body><header><div class="nav"><a href="index.html" class="logo">
@@ -206,7 +233,12 @@ footer{
 ← Back to Home
 </a></div></header><main><div class="register-box"><div class="register-header"><h1>Create Your Account</h1><p>
 Join CreateLK Academy and start your English learning journey.
-</p></div><div id="message" class="message"></div><form id="registerForm"><div class="name-row"><div class="form-group"><label for="firstName">
+</p></div><div
+id="message"
+class="message">
+</div><form
+id="registerForm"
+autocomplete="on"><div class="name-row"><div class="form-group"><label for="firstName">
 First Name
 </label><input
 type="text"
@@ -299,97 +331,286 @@ Login here
 
 </footer><script>
 
-const form = document.getElementById("registerForm");
-const message = document.getElementById("message");
-const button = document.getElementById("registerButton");
+/* =====================================================
+   CREATE LK ACADEMY
+   REGISTRATION API
+   ===================================================== */
 
-form.addEventListener("submit", function(event){
-
-    event.preventDefault();
-
-    message.className = "message";
-    message.textContent = "";
-
-    const firstName =
-        document.getElementById("firstName").value.trim();
-
-    const lastName =
-        document.getElementById("lastName").value.trim();
-
-    const email =
-        document.getElementById("email").value.trim();
-
-    const phone =
-        document.getElementById("phone").value.trim();
-
-    const password =
-        document.getElementById("password").value;
-
-    const confirmPassword =
-        document.getElementById("confirmPassword").value;
+const API_URL =
+    "https://createlk-api.createlk.workers.dev";
 
 
-    if(password.length < 8){
+const form =
+    document.getElementById("registerForm");
 
-        showError("Password must contain at least 8 characters.");
+const message =
+    document.getElementById("message");
 
-        return;
+const button =
+    document.getElementById("registerButton");
+
+
+form.addEventListener(
+    "submit",
+    async function(event){
+
+        event.preventDefault();
+
+
+        hideMessage();
+
+
+        const firstName =
+            document
+            .getElementById("firstName")
+            .value
+            .trim();
+
+
+        const lastName =
+            document
+            .getElementById("lastName")
+            .value
+            .trim();
+
+
+        const email =
+            document
+            .getElementById("email")
+            .value
+            .trim()
+            .toLowerCase();
+
+
+        const phone =
+            document
+            .getElementById("phone")
+            .value
+            .trim();
+
+
+        const password =
+            document
+            .getElementById("password")
+            .value;
+
+
+        const confirmPassword =
+            document
+            .getElementById("confirmPassword")
+            .value;
+
+
+        /* VALIDATION */
+
+        if(
+            !firstName ||
+            !lastName ||
+            !email ||
+            !phone ||
+            !password
+        ){
+
+            showError(
+                "Please complete all required fields."
+            );
+
+            return;
+        }
+
+
+        if(password.length < 8){
+
+            showError(
+                "Password must contain at least 8 characters."
+            );
+
+            return;
+        }
+
+
+        if(password !== confirmPassword){
+
+            showError(
+                "Passwords do not match."
+            );
+
+            return;
+        }
+
+
+        /* BUTTON */
+
+        button.disabled = true;
+
+        button.textContent =
+            "Creating Account...";
+
+
+        try{
+
+
+            const response =
+                await fetch(
+                    API_URL + "/api/register",
+                    {
+                        method:"POST",
+
+                        headers:{
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:JSON.stringify({
+
+                            firstName:
+                                firstName,
+
+                            lastName:
+                                lastName,
+
+                            email:
+                                email,
+
+                            phone:
+                                phone,
+
+                            password:
+                                password
+
+                        })
+                    }
+                );
+
+
+            let data;
+
+
+            try{
+
+                data =
+                    await response.json();
+
+            }catch{
+
+                data = {
+                    success:false,
+                    message:
+                    "Invalid server response."
+                };
+
+            }
+
+
+            /* SERVER ERROR */
+
+            if(
+                !response.ok ||
+                !data.success
+            ){
+
+                showError(
+                    data.message ||
+                    "Registration failed."
+                );
+
+                button.disabled = false;
+
+                button.textContent =
+                    "Create Student Account";
+
+                return;
+            }
+
+
+            /* SUCCESS */
+
+            showSuccess(
+                "Account created successfully. Redirecting to login..."
+            );
+
+
+            button.textContent =
+                "Account Created";
+
+
+            setTimeout(
+                function(){
+
+                    window.location.href =
+                        "login.html";
+
+                },
+                1200
+            );
+
+
+        }catch(error){
+
+            console.error(
+                "Registration error:",
+                error
+            );
+
+
+            showError(
+                "Unable to connect to the server. Please try again."
+            );
+
+
+            button.disabled = false;
+
+            button.textContent =
+                "Create Student Account";
+
+        }
+
     }
+);
 
 
-    if(password !== confirmPassword){
-
-        showError("Passwords do not match.");
-
-        return;
-    }
-
-
-    if(!firstName || !lastName || !email || !phone){
-
-        showError("Please complete all required fields.");
-
-        return;
-    }
-
-
-    /*
-       BACKEND CONNECTION WILL BE ADDED NEXT.
-
-       We will connect this form to:
-
-       Cloudflare Worker
-       ↓
-       D1 Database
-       ↓
-       students table
-
-       DO NOT add your old Worker URL here yet.
-    */
-
-
-    button.disabled = true;
-    button.textContent = "Creating Account...";
-
-
-    setTimeout(function(){
-
-        button.disabled = false;
-        button.textContent = "Create Student Account";
-
-        showError(
-            "Registration system is being connected. Please wait for the next setup step."
-        );
-
-    },800);
-
-});
-
+/* =====================================================
+   MESSAGE FUNCTIONS
+   ===================================================== */
 
 function showError(text){
 
-    message.className = "message error";
-    message.textContent = text;
+    message.className =
+        "message error";
+
+    message.textContent =
+        text;
+
+    message.style.display =
+        "block";
+
+}
+
+
+function showSuccess(text){
+
+    message.className =
+        "message success";
+
+    message.textContent =
+        text;
+
+    message.style.display =
+        "block";
+
+}
+
+
+function hideMessage(){
+
+    message.className =
+        "message";
+
+    message.textContent =
+        "";
+
+    message.style.display =
+        "none";
 
 }
 
