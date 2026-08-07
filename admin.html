@@ -3,40 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-
 <title>Admin | CreateLK Academy</title>
 
 <style>
-*{box-sizing:border-box}
-
 body{
     margin:0;
     font-family:Arial,sans-serif;
     background:#f5f7fb;
     color:#172033;
 }
-
 header{
     background:#fff;
     padding:18px 20px;
     border-bottom:1px solid #ddd;
 }
-
 .container{
-    max-width:1000px;
+    max-width:900px;
     margin:auto;
-    padding:25px 20px;
+    padding:20px;
 }
-
-h1{margin:0}
-
-.login{
+.box,.card{
     background:#fff;
     padding:20px;
     border-radius:12px;
-    margin-bottom:20px;
+    margin-bottom:15px;
+    border:1px solid #e5e7eb;
 }
-
 input{
     width:100%;
     padding:12px;
@@ -44,58 +36,24 @@ input{
     border:1px solid #ccc;
     border-radius:7px;
 }
-
 button{
     border:0;
-    padding:10px 15px;
+    padding:10px 14px;
     border-radius:7px;
     cursor:pointer;
     font-weight:bold;
+    margin:4px;
 }
-
-.load{
-    background:#155eef;
-    color:#fff;
-}
-
-.approve{
-    background:#16a34a;
-    color:#fff;
-}
-
-.reject{
-    background:#dc2626;
-    color:#fff;
-}
-
-.card{
-    background:#fff;
-    padding:20px;
-    border-radius:12px;
-    margin-bottom:15px;
-    border:1px solid #e5e7eb;
-}
-
-.status{
-    font-weight:bold;
-}
-
-.pending{color:#d97706}
-.approved{color:#16a34a}
-.rejected{color:#dc2626}
-
-.receipt{
-    display:inline-block;
-    margin:10px 0;
-    color:#155eef;
-    font-weight:bold;
-}
-
-.message{
-    margin:12px 0;
-    padding:10px;
-    border-radius:7px;
-    background:#eef4ff;
+.load{background:#155eef;color:#fff}
+.view{background:#475467;color:#fff}
+.approve{background:#16a34a;color:#fff}
+.reject{background:#dc2626;color:#fff}
+.pending{color:#d97706;font-weight:bold}
+.approved{color:#16a34a;font-weight:bold}
+.rejected{color:#dc2626;font-weight:bold}
+#message{
+    margin-top:10px;
+    font-size:14px;
 }
 </style>
 </head>
@@ -104,27 +62,25 @@ button{
 
 <header>
 <div class="container">
-<h1>📚 CreateLK Academy — Admin</h1>
+<h2>📚 CreateLK Academy Admin</h2>
 </div>
 </header>
 
 <div class="container">
 
-<div class="login">
+<div class="box">
 
 <label>Admin Key</label>
 
 <input
-    type="password"
-    id="adminKey"
-    placeholder="Enter ADMIN_KEY">
+id="adminKey"
+type="password"
+placeholder="Enter ADMIN_KEY">
 
 <button
-    class="load"
-    onclick="loadPayments()">
-
+class="load"
+onclick="loadPayments()">
 Load Payments
-
 </button>
 
 <div id="message"></div>
@@ -140,30 +96,32 @@ Load Payments
 const API =
 "https://createlk-bank-api.createlk.workers.dev";
 
-function key(){
 
+function getKey(){
     return document
         .getElementById("adminKey")
         .value
         .trim();
+}
 
+
+function message(text){
+    document
+        .getElementById("message")
+        .textContent = text;
 }
 
 
 async function loadPayments(){
 
-    const adminKey = key();
+    const key = getKey();
 
-    if(!adminKey){
-
-        show(
-            "Please enter your Admin Key."
-        );
-
+    if(!key){
+        message("Enter Admin Key.");
         return;
     }
 
-    show("Loading...");
+    message("Loading...");
 
     try{
 
@@ -172,8 +130,7 @@ async function loadPayments(){
                 API + "/api/admin/payments",
                 {
                     headers:{
-                        "X-Admin-Key":
-                            adminKey
+                        "X-Admin-Key":key
                     }
                 }
             );
@@ -183,7 +140,7 @@ async function loadPayments(){
 
         if(!response.ok || !data.success){
 
-            show(
+            message(
                 data.message ||
                 "Unable to load payments."
             );
@@ -191,11 +148,11 @@ async function loadPayments(){
             return;
         }
 
-        render(
+        displayPayments(
             data.payments || []
         );
 
-        show(
+        message(
             "Payments loaded."
         );
 
@@ -203,113 +160,191 @@ async function loadPayments(){
 
         console.error(error);
 
-        show(
-            "Unable to connect to API."
+        message(
+            "Unable to connect to server."
         );
     }
 }
 
 
-function render(payments){
+function displayPayments(list){
 
-    const box =
+    const container =
         document.getElementById(
             "payments"
         );
 
-    box.innerHTML = "";
+    container.innerHTML = "";
 
-    if(!payments.length){
+    if(!list.length){
 
-        box.innerHTML =
-            `<div class="card">
-                No payments found.
-            </div>`;
+        container.innerHTML =
+        `<div class="card">
+            No payments found.
+        </div>`;
 
         return;
     }
 
 
-    payments.forEach(payment => {
+    list.forEach(p => {
 
         const card =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
-        card.className =
-            "card";
-
+        card.className = "card";
 
         card.innerHTML = `
 
             <h3>
-                ${escapeHTML(
-                    payment.first_name
-                )}
-                ${escapeHTML(
-                    payment.last_name
-                )}
+                ${safe(p.first_name)}
+                ${safe(p.last_name)}
             </h3>
 
             <p>
                 <b>Email:</b>
-                ${escapeHTML(
-                    payment.email
-                )}
+                ${safe(p.email)}
             </p>
 
             <p>
                 <b>Phone:</b>
-                ${escapeHTML(
-                    payment.phone || ""
-                )}
+                ${safe(p.phone)}
             </p>
 
             <p>
                 <b>Payment ID:</b>
-                ${escapeHTML(
-                    payment.payment_id
-                )}
+                ${safe(p.payment_id)}
             </p>
 
             <p>
                 <b>Amount:</b>
-                LKR ${payment.amount}
+                LKR ${p.amount}
+            </p>
+
+            <p>
+                <b>Payment Date:</b>
+                ${safe(p.payment_date || "-")}
             </p>
 
             <p>
                 <b>Status:</b>
-                <span class="status ${payment.status}">
-                    ${payment.status}
+                <span class="${p.status}">
+                    ${safe(p.status)}
                 </span>
             </p>
 
-            ${
-                payment.status === "pending"
-                ? `
-                <button
-                    class="approve"
-                    onclick="approve('${encodeURIComponent(payment.payment_id)}')">
-                    ✓ Approve
-                </button>
+            <button
+                class="view"
+                onclick="viewSlip(
+                    '${encodeURIComponent(p.payment_id)}'
+                )">
+                👁 View Slip
+            </button>
 
-                <button
-                    class="reject"
-                    onclick="reject('${encodeURIComponent(payment.payment_id)}')">
-                    ✕ Reject
-                </button>
+            ${
+                p.status === "pending"
+                ? `
+                    <button
+                        class="approve"
+                        onclick="approve(
+                            '${encodeURIComponent(p.payment_id)}'
+                        )">
+                        ✓ Approve
+                    </button>
+
+                    <button
+                        class="reject"
+                        onclick="reject(
+                            '${encodeURIComponent(p.payment_id)}'
+                        )">
+                        ✕ Reject
+                    </button>
                 `
                 : ""
             }
 
         `;
 
-        box.appendChild(card);
+        container.appendChild(card);
 
     });
 }
 
+
+/*
+VIEW SLIP
+
+Fetches the protected R2 receipt
+using the admin key.
+*/
+
+async function viewSlip(id){
+
+    const key = getKey();
+
+    if(!key){
+        message("Enter Admin Key.");
+        return;
+    }
+
+    message("Opening receipt...");
+
+    try{
+
+        const response =
+            await fetch(
+                API +
+                "/api/admin/receipt/" +
+                id,
+                {
+                    headers:{
+                        "X-Admin-Key":key
+                    }
+                }
+            );
+
+        if(!response.ok){
+
+            const data =
+                await response.json();
+
+            message(
+                data.message ||
+                "Unable to open receipt."
+            );
+
+            return;
+        }
+
+        const blob =
+            await response.blob();
+
+        const url =
+            URL.createObjectURL(blob);
+
+        window.open(
+            url,
+            "_blank"
+        );
+
+        message(
+            "Receipt opened."
+        );
+
+    }catch(error){
+
+        console.error(error);
+
+        message(
+            "Unable to open receipt."
+        );
+    }
+}
+
+
+/*
+APPROVE
+*/
 
 async function approve(id){
 
@@ -319,11 +354,15 @@ async function approve(id){
         return;
     }
 
-    await action(
+    await processPayment(
         "/api/admin/approve/" + id
     );
 }
 
+
+/*
+REJECT
+*/
 
 async function reject(id){
 
@@ -333,15 +372,21 @@ async function reject(id){
         return;
     }
 
-    await action(
+    await processPayment(
         "/api/admin/reject/" + id
     );
 }
 
 
-async function action(path){
+/*
+PROCESS
+*/
 
-    show("Processing...");
+async function processPayment(path){
+
+    const key = getKey();
+
+    message("Processing...");
 
     try{
 
@@ -350,10 +395,8 @@ async function action(path){
                 API + path,
                 {
                     method:"POST",
-
                     headers:{
-                        "X-Admin-Key":
-                            key()
+                        "X-Admin-Key":key
                     }
                 }
             );
@@ -361,46 +404,44 @@ async function action(path){
         const data =
             await response.json();
 
-        show(
+        message(
             data.message ||
             "Completed."
         );
 
         if(data.success){
 
-            await loadPayments();
-
+            setTimeout(
+                loadPayments,
+                500
+            );
         }
 
     }catch(error){
 
         console.error(error);
 
-        show(
+        message(
             "Request failed."
         );
     }
 }
 
 
-function show(text){
+/*
+SECURITY
+*/
 
-    document.getElementById(
-        "message"
-    ).textContent = text;
+function safe(value){
 
-}
-
-
-function escapeHTML(value){
-
-    return String(value ?? "")
-        .replaceAll("&","&amp;")
-        .replaceAll("<","&lt;")
-        .replaceAll(">","&gt;")
-        .replaceAll('"',"&quot;")
-        .replaceAll("'","&#039;");
-
+    return String(
+        value ?? ""
+    )
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
 </script>
