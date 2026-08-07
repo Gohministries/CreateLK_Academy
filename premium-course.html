@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Premium Course | CreateLK Academy</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    font-family:Arial,sans-serif;
+    background:#f5f7fb;
+    color:#172033;
+}
+
+header{
+    background:#fff;
+    border-bottom:1px solid #e5e7eb;
+}
+
+.nav{
+    max-width:1000px;
+    margin:auto;
+    padding:16px 20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.logo{
+    color:#155eef;
+    font-weight:800;
+    font-size:20px;
+}
+
+.back{
+    color:#475467;
+    text-decoration:none;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+    padding:30px 20px;
+}
+
+.card{
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:14px;
+    padding:25px;
+    margin-bottom:20px;
+}
+
+.loading{
+    text-align:center;
+}
+
+.premium{
+    border-left:5px solid #16a34a;
+}
+
+.lesson{
+    padding:18px;
+    background:#f8fafc;
+    border-radius:10px;
+    margin-top:12px;
+}
+
+.locked{
+    display:none;
+}
+
+.error{
+    color:#b91c1c;
+    text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+
+<div class="nav">
+
+<div class="logo">
+📚 CreateLK Academy
+</div>
+
+<a
+href="dashboard.html"
+class="back">
+
+← Dashboard
+
+</a>
+
+</div>
+
+</header>
+
+
+<div class="container">
+
+<div
+id="loading"
+class="card loading">
+
+Checking Premium membership...
+
+</div>
+
+
+<div
+id="content"
+class="locked">
+
+
+<div class="card premium">
+
+<h1>⭐ Premium English Course</h1>
+
+<p>
+Welcome to CreateLK Academy Premium.
+</p>
+
+<p>
+Your Premium membership is active.
+</p>
+
+<p>
+<b>Expiry:</b>
+<span id="expiry">-</span>
+</p>
+
+</div>
+
+
+<div class="card">
+
+<h2>📖 Lesson 1 — English Grammar</h2>
+
+<div class="lesson">
+
+<h3>Present Simple</h3>
+
+<p>
+The present simple is used for habits,
+facts and regular actions.
+</p>
+
+<p>
+<strong>Example:</strong>
+She goes to school every day.
+</p>
+
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h2>🤖 AI English MCQ</h2>
+
+<p>
+Practice English questions with AI-powered
+multiple-choice exercises.
+</p>
+
+<a
+href="mcq.html"
+style="
+display:inline-block;
+margin-top:15px;
+padding:12px 18px;
+background:#155eef;
+color:white;
+text-decoration:none;
+border-radius:8px;
+font-weight:bold;
+">
+
+Start AI MCQ
+
+</a>
+
+</div>
+
+
+</div>
+
+
+<div
+id="error"
+class="card error locked">
+
+</div>
+
+</div>
+
+
+<script>
+
+const API =
+"https://createlk-membership-api.createlk.workers.dev";
+
+
+const token =
+sessionStorage.getItem(
+    "createlk_token"
+);
+
+
+const student =
+JSON.parse(
+    sessionStorage.getItem(
+        "createlk_student"
+    ) || "null"
+);
+
+
+if(!token || !student){
+
+    window.location.href =
+        "login.html";
+
+}
+
+
+async function checkAccess(){
+
+    try{
+
+        const response =
+            await fetch(
+                API +
+                "/api/membership?student_id=" +
+                encodeURIComponent(
+                    student.id
+                ),
+                {
+                    headers:{
+                        "Authorization":
+                            "Bearer " + token
+                    }
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        document.getElementById(
+            "loading"
+        ).style.display="none";
+
+
+        if(
+            !response.ok ||
+            !data.success
+        ){
+
+            deny(
+                data.message ||
+                "Unable to verify membership."
+            );
+
+            return;
+        }
+
+
+        if(!data.active){
+
+            if(data.status === "pending"){
+
+                deny(
+                    "⏳ Your payment is still pending administrator approval."
+                );
+
+            }else if(
+                data.status === "expired"
+            ){
+
+                deny(
+                    "⚠️ Your Premium membership has expired."
+                );
+
+            }else{
+
+                deny(
+                    "🔒 Premium membership is required to access this course."
+                );
+
+            }
+
+            return;
+        }
+
+
+        document.getElementById(
+            "content"
+        ).style.display="block";
+
+
+        document.getElementById(
+            "expiry"
+        ).textContent =
+            data.expiry_date || "-";
+
+
+    }catch(error){
+
+        console.error(error);
+
+        deny(
+            "Unable to connect to membership server."
+        );
+
+    }
+
+}
+
+
+function deny(text){
+
+    const error =
+        document.getElementById(
+            "error"
+        );
+
+    error.textContent =
+        text +
+        " Please return to your dashboard.";
+
+    error.style.display="block";
+
+}
+
+
+checkAccess();
+
+</script>
+
+</body>
+</html>
