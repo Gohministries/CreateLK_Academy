@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Admin | CreateLK Academy</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    font-family:Arial,sans-serif;
+    background:#f5f7fb;
+    color:#172033;
+}
+
+header{
+    background:#fff;
+    padding:18px 20px;
+    border-bottom:1px solid #ddd;
+}
+
+.container{
+    max-width:1000px;
+    margin:auto;
+    padding:25px 20px;
+}
+
+h1{margin:0}
+
+.login{
+    background:#fff;
+    padding:20px;
+    border-radius:12px;
+    margin-bottom:20px;
+}
+
+input{
+    width:100%;
+    padding:12px;
+    margin:8px 0 12px;
+    border:1px solid #ccc;
+    border-radius:7px;
+}
+
+button{
+    border:0;
+    padding:10px 15px;
+    border-radius:7px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+.load{
+    background:#155eef;
+    color:#fff;
+}
+
+.approve{
+    background:#16a34a;
+    color:#fff;
+}
+
+.reject{
+    background:#dc2626;
+    color:#fff;
+}
+
+.card{
+    background:#fff;
+    padding:20px;
+    border-radius:12px;
+    margin-bottom:15px;
+    border:1px solid #e5e7eb;
+}
+
+.status{
+    font-weight:bold;
+}
+
+.pending{color:#d97706}
+.approved{color:#16a34a}
+.rejected{color:#dc2626}
+
+.receipt{
+    display:inline-block;
+    margin:10px 0;
+    color:#155eef;
+    font-weight:bold;
+}
+
+.message{
+    margin:12px 0;
+    padding:10px;
+    border-radius:7px;
+    background:#eef4ff;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="container">
+<h1>📚 CreateLK Academy — Admin</h1>
+</div>
+</header>
+
+<div class="container">
+
+<div class="login">
+
+<label>Admin Key</label>
+
+<input
+    type="password"
+    id="adminKey"
+    placeholder="Enter ADMIN_KEY">
+
+<button
+    class="load"
+    onclick="loadPayments()">
+
+Load Payments
+
+</button>
+
+<div id="message"></div>
+
+</div>
+
+<div id="payments"></div>
+
+</div>
+
+<script>
+
+const API =
+"https://createlk-bank-api.createlk.workers.dev";
+
+function key(){
+
+    return document
+        .getElementById("adminKey")
+        .value
+        .trim();
+
+}
+
+
+async function loadPayments(){
+
+    const adminKey = key();
+
+    if(!adminKey){
+
+        show(
+            "Please enter your Admin Key."
+        );
+
+        return;
+    }
+
+    show("Loading...");
+
+    try{
+
+        const response =
+            await fetch(
+                API + "/api/admin/payments",
+                {
+                    headers:{
+                        "X-Admin-Key":
+                            adminKey
+                    }
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if(!response.ok || !data.success){
+
+            show(
+                data.message ||
+                "Unable to load payments."
+            );
+
+            return;
+        }
+
+        render(
+            data.payments || []
+        );
+
+        show(
+            "Payments loaded."
+        );
+
+    }catch(error){
+
+        console.error(error);
+
+        show(
+            "Unable to connect to API."
+        );
+    }
+}
+
+
+function render(payments){
+
+    const box =
+        document.getElementById(
+            "payments"
+        );
+
+    box.innerHTML = "";
+
+    if(!payments.length){
+
+        box.innerHTML =
+            `<div class="card">
+                No payments found.
+            </div>`;
+
+        return;
+    }
+
+
+    payments.forEach(payment => {
+
+        const card =
+            document.createElement(
+                "div"
+            );
+
+        card.className =
+            "card";
+
+
+        card.innerHTML = `
+
+            <h3>
+                ${escapeHTML(
+                    payment.first_name
+                )}
+                ${escapeHTML(
+                    payment.last_name
+                )}
+            </h3>
+
+            <p>
+                <b>Email:</b>
+                ${escapeHTML(
+                    payment.email
+                )}
+            </p>
+
+            <p>
+                <b>Phone:</b>
+                ${escapeHTML(
+                    payment.phone || ""
+                )}
+            </p>
+
+            <p>
+                <b>Payment ID:</b>
+                ${escapeHTML(
+                    payment.payment_id
+                )}
+            </p>
+
+            <p>
+                <b>Amount:</b>
+                LKR ${payment.amount}
+            </p>
+
+            <p>
+                <b>Status:</b>
+                <span class="status ${payment.status}">
+                    ${payment.status}
+                </span>
+            </p>
+
+            ${
+                payment.status === "pending"
+                ? `
+                <button
+                    class="approve"
+                    onclick="approve('${encodeURIComponent(payment.payment_id)}')">
+                    ✓ Approve
+                </button>
+
+                <button
+                    class="reject"
+                    onclick="reject('${encodeURIComponent(payment.payment_id)}')">
+                    ✕ Reject
+                </button>
+                `
+                : ""
+            }
+
+        `;
+
+        box.appendChild(card);
+
+    });
+}
+
+
+async function approve(id){
+
+    if(!confirm(
+        "Approve this payment and activate 30-day membership?"
+    )){
+        return;
+    }
+
+    await action(
+        "/api/admin/approve/" + id
+    );
+}
+
+
+async function reject(id){
+
+    if(!confirm(
+        "Reject this payment?"
+    )){
+        return;
+    }
+
+    await action(
+        "/api/admin/reject/" + id
+    );
+}
+
+
+async function action(path){
+
+    show("Processing...");
+
+    try{
+
+        const response =
+            await fetch(
+                API + path,
+                {
+                    method:"POST",
+
+                    headers:{
+                        "X-Admin-Key":
+                            key()
+                    }
+                }
+            );
+
+        const data =
+            await response.json();
+
+        show(
+            data.message ||
+            "Completed."
+        );
+
+        if(data.success){
+
+            await loadPayments();
+
+        }
+
+    }catch(error){
+
+        console.error(error);
+
+        show(
+            "Request failed."
+        );
+    }
+}
+
+
+function show(text){
+
+    document.getElementById(
+        "message"
+    ).textContent = text;
+
+}
+
+
+function escapeHTML(value){
+
+    return String(value ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+
+}
+
+</script>
+
+</body>
+</html>
