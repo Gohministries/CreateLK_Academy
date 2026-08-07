@@ -1,0 +1,465 @@
+<!DOCTYPE html><html lang="en">
+<head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login | CreateLK Academy</title><meta name="description"
+content="Login to your CreateLK Academy student account.">
+
+<style>
+
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
+
+body{
+    font-family:Arial,Helvetica,sans-serif;
+    background:#f5f7fb;
+    color:#172033;
+    min-height:100vh;
+}
+
+header{
+    background:#fff;
+    border-bottom:1px solid #e5e9f0;
+}
+
+.nav{
+    max-width:1100px;
+    margin:auto;
+    padding:15px 20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.logo{
+    font-size:21px;
+    font-weight:800;
+    color:#155eef;
+    text-decoration:none;
+}
+
+.home{
+    color:#475467;
+    text-decoration:none;
+    font-size:14px;
+    font-weight:600;
+}
+
+.home:hover{
+    color:#155eef;
+}
+
+main{
+    min-height:calc(100vh - 70px);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:45px 20px;
+}
+
+.login-box{
+    width:100%;
+    max-width:450px;
+    background:#fff;
+    border:1px solid #e4e8ef;
+    border-radius:16px;
+    padding:35px;
+    box-shadow:0 10px 35px rgba(20,40,80,.06);
+}
+
+.login-header{
+    text-align:center;
+    margin-bottom:28px;
+}
+
+.login-header h1{
+    font-size:28px;
+    margin-bottom:8px;
+}
+
+.login-header p{
+    color:#667085;
+    font-size:14px;
+}
+
+.form-group{
+    margin-bottom:18px;
+}
+
+label{
+    display:block;
+    font-size:14px;
+    font-weight:600;
+    margin-bottom:7px;
+}
+
+input{
+    width:100%;
+    padding:13px 14px;
+    border:1px solid #d0d5dd;
+    border-radius:8px;
+    outline:none;
+    font-size:15px;
+}
+
+input:focus{
+    border-color:#155eef;
+    box-shadow:0 0 0 3px rgba(21,94,239,.10);
+}
+
+.login-btn{
+    width:100%;
+    border:0;
+    background:#155eef;
+    color:white;
+    padding:14px;
+    border-radius:9px;
+    font-size:15px;
+    font-weight:bold;
+    cursor:pointer;
+    margin-top:5px;
+}
+
+.login-btn:hover{
+    background:#0d4dcc;
+}
+
+.login-btn:disabled{
+    opacity:.65;
+    cursor:not-allowed;
+}
+
+.message{
+    display:none;
+    padding:12px;
+    margin-bottom:18px;
+    border-radius:8px;
+    font-size:13px;
+    text-align:center;
+}
+
+.message.error{
+    display:block;
+    background:#fff1f2;
+    color:#be123c;
+    border:1px solid #fecdd3;
+}
+
+.message.success{
+    display:block;
+    background:#ecfdf3;
+    color:#027a48;
+    border:1px solid #abefc6;
+}
+
+.register-link{
+    text-align:center;
+    margin-top:22px;
+    color:#667085;
+    font-size:14px;
+}
+
+.register-link a{
+    color:#155eef;
+    font-weight:bold;
+}
+
+footer{
+    text-align:center;
+    padding:20px;
+    color:#98a2b3;
+    font-size:12px;
+}
+
+@media(max-width:500px){
+
+    .login-box{
+        padding:25px 20px;
+    }
+
+    .login-header h1{
+        font-size:25px;
+    }
+
+}
+
+</style></head><body><header><div class="nav"><a href="index.html" class="logo">
+📚 CreateLK Academy
+</a><a href="index.html" class="home">
+← Back to Home
+</a></div></header><main><div class="login-box"><div class="login-header"><h1>Student Login</h1><p>
+Login to access your CreateLK Academy account.
+</p></div><div
+id="message"
+class="message">
+</div><form
+id="loginForm"
+autocomplete="on"><div class="form-group"><label for="email">
+Email Address
+</label><input
+type="email"
+id="email"
+name="email"
+placeholder="you@example.com"
+required
+autocomplete="email">
+
+</div><div class="form-group"><label for="password">
+Password
+</label><input
+type="password"
+id="password"
+name="password"
+placeholder="Enter your password"
+required
+autocomplete="current-password">
+
+</div><button
+type="submit"
+class="login-btn"
+id="loginButton">
+
+Login
+
+</button></form><div class="register-link">Don't have an account?
+
+<a href="register.html">
+Create an account
+</a></div></div></main><footer>© 2026 CreateLK Academy. All rights reserved.
+
+</footer><script>
+
+/* =====================================================
+   CREATE LK ACADEMY
+   LOGIN
+   ===================================================== */
+
+const API_URL =
+    "https://createlk-api.createlk.workers.dev";
+
+
+const form =
+    document.getElementById("loginForm");
+
+const message =
+    document.getElementById("message");
+
+const button =
+    document.getElementById("loginButton");
+
+
+form.addEventListener(
+    "submit",
+    async function(event){
+
+        event.preventDefault();
+
+        hideMessage();
+
+
+        const email =
+            document
+            .getElementById("email")
+            .value
+            .trim()
+            .toLowerCase();
+
+
+        const password =
+            document
+            .getElementById("password")
+            .value;
+
+
+        if(!email || !password){
+
+            showError(
+                "Please enter your email and password."
+            );
+
+            return;
+        }
+
+
+        button.disabled = true;
+
+        button.textContent =
+            "Logging in...";
+
+
+        try{
+
+            const response =
+                await fetch(
+                    API_URL + "/api/login",
+                    {
+                        method:"POST",
+
+                        headers:{
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:JSON.stringify({
+
+                            email:
+                                email,
+
+                            password:
+                                password
+
+                        })
+                    }
+                );
+
+
+            let data;
+
+
+            try{
+
+                data =
+                    await response.json();
+
+            }catch{
+
+                data = {
+                    success:false,
+                    message:
+                    "Invalid server response."
+                };
+
+            }
+
+
+            if(
+                !response.ok ||
+                !data.success
+            ){
+
+                showError(
+                    data.message ||
+                    "Invalid email or password."
+                );
+
+                button.disabled = false;
+
+                button.textContent =
+                    "Login";
+
+                return;
+            }
+
+
+            /*
+             * The Worker will return a session token.
+             * Store it temporarily so dashboard.html
+             * can authenticate the student.
+             */
+
+            if(data.token){
+
+                sessionStorage.setItem(
+                    "createlk_token",
+                    data.token
+                );
+            }
+
+
+            if(data.student){
+
+                sessionStorage.setItem(
+                    "createlk_student",
+                    JSON.stringify(data.student)
+                );
+            }
+
+
+            showSuccess(
+                "Login successful. Redirecting..."
+            );
+
+
+            button.textContent =
+                "Success";
+
+
+            setTimeout(
+                function(){
+
+                    window.location.href =
+                        "dashboard.html";
+
+                },
+                800
+            );
+
+
+        }catch(error){
+
+            console.error(
+                "Login error:",
+                error
+            );
+
+
+            showError(
+                "Unable to connect to the server. Please try again."
+            );
+
+
+            button.disabled = false;
+
+            button.textContent =
+                "Login";
+
+        }
+
+    }
+);
+
+
+function showError(text){
+
+    message.className =
+        "message error";
+
+    message.textContent =
+        text;
+
+    message.style.display =
+        "block";
+
+}
+
+
+function showSuccess(text){
+
+    message.className =
+        "message success";
+
+    message.textContent =
+        text;
+
+    message.style.display =
+        "block";
+
+}
+
+
+function hideMessage(){
+
+    message.className =
+        "message";
+
+    message.textContent =
+        "";
+
+    message.style.display =
+        "none";
+
+}
+
+</script></body>
+</html>
