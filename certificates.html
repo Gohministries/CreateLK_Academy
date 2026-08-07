@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Certificate | CreateLK Academy</title>
 
-<!-- PDF LIBRARIES -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -160,14 +159,16 @@ box-shadow:0 12px 35px #0002
 content:"";
 position:absolute;
 inset:18px;
-border:4px solid #f59e0b
+border:4px solid #f59e0b;
+pointer-events:none
 }
 
 .certificate:after{
 content:"";
 position:absolute;
 inset:30px;
-border:2px solid #2563eb
+border:2px solid #2563eb;
+pointer-events:none
 }
 
 .certificate-content{
@@ -313,7 +314,9 @@ color:#999;
 z-index:3
 }
 
-/* MOBILE PREVIEW */
+/* =========================
+   MOBILE
+========================= */
 
 @media(max-width:1150px){
 
@@ -493,10 +496,7 @@ font-size:2.2mm
 </div>
 </header>
 
-
 <div class="container">
-
-<!-- HERO -->
 
 <div class="card hero">
 
@@ -518,9 +518,6 @@ Checking Premium membership...
 
 </div>
 
-
-<!-- ASSESSMENT -->
-
 <div id="progressCard" class="card">
 
 <h2>
@@ -532,9 +529,6 @@ Loading assessment...
 </div>
 
 </div>
-
-
-<!-- CERTIFICATE -->
 
 <div class="card">
 
@@ -550,7 +544,6 @@ Loading certificate...
 
 </div>
 
-
 <footer style="text-align:center;padding:20px;color:#667085">
 
 © 2026 CreateLK Academy. All rights reserved.
@@ -558,7 +551,6 @@ Loading certificate...
 createlk.com
 
 </footer>
-
 
 <script>
 
@@ -568,23 +560,17 @@ const MEMBERSHIP_API =
 const CERTIFICATE_API =
 "https://createlk-certificate-api.createlk.workers.dev";
 
-
 const token =
 sessionStorage.getItem("createlk_token");
-
 
 const student =
 JSON.parse(
 sessionStorage.getItem("createlk_student") || "null"
 );
 
-
 if(!token || !student){
-
 location.href="login.html";
-
 }
-
 
 const $ =
 id => document.getElementById(id);
@@ -599,22 +585,17 @@ async function checkPremium(){
 try{
 
 const r = await fetch(
-
 MEMBERSHIP_API +
 "/api/membership?student_id=" +
 encodeURIComponent(student.id),
-
 {
 headers:{
 Authorization:"Bearer " + token
 }
 }
-
 );
 
-
 const d = await r.json();
-
 
 if(!r.ok || !d.success || !d.active){
 
@@ -624,31 +605,23 @@ $("membershipStatus").className =
 $("membershipStatus").textContent =
 "🔒 Active Premium Membership Required";
 
-
 $("certificateArea").innerHTML =
 `
 <div class="empty">
-
 🔒 Premium membership is required.
-
 </div>
 `;
 
 return;
-
 }
-
 
 $("membershipStatus").className =
 "status active";
 
-
 $("membershipStatus").textContent =
 "⭐ Premium Membership Active";
 
-
 loadData();
-
 
 }catch(e){
 
@@ -674,29 +647,21 @@ async function loadData(){
 try{
 
 const r = await fetch(
-
 CERTIFICATE_API +
 "/api/certificate/progress?student_id=" +
 encodeURIComponent(student.id),
-
 {
 headers:{
 Authorization:"Bearer " + token
 }
 }
-
 );
-
 
 const d = await r.json();
 
-
 if(!r.ok || !d.success){
-
-throw Error();
-
+throw new Error("Certificate API error");
 }
-
 
 showProgress(d);
 
@@ -704,10 +669,16 @@ showCertificate(
 d.certificates || []
 );
 
-
 }catch(e){
 
 console.error(e);
+
+$("progressArea").innerHTML =
+`
+<div class="empty">
+❌ Unable to load assessment.
+</div>
+`;
 
 $("certificateArea").innerHTML =
 `
@@ -732,22 +703,16 @@ parseFloat(
 String(score ?? 0).replace("%","")
 ) || 0;
 
-
 total =
 parseInt(total) || 10;
 
-
-if(score <= 1)
-
+if(score <= 1){
 return Math.round(score * 100);
+}
 
-
-if(score <= 10 && total === 10)
-
-return Math.round(
-score / total * 100
-);
-
+if(score <= 10 && total === 10){
+return Math.round(score / total * 100);
+}
 
 return Math.round(
 Math.min(score,100)
@@ -763,7 +728,6 @@ Math.min(score,100)
 function showProgress(d){
 
 const a = d.assessment;
-
 
 if(!a){
 
@@ -789,9 +753,7 @@ Pass the final assessment with at least 70%.
 `;
 
 return;
-
 }
-
 
 const p =
 getPercent(
@@ -799,11 +761,9 @@ a.score,
 a.total_questions
 );
 
-
 const pass =
 p >= 70 ||
 Number(a.passed) === 1;
-
 
 $("progressArea").innerHTML = `
 
@@ -811,9 +771,7 @@ $("progressArea").innerHTML = `
 
 <div class="row">
 
-<span>
-Course
-</span>
+<span>Course</span>
 
 <strong>
 ${esc(a.course_name)}
@@ -821,12 +779,9 @@ ${esc(a.course_name)}
 
 </div>
 
-
 <div class="row">
 
-<span>
-Score
-</span>
+<span>Score</span>
 
 <strong>
 ${p}%
@@ -834,32 +789,22 @@ ${p}%
 
 </div>
 
-
 <div class="row">
 
-<span>
-Result
-</span>
+<span>Result</span>
 
 <strong class="${pass ? "green" : ""}">
-
 ${pass ? "✅ PASSED" : "❌ NOT PASSED"}
-
 </strong>
 
 </div>
 
-
 <div class="row">
 
-<span>
-Certificate
-</span>
+<span>Certificate</span>
 
 <strong class="${pass ? "green" : ""}">
-
 ${pass ? "🎓 Eligible" : "🔒 70% Required"}
-
 </strong>
 
 </div>
@@ -901,12 +846,9 @@ Pass the final assessment with at least 70% to receive your certificate.
 `;
 
 return;
-
 }
 
-
 const c = list[0];
-
 
 const p =
 getPercent(
@@ -915,15 +857,13 @@ c.total_questions
 );
 
 
-/* STUDENT REAL NAME */
+/* REAL STUDENT NAME */
 
 const first =
 String(student.first_name || "").trim();
 
-
 const last =
 String(student.last_name || "").trim();
-
 
 const fullName =
 (first + " " + last).trim() ||
@@ -944,51 +884,39 @@ $("certificateArea").innerHTML = `
 
 <div class="certificate-wrap">
 
-<div
-id="certificate"
-class="certificate"
->
+<div id="certificate" class="certificate">
 
 <div class="certificate-content">
-
 
 <div class="academy">
 CREATELK ACADEMY
 </div>
 
-
 <div class="line"></div>
-
 
 <h1 class="title">
 CERTIFICATE
 </h1>
 
-
 <div class="sub">
 OF ACHIEVEMENT
 </div>
-
 
 <div class="presented">
 This certificate is proudly presented to
 </div>
 
-
 <div class="name">
 ${esc(fullName)}
 </div>
-
 
 <div class="muted">
 for successfully completing
 </div>
 
-
 <div class="course">
 ${esc(c.course_name || "Premium English Course")}
 </div>
-
 
 <div class="score">
 
@@ -1000,9 +928,7 @@ ${p}%
 
 </div>
 
-
 <div class="details">
-
 
 <div class="detail">
 
@@ -1016,7 +942,6 @@ DATE OF ISSUE
 
 </div>
 
-
 <div class="detail">
 
 <div class="signature">
@@ -1028,7 +953,6 @@ AUTHORIZED SIGNATURE
 </div>
 
 </div>
-
 
 <div class="detail">
 
@@ -1042,28 +966,21 @@ CERTIFICATE ID
 
 </div>
 
-
 </div>
 
 </div>
-
 
 <div class="website">
 createlk.com
 </div>
 
-
 <div class="verify">
-
 This certificate may be verified online using the Certificate ID.
-
-</div>
-
-
 </div>
 
 </div>
 
+</div>
 
 <div class="actions">
 
@@ -1072,19 +989,14 @@ id="downloadBtn"
 class="btn download-btn"
 onclick="downloadCertificate()"
 >
-
 ⬇️ Download Certificate PDF
-
 </button>
-
 
 <a
 class="btn green-btn"
 href="dashboard.html"
 >
-
 ← Dashboard
-
 </a>
 
 </div>
@@ -1095,7 +1007,7 @@ href="dashboard.html"
 
 
 /* =========================
-   DIRECT PDF DOWNLOAD
+   DOWNLOAD PDF
 ========================= */
 
 async function downloadCertificate(){
@@ -1103,19 +1015,29 @@ async function downloadCertificate(){
 const btn =
 document.getElementById("downloadBtn");
 
-
 const certificate =
 document.getElementById("certificate");
-
 
 if(!certificate){
 
 alert("Certificate is not available.");
 
 return;
-
 }
 
+if(typeof html2canvas === "undefined"){
+
+alert("PDF library could not be loaded. Please check your internet connection.");
+
+return;
+}
+
+if(!window.jspdf){
+
+alert("PDF library could not be loaded. Please check your internet connection.");
+
+return;
+}
 
 try{
 
@@ -1126,8 +1048,7 @@ btn.textContent =
 
 
 /*
-Temporarily remove preview scaling
-so the PDF gets the full certificate.
+SAVE CURRENT STYLES
 */
 
 const oldTransform =
@@ -1140,6 +1061,10 @@ const oldHeight =
 certificate.style.height;
 
 
+/*
+REMOVE MOBILE SCALE
+*/
+
 certificate.style.transform =
 "none";
 
@@ -1151,23 +1076,35 @@ certificate.style.height =
 
 
 /*
-Create high-quality image
+WAIT FOR RENDER
+*/
+
+await new Promise(
+resolve => setTimeout(resolve,300)
+);
+
+
+/*
+CREATE HIGH QUALITY CANVAS
 */
 
 const canvas =
 await html2canvas(
 certificate,
 {
-scale:2,
+scale:3,
 useCORS:true,
+allowTaint:false,
 backgroundColor:"#ffffff",
-logging:false
+logging:false,
+width:1120,
+height:792
 }
 );
 
 
 /*
-Restore preview
+RESTORE CERTIFICATE
 */
 
 certificate.style.transform =
@@ -1181,34 +1118,25 @@ oldHeight;
 
 
 /*
-Create A4 landscape PDF
+CREATE PDF
 */
 
-const {jsPDF} =
-window.jspdf;
-
+const jsPDF =
+window.jspdf.jsPDF;
 
 const pdf =
-new jsPDF(
-{
+new jsPDF({
 orientation:"landscape",
 unit:"mm",
-format:"a4"
-}
-);
-
-
-const pageWidth =
-297;
-
-const pageHeight =
-210;
+format:"a4",
+compress:true
+});
 
 
 const imgData =
 canvas.toDataURL(
 "image/jpeg",
-0.95
+0.98
 );
 
 
@@ -1217,15 +1145,15 @@ imgData,
 "JPEG",
 0,
 0,
-pageWidth,
-pageHeight,
+297,
+210,
 undefined,
 "FAST"
 );
 
 
 /*
-Certificate filename
+CREATE SAFE FILENAME
 */
 
 const first =
@@ -1236,34 +1164,25 @@ const last =
 String(student.last_name || "")
 .trim();
 
-
-const studentName =
+let studentName =
 (first + "_" + last)
 .trim()
 .replace(/\s+/g,"_")
 .replace(/[^a-zA-Z0-9_-]/g,"");
 
 
-const certificate =
-document.querySelector(".value");
-
-
 let filename =
 "CreateLK_Academy_Certificate";
 
-
 if(studentName){
-
 filename += "_" + studentName;
-
 }
-
 
 filename += ".pdf";
 
 
 /*
-DIRECT DOWNLOAD
+DOWNLOAD
 */
 
 pdf.save(filename);
@@ -1285,7 +1204,28 @@ btn.textContent =
 
 }catch(error){
 
-console.error(error);
+console.error(
+"Certificate PDF Error:",
+error
+);
+
+
+/*
+RESTORE EVEN IF ERROR
+*/
+
+try{
+
+certificate.style.transform =
+oldTransform;
+
+certificate.style.width =
+oldWidth;
+
+certificate.style.height =
+oldHeight;
+
+}catch(e){}
 
 
 btn.disabled = false;
