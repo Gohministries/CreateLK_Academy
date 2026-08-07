@@ -5,8 +5,7 @@
 
 <meta charset="UTF-8">
 
-<meta
-name="viewport"
+<meta name="viewport"
 content="width=device-width,initial-scale=1">
 
 <title>Premium Membership | CreateLK Academy</title>
@@ -95,20 +94,28 @@ margin-top:0;
 font-size:20px;
 }
 
+/* ==============================
+   CENTER BANK DETAILS
+============================== */
+
 .bank-row{
-margin:15px 0;
+margin:18px 0;
+text-align:center;
 }
 
 .label{
 font-size:12px;
 color:#667085;
-margin-bottom:5px;
+margin-bottom:6px;
+text-align:center;
 }
 
 .value-row{
 display:flex;
 align-items:center;
+justify-content:center;
 gap:8px;
+text-align:center;
 }
 
 .value{
@@ -288,8 +295,7 @@ LKR 1,500
 
 
 <!-- =================================
-     EXISTING BANK PAYMENT
-     DO NOT REMOVE
+     BANK TRANSFER
 ================================= -->
 
 <div class="section">
@@ -452,7 +458,6 @@ verifies and approves your payment.
 <div
 id="bankStatus"
 class="status">
-
 </div>
 
 </div>
@@ -472,7 +477,6 @@ class="status">
 Pay securely online using PayHere.
 </p>
 
-
 <div class="payhere-box">
 
 <div class="payhere-price">
@@ -484,24 +488,35 @@ LKR 1,500
 </p>
 
 
-<button
-type="button"
-class="submit"
-id="payhere-payment">
+<!--
+PAYHERE BUTTON
 
-💳 Pay LKR 1,500 with PayHere
+Replace this section with your
+approved LIVE PayHere button/link
+after PayHere approval.
 
-</button>
+For now this is your Sandbox button.
+-->
+
+<div
+id="payhere-form"
+data-pay-id="ob44d0014"
+data-type="SANDBOX">
+</div>
+
+<script
+src="https://sandbox.payhere.lk/payhere.pay.button.js"
+id="payhere-button">
+</script>
 
 
 <div class="secure">
-🔒 Secure online payment powered by PayHere
+🔒 Secure payment powered by PayHere
 </div>
 
 <div
 id="payhereStatus"
 class="status">
-
 </div>
 
 </div>
@@ -519,11 +534,6 @@ class="status">
 </footer>
 
 
-<script
-src="https://www.payhere.lk/lib/payhere.js">
-</script>
-
-
 <script>
 
 /* =========================================
@@ -533,11 +543,12 @@ src="https://www.payhere.lk/lib/payhere.js">
 const BANK_API =
 "https://createlk-bank-api.createlk.workers.dev";
 
-const PAYHERE_API =
-"https://createlk-payhere-api.createlk.workers.dev";
 
 const token =
-sessionStorage.getItem("createlk_token");
+sessionStorage.getItem(
+"createlk_token"
+);
+
 
 const student =
 JSON.parse(
@@ -560,10 +571,15 @@ window.location.href =
 
 
 /* =========================================
-   COPY
+   COPY BANK DETAILS
 ========================================= */
 
 function copyText(text){
+
+if(
+navigator.clipboard &&
+navigator.clipboard.writeText
+){
 
 navigator.clipboard
 .writeText(text)
@@ -577,6 +593,25 @@ alert("Copied");
 alert("Unable to copy");
 
 });
+
+}else{
+
+const input =
+document.createElement("textarea");
+
+input.value = text;
+
+document.body.appendChild(input);
+
+input.select();
+
+document.execCommand("copy");
+
+input.remove();
+
+alert("Copied");
+
+}
 
 }
 
@@ -634,7 +669,8 @@ return;
 }
 
 
-if(file.size > 5 * 1024 * 1024){
+if(file.size >
+5 * 1024 * 1024){
 
 showStatus(
 status,
@@ -658,15 +694,18 @@ try{
 const form =
 new FormData();
 
+
 form.append(
 "payment_date",
 date
 );
 
+
 form.append(
 "receipt",
 file
 );
+
 
 form.append(
 "student_id",
@@ -680,11 +719,14 @@ BANK_API +
 "/api/submit-payment",
 {
 method:"POST",
+
 headers:{
 "Authorization":
 "Bearer " + token
 },
+
 body:form
+
 }
 );
 
@@ -693,8 +735,10 @@ const data =
 await response.json();
 
 
-if(!response.ok ||
-!data.success){
+if(
+!response.ok ||
+!data.success
+){
 
 throw new Error(
 data.message ||
@@ -710,6 +754,7 @@ status,
 true
 );
 
+
 button.textContent =
 "Payment Submitted";
 
@@ -718,12 +763,14 @@ button.textContent =
 
 console.error(error);
 
+
 showStatus(
 status,
 error.message ||
 "Unable to submit payment.",
 false
 );
+
 
 button.disabled = false;
 
@@ -748,243 +795,24 @@ success
 element.style.display =
 "block";
 
+
 element.className =
 "status " +
-(success ? "success" : "error");
+(
+success
+? "success"
+: "error"
+);
+
 
 element.textContent =
 message;
 
 }
 
-
-/* =========================================
-   PAYHERE
-========================================= */
-
-async function startPayHere(){
-
-const status =
-document.getElementById(
-"payhereStatus"
-);
-
-try{
-
-showStatus(
-status,
-"Preparing secure PayHere payment...",
-true
-);
-
-
-/* -----------------------------------------
-   ASK WORKER FOR PAYMENT DATA
------------------------------------------ */
-
-const response =
-await fetch(
-PAYHERE_API +
-"/api/create-payment",
-{
-method:"POST",
-headers:{
-"Content-Type":
-"application/json",
-"Authorization":
-"Bearer " + token
-},
-
-body:JSON.stringify({
-
-student_id:
-student.id,
-
-first_name:
-student.first_name ||
-"Student",
-
-last_name:
-student.last_name ||
-"",
-
-email:
-student.email,
-
-phone:
-student.phone ||
-"0770000000",
-
-address:
-student.address ||
-"",
-
-city:
-student.city ||
-"Colombo"
-
-})
-
-}
-);
-
-
-const data =
-await response.json();
-
-
-if(!response.ok ||
-!data.success){
-
-throw new Error(
-data.message ||
-"Unable to prepare PayHere payment."
-);
-
-}
-
-
-/* -----------------------------------------
-   PAYHERE PAYMENT OBJECT
------------------------------------------ */
-
-const payment = {
-
-sandbox:
-data.sandbox,
-
-merchant_id:
-data.merchant_id,
-
-return_url:
-data.return_url,
-
-cancel_url:
-data.cancel_url,
-
-notify_url:
-data.notify_url,
-
-order_id:
-data.order_id,
-
-items:
-data.items,
-
-amount:
-data.amount,
-
-currency:
-data.currency,
-
-hash:
-data.hash,
-
-first_name:
-data.first_name,
-
-last_name:
-data.last_name,
-
-email:
-data.email,
-
-phone:
-data.phone,
-
-address:
-data.address,
-
-city:
-data.city,
-
-country:
-"Sri Lanka",
-
-custom_1:
-String(student.id),
-
-custom_2:
-"CreateLK Premium"
-
-};
-
-
-/* -----------------------------------------
-   PAYHERE EVENTS
------------------------------------------ */
-
-payhere.onCompleted =
-function(orderId){
-
-showStatus(
-status,
-"✅ Payment completed. We are verifying your payment. Please wait for your Premium membership to become active.",
-true
-);
-
-};
-
-
-payhere.onDismissed =
-function(){
-
-showStatus(
-status,
-"Payment window closed.",
-false
-);
-
-};
-
-
-payhere.onError =
-function(error){
-
-showStatus(
-status,
-"PayHere error: " +
-error,
-false
-);
-
-};
-
-
-/* -----------------------------------------
-   START
------------------------------------------ */
-
-payhere.startPayment(
-payment
-);
-
-
-}catch(error){
-
-console.error(error);
-
-showStatus(
-status,
-error.message ||
-"Unable to start PayHere payment.",
-false
-);
-
-}
-
-}
-
-
-document.getElementById(
-"payhere-payment"
-).addEventListener(
-"click",
-startPayHere
-);
-
 </script>
 
 
 </body>
+
 </html>
