@@ -119,6 +119,10 @@ opacity:.6;
 cursor:not-allowed;
 }
 
+.load-btn{
+background:#475467;
+}
+
 .current{
 margin-top:20px;
 padding:18px;
@@ -169,6 +173,13 @@ font-size:14px;
 line-height:1.6;
 }
 
+.footer{
+text-align:center;
+padding:25px;
+color:#667085;
+font-size:13px;
+}
+
 </style>
 
 </head>
@@ -212,10 +223,14 @@ Certificate Control
 
 
 <div class="subtitle">
+
 Manage how many practice questions a student
 must complete before the certificate unlocks.
+
 </div>
 
+
+<!-- ADMIN KEY -->
 
 <label for="adminKey">
 Admin Key
@@ -229,11 +244,15 @@ autocomplete="off"
 >
 
 
+<!-- REQUIRED QUESTIONS -->
+
 <label
 for="requiredQuestions"
 style="margin-top:18px"
 >
+
 Required Practice Questions
+
 </label>
 
 <input
@@ -245,21 +264,32 @@ value="1000"
 >
 
 
+<!-- LOAD -->
+
 <button
 id="loadBtn"
+class="load-btn"
 type="button"
 >
+
 🔄 Load Current Requirement
+
 </button>
 
+
+<!-- SAVE -->
 
 <button
 id="saveBtn"
 type="button"
 >
+
 💾 Save Certificate Requirement
+
 </button>
 
+
+<!-- CURRENT VALUE -->
 
 <div class="current">
 
@@ -276,17 +306,23 @@ questions
 </div>
 
 
+<!-- SUCCESS -->
+
 <div
 id="success"
 class="success">
 </div>
 
 
+<!-- ERROR -->
+
 <div
 id="error"
 class="error">
 </div>
 
+
+<!-- INFORMATION -->
 
 <div class="info">
 
@@ -311,8 +347,8 @@ automatically becomes 1000.
 
 <br><br>
 
-Your existing Progress Worker does not need to
-be changed for this setting.
+Your existing Progress Worker and AI MCQ Worker
+are not changed by this page.
 
 </div>
 
@@ -320,29 +356,28 @@ be changed for this setting.
 </div>
 
 </div>
+
+
+<footer class="footer">
+
+© 2026 CreateLK Academy
+
+<br>
+
+createlk.com
+
+</footer>
 
 
 <script>
 
 
 /* =====================================
-   NEW CERTIFICATE SETTINGS WORKER
+   CERTIFICATE SETTINGS WORKER
 ===================================== */
 
 const API =
-"https://createlk-certificate-settings.YOUR-WORKER.workers.dev";
-
-
-/*
-IMPORTANT:
-
-Replace the URL above with your actual
-Cloudflare Worker URL.
-
-Example:
-
-https://createlk-certificate-settings.username.workers.dev
-*/
+"https://createlk-certificate-settings.createlk.workers.dev";
 
 
 /* =====================================
@@ -386,7 +421,7 @@ document.getElementById(
 
 
 /* =====================================
-   SUCCESS
+   SUCCESS MESSAGE
 ===================================== */
 
 function showSuccess(message){
@@ -404,7 +439,7 @@ errorBox.style.display =
 
 
 /* =====================================
-   ERROR
+   ERROR MESSAGE
 ===================================== */
 
 function showError(message){
@@ -422,7 +457,7 @@ successBox.style.display =
 
 
 /* =====================================
-   CLEAR
+   CLEAR MESSAGES
 ===================================== */
 
 function clearMessages(){
@@ -437,7 +472,7 @@ errorBox.style.display =
 
 
 /* =====================================
-   LOAD CURRENT SETTING
+   LOAD SETTINGS
 ===================================== */
 
 async function loadSetting(){
@@ -472,8 +507,7 @@ try{
 const response =
 await fetch(
 
-API +
-"/settings",
+API + "/settings",
 
 {
 method:"GET",
@@ -488,12 +522,24 @@ key
 );
 
 
-const data =
+let data;
+
+try{
+
+data =
 await response.json();
+
+}catch(error){
+
+throw new Error(
+"Certificate Settings Worker returned an invalid response."
+);
+
+}
 
 
 console.log(
-"Certificate settings:",
+"Certificate Settings response:",
 data
 );
 
@@ -517,6 +563,18 @@ data.required_questions
 );
 
 
+if(
+!Number.isInteger(value) ||
+value < 1
+){
+
+throw new Error(
+"Worker returned an invalid certificate requirement."
+);
+
+}
+
+
 requiredQuestions.value =
 value;
 
@@ -531,11 +589,14 @@ showSuccess(
 
 }catch(error){
 
-console.error(error);
+console.error(
+"Load setting error:",
+error
+);
 
 showError(
 error.message ||
-"Unable to connect to Certificate Settings Worker."
+"Failed to connect to Certificate Settings Worker."
 );
 
 }
@@ -551,7 +612,7 @@ loadBtn.textContent =
 
 
 /* =====================================
-   SAVE SETTING
+   SAVE SETTINGS
 ===================================== */
 
 async function saveSetting(){
@@ -596,10 +657,12 @@ return;
 
 
 const confirmed =
-confirm(
+window.confirm(
+
 "Set the certificate requirement to " +
 value.toLocaleString() +
 " questions?"
+
 );
 
 
@@ -622,8 +685,7 @@ try{
 const response =
 await fetch(
 
-API +
-"/settings",
+API + "/settings",
 
 {
 method:"POST",
@@ -648,8 +710,20 @@ value
 );
 
 
-const data =
+let data;
+
+try{
+
+data =
 await response.json();
+
+}catch(error){
+
+throw new Error(
+"Certificate Settings Worker returned an invalid response."
+);
+
+}
 
 
 console.log(
@@ -671,28 +745,32 @@ data.message ||
 }
 
 
+requiredQuestions.value =
+value;
+
 currentValue.textContent =
 value.toLocaleString();
 
 
-requiredQuestions.value =
-value;
-
-
 showSuccess(
+
 "Certificate requirement updated to " +
 value.toLocaleString() +
 " questions."
+
 );
 
 
 }catch(error){
 
-console.error(error);
+console.error(
+"Save setting error:",
+error
+);
 
 showError(
 error.message ||
-"Unable to connect to Certificate Settings Worker."
+"Failed to save certificate requirement."
 );
 
 }
@@ -708,7 +786,7 @@ saveBtn.textContent =
 
 
 /* =====================================
-   BUTTONS
+   BUTTON EVENTS
 ===================================== */
 
 loadBtn.addEventListener(
@@ -720,6 +798,21 @@ saveBtn.addEventListener(
 "click",
 saveSetting
 );
+
+
+/* =====================================
+   DO NOT AUTO LOAD
+===================================== */
+
+/*
+The Admin Key is required.
+
+Therefore the page waits until
+the administrator clicks:
+
+🔄 Load Current Requirement
+*/
+
 
 </script>
 
