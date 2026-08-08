@@ -84,10 +84,12 @@ button:disabled{
     border-radius:9px;
     cursor:pointer;
     background:#fff;
+    transition:.2s;
 }
 
 .option:hover{
     background:#f8fafc;
+    border-color:#2563eb;
 }
 
 .option input{
@@ -128,6 +130,29 @@ button:disabled{
     border-radius:10px;
     padding:18px;
 }
+
+.error{
+    background:#fef2f2;
+    color:#991b1b;
+    border-radius:10px;
+    padding:15px;
+    margin-top:15px;
+}
+
+.progress{
+    height:8px;
+    background:#e5e7eb;
+    border-radius:20px;
+    overflow:hidden;
+    margin:15px 0 20px;
+}
+
+.progress-bar{
+    height:100%;
+    width:0%;
+    background:#2563eb;
+    transition:.3s;
+}
 </style>
 </head>
 
@@ -162,28 +187,43 @@ button:disabled{
             <li>Each question has four answers.</li>
             <li>Only one answer is correct.</li>
             <li>Pass mark is 70%.</li>
+            <li>Answer all questions before submitting.</li>
         </ul>
 
-        <button id="startButton" onclick="startExam()">
+        <button
+            id="startButton"
+            onclick="startExam()"
+        >
             Start Final Assessment
         </button>
+
+        <div id="startError"></div>
 
     </div>
 
 
     <!-- LOADING SCREEN -->
 
-    <div class="card hidden" id="loadingScreen">
+    <div
+        class="card hidden"
+        id="loadingScreen"
+    >
 
         <div class="loading">
 
             <div class="spinner"></div>
 
-            <h2>🤖 Generating Assessment</h2>
+            <h2>
+                🤖 Generating Assessment
+            </h2>
 
             <p>
                 Please wait while CreateLK Academy
                 prepares your final assessment.
+            </p>
+
+            <p>
+                This may take a few seconds.
             </p>
 
         </div>
@@ -193,18 +233,36 @@ button:disabled{
 
     <!-- EXAM SCREEN -->
 
-    <div class="card hidden" id="examScreen">
+    <div
+        class="card hidden"
+        id="examScreen"
+    >
 
-        <h2>📝 Final Assessment</h2>
+        <h2>
+            📝 Final Assessment
+        </h2>
 
         <div class="info">
 
             Question
-            <strong id="currentQuestion">1</strong>
+            <strong id="currentQuestion">
+                1
+            </strong>
 
             of
 
-            <strong id="totalQuestions">0</strong>
+            <strong id="totalQuestions">
+                0
+            </strong>
+
+        </div>
+
+        <div class="progress">
+
+            <div
+                class="progress-bar"
+                id="progressBar"
+            ></div>
 
         </div>
 
@@ -212,7 +270,10 @@ button:disabled{
 
         <br>
 
-        <button id="nextButton" onclick="nextQuestion()">
+        <button
+            id="nextButton"
+            onclick="nextQuestion()"
+        >
             Next Question
         </button>
 
@@ -221,25 +282,36 @@ button:disabled{
 
     <!-- RESULT SCREEN -->
 
-    <div class="card hidden" id="resultScreen">
+    <div
+        class="card hidden"
+        id="resultScreen"
+    >
 
-        <h2>🏆 Assessment Result</h2>
+        <h2>
+            🏆 Assessment Result
+        </h2>
 
         <div class="info">
 
             <p>
                 <strong>Score:</strong>
-                <span id="score">0</span>%
+                <span id="score">
+                    0
+                </span>%
             </p>
 
             <p>
                 <strong>Correct Answers:</strong>
-                <span id="correctAnswers">0</span>
+                <span id="correctAnswers">
+                    0
+                </span>
             </p>
 
             <p>
                 <strong>Total Questions:</strong>
-                <span id="resultTotal">0</span>
+                <span id="resultTotal">
+                    0
+                </span>
             </p>
 
         </div>
@@ -262,6 +334,18 @@ const AI_WORKER =
 
 
 /* =========================================
+   SETTINGS
+========================================= */
+
+const PASS_MARK = 70;
+
+const QUESTION_COUNT = 10;
+
+const SUBJECT =
+    "English Grammar";
+
+
+/* =========================================
    EXAM VARIABLES
 ========================================= */
 
@@ -279,19 +363,43 @@ let score = 0;
 async function startExam(){
 
     const startButton =
-        document.getElementById("startButton");
+        document.getElementById(
+            "startButton"
+        );
 
     const startScreen =
-        document.getElementById("startScreen");
+        document.getElementById(
+            "startScreen"
+        );
 
     const loadingScreen =
-        document.getElementById("loadingScreen");
+        document.getElementById(
+            "loadingScreen"
+        );
+
+    const startError =
+        document.getElementById(
+            "startError"
+        );
+
+
+    startError.innerHTML = "";
+
 
     startButton.disabled = true;
 
-    startScreen.classList.add("hidden");
+    startButton.textContent =
+        "Preparing...";
 
-    loadingScreen.classList.remove("hidden");
+
+    startScreen
+        .classList
+        .add("hidden");
+
+
+    loadingScreen
+        .classList
+        .remove("hidden");
 
 
     try{
@@ -308,9 +416,14 @@ async function startExam(){
                     },
 
                     body:JSON.stringify({
-                        subject:"English Grammar",
-                        count:10
+
+                        subject:SUBJECT,
+
+                        count:
+                            QUESTION_COUNT
+
                     })
+
                 }
             );
 
@@ -335,103 +448,106 @@ async function startExam(){
         );
 
 
-        if(!data.success){
-
-            throw new Error(
-                data.message ||
-                "AI generation failed."
-            );
-
-        }
-
-
         /*
-         * Workers AI normally returns
-         * generated text inside response.
-         */
-
-        let aiText =
-            data.result &&
-            data.result.response;
-
-
-        if(!aiText){
-
-            throw new Error(
-                "AI returned an empty response."
-            );
-
-        }
-
-
-        /*
-         * Remove markdown code fences
-         * if AI adds them.
-         */
-
-        aiText =
-            aiText
-            .replace(/```json/gi,"")
-            .replace(/```/g,"")
-            .trim();
-
-
-        /*
-         * Convert AI text to JSON.
-         */
-
-        const parsed =
-            JSON.parse(aiText);
-
-
-        /*
-         * Validate questions.
+         * NEW WORKER RESPONSE
+         *
+         * {
+         *   success:true,
+         *   questions:[...]
+         * }
          */
 
         if(
-            !parsed.questions ||
+            !data.success ||
             !Array.isArray(
-                parsed.questions
+                data.questions
             ) ||
-            parsed.questions.length === 0
+            data.questions.length === 0
         ){
 
             throw new Error(
+                data.message ||
                 "AI did not return valid questions."
             );
 
         }
 
 
-        questions =
-            parsed.questions;
-
-
         /*
-         * Validate every question.
+         * Validate questions
          */
 
-        questions =
-            questions.filter(q =>
+        const validQuestions =
+            data.questions.filter(
+                question => {
 
-                q &&
-                typeof q.question === "string" &&
-                Array.isArray(q.options) &&
-                q.options.length === 4 &&
-                Number.isInteger(
-                    Number(q.answer)
-                )
+                    if(
+                        !question ||
+                        typeof question.question !==
+                        "string"
+                    ){
+                        return false;
+                    }
 
+
+                    if(
+                        !Array.isArray(
+                            question.options
+                        )
+                    ){
+                        return false;
+                    }
+
+
+                    if(
+                        question.options.length !== 4
+                    ){
+                        return false;
+                    }
+
+
+                    const answer =
+                        Number(
+                            question.answer
+                        );
+
+
+                    if(
+                        !Number.isInteger(
+                            answer
+                        )
+                    ){
+                        return false;
+                    }
+
+
+                    if(
+                        answer < 0 ||
+                        answer > 3
+                    ){
+                        return false;
+                    }
+
+
+                    return true;
+
+                }
             );
 
 
-        if(questions.length === 0){
+        if(
+            validQuestions.length === 0
+        ){
 
             throw new Error(
                 "No valid questions were received."
             );
 
         }
+
+
+        questions =
+            validQuestions;
 
 
         currentIndex = 0;
@@ -481,13 +597,31 @@ async function startExam(){
             .remove("hidden");
 
 
-        startButton.disabled = false;
+        startButton.disabled =
+            false;
 
 
-        alert(
-            "Unable to generate the assessment.\n\n" +
-            error.message
-        );
+        startButton.textContent =
+            "Start Final Assessment";
+
+
+        startError.innerHTML = `
+
+            <div class="error">
+
+                <strong>
+                    Unable to start assessment
+                </strong>
+
+                <br><br>
+
+                ${escapeHTML(
+                    error.message
+                )}
+
+            </div>
+
+        `;
 
     }
 
@@ -510,6 +644,34 @@ function showQuestion(){
         )
         .textContent =
             currentIndex + 1;
+
+
+    document
+        .getElementById(
+            "totalQuestions"
+        )
+        .textContent =
+            questions.length;
+
+
+    /*
+     * Progress
+     */
+
+    const progress =
+        (
+            (currentIndex + 1) /
+            questions.length
+        ) * 100;
+
+
+    document
+        .getElementById(
+            "progressBar"
+        )
+        .style
+        .width =
+            progress + "%";
 
 
     const area =
@@ -538,7 +700,9 @@ function showQuestion(){
                         value="${index}"
                     >
 
-                    ${escapeHTML(option)}
+                    ${escapeHTML(
+                        option
+                    )}
 
                 </label>
 
@@ -701,7 +865,7 @@ function showResult(){
 
 
     if(
-        percentage >= 70
+        percentage >= PASS_MARK
     ){
 
         message.innerHTML = `
@@ -716,7 +880,14 @@ function showResult(){
                 <br><br>
 
                 You have passed the
-                CreateLK Academy Final Assessment.
+                CreateLK Academy
+                Final Assessment.
+
+                <br><br>
+
+                You are eligible to
+                continue to the certificate
+                stage.
 
             </div>
 
@@ -736,7 +907,12 @@ function showResult(){
                 <br><br>
 
                 Your score is below
-                the 70% pass mark.
+                the ${PASS_MARK}% pass mark.
+
+                <br><br>
+
+                Please review your lessons
+                and try again.
 
             </div>
 
@@ -748,7 +924,7 @@ function showResult(){
 
 
 /* =========================================
-   SAFE TEXT DISPLAY
+   SAFE HTML OUTPUT
 ========================================= */
 
 function escapeHTML(value){
