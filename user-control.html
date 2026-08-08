@@ -118,7 +118,7 @@ button:hover{
 }
 
 button:disabled{
-    opacity:.65;
+    opacity:.6;
     cursor:not-allowed;
 }
 
@@ -165,6 +165,7 @@ button:disabled{
     font-weight:700;
     font-size:16px;
     margin-bottom:8px;
+    color:#172033;
 }
 
 .user-info{
@@ -267,14 +268,13 @@ footer{
         <input
             id="adminKey"
             type="password"
-            placeholder="Enter ADMIN_KEY"
+            placeholder="Enter Admin Key"
             autocomplete="off"
         >
 
         <button
             type="button"
-            id="loadButton"
-            onclick="loadUsers()">
+            id="loadButton">
             Load Users
         </button>
 
@@ -287,7 +287,9 @@ footer{
 
         <h2>Users</h2>
 
-        <div class="user-list" id="userList">
+        <div
+            class="user-list"
+            id="userList">
 
             <div class="empty">
                 Enter Admin Key and click "Load Users".
@@ -303,56 +305,84 @@ footer{
     © 2026 CreateLK Academy. All rights reserved.
 </footer><script>
 
-/* ==========================================
-   USER CONTROL WORKER
-========================================== */
+/* =========================================
+   USER CONTROL API
+========================================= */
 
 const WORKER_URL =
     "https://createlk-user-control-api.createlk.workers.dev";
 
 
-/* ==========================================
+/* =========================================
+   ELEMENTS
+========================================= */
+
+const adminKeyInput =
+    document.getElementById("adminKey");
+
+const loadButton =
+    document.getElementById("loadButton");
+
+const message =
+    document.getElementById("message");
+
+const userList =
+    document.getElementById("userList");
+
+
+/* =========================================
    LOAD USERS
-========================================== */
+========================================= */
+
+loadButton.addEventListener(
+    "click",
+    loadUsers
+);
+
+
+adminKeyInput.addEventListener(
+    "keydown",
+    function(event){
+
+        if(event.key === "Enter"){
+
+            loadUsers();
+
+        }
+
+    }
+);
+
 
 async function loadUsers(){
 
     const adminKey =
-        document.getElementById("adminKey").value.trim();
-
-    const message =
-        document.getElementById("message");
-
-    const userList =
-        document.getElementById("userList");
-
-    const button =
-        document.getElementById("loadButton");
+        adminKeyInput.value.trim();
 
 
     if(!adminKey){
 
-        message.textContent =
-            "Please enter the Admin Key.";
+        showMessage(
+            "Please enter the Admin Key.",
+            "error"
+        );
 
-        message.style.color =
-            "#d92d20";
+        adminKeyInput.focus();
 
         return;
     }
 
 
-    button.disabled = true;
+    loadButton.disabled = true;
 
-    button.textContent =
+    loadButton.textContent =
         "Loading...";
 
 
-    message.textContent =
-        "Loading users...";
-
-    message.style.color =
-        "#475467";
+    showMessage(
+        "Connecting to User Control API...",
+        "normal"
+    );
 
 
     userList.innerHTML = `
@@ -364,23 +394,24 @@ async function loadUsers(){
 
     try{
 
-        const response = await fetch(
-            WORKER_URL + "/students",
-            {
-                method:"GET",
+        const response =
+            await fetch(
+                WORKER_URL + "/students",
+                {
+                    method:"GET",
 
-                headers:{
-                    "Authorization":
-                        "Bearer " + adminKey,
+                    headers:{
+                        "Accept":
+                            "application/json",
 
-                    "X-Admin-Key":
-                        adminKey,
+                        "X-Admin-Key":
+                            adminKey,
 
-                    "Accept":
-                        "application/json"
+                        "Authorization":
+                            "Bearer " + adminKey
+                    }
                 }
-            }
-        );
+            );
 
 
         const responseText =
@@ -395,15 +426,16 @@ async function loadUsers(){
             data =
                 JSON.parse(responseText);
 
-        }catch(error){
+        }
+        catch(error){
 
             console.error(
-                "Invalid JSON:",
+                "Worker response:",
                 responseText
             );
 
             throw new Error(
-                "The Worker returned an invalid response."
+                "The server returned an invalid response."
             );
         }
 
@@ -411,9 +443,21 @@ async function loadUsers(){
         if(!response.ok){
 
             throw new Error(
-                data.message ||
                 data.error ||
-                "Admin authentication failed."
+                data.message ||
+                "Unable to load users."
+            );
+        }
+
+
+        if(
+            data.success === false
+        ){
+
+            throw new Error(
+                data.error ||
+                data.message ||
+                "Request failed."
             );
         }
 
@@ -421,41 +465,45 @@ async function loadUsers(){
         let users = [];
 
 
-        if(Array.isArray(data)){
-
-            users = data;
-
-        }
-        else if(
-            data.students &&
-            Array.isArray(data.students)
-        ){
-
-            users = data.students;
-
-        }
-        else if(
-            data.users &&
+        if(
             Array.isArray(data.users)
         ){
 
-            users = data.users;
+            users =
+                data.users;
 
         }
         else if(
-            data.results &&
+            Array.isArray(data.students)
+        ){
+
+            users =
+                data.students;
+
+        }
+        else if(
             Array.isArray(data.results)
         ){
 
-            users = data.results;
+            users =
+                data.results;
 
         }
         else if(
-            data.data &&
             Array.isArray(data.data)
         ){
 
-            users = data.data;
+            users =
+                data.data;
+
+        }
+        else if(
+            Array.isArray(data)
+        ){
+
+            users =
+                data;
+
         }
 
 
@@ -463,36 +511,34 @@ async function loadUsers(){
 
             userList.innerHTML = `
                 <div class="empty">
-                    No users found.
+                    No users found in the database.
                 </div>
             `;
 
-            message.textContent =
-                "Connected successfully, but no users were returned.";
-
-            message.style.color =
-                "#027a48";
+            showMessage(
+                "Connected successfully. No users found.",
+                "success"
+            );
 
             return;
         }
 
 
-        displayUsers(users);
+        renderUsers(users);
 
 
-        message.textContent =
+        showMessage(
             users.length +
-            " user(s) loaded successfully.";
-
-        message.style.color =
-            "#027a48";
+            " user(s) loaded successfully.",
+            "success"
+        );
 
 
     }
     catch(error){
 
         console.error(
-            "User loading error:",
+            "Load users error:",
             error
         );
 
@@ -504,19 +550,18 @@ async function loadUsers(){
         `;
 
 
-        message.textContent =
+        showMessage(
             error.message ||
-            "Connection error. Please try again.";
-
-        message.style.color =
-            "#d92d20";
+            "Connection error. Please try again.",
+            "error"
+        );
 
     }
     finally{
 
-        button.disabled = false;
+        loadButton.disabled = false;
 
-        button.textContent =
+        loadButton.textContent =
             "Load Users";
 
     }
@@ -524,140 +569,171 @@ async function loadUsers(){
 }
 
 
-/* ==========================================
+/* =========================================
    DISPLAY USERS
-========================================== */
+========================================= */
 
-function displayUsers(users){
-
-    const userList =
-        document.getElementById("userList");
-
+function renderUsers(users){
 
     userList.innerHTML = "";
 
 
-    users.forEach(function(user){
+    users.forEach(
+        function(user){
 
-        const firstName =
-            user.first_name || "";
+            const firstName =
+                user.first_name ||
+                "";
 
-        const lastName =
-            user.last_name || "";
-
-
-        let name =
-            user.name ||
-            (firstName + " " + lastName).trim() ||
-            "Unnamed User";
+            const lastName =
+                user.last_name ||
+                "";
 
 
-        const email =
-            user.email ||
-            "No email";
+            const fullName =
+                (
+                    firstName +
+                    " " +
+                    lastName
+                ).trim();
 
 
-        const phone =
-            user.phone ||
-            "No phone";
+            const name =
+                user.name ||
+                fullName ||
+                "Unnamed User";
 
 
-        const status =
-            user.membership_status ||
-            user.status ||
-            "Unknown";
+            const email =
+                user.email ||
+                "No email";
 
 
-        const expiry =
-            user.membership_expiry ||
-            user.expires_at ||
-            user.expiry ||
-            "—";
+            const phone =
+                user.phone ||
+                "No phone";
 
 
-        const div =
-            document.createElement("div");
+            const membership =
+                user.membership_status ||
+                user.status ||
+                "Unknown";
 
 
-        div.className =
-            "user";
+            const expiry =
+                user.membership_expiry ||
+                user.expires_at ||
+                user.expiry ||
+                "—";
 
 
-        div.innerHTML = `
-
-            <div class="user-name">
-                ${escapeHTML(name)}
-            </div>
-
-            <div class="user-info">
-
-                Email:
-                ${escapeHTML(email)}
-
-                <br>
-
-                Phone:
-                ${escapeHTML(phone)}
-
-                <br>
-
-                Membership:
-                <span class="status ${getStatusClass(status)}">
-                    ${escapeHTML(status)}
-                </span>
-
-                <br>
-
-                Expiry:
-                ${escapeHTML(expiry)}
-
-            </div>
-
-        `;
+            const created =
+                user.created_at ||
+                "—";
 
 
-        userList.appendChild(div);
+            const userElement =
+                document.createElement(
+                    "div"
+                );
 
-    });
+
+            userElement.className =
+                "user";
+
+
+            userElement.innerHTML = `
+
+                <div class="user-name">
+                    ${escapeHTML(name)}
+                </div>
+
+                <div class="user-info">
+
+                    Email:
+                    ${escapeHTML(email)}
+
+                    <br>
+
+                    Phone:
+                    ${escapeHTML(phone)}
+
+                    <br>
+
+                    Membership:
+                    <span class="status ${getStatusClass(membership)}">
+                        ${escapeHTML(membership)}
+                    </span>
+
+                    <br>
+
+                    Expiry:
+                    ${escapeHTML(expiry)}
+
+                    <br>
+
+                    Registered:
+                    ${escapeHTML(created)}
+
+                </div>
+
+            `;
+
+
+            userList.appendChild(
+                userElement
+            );
+
+        }
+    );
 
 }
 
 
-/* ==========================================
-   STATUS CLASS
-========================================== */
+/* =========================================
+   STATUS
+========================================= */
 
 function getStatusClass(status){
 
     const value =
-        String(status).toLowerCase();
+        String(status)
+        .toLowerCase();
 
 
-    if(value === "active" ||
-       value.includes("active")){
+    if(
+        value.includes("active")
+    ){
 
         return "active";
+
     }
 
 
-    if(value === "pending" ||
-       value.includes("pending")){
+    if(
+        value.includes("pending")
+    ){
 
         return "pending";
+
     }
 
 
-    if(value === "expired" ||
-       value.includes("expired")){
+    if(
+        value.includes("expired")
+    ){
 
         return "expired";
+
     }
 
 
-    if(value === "rejected" ||
-       value.includes("rejected")){
+    if(
+        value.includes("reject")
+    ){
 
         return "rejected";
+
     }
 
 
@@ -665,44 +741,75 @@ function getStatusClass(status){
 }
 
 
-/* ==========================================
-   HTML ESCAPE
-========================================== */
+/* =========================================
+   MESSAGE
+========================================= */
+
+function showMessage(
+    text,
+    type
+){
+
+    message.textContent =
+        text;
+
+
+    if(type === "error"){
+
+        message.style.color =
+            "#d92d20";
+
+    }
+    else if(type === "success"){
+
+        message.style.color =
+            "#027a48";
+
+    }
+    else{
+
+        message.style.color =
+            "#475467";
+
+    }
+
+}
+
+
+/* =========================================
+   SECURITY
+========================================= */
 
 function escapeHTML(value){
 
     return String(value)
 
-        .replace(/&/g,"&amp;")
+        .replace(
+            /&/g,
+            "&amp;"
+        )
 
-        .replace(/</g,"&lt;")
+        .replace(
+            /</g,
+            "&lt;"
+        )
 
-        .replace(/>/g,"&gt;")
+        .replace(
+            />/g,
+            "&gt;"
+        )
 
-        .replace(/"/g,"&quot;")
+        .replace(
+            /"/g,
+            "&quot;"
+        )
 
-        .replace(/'/g,"&#039;");
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+
 }
-
-
-/* ==========================================
-   ENTER KEY
-========================================== */
-
-document
-    .getElementById("adminKey")
-    .addEventListener(
-        "keydown",
-        function(event){
-
-            if(event.key === "Enter"){
-
-                loadUsers();
-
-            }
-
-        }
-    );
 
 </script></body>
 </html>
