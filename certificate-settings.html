@@ -1,12 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<meta
+name="viewport"
+content="width=device-width,initial-scale=1">
 
 <title>Certificate Settings | CreateLK Academy</title>
 
 <style>
+
 *{
     box-sizing:border-box;
 }
@@ -52,6 +58,7 @@ h2{
 
 .muted{
     color:#667085;
+    line-height:1.5;
 }
 
 label{
@@ -84,6 +91,11 @@ button{
 
 button:disabled{
     opacity:.6;
+    cursor:not-allowed;
+}
+
+.secondary{
+    background:#475467;
 }
 
 .status{
@@ -119,264 +131,540 @@ button:disabled{
     color:#155eef;
     margin-top:5px;
 }
+
+.security{
+    margin-top:20px;
+    padding:15px;
+    background:#f8fafc;
+    border-radius:10px;
+    font-size:14px;
+    line-height:1.6;
+    color:#475467;
+}
+
 </style>
+
 </head>
 
 <body>
 
+
 <header>
-    <h1>📚 CreateLK Academy — Admin</h1>
+
+<h1>
+📚 CreateLK Academy — Admin
+</h1>
+
 </header>
+
 
 <div class="container">
 
 <div class="card">
 
-    <div class="icon">🎓</div>
 
-    <h2>Certificate Settings</h2>
+<div class="icon">
+🎓
+</div>
 
-    <p class="muted">
-        Set the number of completed practice questions
-        required before students can unlock their certificate.
-    </p>
 
-    <div class="current">
-        Current Requirement
-        <strong id="currentAmount">Loading...</strong>
-        questions
-    </div>
+<h2>
+Certificate Settings
+</h2>
 
-    <label for="questionAmount">
-        Required Practice Questions
-    </label>
 
-    <input
-        id="questionAmount"
-        type="number"
-        min="1"
-        max="100000"
-        placeholder="1000"
-    >
+<p class="muted">
 
-    <button
-        id="saveButton"
-        onclick="saveSettings()"
-    >
-        💾 Save Certificate Requirement
-    </button>
+Set the number of completed practice questions
+required before students can unlock their certificate.
 
-    <div id="status" class="status"></div>
+</p>
+
+
+<!-- ADMIN KEY -->
+
+<label for="adminKey">
+Admin Key
+</label>
+
+<input
+id="adminKey"
+type="password"
+placeholder="Enter Admin Key"
+autocomplete="off"
+>
+
+
+<!-- CURRENT -->
+
+<div class="current">
+
+Current Requirement
+
+<strong id="currentAmount">
+Loading...
+</strong>
+
+questions
+
+</div>
+
+
+<!-- QUESTION AMOUNT -->
+
+<label for="questionAmount">
+
+Required Practice Questions
+
+</label>
+
+
+<input
+id="questionAmount"
+type="number"
+min="1"
+max="1000000"
+placeholder="1000"
+>
+
+
+<!-- LOAD -->
+
+<button
+id="loadButton"
+class="secondary"
+onclick="loadSettings()"
+>
+
+🔄 Load Current Requirement
+
+</button>
+
+
+<!-- SAVE -->
+
+<button
+id="saveButton"
+onclick="saveSettings()"
+>
+
+💾 Save Certificate Requirement
+
+</button>
+
+
+<!-- STATUS -->
+
+<div
+id="status"
+class="status"
+>
+</div>
+
+
+<div class="security">
+
+<strong>🔐 Secure Admin Control</strong>
+
+<br><br>
+
+The certificate requirement is stored in
+Cloudflare D1.
+
+The Admin Key is sent to the Certificate
+Settings Worker through HTTPS.
+
+Your existing AI MCQ and Progress Workers
+are not changed.
+
+</div>
+
 
 </div>
 
 </div>
+
 
 <script>
 
-/* ==============================
-   WORKER URL
-============================== */
+
+/* =====================================
+   CERTIFICATE SETTINGS WORKER
+===================================== */
+
+/*
+IMPORTANT:
+
+Replace this URL with the actual URL of your
+NEW Certificate Settings Worker.
+
+Example:
+
+https://createlk-certificate-settings-xxxxx.workers.dev
+*/
 
 const API =
-"https://createlk-final-ai.createlk.workers.dev";
+"https://YOUR-CERTIFICATE-SETTINGS-WORKER.workers.dev";
 
 
-/* ==============================
+/* =====================================
+   ELEMENTS
+===================================== */
+
+const adminKey =
+document.getElementById(
+"adminKey"
+);
+
+const questionAmount =
+document.getElementById(
+"questionAmount"
+);
+
+const currentAmount =
+document.getElementById(
+"currentAmount"
+);
+
+const loadButton =
+document.getElementById(
+"loadButton"
+);
+
+const saveButton =
+document.getElementById(
+"saveButton"
+);
+
+const statusBox =
+document.getElementById(
+"status"
+);
+
+
+/* =====================================
+   STATUS
+===================================== */
+
+function showStatus(
+message,
+success
+){
+
+statusBox.textContent =
+(success ? "✅ " : "❌ ") +
+message;
+
+statusBox.className =
+"status " +
+(
+success
+? "success"
+: "error"
+);
+
+}
+
+
+/* =====================================
    LOAD SETTINGS
-============================== */
+===================================== */
 
 async function loadSettings(){
 
-    try{
+const key =
+adminKey.value.trim();
 
-        const response =
-            await fetch(
-                API + "/certificate-settings"
-            );
 
-        const data =
-            await response.json();
+if(!key){
 
-        if(
-            !response.ok ||
-            !data.success
-        ){
+showStatus(
+"Please enter your Admin Key.",
+false
+);
 
-            throw new Error(
-                data.message ||
-                "Unable to load settings."
-            );
-
-        }
-
-        document
-            .getElementById(
-                "questionAmount"
-            )
-            .value =
-                data.required_questions;
-
-        document
-            .getElementById(
-                "currentAmount"
-            )
-            .textContent =
-                data.required_questions;
-
-    }catch(error){
-
-        showStatus(
-            error.message,
-            false
-        );
-
-    }
+return;
 
 }
 
 
-/* ==============================
+loadButton.disabled =
+true;
+
+loadButton.textContent =
+"Loading...";
+
+
+try{
+
+const response =
+await fetch(
+
+API +
+"/settings",
+
+{
+method:"GET",
+
+headers:{
+"X-Admin-Key":
+key
+}
+
+}
+
+);
+
+
+let data;
+
+try{
+
+data =
+await response.json();
+
+}catch(error){
+
+throw new Error(
+"Worker returned an invalid response."
+);
+
+}
+
+
+console.log(
+"Certificate settings:",
+data
+);
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Unable to load certificate settings."
+);
+
+}
+
+
+const required =
+Number(
+data.required_questions
+);
+
+
+currentAmount.textContent =
+required.toLocaleString();
+
+questionAmount.value =
+required;
+
+
+showStatus(
+"Current certificate requirement loaded successfully.",
+true
+);
+
+
+}catch(error){
+
+console.error(
+"Load settings error:",
+error
+);
+
+showStatus(
+error.message ||
+"Failed to fetch Certificate Settings Worker.",
+false
+);
+
+}
+
+
+loadButton.disabled =
+false;
+
+loadButton.textContent =
+"🔄 Load Current Requirement";
+
+}
+
+
+/* =====================================
    SAVE SETTINGS
-============================== */
+===================================== */
 
 async function saveSettings(){
 
-    const input =
-        document.getElementById(
-            "questionAmount"
-        );
-
-    const button =
-        document.getElementById(
-            "saveButton"
-        );
-
-    const amount =
-        Number(input.value);
+const key =
+adminKey.value.trim();
 
 
-    if(
-        !Number.isInteger(amount) ||
-        amount < 1
-    ){
+if(!key){
 
-        showStatus(
-            "Please enter a valid question amount.",
-            false
-        );
+showStatus(
+"Please enter your Admin Key.",
+false
+);
 
-        return;
-
-    }
-
-
-    button.disabled = true;
-
-    button.textContent =
-        "Saving...";
-
-
-    try{
-
-        const response =
-            await fetch(
-                API + "/certificate-settings",
-                {
-                    method:"POST",
-
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:JSON.stringify({
-                        required_questions:
-                            amount
-                    })
-                }
-            );
-
-
-        const data =
-            await response.json();
-
-
-        if(
-            !response.ok ||
-            !data.success
-        ){
-
-            throw new Error(
-                data.message ||
-                "Unable to save settings."
-            );
-
-        }
-
-
-        document
-            .getElementById(
-                "currentAmount"
-            )
-            .textContent =
-                amount;
-
-
-        showStatus(
-            "Certificate requirement updated successfully.",
-            true
-        );
-
-
-    }catch(error){
-
-        showStatus(
-            error.message,
-            false
-        );
-
-    }
-
-
-    button.disabled = false;
-
-    button.textContent =
-        "💾 Save Certificate Requirement";
+return;
 
 }
 
 
-/* ==============================
-   STATUS
-============================== */
+const amount =
+Number(
+questionAmount.value
+);
 
-function showStatus(message,success){
 
-    const box =
-        document.getElementById(
-            "status"
-        );
+if(
+!Number.isInteger(amount) ||
+amount < 1 ||
+amount > 1000000
+){
 
-    box.textContent =
-        message;
+showStatus(
+"Please enter a number between 1 and 1,000,000.",
+false
+);
 
-    box.className =
-        "status " +
-        (success
-            ? "success"
-            : "error");
+return;
 
 }
 
 
-/* ==============================
-   START
-============================== */
+if(
+!confirm(
+"Set the certificate requirement to " +
+amount.toLocaleString() +
+" questions?"
+)
+){
 
-loadSettings();
+return;
+
+}
+
+
+saveButton.disabled =
+true;
+
+saveButton.textContent =
+"Saving...";
+
+
+try{
+
+const response =
+await fetch(
+
+API +
+"/settings",
+
+{
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"X-Admin-Key":
+key
+},
+
+body:JSON.stringify({
+
+required_questions:
+amount
+
+})
+
+}
+
+);
+
+
+let data;
+
+try{
+
+data =
+await response.json();
+
+}catch(error){
+
+throw new Error(
+"Worker returned an invalid response."
+);
+
+}
+
+
+console.log(
+"Save response:",
+data
+);
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Unable to save certificate settings."
+);
+
+}
+
+
+currentAmount.textContent =
+amount.toLocaleString();
+
+questionAmount.value =
+amount;
+
+
+showStatus(
+"Certificate requirement updated successfully.",
+true
+);
+
+
+}catch(error){
+
+console.error(
+"Save settings error:",
+error
+);
+
+showStatus(
+error.message ||
+"Failed to save certificate requirement.",
+false
+);
+
+}
+
+
+saveButton.disabled =
+false;
+
+saveButton.textContent =
+"💾 Save Certificate Requirement";
+
+}
+
 
 </script>
 
 </body>
+
 </html>
