@@ -504,6 +504,12 @@ const MEMBERSHIP_API =
 const AI_API =
 "https://createlk-ai-mcq.createlk.workers.dev";
 
+/*
+   Certificate progress API
+*/
+const PROGRESS_API =
+"https://createlk-progress.createlk.workers.dev";
+
 
 /* =========================================
    SESSION
@@ -797,6 +803,107 @@ count.textContent =
 
 console.log(
 "Usage check skipped:",
+error
+);
+
+}
+
+}
+
+
+/* =========================================
+   RECORD CERTIFICATE PROGRESS
+========================================= */
+
+async function recordCompletedQuestion(){
+
+try{
+
+const response =
+await fetch(
+
+PROGRESS_API+
+"/progress/complete",
+
+{
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"Authorization":
+"Bearer "+token
+},
+
+body:JSON.stringify({
+
+student_id:
+student.id
+
+})
+
+}
+
+);
+
+
+let data;
+
+try{
+
+data =
+await response.json();
+
+}catch(e){
+
+console.error(
+"Progress server returned invalid JSON."
+);
+
+return;
+
+}
+
+
+console.log(
+"Progress update:",
+data
+);
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+console.error(
+"Progress update failed:",
+data
+);
+
+return;
+
+}
+
+
+console.log(
+"Certificate progress:",
+data.completed_questions+
+" / "+
+data.required_questions
+);
+
+
+}catch(error){
+
+/*
+  Progress failure should NOT
+  stop the MCQ system.
+*/
+
+console.error(
+"Unable to update certificate progress:",
 error
 );
 
@@ -1147,6 +1254,14 @@ explanationText;
 explanation.classList.remove(
 "hidden"
 );
+
+
+/*
+   IMPORTANT:
+   Count this question after
+   the student has selected an answer.
+*/
+recordCompletedQuestion();
 
 
 /* NEXT */
