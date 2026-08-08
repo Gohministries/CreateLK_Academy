@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+name="viewport"
+content="width=device-width,initial-scale=1">
+
+<title>Certificate Control | CreateLK Academy</title>
+
+<style>
+
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+font-family:Arial,sans-serif;
+background:#f4f7fb;
+color:#172033;
+}
+
+header{
+background:#fff;
+border-bottom:1px solid #e5e7eb;
+}
+
+.nav{
+max-width:900px;
+margin:auto;
+padding:15px 20px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+.logo{
+font-size:20px;
+font-weight:800;
+color:#155eef;
+}
+
+.back{
+text-decoration:none;
+color:#475467;
+font-weight:bold;
+}
+
+.container{
+max-width:650px;
+margin:auto;
+padding:25px 15px;
+}
+
+.card{
+background:#fff;
+border:1px solid #e4e7ec;
+border-radius:16px;
+padding:25px;
+box-shadow:0 5px 20px rgba(16,24,40,.05);
+}
+
+.icon{
+font-size:45px;
+text-align:center;
+margin-bottom:10px;
+}
+
+h1{
+text-align:center;
+margin:0 0 8px;
+}
+
+.subtitle{
+text-align:center;
+color:#667085;
+margin-bottom:25px;
+line-height:1.5;
+}
+
+label{
+display:block;
+font-weight:bold;
+margin-bottom:8px;
+}
+
+input{
+width:100%;
+padding:13px;
+border:1px solid #d0d5dd;
+border-radius:9px;
+font-size:16px;
+outline:none;
+}
+
+input:focus{
+border-color:#155eef;
+}
+
+button{
+width:100%;
+padding:14px;
+border:0;
+border-radius:9px;
+background:#155eef;
+color:#fff;
+font-size:15px;
+font-weight:bold;
+cursor:pointer;
+margin-top:15px;
+}
+
+button:disabled{
+opacity:.6;
+cursor:not-allowed;
+}
+
+.current{
+margin-top:20px;
+padding:18px;
+border-radius:10px;
+background:#f8fafc;
+text-align:center;
+}
+
+.current-title{
+color:#667085;
+font-size:14px;
+}
+
+.current strong{
+font-size:30px;
+color:#155eef;
+display:block;
+margin:5px 0;
+}
+
+.success{
+margin-top:15px;
+padding:13px;
+border-radius:9px;
+background:#dcfce7;
+color:#166534;
+font-weight:bold;
+display:none;
+}
+
+.error{
+margin-top:15px;
+padding:13px;
+border-radius:9px;
+background:#fee2e2;
+color:#991b1b;
+font-weight:bold;
+display:none;
+}
+
+.info{
+margin-top:20px;
+padding:15px;
+background:#eff6ff;
+border-radius:10px;
+color:#1e40af;
+font-size:14px;
+line-height:1.6;
+}
+
+</style>
+
+</head>
+
+<body>
+
+
+<header>
+
+<div class="nav">
+
+<div class="logo">
+📚 CreateLK Academy
+</div>
+
+<a
+href="admin.html"
+class="back"
+>
+← Admin
+</a>
+
+</div>
+
+</header>
+
+
+<div class="container">
+
+<div class="card">
+
+
+<div class="icon">
+🎓
+</div>
+
+
+<h1>
+Certificate Control
+</h1>
+
+
+<div class="subtitle">
+Manage how many practice questions a student
+must complete before the certificate unlocks.
+</div>
+
+
+<label for="adminKey">
+Admin Key
+</label>
+
+<input
+type="password"
+id="adminKey"
+placeholder="Enter Admin Key"
+autocomplete="off"
+>
+
+
+<label
+for="requiredQuestions"
+style="margin-top:18px"
+>
+Required Practice Questions
+</label>
+
+<input
+type="number"
+id="requiredQuestions"
+min="1"
+max="1000000"
+value="1000"
+>
+
+
+<button
+id="loadBtn"
+type="button"
+>
+🔄 Load Current Requirement
+</button>
+
+
+<button
+id="saveBtn"
+type="button"
+>
+💾 Save Certificate Requirement
+</button>
+
+
+<div class="current">
+
+<div class="current-title">
+Current Certificate Requirement
+</div>
+
+<strong id="currentValue">
+1000
+</strong>
+
+questions
+
+</div>
+
+
+<div
+id="success"
+class="success">
+</div>
+
+
+<div
+id="error"
+class="error">
+</div>
+
+
+<div class="info">
+
+<strong>How this works</strong>
+
+<br><br>
+
+The certificate requirement is stored in
+<strong>Cloudflare D1</strong>.
+
+<br><br>
+
+For example, if you set the requirement to
+<strong>500</strong>, students need to complete
+500 practice questions.
+
+<br><br>
+
+If you later change it to
+<strong>1000</strong>, the certificate requirement
+automatically becomes 1000.
+
+<br><br>
+
+Your existing Progress Worker does not need to
+be changed for this setting.
+
+</div>
+
+
+</div>
+
+</div>
+
+
+<script>
+
+
+/* =====================================
+   NEW CERTIFICATE SETTINGS WORKER
+===================================== */
+
+const API =
+"https://createlk-certificate-settings.YOUR-WORKER.workers.dev";
+
+
+/*
+IMPORTANT:
+
+Replace the URL above with your actual
+Cloudflare Worker URL.
+
+Example:
+
+https://createlk-certificate-settings.username.workers.dev
+*/
+
+
+/* =====================================
+   ELEMENTS
+===================================== */
+
+const adminKey =
+document.getElementById(
+"adminKey"
+);
+
+const requiredQuestions =
+document.getElementById(
+"requiredQuestions"
+);
+
+const currentValue =
+document.getElementById(
+"currentValue"
+);
+
+const loadBtn =
+document.getElementById(
+"loadBtn"
+);
+
+const saveBtn =
+document.getElementById(
+"saveBtn"
+);
+
+const successBox =
+document.getElementById(
+"success"
+);
+
+const errorBox =
+document.getElementById(
+"error"
+);
+
+
+/* =====================================
+   SUCCESS
+===================================== */
+
+function showSuccess(message){
+
+successBox.textContent =
+"✅ " + message;
+
+successBox.style.display =
+"block";
+
+errorBox.style.display =
+"none";
+
+}
+
+
+/* =====================================
+   ERROR
+===================================== */
+
+function showError(message){
+
+errorBox.textContent =
+"❌ " + message;
+
+errorBox.style.display =
+"block";
+
+successBox.style.display =
+"none";
+
+}
+
+
+/* =====================================
+   CLEAR
+===================================== */
+
+function clearMessages(){
+
+successBox.style.display =
+"none";
+
+errorBox.style.display =
+"none";
+
+}
+
+
+/* =====================================
+   LOAD CURRENT SETTING
+===================================== */
+
+async function loadSetting(){
+
+clearMessages();
+
+
+const key =
+adminKey.value.trim();
+
+
+if(!key){
+
+showError(
+"Please enter your Admin Key."
+);
+
+return;
+
+}
+
+
+loadBtn.disabled =
+true;
+
+loadBtn.textContent =
+"⏳ Loading...";
+
+
+try{
+
+const response =
+await fetch(
+
+API +
+"/settings",
+
+{
+method:"GET",
+
+headers:{
+"X-Admin-Key":
+key
+}
+
+}
+
+);
+
+
+const data =
+await response.json();
+
+
+console.log(
+"Certificate settings:",
+data
+);
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Unable to load certificate setting."
+);
+
+}
+
+
+const value =
+Number(
+data.required_questions
+);
+
+
+requiredQuestions.value =
+value;
+
+currentValue.textContent =
+value.toLocaleString();
+
+
+showSuccess(
+"Current certificate requirement loaded."
+);
+
+
+}catch(error){
+
+console.error(error);
+
+showError(
+error.message ||
+"Unable to connect to Certificate Settings Worker."
+);
+
+}
+
+
+loadBtn.disabled =
+false;
+
+loadBtn.textContent =
+"🔄 Load Current Requirement";
+
+}
+
+
+/* =====================================
+   SAVE SETTING
+===================================== */
+
+async function saveSetting(){
+
+clearMessages();
+
+
+const key =
+adminKey.value.trim();
+
+
+if(!key){
+
+showError(
+"Please enter your Admin Key."
+);
+
+return;
+
+}
+
+
+const value =
+Number(
+requiredQuestions.value
+);
+
+
+if(
+!Number.isInteger(value) ||
+value < 1 ||
+value > 1000000
+){
+
+showError(
+"Enter a number between 1 and 1,000,000."
+);
+
+return;
+
+}
+
+
+const confirmed =
+confirm(
+"Set the certificate requirement to " +
+value.toLocaleString() +
+" questions?"
+);
+
+
+if(!confirmed){
+
+return;
+
+}
+
+
+saveBtn.disabled =
+true;
+
+saveBtn.textContent =
+"⏳ Saving...";
+
+
+try{
+
+const response =
+await fetch(
+
+API +
+"/settings",
+
+{
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"X-Admin-Key":
+key
+},
+
+body:JSON.stringify({
+
+required_questions:
+value
+
+})
+
+}
+
+);
+
+
+const data =
+await response.json();
+
+
+console.log(
+"Save response:",
+data
+);
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Unable to save certificate requirement."
+);
+
+}
+
+
+currentValue.textContent =
+value.toLocaleString();
+
+
+requiredQuestions.value =
+value;
+
+
+showSuccess(
+"Certificate requirement updated to " +
+value.toLocaleString() +
+" questions."
+);
+
+
+}catch(error){
+
+console.error(error);
+
+showError(
+error.message ||
+"Unable to connect to Certificate Settings Worker."
+);
+
+}
+
+
+saveBtn.disabled =
+false;
+
+saveBtn.textContent =
+"💾 Save Certificate Requirement";
+
+}
+
+
+/* =====================================
+   BUTTONS
+===================================== */
+
+loadBtn.addEventListener(
+"click",
+loadSetting
+);
+
+saveBtn.addEventListener(
+"click",
+saveSetting
+);
+
+</script>
+
+</body>
+
+</html>
