@@ -117,6 +117,23 @@ button:disabled{
     }
 }
 
+.timer{
+    background:#fff7ed;
+    color:#9a3412;
+    border:1px solid #fed7aa;
+    border-radius:10px;
+    padding:10px 14px;
+    font-weight:bold;
+    text-align:center;
+    margin-bottom:15px;
+}
+
+.timer.warning{
+    background:#fef2f2;
+    color:#b91c1c;
+    border-color:#fecaca;
+}
+
 .result-pass{
     background:#ecfdf5;
     color:#166534;
@@ -187,7 +204,7 @@ button:disabled{
             <li>Each question has four answers.</li>
             <li>Only one answer is correct.</li>
             <li>Pass mark is 70%.</li>
-            <li>Answer all questions before submitting.</li>
+            <li>Time limit is 30 minutes.</li>
         </ul>
 
         <button
@@ -242,6 +259,16 @@ button:disabled{
             📝 Final Assessment
         </h2>
 
+        <!-- TIMER -->
+
+        <div
+            class="timer"
+            id="timer"
+        >
+            ⏱️ Time Remaining: 30:00
+        </div>
+
+
         <div class="info">
 
             Question
@@ -257,6 +284,7 @@ button:disabled{
 
         </div>
 
+
         <div class="progress">
 
             <div
@@ -265,6 +293,7 @@ button:disabled{
             ></div>
 
         </div>
+
 
         <div id="questionArea"></div>
 
@@ -344,6 +373,9 @@ const QUESTION_COUNT = 10;
 const SUBJECT =
     "English Grammar";
 
+const EXAM_TIME =
+    30 * 60;
+
 
 /* =========================================
    EXAM VARIABLES
@@ -354,6 +386,12 @@ let questions = [];
 let currentIndex = 0;
 
 let score = 0;
+
+let timeRemaining =
+    EXAM_TIME;
+
+let timerInterval =
+    null;
 
 
 /* =========================================
@@ -417,7 +455,8 @@ async function startExam(){
 
                     body:JSON.stringify({
 
-                        subject:SUBJECT,
+                        subject:
+                            SUBJECT,
 
                         count:
                             QUESTION_COUNT
@@ -449,7 +488,7 @@ async function startExam(){
 
 
         /*
-         * NEW WORKER RESPONSE
+         * Expected Worker response:
          *
          * {
          *   success:true,
@@ -576,6 +615,14 @@ async function startExam(){
             .remove("hidden");
 
 
+        /*
+         * Start timer only after
+         * questions are successfully loaded.
+         */
+
+        startTimer();
+
+
         showQuestion();
 
 
@@ -622,6 +669,118 @@ async function startExam(){
             </div>
 
         `;
+
+    }
+
+}
+
+
+/* =========================================
+   TIMER
+========================================= */
+
+function startTimer(){
+
+    clearInterval(
+        timerInterval
+    );
+
+
+    timeRemaining =
+        EXAM_TIME;
+
+
+    updateTimer();
+
+
+    timerInterval =
+        setInterval(
+            function(){
+
+                timeRemaining--;
+
+                updateTimer();
+
+
+                if(
+                    timeRemaining <= 0
+                ){
+
+                    clearInterval(
+                        timerInterval
+                    );
+
+
+                    alert(
+                        "Time is up. Your assessment will be submitted."
+                    );
+
+
+                    finishExam();
+
+                }
+
+            },
+            1000
+        );
+
+}
+
+
+/* =========================================
+   UPDATE TIMER
+========================================= */
+
+function updateTimer(){
+
+    const timer =
+        document.getElementById(
+            "timer"
+        );
+
+
+    if(!timer){
+        return;
+    }
+
+
+    const minutes =
+        Math.floor(
+            timeRemaining / 60
+        );
+
+
+    const seconds =
+        timeRemaining % 60;
+
+
+    timer.textContent =
+        "⏱️ Time Remaining: " +
+        String(minutes)
+            .padStart(2,"0") +
+        ":" +
+        String(seconds)
+            .padStart(2,"0");
+
+
+    /*
+     * Warning when 5 minutes
+     * or less remain.
+     */
+
+    if(
+        timeRemaining <= 300
+    ){
+
+        timer.classList.add(
+            "warning"
+        );
+
+    }else{
+
+        timer.classList.remove(
+            "warning"
+        );
 
     }
 
@@ -796,9 +955,25 @@ function nextQuestion(){
 
     }else{
 
-        showResult();
+        finishExam();
 
     }
+
+}
+
+
+/* =========================================
+   FINISH EXAM
+========================================= */
+
+function finishExam(){
+
+    clearInterval(
+        timerInterval
+    );
+
+
+    showResult();
 
 }
 
