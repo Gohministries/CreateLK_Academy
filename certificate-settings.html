@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Certificate Settings | CreateLK Academy</title>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    font-family:Arial,sans-serif;
+    background:#f4f7fb;
+    color:#172033;
+}
+
+header{
+    background:#fff;
+    border-bottom:1px solid #e5e7eb;
+    padding:18px 20px;
+}
+
+header h1{
+    margin:0;
+    font-size:21px;
+}
+
+.container{
+    max-width:700px;
+    margin:35px auto;
+    padding:0 16px;
+}
+
+.card{
+    background:#fff;
+    border-radius:14px;
+    padding:25px;
+    box-shadow:0 4px 18px rgba(0,0,0,.06);
+}
+
+.icon{
+    font-size:42px;
+}
+
+h2{
+    margin:10px 0 5px;
+}
+
+.muted{
+    color:#667085;
+}
+
+label{
+    display:block;
+    margin-top:25px;
+    margin-bottom:8px;
+    font-weight:bold;
+}
+
+input{
+    width:100%;
+    padding:13px;
+    border:1px solid #d0d5dd;
+    border-radius:8px;
+    font-size:16px;
+}
+
+button{
+    width:100%;
+    margin-top:18px;
+    padding:13px;
+    border:0;
+    border-radius:8px;
+    background:#155eef;
+    color:#fff;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+button:disabled{
+    opacity:.6;
+}
+
+.status{
+    margin-top:18px;
+    padding:13px;
+    border-radius:8px;
+    display:none;
+}
+
+.success{
+    display:block;
+    background:#ecfdf3;
+    color:#027a48;
+}
+
+.error{
+    display:block;
+    background:#fef3f2;
+    color:#b42318;
+}
+
+.current{
+    margin-top:20px;
+    padding:15px;
+    background:#eff6ff;
+    border-radius:10px;
+    text-align:center;
+}
+
+.current strong{
+    display:block;
+    font-size:28px;
+    color:#155eef;
+    margin-top:5px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>📚 CreateLK Academy — Admin</h1>
+</header>
+
+<div class="container">
+
+<div class="card">
+
+    <div class="icon">🎓</div>
+
+    <h2>Certificate Settings</h2>
+
+    <p class="muted">
+        Set the number of completed practice questions
+        required before students can unlock their certificate.
+    </p>
+
+    <div class="current">
+        Current Requirement
+        <strong id="currentAmount">Loading...</strong>
+        questions
+    </div>
+
+    <label for="questionAmount">
+        Required Practice Questions
+    </label>
+
+    <input
+        id="questionAmount"
+        type="number"
+        min="1"
+        max="100000"
+        placeholder="1000"
+    >
+
+    <button
+        id="saveButton"
+        onclick="saveSettings()"
+    >
+        💾 Save Certificate Requirement
+    </button>
+
+    <div id="status" class="status"></div>
+
+</div>
+
+</div>
+
+<script>
+
+/* ==============================
+   WORKER URL
+============================== */
+
+const API =
+"https://createlk-final-ai.createlk.workers.dev";
+
+
+/* ==============================
+   LOAD SETTINGS
+============================== */
+
+async function loadSettings(){
+
+    try{
+
+        const response =
+            await fetch(
+                API + "/certificate-settings"
+            );
+
+        const data =
+            await response.json();
+
+        if(
+            !response.ok ||
+            !data.success
+        ){
+
+            throw new Error(
+                data.message ||
+                "Unable to load settings."
+            );
+
+        }
+
+        document
+            .getElementById(
+                "questionAmount"
+            )
+            .value =
+                data.required_questions;
+
+        document
+            .getElementById(
+                "currentAmount"
+            )
+            .textContent =
+                data.required_questions;
+
+    }catch(error){
+
+        showStatus(
+            error.message,
+            false
+        );
+
+    }
+
+}
+
+
+/* ==============================
+   SAVE SETTINGS
+============================== */
+
+async function saveSettings(){
+
+    const input =
+        document.getElementById(
+            "questionAmount"
+        );
+
+    const button =
+        document.getElementById(
+            "saveButton"
+        );
+
+    const amount =
+        Number(input.value);
+
+
+    if(
+        !Number.isInteger(amount) ||
+        amount < 1
+    ){
+
+        showStatus(
+            "Please enter a valid question amount.",
+            false
+        );
+
+        return;
+
+    }
+
+
+    button.disabled = true;
+
+    button.textContent =
+        "Saving...";
+
+
+    try{
+
+        const response =
+            await fetch(
+                API + "/certificate-settings",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:JSON.stringify({
+                        required_questions:
+                            amount
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(
+            !response.ok ||
+            !data.success
+        ){
+
+            throw new Error(
+                data.message ||
+                "Unable to save settings."
+            );
+
+        }
+
+
+        document
+            .getElementById(
+                "currentAmount"
+            )
+            .textContent =
+                amount;
+
+
+        showStatus(
+            "Certificate requirement updated successfully.",
+            true
+        );
+
+
+    }catch(error){
+
+        showStatus(
+            error.message,
+            false
+        );
+
+    }
+
+
+    button.disabled = false;
+
+    button.textContent =
+        "💾 Save Certificate Requirement";
+
+}
+
+
+/* ==============================
+   STATUS
+============================== */
+
+function showStatus(message,success){
+
+    const box =
+        document.getElementById(
+            "status"
+        );
+
+    box.textContent =
+        message;
+
+    box.className =
+        "status " +
+        (success
+            ? "success"
+            : "error");
+
+}
+
+
+/* ==============================
+   START
+============================== */
+
+loadSettings();
+
+</script>
+
+</body>
+</html>
