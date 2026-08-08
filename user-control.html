@@ -1,12 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>User Control | CreateLK Academy</title>
-
-<style>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>User Control | CreateLK Academy</title><style>
 *{
     box-sizing:border-box;
 }
@@ -118,23 +113,19 @@ button{
     color:#fff;
 }
 
-button.primary{
-    background:#155eef !important;
-    color:#fff !important;
+button:hover{
+    background:#0d4dcc;
 }
 
-button.primary:hover{
-    background:#0d4dcc !important;
-}
-
-button:active{
-    transform:translateY(1px);
+button:disabled{
+    opacity:.65;
+    cursor:not-allowed;
 }
 
 #message{
     margin-top:15px;
     font-size:14px;
-    color:#475467;
+    line-height:1.5;
 }
 
 .users-section{
@@ -150,6 +141,7 @@ button:active{
     border:1px solid #e4e7ec;
     border-radius:8px;
     overflow:hidden;
+    background:#fff;
 }
 
 .empty{
@@ -158,6 +150,60 @@ button:active{
     color:#667085;
     font-size:14px;
     background:#fafafa;
+}
+
+.user{
+    padding:18px;
+    border-bottom:1px solid #eaecf0;
+}
+
+.user:last-child{
+    border-bottom:0;
+}
+
+.user-name{
+    font-weight:700;
+    font-size:16px;
+    margin-bottom:8px;
+}
+
+.user-info{
+    color:#667085;
+    font-size:14px;
+    line-height:1.8;
+}
+
+.status{
+    display:inline-block;
+    padding:4px 9px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:700;
+}
+
+.status.active{
+    background:#ecfdf3;
+    color:#027a48;
+}
+
+.status.pending{
+    background:#fffaeb;
+    color:#b54708;
+}
+
+.status.expired{
+    background:#fef3f2;
+    color:#b42318;
+}
+
+.status.rejected{
+    background:#fef3f2;
+    color:#b42318;
+}
+
+.status.other{
+    background:#f2f4f7;
+    color:#475467;
 }
 
 footer{
@@ -191,104 +237,472 @@ footer{
         margin:4px 0;
     }
 }
-</style>
-</head>
+</style></head><body><header><div class="header-inner">
 
-<body>
-
-<header>
-    <div class="header-inner">
-        <div class="logo">
-            Create<span>LK</span> Academy
-        </div>
-
-        <a href="admin.html" class="logout">
-            ← Admin
-        </a>
+    <div class="logo">
+        Create<span>LK</span> Academy
     </div>
-</header>
 
-<main class="container">
+    <a href="admin.html" class="logout">
+        ← Admin
+    </a>
 
-    <div class="card">
+</div>
 
-        <h1>User Control</h1>
+</header><main class="container"><div class="card">
 
-        <p class="subtitle">
-            Manage CreateLK Academy users and membership access.
-        </p>
+    <h1>User Control</h1>
 
-        <div class="section">
+    <p class="subtitle">
+        Manage CreateLK Academy users and membership access.
+    </p>
 
-            <label for="adminKey">Admin Key</label>
 
-            <input
-                id="adminKey"
-                type="password"
-                placeholder="Enter ADMIN_KEY"
-                autocomplete="off"
-            >
+    <div class="section">
 
-            <button
-                type="button"
-                class="primary"
-                onclick="loadUsers()">
-                Load Users
-            </button>
+        <label for="adminKey">
+            Admin Key
+        </label>
 
-            <div id="message"></div>
+        <input
+            id="adminKey"
+            type="password"
+            placeholder="Enter ADMIN_KEY"
+            autocomplete="off"
+        >
 
-        </div>
+        <button
+            type="button"
+            id="loadButton"
+            onclick="loadUsers()">
+            Load Users
+        </button>
 
-        <div class="users-section">
+        <div id="message"></div>
 
-            <h2>Users</h2>
+    </div>
 
-            <div class="user-list">
 
-                <div class="empty" id="userList">
-                    Enter Admin Key and click "Load Users".
-                </div>
+    <div class="users-section">
 
+        <h2>Users</h2>
+
+        <div class="user-list" id="userList">
+
+            <div class="empty">
+                Enter Admin Key and click "Load Users".
             </div>
 
         </div>
 
     </div>
 
-</main>
+</div>
 
-<footer>
+</main><footer>
     © 2026 CreateLK Academy. All rights reserved.
-</footer>
+</footer><script>
 
-<script>
+/* ==========================================
+   USER CONTROL WORKER
+========================================== */
 
-function loadUsers(){
+const WORKER_URL =
+    "https://createlk-user-control-api.createlk.workers.dev";
 
-    const adminKey = document.getElementById("adminKey").value.trim();
-    const message = document.getElementById("message");
+
+/* ==========================================
+   LOAD USERS
+========================================== */
+
+async function loadUsers(){
+
+    const adminKey =
+        document.getElementById("adminKey").value.trim();
+
+    const message =
+        document.getElementById("message");
+
+    const userList =
+        document.getElementById("userList");
+
+    const button =
+        document.getElementById("loadButton");
+
 
     if(!adminKey){
 
-        message.textContent = "Please enter the Admin Key.";
-        message.style.color = "#d92d20";
+        message.textContent =
+            "Please enter the Admin Key.";
+
+        message.style.color =
+            "#d92d20";
 
         return;
     }
 
-    message.textContent = "Load Users button is working.";
-    message.style.color = "#027a48";
 
-    /*
-        API connection will be added next.
+    button.disabled = true;
 
-        The button is intentionally not connected
-        to the Worker yet.
-    */
+    button.textContent =
+        "Loading...";
+
+
+    message.textContent =
+        "Loading users...";
+
+    message.style.color =
+        "#475467";
+
+
+    userList.innerHTML = `
+        <div class="empty">
+            Loading users...
+        </div>
+    `;
+
+
+    try{
+
+        const response = await fetch(
+            WORKER_URL + "/students",
+            {
+                method:"GET",
+
+                headers:{
+                    "Authorization":
+                        "Bearer " + adminKey,
+
+                    "X-Admin-Key":
+                        adminKey,
+
+                    "Accept":
+                        "application/json"
+                }
+            }
+        );
+
+
+        const responseText =
+            await response.text();
+
+
+        let data;
+
+
+        try{
+
+            data =
+                JSON.parse(responseText);
+
+        }catch(error){
+
+            console.error(
+                "Invalid JSON:",
+                responseText
+            );
+
+            throw new Error(
+                "The Worker returned an invalid response."
+            );
+        }
+
+
+        if(!response.ok){
+
+            throw new Error(
+                data.message ||
+                data.error ||
+                "Admin authentication failed."
+            );
+        }
+
+
+        let users = [];
+
+
+        if(Array.isArray(data)){
+
+            users = data;
+
+        }
+        else if(
+            data.students &&
+            Array.isArray(data.students)
+        ){
+
+            users = data.students;
+
+        }
+        else if(
+            data.users &&
+            Array.isArray(data.users)
+        ){
+
+            users = data.users;
+
+        }
+        else if(
+            data.results &&
+            Array.isArray(data.results)
+        ){
+
+            users = data.results;
+
+        }
+        else if(
+            data.data &&
+            Array.isArray(data.data)
+        ){
+
+            users = data.data;
+        }
+
+
+        if(users.length === 0){
+
+            userList.innerHTML = `
+                <div class="empty">
+                    No users found.
+                </div>
+            `;
+
+            message.textContent =
+                "Connected successfully, but no users were returned.";
+
+            message.style.color =
+                "#027a48";
+
+            return;
+        }
+
+
+        displayUsers(users);
+
+
+        message.textContent =
+            users.length +
+            " user(s) loaded successfully.";
+
+        message.style.color =
+            "#027a48";
+
+
+    }
+    catch(error){
+
+        console.error(
+            "User loading error:",
+            error
+        );
+
+
+        userList.innerHTML = `
+            <div class="empty">
+                Unable to load users.
+            </div>
+        `;
+
+
+        message.textContent =
+            error.message ||
+            "Connection error. Please try again.";
+
+        message.style.color =
+            "#d92d20";
+
+    }
+    finally{
+
+        button.disabled = false;
+
+        button.textContent =
+            "Load Users";
+
+    }
+
 }
 
-</script>
 
-</body>
+/* ==========================================
+   DISPLAY USERS
+========================================== */
+
+function displayUsers(users){
+
+    const userList =
+        document.getElementById("userList");
+
+
+    userList.innerHTML = "";
+
+
+    users.forEach(function(user){
+
+        const firstName =
+            user.first_name || "";
+
+        const lastName =
+            user.last_name || "";
+
+
+        let name =
+            user.name ||
+            (firstName + " " + lastName).trim() ||
+            "Unnamed User";
+
+
+        const email =
+            user.email ||
+            "No email";
+
+
+        const phone =
+            user.phone ||
+            "No phone";
+
+
+        const status =
+            user.membership_status ||
+            user.status ||
+            "Unknown";
+
+
+        const expiry =
+            user.membership_expiry ||
+            user.expires_at ||
+            user.expiry ||
+            "—";
+
+
+        const div =
+            document.createElement("div");
+
+
+        div.className =
+            "user";
+
+
+        div.innerHTML = `
+
+            <div class="user-name">
+                ${escapeHTML(name)}
+            </div>
+
+            <div class="user-info">
+
+                Email:
+                ${escapeHTML(email)}
+
+                <br>
+
+                Phone:
+                ${escapeHTML(phone)}
+
+                <br>
+
+                Membership:
+                <span class="status ${getStatusClass(status)}">
+                    ${escapeHTML(status)}
+                </span>
+
+                <br>
+
+                Expiry:
+                ${escapeHTML(expiry)}
+
+            </div>
+
+        `;
+
+
+        userList.appendChild(div);
+
+    });
+
+}
+
+
+/* ==========================================
+   STATUS CLASS
+========================================== */
+
+function getStatusClass(status){
+
+    const value =
+        String(status).toLowerCase();
+
+
+    if(value === "active" ||
+       value.includes("active")){
+
+        return "active";
+    }
+
+
+    if(value === "pending" ||
+       value.includes("pending")){
+
+        return "pending";
+    }
+
+
+    if(value === "expired" ||
+       value.includes("expired")){
+
+        return "expired";
+    }
+
+
+    if(value === "rejected" ||
+       value.includes("rejected")){
+
+        return "rejected";
+    }
+
+
+    return "other";
+}
+
+
+/* ==========================================
+   HTML ESCAPE
+========================================== */
+
+function escapeHTML(value){
+
+    return String(value)
+
+        .replace(/&/g,"&amp;")
+
+        .replace(/</g,"&lt;")
+
+        .replace(/>/g,"&gt;")
+
+        .replace(/"/g,"&quot;")
+
+        .replace(/'/g,"&#039;");
+}
+
+
+/* ==========================================
+   ENTER KEY
+========================================== */
+
+document
+    .getElementById("adminKey")
+    .addEventListener(
+        "keydown",
+        function(event){
+
+            if(event.key === "Enter"){
+
+                loadUsers();
+
+            }
+
+        }
+    );
+
+</script></body>
 </html>
