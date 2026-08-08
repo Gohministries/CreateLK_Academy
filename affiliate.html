@@ -46,6 +46,7 @@ border-bottom:1px solid #e5e7eb;
 }
 
 .nav{
+width:100%;
 max-width:1050px;
 margin:auto;
 padding:16px 20px;
@@ -76,6 +77,10 @@ font-weight:bold;
 
 cursor:pointer;
 text-decoration:none;
+}
+
+.back-btn:hover{
+background:#dbe7ff;
 }
 
 
@@ -233,7 +238,6 @@ box-shadow:
 
 .stat-icon{
 font-size:25px;
-
 margin-bottom:10px;
 }
 
@@ -247,7 +251,6 @@ margin-bottom:5px;
 
 .stat-label{
 font-size:13px;
-
 color:#667085;
 }
 
@@ -281,7 +284,6 @@ text-align:center;
 
 .earning-card h3{
 font-size:17px;
-
 margin-bottom:10px;
 }
 
@@ -295,7 +297,6 @@ margin-bottom:5px;
 
 .amount-label{
 color:#667085;
-
 font-size:13px;
 }
 
@@ -311,7 +312,7 @@ border:1px solid #e5e7eb;
 
 border-radius:15px;
 
-padding:25px;
+padding:28px;
 
 text-align:center;
 
@@ -320,8 +321,7 @@ margin-bottom:20px;
 
 .payout-card h2{
 font-size:20px;
-
-margin-bottom:8px;
+margin-bottom:10px;
 }
 
 .payout-card p{
@@ -329,13 +329,33 @@ color:#667085;
 
 font-size:14px;
 
-line-height:1.6;
+line-height:1.7;
 
-margin-bottom:15px;
+margin-bottom:8px;
+}
+
+.minimum-payout{
+display:inline-block;
+
+margin:10px 0 8px;
+
+padding:8px 14px;
+
+background:#eef4ff;
+
+color:#155eef;
+
+border-radius:20px;
+
+font-size:14px;
+
+font-weight:bold;
 }
 
 .payout-btn{
 display:inline-block;
+
+margin-top:12px;
 
 padding:12px 22px;
 
@@ -350,10 +370,20 @@ font-weight:bold;
 text-decoration:none;
 
 font-size:14px;
+
+transition:.2s;
 }
 
 .payout-btn:hover{
 background:#15803d;
+}
+
+.payout-btn.disabled{
+background:#98a2b3;
+
+cursor:not-allowed;
+
+pointer-events:none;
 }
 
 
@@ -377,15 +407,12 @@ margin-bottom:20px;
 
 .share-card h2{
 font-size:20px;
-
 margin-bottom:8px;
 }
 
 .share-card p{
 color:#667085;
-
 font-size:14px;
-
 margin-bottom:18px;
 }
 
@@ -428,6 +455,10 @@ background:#f2f4f7;
 color:#344054;
 }
 
+.share-btn:hover{
+opacity:.85;
+}
+
 
 /* =====================================
    INFORMATION
@@ -455,7 +486,6 @@ margin-bottom:18px;
 
 .info-list{
 max-width:700px;
-
 margin:auto;
 }
 
@@ -479,6 +509,7 @@ border-bottom:0;
 
 .info-icon{
 width:25px;
+flex-shrink:0;
 }
 
 
@@ -840,17 +871,24 @@ Available for payout
 </h2>
 
 <p>
-Once your available commission reaches
-the minimum payout amount, you can
-request a payment.
+Your available commission must reach
+the minimum payout amount before you
+can request payment.
 </p>
 
+<div class="minimum-payout">
+Minimum Payout: LKR 3,000
+</div>
+
+<br>
+
 <a
+id="payoutButton"
 href="#"
-class="payout-btn"
+class="payout-btn disabled"
 onclick="requestPayout(event)">
 
-💳 Request Payout
+🔒 Minimum Rs. 3,000 Required
 
 </a>
 
@@ -985,9 +1023,9 @@ your commission is recorded.
 </div>
 
 <div>
-<strong>Request your payout</strong><br>
-Request payment when your balance
-reaches the required minimum.
+<strong>Request payout</strong><br>
+Once your available balance reaches
+LKR 3,000, you can request payment.
 </div>
 
 </div>
@@ -1004,10 +1042,10 @@ reaches the required minimum.
 
 <div class="notice">
 
-🔒 Affiliate statistics and commission
-amounts will be updated automatically
-after the affiliate system is connected
-to the CreateLK Academy server.
+💰 Commission: <strong>20%</strong> per approved
+Premium membership.
+&nbsp;•&nbsp;
+💳 Minimum payout: <strong>LKR 3,000</strong>.
 
 </div>
 
@@ -1028,6 +1066,13 @@ All rights reserved.
 
 
 <script>
+
+/* =====================================
+   SETTINGS
+===================================== */
+
+const MINIMUM_PAYOUT = 3000;
+
 
 /* =====================================
    LOGIN / STUDENT
@@ -1060,14 +1105,14 @@ window.location.href =
 
 
 /* =====================================
-   CREATE AFFILIATE ID
+   TEMPORARY AFFILIATE ID
 ===================================== */
 
 /*
-   Temporary affiliate ID.
+   This is temporary.
 
-   Later this will come from
-   Cloudflare D1.
+   After the Cloudflare Worker is connected,
+   the affiliate code will come from D1.
 */
 
 let affiliateId =
@@ -1220,27 +1265,103 @@ function requestPayout(event){
 
 event.preventDefault();
 
+
+const balanceElement =
+document.getElementById(
+"availableBalance"
+);
+
+
+const balance =
+parseFloat(
+balanceElement.textContent
+.replace(/[^\d.]/g,"")
+) || 0;
+
+
+if(balance < MINIMUM_PAYOUT){
+
 alert(
-"Payout requests will be available after the affiliate payment system is connected."
+"Minimum payout is LKR 3,000.\n\n" +
+"Your current available balance is LKR " +
+balance.toLocaleString()
+);
+
+return;
+
+}
+
+
+/*
+   This will later call:
+
+   POST /api/affiliate/payout
+
+   through the Cloudflare Worker.
+*/
+
+alert(
+"Your payout request will be submitted."
 );
 
 }
 
 
 /* =====================================
-   FUTURE API
+   UPDATE PAYOUT BUTTON
+===================================== */
+
+function updatePayoutButton(balance){
+
+const button =
+document.getElementById(
+"payoutButton"
+);
+
+if(balance >= MINIMUM_PAYOUT){
+
+button.classList.remove(
+"disabled"
+);
+
+button.textContent =
+"💳 Request Payout";
+
+}else{
+
+button.classList.add(
+"disabled"
+);
+
+button.textContent =
+"🔒 Minimum Rs. 3,000 Required";
+
+}
+
+}
+
+
+/* =====================================
+   INITIAL PAYOUT STATE
+===================================== */
+
+updatePayoutButton(0);
+
+
+/* =====================================
+   FUTURE CLOUDflare API
 ===================================== */
 
 /*
-   Later we can replace the temporary
-   values below with Cloudflare Worker
-   API data.
+   Later, the temporary values above
+   will be replaced with real D1 data.
 
-   Example:
+   Example API:
 
-   GET /api/affiliate/dashboard
+   GET
+   /api/affiliate/dashboard
 
-   The Worker can return:
+   Response:
 
    {
       clicks: 125,
@@ -1250,8 +1371,10 @@ alert(
       pending: 600,
       available: 1800
    }
-*/
 
+   The Worker will also enforce the
+   LKR 3,000 minimum payout server-side.
+*/
 
 </script>
 
