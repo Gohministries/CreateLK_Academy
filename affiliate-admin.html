@@ -1,12 +1,9 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta
-name="viewport"
-content="width=device-width,initial-scale=1">
-
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Affiliate Admin | CreateLK Academy</title><style>
-
-*{
-box-sizing:border-box;
-}
+*{box-sizing:border-box}
 
 body{
 margin:0;
@@ -99,24 +96,19 @@ font-weight:bold;
 cursor:pointer;
 }
 
+button:disabled{
+opacity:.6;
+cursor:not-allowed;
+}
+
 .load{
 background:#155eef;
 color:#fff;
 }
 
-.load:hover{
-background:#104bc4;
-}
-
-.approve{
-background:#16a34a;
-color:#fff;
-width:100%;
-margin-top:12px;
-}
-
-.approve:hover{
-background:#15803d;
+.section-title{
+margin:0 0 15px;
+font-size:20px;
 }
 
 .message{
@@ -129,7 +121,8 @@ font-size:14px;
 margin-bottom:18px;
 }
 
-.referral{
+.referral,
+.payout{
 border:1px solid #e5e7eb;
 border-radius:12px;
 padding:18px;
@@ -137,7 +130,8 @@ margin-top:15px;
 background:#fff;
 }
 
-.referral h3{
+.referral h3,
+.payout h3{
 margin:0 0 12px;
 font-size:17px;
 }
@@ -178,9 +172,28 @@ background:#fef3c7;
 color:#92400e;
 }
 
-.approved{
+.paid{
 background:#dcfce7;
 color:#166534;
+}
+
+.rejected{
+background:#fee2e2;
+color:#991b1b;
+}
+
+.approve{
+background:#16a34a;
+color:#fff;
+width:100%;
+margin-top:12px;
+}
+
+.reject{
+background:#dc2626;
+color:#fff;
+width:100%;
+margin-top:8px;
 }
 
 .empty{
@@ -198,6 +211,13 @@ margin-top:15px;
 font-size:13px;
 line-height:1.6;
 color:#475467;
+}
+
+.payout-amount{
+font-size:24px;
+font-weight:800;
+color:#155eef;
+margin:12px 0;
 }
 
 footer{
@@ -239,57 +259,75 @@ padding:16px;
 }
 
 }
-
 </style></head><body><header><div class="nav"><div class="logo">
 📚 CreateLK Academy
 </div><a
 href="dashboard.html"
-class="back">
+class="back"
+
+«»
 
 ← Dashboard
+</a>
 
-</a></div></header><main class="container"><div class="title"><h1>
+</div></header><main class="container"><div class="title"><h1>
 🤝 Affiliate Admin
 </h1><p>
-Review and approve affiliate referrals.
+Manage affiliate referrals, commissions and payouts.
 </p></div><div
 id="message"
-class="message">
-</div><!-- ADMIN LOGIN --><div class="card"><h2>
+class="message"
+></div><!-- =====================================
+     ADMIN LOGIN
+===================================== --><div class="card"><h2>
 🔐 Admin Access
-</h2><p
-style="color:#667085;font-size:14px;">Enter your affiliate admin key.
-
+</h2><p style="color:#667085;font-size:14px;">
+Enter your affiliate admin key.
 </p><input
 id="adminKey"
 type="password"
-placeholder="Enter ADMIN_KEY">
+placeholder="Enter ADMIN_KEY"
+
+«»
 
 <button
 class="load"
-onclick="loadReferrals()">
+onclick="loadAll()"
 
-🔄 Load Pending Referrals
+«»
 
-</button></div><!-- REFERRALS --><div
+🔄 Load Affiliate Data
+</button>
+
+</div><!-- =====================================
+     PENDING REFERRALS
+===================================== --><div
 id="referralsCard"
 class="card"
-style="display:none;"><h2>
+style="display:none;"
+><h2 class="section-title">
 ⏳ Pending Affiliate Referrals
-</h2><div
-id="referrals"></div></div></main><footer>© 2026 CreateLK Academy.
-All rights reserved.
+</h2><div id="referrals"></div></div><!-- =====================================
+     PAYOUTS
+===================================== --><div
+id="payoutsCard"
+class="card"
+style="display:none;"
+><h2 class="section-title">
+💳 Affiliate Payout Requests
+</h2><div id="payouts"></div></div></main><footer>© 2026 CreateLK Academy. All rights reserved.
 
 </footer><script>
-
 
 /* =====================================
    SETTINGS
 ===================================== */
 
-const API =
+const AFFILIATE_ADMIN_API =
 "https://createlk-affiliate-admin.createlk.workers.dev";
 
+const PAYOUT_API =
+"https://createlk-affiliate-payout.createlk.workers.dev";
 
 const COMMISSION_RATE = 20;
 
@@ -301,15 +339,11 @@ const COMMISSION_RATE = 20;
 function showMessage(text){
 
 const box =
-document.getElementById(
-"message"
-);
+document.getElementById("message");
 
-box.textContent =
-text;
+box.textContent = text;
 
-box.style.display =
-"block";
+box.style.display = "block";
 
 }
 
@@ -321,9 +355,7 @@ box.style.display =
 function getAdminKey(){
 
 return document
-.getElementById(
-"adminKey"
-)
+.getElementById("adminKey")
 .value
 .trim();
 
@@ -331,14 +363,13 @@ return document
 
 
 /* =====================================
-   LOAD REFERRALS
+   LOAD ALL
 ===================================== */
 
-async function loadReferrals(){
+async function loadAll(){
 
 const key =
 getAdminKey();
-
 
 if(!key){
 
@@ -350,35 +381,45 @@ return;
 
 }
 
-
 showMessage(
-"Loading pending referrals..."
+"Loading affiliate information..."
 );
 
+await Promise.all([
+loadReferrals(key),
+loadPayouts(key)
+]);
+
+}
+
+
+/* =====================================
+   LOAD REFERRALS
+===================================== */
+
+async function loadReferrals(key){
 
 try{
 
 const response =
 await fetch(
-API +
+AFFILIATE_ADMIN_API +
 "/api/admin/pending-referrals",
 {
 method:"GET",
-
 headers:{
 "X-Admin-Key":key
 }
-
 }
 );
-
 
 const data =
 await response.json();
 
-
-if(!response.ok ||
-!data.success){
+if(
+!response.ok ||
+!data.success
+){
 
 showMessage(
 data.message ||
@@ -389,26 +430,21 @@ return;
 
 }
 
-
 document.getElementById(
 "referralsCard"
 ).style.display =
 "block";
 
-
 renderReferrals(
 data.referrals || []
 );
 
-
-showMessage(
-"Pending referrals loaded."
-);
-
-
 }catch(error){
 
-console.error(error);
+console.error(
+"Referral error:",
+error
+);
 
 showMessage(
 "Unable to connect to Affiliate Admin API."
@@ -423,53 +459,38 @@ showMessage(
    RENDER REFERRALS
 ===================================== */
 
-function renderReferrals(
-list
-){
+function renderReferrals(list){
 
 const container =
 document.getElementById(
 "referrals"
 );
 
-
 container.innerHTML = "";
-
 
 if(!list.length){
 
 container.innerHTML = `
-
 <div class="empty">
-
 ✅ No pending affiliate referrals.
-
 </div>
-
 `;
 
 return;
 
 }
 
+list.forEach(referral => {
 
-list.forEach(
-referral => {
-
-const card =
-document.createElement(
-"div"
+const referralId =
+Number(
+referral.referral_id
 );
-
-card.className =
-"referral";
-
 
 const affiliateCode =
 safe(
 referral.affiliate_code
 );
-
 
 const studentName =
 safe(
@@ -482,18 +503,18 @@ referral.last_name || ""
 )
 );
 
-
 const email =
 safe(
 referral.email
 );
 
-
-const referralId =
-Number(
-referral.referral_id
+const card =
+document.createElement(
+"div"
 );
 
+card.className =
+"referral";
 
 card.innerHTML = `
 
@@ -501,9 +522,7 @@ card.innerHTML = `
 🤝 Affiliate Referral #${referralId}
 </h3>
 
-
 <div class="row">
-
 <div class="label">
 Affiliate Code
 </div>
@@ -511,12 +530,9 @@ Affiliate Code
 <div class="value">
 ${affiliateCode}
 </div>
-
 </div>
 
-
 <div class="row">
-
 <div class="label">
 Referred Student ID
 </div>
@@ -526,12 +542,9 @@ ${Number(
 referral.referred_student_id || 0
 )}
 </div>
-
 </div>
 
-
 <div class="row">
-
 <div class="label">
 Student
 </div>
@@ -539,12 +552,9 @@ Student
 <div class="value">
 ${studentName}
 </div>
-
 </div>
 
-
 <div class="row">
-
 <div class="label">
 Email
 </div>
@@ -552,12 +562,9 @@ Email
 <div class="value">
 ${email}
 </div>
-
 </div>
 
-
 <div class="row">
-
 <div class="label">
 Referral Date
 </div>
@@ -567,43 +574,30 @@ ${safe(
 referral.created_at || "-"
 )}
 </div>
-
 </div>
 
-
 <div class="row">
-
 <div class="label">
 Status
 </div>
 
 <div class="value">
-
 <span class="badge pending">
 PENDING
 </span>
-
 </div>
-
 </div>
-
 
 <div class="info">
 
-💰 Commission is calculated at
-<strong>20%</strong> of the student's
-approved Premium payment.
+💰 Commission rate:
+<strong>20%</strong>
 
-<br><br>
+<br>
 
-For a LKR 1,500 Premium payment:
-
-<strong>
-LKR 300 commission
-</strong>
+Enter the approved Premium payment amount below.
 
 </div>
-
 
 <label
 style="
@@ -611,12 +605,10 @@ display:block;
 margin-top:15px;
 font-size:13px;
 font-weight:bold;
-">
-
+"
+>
 Approved Premium Payment Amount
-
 </label>
-
 
 <input
 id="amount-${referralId}"
@@ -624,8 +616,8 @@ type="number"
 min="1"
 step="0.01"
 value="1500"
-placeholder="Example: 1500">
-
+placeholder="Example: 1500"
+>
 
 <div
 id="commission-${referralId}"
@@ -634,33 +626,23 @@ font-size:14px;
 color:#16a34a;
 font-weight:bold;
 margin-top:4px;
-">
-
+"
+>
 Commission: LKR 300
-
 </div>
-
 
 <button
 class="approve"
 onclick="
-approveReferral(
-${referralId}
-)">
-
+approveReferral(${referralId})
+"
+>
 ✓ Approve Referral & Add Commission
-
 </button>
 
 `;
 
-
-container.appendChild(
-card
-);
-
-
-/* Commission preview */
+container.appendChild(card);
 
 const amountInput =
 document.getElementById(
@@ -673,7 +655,6 @@ document.getElementById(
 "commission-" +
 referralId
 );
-
 
 amountInput.addEventListener(
 "input",
@@ -705,7 +686,7 @@ commission.toLocaleString();
 
 
 /* =====================================
-   APPROVE
+   APPROVE REFERRAL
 ===================================== */
 
 async function approveReferral(
@@ -714,7 +695,6 @@ referralId
 
 const key =
 getAdminKey();
-
 
 if(!key){
 
@@ -726,22 +706,21 @@ return;
 
 }
 
-
 const amountInput =
 document.getElementById(
 "amount-" +
 referralId
 );
 
-
 const amount =
 Number(
 amountInput.value
 );
 
-
-if(!amount ||
-amount <= 0){
+if(
+!amount ||
+amount <= 0
+){
 
 alert(
 "Enter a valid Premium payment amount."
@@ -751,7 +730,6 @@ return;
 
 }
 
-
 const commission =
 Math.round(
 amount *
@@ -760,38 +738,29 @@ COMMISSION_RATE /
 100
 ) / 100;
 
-
-const confirmed =
-confirm(
-
+if(
+!confirm(
 "Approve this referral?\n\n" +
-
 "Payment: LKR " +
 amount.toLocaleString() +
-
 "\nCommission: LKR " +
 commission.toLocaleString()
-
-);
-
-
-if(!confirmed){
+)
+){
 
 return;
 
 }
 
-
 showMessage(
 "Approving affiliate referral..."
 );
-
 
 try{
 
 const response =
 await fetch(
-API +
+AFFILIATE_ADMIN_API +
 "/api/admin/approve-referral",
 {
 
@@ -800,7 +769,6 @@ method:"POST",
 headers:{
 "Content-Type":
 "application/json",
-
 "X-Admin-Key":
 key
 },
@@ -818,18 +786,13 @@ amount
 }
 );
 
-
 const data =
 await response.json();
 
-
-if(!response.ok ||
-!data.success){
-
-alert(
-data.message ||
-"Unable to approve referral."
-);
+if(
+!response.ok ||
+!data.success
+){
 
 showMessage(
 data.message ||
@@ -840,35 +803,16 @@ return;
 
 }
 
-
 alert(
-
 "✅ Referral approved successfully!\n\n" +
-
 "Commission: LKR " +
 Number(
-data.commission?.amount || commission
+data.commission?.amount ||
+commission
 ).toLocaleString()
-
 );
 
-
-showMessage(
-"✅ Affiliate commission approved successfully."
-);
-
-
-/* Reload */
-
-setTimeout(
-function(){
-
-loadReferrals();
-
-},
-500
-);
-
+await loadReferrals(key);
 
 }catch(error){
 
@@ -876,6 +820,522 @@ console.error(error);
 
 showMessage(
 "Unable to connect to Affiliate Admin API."
+);
+
+}
+
+}
+
+
+/* =====================================
+   LOAD PAYOUTS
+===================================== */
+
+async function loadPayouts(key){
+
+try{
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/admin/payouts",
+{
+method:"GET",
+
+headers:{
+"X-Admin-Key":key
+}
+
+}
+);
+
+const data =
+await response.json();
+
+if(
+!response.ok ||
+!data.success
+){
+
+console.error(
+"Payout API:",
+data
+);
+
+return;
+
+}
+
+document.getElementById(
+"payoutsCard"
+).style.display =
+"block";
+
+renderPayouts(
+data.payouts || []
+);
+
+}catch(error){
+
+console.error(
+"Payout load:",
+error
+);
+
+showMessage(
+"Affiliate referrals loaded, but payouts could not be loaded."
+);
+
+}
+
+}
+
+
+/* =====================================
+   RENDER PAYOUTS
+===================================== */
+
+function renderPayouts(list){
+
+const container =
+document.getElementById(
+"payouts"
+);
+
+container.innerHTML = "";
+
+if(!list.length){
+
+container.innerHTML = `
+<div class="empty">
+✅ No payout requests found.
+</div>
+`;
+
+return;
+
+}
+
+list.forEach(payout => {
+
+const id =
+Number(payout.id);
+
+const status =
+String(
+payout.status || "PENDING"
+).toUpperCase();
+
+let badgeClass =
+"pending";
+
+if(status === "PAID"){
+badgeClass = "paid";
+}
+
+if(status === "REJECTED"){
+badgeClass = "rejected";
+}
+
+let details = {};
+
+try{
+
+details =
+typeof payout.payment_details === "string"
+?
+JSON.parse(
+payout.payment_details
+)
+:
+(
+payout.payment_details || {}
+);
+
+}catch(e){
+
+details = {};
+
+}
+
+const accountName =
+details.account_name ||
+payout.account_name ||
+"-";
+
+const bankName =
+details.bank_name ||
+payout.bank_name ||
+"-";
+
+const accountNumber =
+details.account_number ||
+payout.account_number ||
+"-";
+
+const branchName =
+payout.branch_name ||
+details.branch_name ||
+"-";
+
+const card =
+document.createElement(
+"div"
+);
+
+card.className =
+"payout";
+
+card.innerHTML = `
+
+<h3>
+💳 Payout #${id}
+</h3>
+
+<div class="payout-amount">
+LKR ${Number(
+payout.amount || 0
+).toLocaleString()}
+</div>
+
+<div class="row">
+<div class="label">
+Affiliate ID
+</div>
+<div class="value">
+${Number(
+payout.affiliate_id || 0
+)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Student ID
+</div>
+<div class="value">
+${Number(
+payout.student_id || 0
+)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Payment Method
+</div>
+<div class="value">
+${safe(
+payout.payment_method ||
+"BANK_TRANSFER"
+)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Account Name
+</div>
+<div class="value">
+${safe(accountName)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Bank Name
+</div>
+<div class="value">
+${safe(bankName)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Account Number
+</div>
+<div class="value">
+${safe(accountNumber)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Branch
+</div>
+<div class="value">
+${safe(branchName)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Requested
+</div>
+<div class="value">
+${safe(
+payout.requested_at ||
+payout.created_at ||
+"-"
+)}
+</div>
+</div>
+
+<div class="row">
+<div class="label">
+Status
+</div>
+<div class="value">
+
+<span class="badge ${badgeClass}">
+${safe(status)}
+</span>
+
+</div>
+</div>
+
+${
+status === "PENDING"
+?
+
+`
+
+<button
+class="approve"
+onclick="
+approvePayout(${id})
+"
+>
+✓ Approve Payout
+</button>
+
+<button
+class="reject"
+onclick="
+rejectPayout(${id})
+"
+>
+✕ Reject Payout
+</button>
+
+`
+
+:
+
+""
+
+}
+
+`;
+
+container.appendChild(card);
+
+});
+
+}
+
+
+/* =====================================
+   APPROVE PAYOUT
+===================================== */
+
+async function approvePayout(
+payoutId
+){
+
+const key =
+getAdminKey();
+
+if(!key){
+
+alert(
+"Admin key is required."
+);
+
+return;
+
+}
+
+if(
+!confirm(
+"Approve payout #" +
+payoutId +
+"?\n\nThe payout will be marked PAID."
+)
+){
+
+return;
+
+}
+
+showMessage(
+"Approving payout..."
+);
+
+try{
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/admin/payout/approve",
+{
+
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"X-Admin-Key":
+key
+},
+
+body:JSON.stringify({
+
+payout_id:
+payoutId
+
+})
+
+}
+);
+
+const data =
+await response.json();
+
+if(
+!response.ok ||
+!data.success
+){
+
+showMessage(
+data.message ||
+"Unable to approve payout."
+);
+
+return;
+
+}
+
+alert(
+"✅ Payout approved successfully."
+);
+
+await loadPayouts(key);
+
+}catch(error){
+
+console.error(
+"Payout approval:",
+error
+);
+
+showMessage(
+"Unable to connect to Payout API."
+);
+
+}
+
+}
+
+
+/* =====================================
+   REJECT PAYOUT
+===================================== */
+
+async function rejectPayout(
+payoutId
+){
+
+const key =
+getAdminKey();
+
+if(!key){
+
+alert(
+"Admin key is required."
+);
+
+return;
+
+}
+
+if(
+!confirm(
+"Reject payout #" +
+payoutId +
+"?\n\nThe affiliate balance should be restored by the payout Worker."
+)
+){
+
+return;
+
+}
+
+showMessage(
+"Rejecting payout..."
+);
+
+try{
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/admin/payout/reject",
+{
+
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"X-Admin-Key":
+key
+},
+
+body:JSON.stringify({
+
+payout_id:
+payoutId
+
+})
+
+}
+);
+
+const data =
+await response.json();
+
+if(
+!response.ok ||
+!data.success
+){
+
+showMessage(
+data.message ||
+"Unable to reject payout."
+);
+
+return;
+
+}
+
+alert(
+"✅ Payout rejected."
+);
+
+await loadPayouts(key);
+
+}catch(error){
+
+console.error(
+"Payout rejection:",
+error
+);
+
+showMessage(
+"Unable to connect to Payout API."
 );
 
 }
@@ -920,5 +1380,5 @@ value ?? ""
 
 }
 
-
-</script></body></html>
+</script></body>
+</html>
