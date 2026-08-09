@@ -4,7 +4,10 @@
 <head>
 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<meta
+name="viewport"
+content="width=device-width,initial-scale=1">
 
 <title>Admin | CreateLK Academy</title>
 
@@ -29,7 +32,8 @@ header{
     padding:20px;
 }
 
-.box,.card{
+.box,
+.card{
     background:#fff;
     padding:20px;
     border-radius:12px;
@@ -43,6 +47,7 @@ input{
     margin:8px 0 12px;
     border:1px solid #ccc;
     border-radius:7px;
+    font-size:15px;
 }
 
 button{
@@ -92,15 +97,30 @@ button{
 #message{
     margin-top:10px;
     font-size:14px;
+    line-height:1.5;
 }
 
-.affiliate-success{
+.info{
+    background:#eef4ff;
+    border:1px solid #dbe7ff;
+    padding:12px;
+    border-radius:8px;
+    margin-bottom:15px;
+    font-size:14px;
+}
+
+.affiliate-ok{
     color:#16a34a;
     font-weight:bold;
 }
 
+.affiliate-none{
+    color:#667085;
+    font-weight:bold;
+}
+
 .affiliate-error{
-    color:#dc2626;
+    color:#d97706;
     font-weight:bold;
 }
 
@@ -152,6 +172,19 @@ Load Payments
 </div>
 
 
+<div class="info">
+
+<strong>Affiliate:</strong>
+
+Affiliate commission is processed separately
+after a payment is successfully approved.
+
+Premium membership approval is not dependent
+on the affiliate system.
+
+</div>
+
+
 <div id="payments"></div>
 
 
@@ -170,7 +203,7 @@ const API =
 
 
 /* =====================================
-   AFFILIATE COMMISSION API
+   EXISTING AFFILIATE WORKER
 ===================================== */
 
 const AFFILIATE_API =
@@ -178,7 +211,7 @@ const AFFILIATE_API =
 
 
 /* =====================================
-   GET ADMIN KEY
+   ADMIN KEY
 ===================================== */
 
 function getKey(){
@@ -226,7 +259,7 @@ async function loadPayments(){
 
 
     message(
-        "Loading..."
+        "Loading payments..."
     );
 
 
@@ -237,8 +270,11 @@ async function loadPayments(){
                 API +
                 "/api/admin/payments",
                 {
+                    method:"GET",
+
                     headers:{
-                        "X-Admin-Key":key
+                        "X-Admin-Key":
+                            key
                     }
                 }
             );
@@ -275,11 +311,13 @@ async function loadPayments(){
 
     }catch(error){
 
-        console.error(error);
+        console.error(
+            error
+        );
 
 
         message(
-            "Unable to connect to server."
+            "Unable to connect to payment server."
         );
 
     }
@@ -332,6 +370,24 @@ function displayPayments(list){
                 "card";
 
 
+            const status =
+                String(
+                    p.status || ""
+                ).toLowerCase();
+
+
+            const studentId =
+                Number(
+                    p.student_id || 0
+                );
+
+
+            const amount =
+                Number(
+                    p.amount || 0
+                );
+
+
             card.innerHTML =
             `
 
@@ -374,10 +430,25 @@ function displayPayments(list){
 
                 <b>Student ID:</b>
 
-                ${safe(
-                    p.student_id ||
-                    "NOT FOUND"
-                )}
+                ${
+                    studentId > 0
+
+                    ? safe(
+                        String(
+                            studentId
+                        )
+                    )
+
+                    : `
+                    <span
+                        style="
+                        color:#d97706;
+                        font-weight:bold;
+                        ">
+                        Not available
+                    </span>
+                    `
+                }
 
             </p>
 
@@ -398,9 +469,7 @@ function displayPayments(list){
                 <b>Amount:</b>
 
                 LKR
-                ${Number(
-                    p.amount || 0
-                ).toLocaleString()}
+                ${amount.toLocaleString()}
 
             </p>
 
@@ -410,8 +479,7 @@ function displayPayments(list){
                 <b>Payment Date:</b>
 
                 ${safe(
-                    p.payment_date ||
-                    "-"
+                    p.payment_date || "-"
                 )}
 
             </p>
@@ -422,9 +490,7 @@ function displayPayments(list){
                 <b>Status:</b>
 
                 <span
-                    class="${safe(
-                        p.status
-                    )}">
+                    class="${safe(status)}">
 
                     ${safe(
                         p.status
@@ -449,10 +515,7 @@ function displayPayments(list){
 
 
             ${
-                String(
-                    p.status
-                ).toLowerCase()
-                === "pending"
+                status === "pending"
 
                 ?
 
@@ -460,18 +523,14 @@ function displayPayments(list){
 
                 <button
                     class="approve"
-                    onclick="approve(
+                    onclick="approvePayment(
                         '${encodeURIComponent(
                             p.payment_id
                         )}',
 
-                        ${Number(
-                            p.student_id || 0
-                        )},
+                        ${studentId},
 
-                        ${Number(
-                            p.amount || 0
-                        )}
+                        ${amount}
                     )">
 
                     ✓ Approve
@@ -481,7 +540,7 @@ function displayPayments(list){
 
                 <button
                     class="reject"
-                    onclick="reject(
+                    onclick="rejectPayment(
                         '${encodeURIComponent(
                             p.payment_id
                         )}'
@@ -548,8 +607,11 @@ async function viewSlip(id){
                 id,
 
                 {
+                    method:"GET",
+
                     headers:{
-                        "X-Admin-Key":key
+                        "X-Admin-Key":
+                            key
                     }
                 }
 
@@ -558,8 +620,14 @@ async function viewSlip(id){
 
         if(!response.ok){
 
-            const data =
-                await response.json();
+            let data = {};
+
+            try{
+
+                data =
+                    await response.json();
+
+            }catch(e){}
 
 
             message(
@@ -595,7 +663,9 @@ async function viewSlip(id){
 
     }catch(error){
 
-        console.error(error);
+        console.error(
+            error
+        );
 
 
         message(
@@ -611,8 +681,8 @@ async function viewSlip(id){
    APPROVE PAYMENT
 ===================================== */
 
-async function approve(
-    id,
+async function approvePayment(
+    paymentId,
     studentId,
     amount
 ){
@@ -625,55 +695,6 @@ async function approve(
 
     }
 
-
-    await processPayment(
-
-        "/api/admin/approve/" +
-        id,
-
-        studentId,
-
-        amount
-
-    );
-
-}
-
-
-/* =====================================
-   REJECT PAYMENT
-===================================== */
-
-async function reject(id){
-
-    if(!confirm(
-        "Reject this payment?"
-    )){
-
-        return;
-
-    }
-
-
-    await processPayment(
-
-        "/api/admin/reject/" +
-        id
-
-    );
-
-}
-
-
-/* =====================================
-   PROCESS PAYMENT
-===================================== */
-
-async function processPayment(
-    path,
-    studentId = 0,
-    amount = 0
-){
 
     const key =
         getKey();
@@ -691,7 +712,7 @@ async function processPayment(
 
 
     message(
-        "Processing payment..."
+        "Approving payment..."
     );
 
 
@@ -700,16 +721,324 @@ async function processPayment(
 
         /* =================================
            STEP 1
-           APPROVE / REJECT PAYMENT
+           EXISTING PAYMENT APPROVAL
         ================================= */
 
         const response =
             await fetch(
 
                 API +
-                path,
+                "/api/admin/approve/" +
+                paymentId,
 
                 {
+
+                    method:"POST",
+
+                    headers:{
+                        "X-Admin-Key":
+                            key
+                    }
+
+                }
+
+            );
+
+
+        const data =
+            await response.json();
+
+
+        /*
+           IMPORTANT:
+
+           If payment approval fails,
+           STOP HERE.
+
+           Affiliate is NOT called.
+        */
+
+        if(
+            !response.ok ||
+            !data.success
+        ){
+
+            message(
+                data.message ||
+                "Payment approval failed."
+            );
+
+            return;
+
+        }
+
+
+        /* =================================
+           PAYMENT IS NOW APPROVED
+        ================================= */
+
+        message(
+            "✅ Payment approved successfully."
+        );
+
+
+        /*
+           DO NOT let affiliate errors
+           affect Premium membership.
+
+           Premium approval has already
+           completed above.
+        */
+
+
+        /* =================================
+           STEP 2
+           AFFILIATE PROCESS
+        ================================= */
+
+        if(
+            !studentId ||
+            studentId <= 0
+        ){
+
+            console.warn(
+                "Student ID unavailable."
+            );
+
+
+            message(
+                "✅ Payment approved. Affiliate commission could not be checked because Student ID was unavailable."
+            );
+
+
+            setTimeout(
+                loadPayments,
+                1000
+            );
+
+
+            return;
+
+        }
+
+
+        if(
+            !amount ||
+            amount <= 0
+        ){
+
+            console.warn(
+                "Payment amount unavailable."
+            );
+
+
+            message(
+                "✅ Payment approved. Affiliate commission could not be checked because payment amount was unavailable."
+            );
+
+
+            setTimeout(
+                loadPayments,
+                1000
+            );
+
+
+            return;
+
+        }
+
+
+        message(
+            "Payment approved. Checking affiliate referral..."
+        );
+
+
+        try{
+
+
+            const affiliateResponse =
+                await fetch(
+
+                    AFFILIATE_API +
+                    "/api/approve-commission",
+
+                    {
+
+                        method:"POST",
+
+                        headers:{
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+
+                                student_id:
+                                    Number(
+                                        studentId
+                                    ),
+
+                                amount:
+                                    Number(
+                                        amount
+                                    )
+
+                            })
+
+                        }
+
+                    );
+
+
+            const affiliateData =
+                await affiliateResponse.json();
+
+
+            /* =================================
+               AFFILIATE SUCCESS
+            ================================= */
+
+            if(
+                affiliateResponse.ok &&
+                affiliateData.success
+            ){
+
+                const commission =
+                    Number(
+                        affiliateData
+                        ?.commission
+                        ?.amount || 0
+                    );
+
+
+                message(
+                    "✅ Payment approved. Affiliate commission of LKR " +
+                    commission.toLocaleString() +
+                    " recorded."
+                );
+
+
+            }
+
+            /* =================================
+               NO REFERRAL
+            ================================= */
+
+            else{
+
+                message(
+                    "✅ Payment approved. No pending affiliate referral was processed."
+                );
+
+
+                console.log(
+                    "Affiliate response:",
+                    affiliateData
+                );
+
+            }
+
+
+        }catch(
+            affiliateError
+        ){
+
+            /*
+               IMPORTANT:
+
+               Affiliate failure does NOT
+               affect Premium approval.
+            */
+
+            console.error(
+                "Affiliate error:",
+                affiliateError
+            );
+
+
+            message(
+                "✅ Payment approved successfully. Affiliate commission could not be processed at this time."
+            );
+
+        }
+
+
+        /* =================================
+           REFRESH PAYMENT LIST
+        ================================= */
+
+        setTimeout(
+            loadPayments,
+            1200
+        );
+
+
+    }catch(error){
+
+        console.error(
+            "Payment approval error:",
+            error
+        );
+
+
+        message(
+            "Unable to complete payment approval request."
+        );
+
+    }
+
+}
+
+
+/* =====================================
+   REJECT PAYMENT
+===================================== */
+
+async function rejectPayment(
+    paymentId
+){
+
+    if(!confirm(
+        "Reject this payment?"
+    )){
+
+        return;
+
+    }
+
+
+    const key =
+        getKey();
+
+
+    if(!key){
+
+        message(
+            "Enter Admin Key."
+        );
+
+        return;
+
+    }
+
+
+    message(
+        "Rejecting payment..."
+    );
+
+
+    try{
+
+        const response =
+            await fetch(
+
+                API +
+                "/api/admin/reject/" +
+                paymentId,
+
+                {
+
                     method:"POST",
 
                     headers:{
@@ -733,205 +1062,34 @@ async function processPayment(
 
             message(
                 data.message ||
-                "Payment processing failed."
+                "Payment rejection failed."
             );
 
             return;
 
         }
 
-
-        /* =================================
-           REJECTED PAYMENT
-        ================================= */
-
-        if(
-            path.includes(
-                "/reject/"
-            )
-        ){
-
-            message(
-                "Payment rejected successfully."
-            );
-
-
-            setTimeout(
-                loadPayments,
-                500
-            );
-
-
-            return;
-
-        }
-
-
-        /* =================================
-           APPROVED PAYMENT
-        ================================= */
 
         message(
-            "Payment approved. Processing affiliate commission..."
+            "Payment rejected successfully."
         );
 
 
-        /* =================================
-           VALIDATE STUDENT
-        ================================= */
-
-        if(
-            !studentId ||
-            studentId <= 0
-        ){
-
-            message(
-                "Payment approved, but Student ID was not found. Affiliate commission was not processed."
-            );
-
-
-            setTimeout(
-                loadPayments,
-                1000
-            );
-
-
-            return;
-
-        }
-
-
-        /* =================================
-           VALIDATE AMOUNT
-        ================================= */
-
-        if(
-            !amount ||
-            amount <= 0
-        ){
-
-            message(
-                "Payment approved, but payment amount was not found. Affiliate commission was not processed."
-            );
-
-
-            setTimeout(
-                loadPayments,
-                1000
-            );
-
-
-            return;
-
-        }
-
-
-        /* =================================
-           STEP 2
-           AFFILIATE COMMISSION
-        ================================= */
-
-        const affiliateResponse =
-            await fetch(
-
-                AFFILIATE_API +
-                "/api/approve-commission",
-
-                {
-
-                    method:"POST",
-
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify({
-
-                            student_id:
-                                Number(
-                                    studentId
-                                ),
-
-                            amount:
-                                Number(
-                                    amount
-                                )
-
-                        })
-
-                }
-
-            );
-
-
-        const affiliateData =
-            await affiliateResponse.json();
-
-
-        /* =================================
-           AFFILIATE RESULT
-        ================================= */
-
-        if(
-            affiliateResponse.ok &&
-            affiliateData.success
-        ){
-
-            const commission =
-                Number(
-                    affiliateData
-                    ?.commission
-                    ?.amount || 0
-                );
-
-
-            message(
-                "✅ Payment approved successfully. Affiliate commission of LKR " +
-                commission.toLocaleString() +
-                " was recorded."
-            );
-
-        }else{
-
-            message(
-                "✅ Payment approved successfully, but no affiliate commission was recorded. " +
-                (
-                    affiliateData.message ||
-                    "No affiliate referral found."
-                )
-            );
-
-        }
-
-
-        /* =================================
-           REFRESH
-        ================================= */
-
         setTimeout(
             loadPayments,
-            1200
+            500
         );
 
 
     }catch(error){
 
         console.error(
-            "Payment processing error:",
             error
         );
 
 
         message(
-            "Payment was processed, but an error occurred while connecting to the affiliate system."
-        );
-
-
-        setTimeout(
-            loadPayments,
-            1200
+            "Unable to connect to payment server."
         );
 
     }
@@ -977,6 +1135,7 @@ function safe(value){
 }
 
 </script>
+
 
 </body>
 
