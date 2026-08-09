@@ -1,0 +1,866 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Affiliate Payouts | CreateLK Academy</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+font-family:Arial,Helvetica,sans-serif;
+background:#f5f7fb;
+color:#172033;
+}
+
+header{
+background:#fff;
+border-bottom:1px solid #e5e7eb;
+}
+
+.nav{
+max-width:1200px;
+margin:auto;
+padding:16px 20px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+.logo{
+font-size:20px;
+font-weight:800;
+color:#155eef;
+}
+
+.back{
+background:#eef4ff;
+color:#155eef;
+padding:9px 14px;
+border-radius:8px;
+text-decoration:none;
+font-weight:bold;
+font-size:14px;
+}
+
+.container{
+max-width:1200px;
+margin:auto;
+padding:30px 20px 50px;
+}
+
+h1{
+font-size:28px;
+margin-bottom:8px;
+}
+
+.subtitle{
+color:#667085;
+margin-bottom:25px;
+}
+
+.message{
+display:none;
+padding:13px;
+border-radius:9px;
+margin-bottom:20px;
+text-align:center;
+font-size:14px;
+}
+
+.success{
+display:block;
+background:#ecfdf3;
+color:#027a48;
+border:1px solid #abefc6;
+}
+
+.error{
+display:block;
+background:#fff1f2;
+color:#be123c;
+border:1px solid #fecdd3;
+}
+
+.stats{
+display:grid;
+grid-template-columns:repeat(3,1fr);
+gap:15px;
+margin-bottom:25px;
+}
+
+.stat{
+background:#fff;
+border:1px solid #e5e7eb;
+border-radius:14px;
+padding:20px;
+text-align:center;
+}
+
+.stat strong{
+display:block;
+font-size:25px;
+margin-top:8px;
+}
+
+.card{
+background:#fff;
+border:1px solid #e5e7eb;
+border-radius:14px;
+overflow:hidden;
+}
+
+.card-header{
+padding:18px 20px;
+border-bottom:1px solid #e5e7eb;
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:10px;
+}
+
+.refresh{
+border:0;
+background:#155eef;
+color:white;
+padding:9px 15px;
+border-radius:8px;
+font-weight:bold;
+cursor:pointer;
+}
+
+.table-wrap{
+overflow-x:auto;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+min-width:950px;
+}
+
+th,td{
+padding:14px 12px;
+border-bottom:1px solid #eef0f3;
+text-align:left;
+font-size:13px;
+vertical-align:top;
+}
+
+th{
+background:#f9fafb;
+font-weight:700;
+color:#344054;
+}
+
+.amount{
+font-weight:800;
+}
+
+.status{
+display:inline-block;
+padding:5px 9px;
+border-radius:20px;
+font-size:11px;
+font-weight:bold;
+}
+
+.pending{
+background:#fff7ed;
+color:#c2410c;
+}
+
+.paid{
+background:#ecfdf3;
+color:#027a48;
+}
+
+.rejected{
+background:#fff1f2;
+color:#be123c;
+}
+
+.bank{
+line-height:1.6;
+color:#344054;
+}
+
+.actions{
+display:flex;
+gap:6px;
+flex-wrap:wrap;
+}
+
+.action{
+border:0;
+padding:7px 10px;
+border-radius:7px;
+font-size:12px;
+font-weight:bold;
+cursor:pointer;
+}
+
+.approve{
+background:#dcfce7;
+color:#15803d;
+}
+
+.reject{
+background:#fee2e2;
+color:#b91c1c;
+}
+
+.view{
+background:#eef4ff;
+color:#155eef;
+}
+
+.empty{
+padding:40px;
+text-align:center;
+color:#667085;
+}
+
+footer{
+text-align:center;
+padding:30px;
+font-size:12px;
+color:#98a2b3;
+}
+
+@media(max-width:700px){
+.stats{
+grid-template-columns:1fr;
+}
+
+.container{
+padding:25px 12px;
+}
+
+h1{
+font-size:24px;
+}
+}
+</style></head><body><header>
+<div class="nav"><div class="logo">
+📚 CreateLK Academy
+</div><a href="dashboard.html" class="back">
+← Dashboard
+</a></div>
+</header><main class="container"><h1>💳 Affiliate Payouts</h1><p class="subtitle">
+View and manage affiliate payout requests.
+</p><div id="message" class="message"></div><section class="stats"><div class="stat">
+⏳ Pending Requests
+<strong id="pendingCount">0</strong>
+</div><div class="stat">
+💰 Pending Amount
+<strong id="pendingAmount">LKR 0</strong>
+</div><div class="stat">
+💵 Paid Requests
+<strong id="paidCount">0</strong>
+</div></section><section class="card"><div class="card-header"><strong>Affiliate Payout Requests</strong>
+
+<button class="refresh" onclick="loadPayouts()">
+🔄 Refresh
+</button></div><div class="table-wrap"><table><thead><tr>
+<th>ID</th>
+<th>Affiliate</th>
+<th>Student</th>
+<th>Amount</th>
+<th>Bank Details</th>
+<th>Status</th>
+<th>Requested</th>
+<th>Actions</th>
+</tr></thead><tbody id="payoutTable"><tr>
+<td colspan="8" class="empty">
+Loading payout requests...
+</td>
+</tr></tbody></table></div></section></main><footer>
+© 2026 CreateLK Academy. All rights reserved.
+</footer><script>
+
+const PAYOUT_API =
+"https://createlk-affiliate-payout.createlk.workers.dev";
+
+let payouts = [];
+
+
+/* =========================
+   MESSAGE
+========================= */
+
+function showMessage(text,type="success"){
+
+const box =
+document.getElementById("message");
+
+box.textContent = text;
+box.className = "message " + type;
+box.style.display = "block";
+
+setTimeout(()=>{
+box.style.display="none";
+},5000);
+
+}
+
+
+/* =========================
+   MONEY
+========================= */
+
+function money(value){
+
+return "LKR " +
+Number(value || 0).toLocaleString();
+
+}
+
+
+/* =========================
+   STATUS
+========================= */
+
+function statusClass(status){
+
+status =
+String(status || "").toUpperCase();
+
+if(status === "PAID")
+return "paid";
+
+if(status === "REJECTED")
+return "rejected";
+
+return "pending";
+
+}
+
+
+/* =========================
+   LOAD PAYOUTS
+========================= */
+
+async function loadPayouts(){
+
+const table =
+document.getElementById("payoutTable");
+
+table.innerHTML =
+`
+<tr>
+<td colspan="8" class="empty">
+⏳ Loading payout requests...
+</td>
+</tr>
+`;
+
+try{
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/admin/payouts"
+);
+
+const data =
+await response.json();
+
+console.log("Admin payouts:",data);
+
+if(!response.ok || !data.success){
+
+throw new Error(
+data.message ||
+"Unable to load payout requests."
+);
+
+}
+
+payouts =
+data.payouts ||
+data.requests ||
+data.data ||
+[];
+
+renderPayouts();
+
+}catch(error){
+
+console.error(error);
+
+table.innerHTML =
+`
+<tr>
+<td colspan="8" class="empty">
+❌ ${escapeHtml(error.message)}
+</td>
+</tr>
+`;
+
+showMessage(
+error.message ||
+"Failed to load payouts.",
+"error"
+);
+
+}
+
+}
+
+
+/* =========================
+   RENDER
+========================= */
+
+function renderPayouts(){
+
+const table =
+document.getElementById("payoutTable");
+
+let pendingCount = 0;
+let pendingAmount = 0;
+let paidCount = 0;
+
+if(!payouts.length){
+
+table.innerHTML =
+`
+<tr>
+<td colspan="8" class="empty">
+No payout requests found.
+</td>
+</tr>
+`;
+
+updateStats(0,0,0);
+
+return;
+
+}
+
+
+payouts.forEach(p=>{
+
+const status =
+String(p.status || "PENDING").toUpperCase();
+
+if(status === "PENDING"){
+
+pendingCount++;
+
+pendingAmount +=
+Number(p.amount || 0);
+
+}
+
+if(status === "PAID"){
+
+paidCount++;
+
+}
+
+});
+
+
+updateStats(
+pendingCount,
+pendingAmount,
+paidCount
+);
+
+
+table.innerHTML =
+payouts.map(p=>{
+
+const details =
+parseDetails(p.payment_details);
+
+const status =
+String(
+p.status || "PENDING"
+).toUpperCase();
+
+return `
+
+<tr>
+
+<td>
+<strong>#${escapeHtml(p.id)}</strong>
+</td>
+
+<td>
+Affiliate ID:
+<strong>${escapeHtml(p.affiliate_id)}</strong>
+</td>
+
+<td>
+Student ID:
+<strong>${escapeHtml(p.student_id)}</strong>
+</td>
+
+<td class="amount">
+${money(p.amount)}
+</td>
+
+<td class="bank">
+
+<strong>${escapeHtml(details.account_name || "-")}</strong><br>
+
+🏦 ${escapeHtml(details.bank_name || "-")}<br>
+
+💳 ${escapeHtml(details.account_number || "-")}<br>
+
+📍 ${escapeHtml(
+details.branch_name ||
+p.branch_name ||
+"-"
+)}
+
+</td>
+
+<td>
+
+<span class="status ${statusClass(status)}">
+${escapeHtml(status)}
+</span>
+
+</td>
+
+<td>
+${escapeHtml(
+p.requested_at ||
+p.created_at ||
+"-"
+)}
+</td>
+
+<td>
+
+<div class="actions">
+
+<button
+class="action view"
+onclick="viewPayout(${Number(p.id)})">
+👁️ View
+</button>
+
+${
+status === "PENDING"
+?
+`
+<button
+class="action approve"
+onclick="approvePayout(${Number(p.id)})">
+✅ Paid
+</button>
+
+<button
+class="action reject"
+onclick="rejectPayout(${Number(p.id)})">
+❌ Reject
+</button>
+`
+:
+""
+}
+
+</div>
+
+</td>
+
+</tr>
+
+`;
+
+}).join("");
+
+}
+
+
+/* =========================
+   STATS
+========================= */
+
+function updateStats(
+pendingCount,
+pendingAmount,
+paidCount
+){
+
+document.getElementById(
+"pendingCount"
+).textContent =
+pendingCount;
+
+document.getElementById(
+"pendingAmount"
+).textContent =
+money(pendingAmount);
+
+document.getElementById(
+"paidCount"
+).textContent =
+paidCount;
+
+}
+
+
+/* =========================
+   DETAILS
+========================= */
+
+function parseDetails(value){
+
+if(!value)
+return {};
+
+if(typeof value === "object")
+return value;
+
+try{
+
+return JSON.parse(value);
+
+}catch(e){
+
+return {};
+
+}
+
+}
+
+
+/* =========================
+   VIEW
+========================= */
+
+function viewPayout(id){
+
+const payout =
+payouts.find(
+p=>Number(p.id) === Number(id)
+);
+
+if(!payout)
+return;
+
+const details =
+parseDetails(
+payout.payment_details
+);
+
+alert(
+
+"Affiliate Payout\n\n" +
+
+"Request ID: " +
+payout.id +
+
+"\nAffiliate ID: " +
+payout.affiliate_id +
+
+"\nStudent ID: " +
+payout.student_id +
+
+"\nAmount: " +
+money(payout.amount) +
+
+"\n\nAccount Name: " +
+(details.account_name || "-") +
+
+"\nBank: " +
+(details.bank_name || "-") +
+
+"\nAccount Number: " +
+(details.account_number || "-") +
+
+"\nBranch: " +
+(details.branch_name || payout.branch_name || "-") +
+
+"\n\nStatus: " +
+(payout.status || "PENDING") +
+
+"\nRequested: " +
+(payout.requested_at || payout.created_at || "-")
+
+);
+
+}
+
+
+/* =========================
+   APPROVE / PAID
+========================= */
+
+async function approvePayout(id){
+
+const payout =
+payouts.find(
+p=>Number(p.id) === Number(id)
+);
+
+if(!payout)
+return;
+
+if(!confirm(
+"Mark payout #" +
+id +
+" as PAID?\n\n" +
+"Amount: " +
+money(payout.amount)
+)){
+
+return;
+
+}
+
+
+try{
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/admin/payout/paid",
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+id:Number(id)
+})
+}
+);
+
+const data =
+await response.json();
+
+if(!response.ok || !data.success){
+
+throw new Error(
+data.message ||
+"Unable to update payout."
+);
+
+}
+
+showMessage(
+"Payout #" +
+id +
+" marked as PAID."
+);
+
+await loadPayouts();
+
+}catch(error){
+
+console.error(error);
+
+showMessage(
+error.message ||
+"Failed to update payout.",
+"error"
+);
+
+}
+
+}
+
+
+/* =========================
+   REJECT
+========================= */
+
+async function rejectPayout(id){
+
+if(!confirm(
+"Reject payout #" +
+id +
+"?\n\n" +
+"The affiliate balance should be restored by the Worker."
+)){
+
+return;
+
+}
+
+
+try{
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/admin/payout/reject",
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+id:Number(id)
+})
+}
+);
+
+const data =
+await response.json();
+
+if(!response.ok || !data.success){
+
+throw new Error(
+data.message ||
+"Unable to reject payout."
+);
+
+}
+
+showMessage(
+"Payout #" +
+id +
+" rejected."
+);
+
+await loadPayouts();
+
+}catch(error){
+
+console.error(error);
+
+showMessage(
+error.message ||
+"Failed to reject payout.",
+"error"
+);
+
+}
+
+}
+
+
+/* =========================
+   ESCAPE HTML
+========================= */
+
+function escapeHtml(value){
+
+return String(
+value ?? ""
+)
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
+
+}
+
+
+/* =========================
+   START
+========================= */
+
+loadPayouts();
+
+</script></body>
+</html>
