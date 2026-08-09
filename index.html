@@ -345,7 +345,7 @@ padding:40px 20px;
 max-width:1100px;
 margin:auto;
 display:grid;
-grid-template-columns:2fr 1fr 1fr;
+grid-template-columns:2fr 1fr 1fr 1fr;
 gap:30px;
 }
 
@@ -376,6 +376,126 @@ color:#8994a7;
 font-size:12px;
 }
 
+/* ==========================================
+   ADMIN BUTTONS
+========================================== */
+
+.admin-title{
+color:#ffffff;
+font-size:13px;
+font-weight:bold;
+margin-bottom:10px;
+}
+
+.admin-buttons{
+display:flex;
+flex-direction:column;
+gap:8px;
+}
+
+.admin-btn{
+display:block!important;
+background:#1f2937;
+border:1px solid #374151;
+color:#d1d5db!important;
+padding:9px 11px!important;
+border-radius:7px;
+font-size:12px!important;
+font-weight:bold;
+text-align:center;
+cursor:pointer;
+}
+
+.admin-btn:hover{
+background:#374151;
+color:#ffffff!important;
+}
+
+/* ==========================================
+   ADMIN PASSWORD POPUP
+========================================== */
+
+.admin-modal{
+display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.65);
+z-index:10000;
+align-items:center;
+justify-content:center;
+padding:20px;
+}
+
+.admin-modal-box{
+width:100%;
+max-width:380px;
+background:#ffffff;
+border-radius:16px;
+padding:25px;
+box-shadow:0 20px 50px rgba(0,0,0,.25);
+text-align:center;
+}
+
+.admin-modal-box h2{
+font-size:20px;
+margin-bottom:8px;
+}
+
+.admin-modal-box p{
+font-size:13px;
+color:#667085;
+margin-bottom:18px;
+}
+
+.admin-password{
+width:100%;
+padding:13px 14px;
+border:1px solid #d0d5dd;
+border-radius:9px;
+font-size:14px;
+outline:none;
+margin-bottom:12px;
+}
+
+.admin-password:focus{
+border-color:#155eef;
+box-shadow:0 0 0 3px rgba(21,94,239,.1);
+}
+
+.admin-error{
+display:none;
+color:#dc2626;
+font-size:13px;
+margin-bottom:12px;
+}
+
+.admin-modal-buttons{
+display:flex;
+gap:10px;
+}
+
+.admin-enter{
+flex:1;
+border:0;
+background:#155eef;
+color:#ffffff;
+padding:12px;
+border-radius:9px;
+font-weight:bold;
+cursor:pointer;
+}
+
+.admin-cancel{
+flex:1;
+border:0;
+background:#f2f4f7;
+color:#344054;
+padding:12px;
+border-radius:9px;
+font-weight:bold;
+cursor:pointer;
+}
+
 .whatsapp-btn{
 position:fixed;
 right:20px;
@@ -396,6 +516,14 @@ transition:.2s;
 
 .whatsapp-btn:hover{
 transform:scale(1.08);
+}
+
+@media(max-width:900px){
+
+.footer-inner{
+grid-template-columns:2fr 1fr 1fr;
+}
+
 }
 
 @media(max-width:800px){
@@ -437,6 +565,11 @@ grid-template-columns:1fr;
 text-align:center;
 }
 
+.admin-buttons{
+max-width:280px;
+margin:auto;
+}
+
 }
 
 @media(max-width:480px){
@@ -463,6 +596,14 @@ bottom:15px;
 width:54px;
 height:54px;
 font-size:27px;
+}
+
+.admin-modal-box{
+padding:22px;
+}
+
+.admin-modal-buttons{
+flex-direction:column;
 }
 
 }
@@ -495,8 +636,7 @@ Membership
 How It Works
 </a>
 
-<a
-href="login.html">
+<a href="login.html">
 Login
 </a>
 
@@ -980,6 +1120,45 @@ Contact Us
 
 </div>
 
+
+<!-- =====================================
+     ADMIN SECTION
+===================================== -->
+
+<div class="footer-column">
+
+<h3>
+Admin
+</h3>
+
+<div class="admin-title">
+🔐 Administration
+</div>
+
+<div class="admin-buttons">
+
+<button
+class="admin-btn"
+onclick="openAdmin('admin.html')">
+🔐 Admin Dashboard
+</button>
+
+<button
+class="admin-btn"
+onclick="openAdmin('affiliate-admin.html')">
+🤝 Affiliate Admin
+</button>
+
+<button
+class="admin-btn"
+onclick="openAdmin('affiliate-payouts-admin.html')">
+💳 Affiliate Payouts
+</button>
+
+</div>
+
+</div>
+
 </div>
 
 
@@ -991,6 +1170,58 @@ All rights reserved.
 </div>
 
 </footer>
+
+
+<!-- =====================================
+     ADMIN PASSWORD MODAL
+===================================== -->
+
+<div
+id="adminModal"
+class="admin-modal">
+
+<div class="admin-modal-box">
+
+<h2>
+🔐 Admin Access
+</h2>
+
+<p>
+Enter the admin password to continue.
+</p>
+
+<input
+id="adminPassword"
+class="admin-password"
+type="password"
+placeholder="Enter password"
+autocomplete="off">
+
+<div
+id="adminError"
+class="admin-error">
+Incorrect password. Please try again.
+</div>
+
+<div class="admin-modal-buttons">
+
+<button
+class="admin-enter"
+onclick="verifyAdmin()">
+🔓 Continue
+</button>
+
+<button
+class="admin-cancel"
+onclick="closeAdmin()">
+Cancel
+</button>
+
+</div>
+
+</div>
+
+</div>
 
 
 <a
@@ -1028,6 +1259,185 @@ document.getElementById(
 
 
 /* ==========================================
+   ADMIN SETTINGS
+========================================== */
+
+/*
+   Temporary front-end gate.
+
+   IMPORTANT:
+   Real security must still be handled
+   by the Cloudflare Worker Admin Key.
+*/
+
+const ADMIN_GATE_PASSWORD =
+"Sathya#2026#";
+
+let selectedAdminPage = "";
+
+
+/* ==========================================
+   OPEN ADMIN
+========================================== */
+
+function openAdmin(page){
+
+selectedAdminPage = page;
+
+const modal =
+document.getElementById(
+"adminModal"
+);
+
+const password =
+document.getElementById(
+"adminPassword"
+);
+
+const error =
+document.getElementById(
+"adminError"
+);
+
+error.style.display =
+"none";
+
+password.value =
+"";
+
+modal.style.display =
+"flex";
+
+setTimeout(
+function(){
+
+password.focus();
+
+},
+100
+);
+
+}
+
+
+/* ==========================================
+   CLOSE ADMIN
+========================================== */
+
+function closeAdmin(){
+
+document.getElementById(
+"adminModal"
+).style.display =
+"none";
+
+document.getElementById(
+"adminPassword"
+).value =
+"";
+
+}
+
+
+/* ==========================================
+   VERIFY ADMIN PASSWORD
+========================================== */
+
+function verifyAdmin(){
+
+const password =
+document.getElementById(
+"adminPassword"
+).value;
+
+const error =
+document.getElementById(
+"adminError"
+);
+
+
+if(
+password !== ADMIN_GATE_PASSWORD
+){
+
+error.style.display =
+"block";
+
+return;
+
+}
+
+
+if(!selectedAdminPage){
+
+return;
+
+}
+
+
+/*
+   Open selected admin page.
+*/
+
+window.location.href =
+selectedAdminPage;
+
+}
+
+
+/* ==========================================
+   ENTER KEY SUPPORT
+========================================== */
+
+document.getElementById(
+"adminPassword"
+).addEventListener(
+"keydown",
+function(event){
+
+if(
+event.key === "Enter"
+){
+
+verifyAdmin();
+
+}
+
+if(
+event.key === "Escape"
+){
+
+closeAdmin();
+
+}
+
+}
+);
+
+
+/* ==========================================
+   CLOSE MODAL OUTSIDE BOX
+========================================== */
+
+document.getElementById(
+"adminModal"
+).addEventListener(
+"click",
+function(event){
+
+if(
+event.target === this
+){
+
+closeAdmin();
+
+}
+
+}
+);
+
+
+/* ==========================================
    AFFILIATE LINK DETECTION
 ========================================== */
 
@@ -1042,11 +1452,6 @@ const referral =
 params.get("ref");
 
 
-/*
-   No referral code:
-   Continue normally.
-*/
-
 if(!referral){
 
 return;
@@ -1054,24 +1459,11 @@ return;
 }
 
 
-/*
-   Clean referral code.
-*/
-
 const code =
 referral
 .trim()
 .toUpperCase();
 
-
-/*
-   Validate:
-
-   CLK + 5 numbers
-
-   Example:
-   CLK48355
-*/
 
 if(
 !/^CLK[0-9]{5}$/.test(code)
@@ -1082,37 +1474,22 @@ return;
 }
 
 
-/*
-   Save referral code locally.
-
-   Register page will use
-   this code after account creation.
-*/
-
 localStorage.setItem(
 "createlk_referral_code",
 code
 );
 
 
-/*
-   Prevent duplicate click
-   tracking in the same browser.
-*/
-
 const clickKey =
 "createlk_affiliate_click_" +
 code;
+
 
 const alreadyTracked =
 sessionStorage.getItem(
 clickKey
 );
 
-
-/*
-   Record affiliate click.
-*/
 
 if(!alreadyTracked){
 
@@ -1168,26 +1545,10 @@ error
 }
 
 
-/*
-   Redirect to Register.
-
-   Important:
-   The referral code is included
-   in the URL as well.
-
-   Example:
-
-   register.html?ref=CLK48355
-*/
-
 const registerUrl =
 "register.html?ref=" +
 encodeURIComponent(code);
 
-
-/*
-   Redirect immediately.
-*/
 
 window.location.replace(
 registerUrl
