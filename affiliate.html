@@ -253,7 +253,8 @@ border:0;
 cursor:pointer;
 }
 
-.payout-btn.disabled{
+.payout-btn.disabled,
+.payout-btn:disabled{
 background:#98a2b3;
 cursor:not-allowed;
 }
@@ -817,6 +818,9 @@ All rights reserved.
 const API =
 "https://createlk-affiliate-api.createlk.workers.dev";
 
+const PAYOUT_API =
+"https://createlk-affiliate-payout.createlk.workers.dev";
+
 const MINIMUM_PAYOUT =
 3000;
 
@@ -857,6 +861,8 @@ window.location.href =
 let referralLink = "";
 
 let currentBalance = 0;
+
+let payoutSubmitting = false;
 
 
 /* =====================================
@@ -1243,6 +1249,8 @@ button.classList.remove(
 "disabled"
 );
 
+button.disabled = false;
+
 button.textContent =
 "💳 Request Payout";
 
@@ -1251,6 +1259,8 @@ button.textContent =
 button.classList.add(
 "disabled"
 );
+
+button.disabled = true;
 
 button.textContent =
 "🔒 Minimum Rs. 3,000 Required";
@@ -1261,10 +1271,17 @@ button.textContent =
 
 
 /* =====================================
-   PAYOUT
+   PAYOUT REQUEST
 ===================================== */
 
-function requestPayout(){
+async function requestPayout(){
+
+if(payoutSubmitting){
+
+return;
+
+}
+
 
 if(
 currentBalance <
@@ -1282,13 +1299,149 @@ return;
 }
 
 
-/*
-   Connect your payout API here later.
-*/
-
-alert(
-"Payout request feature will be available soon."
+const confirmed =
+confirm(
+"Request payout of LKR " +
+currentBalance.toLocaleString() +
+"?\n\n" +
+"Your payout request will be sent to Admin for approval."
 );
+
+
+if(!confirmed){
+
+return;
+
+}
+
+
+const button =
+document.getElementById(
+"payoutButton"
+);
+
+payoutSubmitting = true;
+
+button.disabled = true;
+
+button.textContent =
+"⏳ Sending Request...";
+
+
+showMessage(
+"Submitting payout request..."
+);
+
+
+try{
+
+
+/* =====================================
+   PAYOUT REQUEST
+===================================== */
+
+const response =
+await fetch(
+PAYOUT_API +
+"/api/payout/request",
+{
+
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"Authorization":
+"Bearer " + token
+},
+
+body:JSON.stringify({
+
+student_id:
+Number(student.id),
+
+affiliate_code:
+referralLink
+.split("ref=")[1] ||
+"",
+
+email:
+student.email ||
+"",
+
+amount:
+currentBalance
+
+})
+
+});
+
+
+const data =
+await response.json();
+
+
+console.log(
+"Payout API:",
+data
+);
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Payout request failed."
+);
+
+}
+
+
+/* =====================================
+   SUCCESS
+===================================== */
+
+showMessage(
+"Payout request submitted successfully. Status: PENDING"
+);
+
+
+button.disabled = true;
+
+button.classList.add(
+"disabled"
+);
+
+button.textContent =
+"⏳ Payout Pending";
+
+
+}catch(error){
+
+console.error(
+"Payout Error:",
+error
+);
+
+showMessage(
+error.message ||
+"Unable to submit payout request.",
+"error"
+);
+
+updatePayoutButton(
+currentBalance
+);
+
+}finally{
+
+payoutSubmitting = false;
+
+}
 
 }
 
@@ -1321,9 +1474,6 @@ loadAffiliate();
 
 /*
    Automatically refresh every 30 seconds.
-   This means after Admin approves a payment,
-   the affiliate dashboard can update without
-   manually rebuilding the page.
 */
 
 setInterval(
