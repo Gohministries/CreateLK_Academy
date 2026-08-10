@@ -4,13 +4,14 @@
 <head>
 
 <meta charset="UTF-8">
-
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <title>Register | CreateLK Academy</title>
 
-<meta name="description"
-content="Create your CreateLK Academy student account.">
+<meta
+name="description"
+content="Create your CreateLK Academy student account."
+>
 
 <style>
 
@@ -204,6 +205,18 @@ color:#027a48;
 border:1px solid #abefc6;
 }
 
+.referral-notice{
+display:none;
+background:#eef4ff;
+border:1px solid #dbe7ff;
+color:#155eef;
+padding:11px 13px;
+border-radius:8px;
+font-size:13px;
+text-align:center;
+margin-bottom:18px;
+}
+
 .login-link{
 text-align:center;
 margin-top:22px;
@@ -306,7 +319,17 @@ English learning journey.
 <div id="message" class="message"></div>
 
 
-<form id="registerForm" autocomplete="on">
+<div
+id="referralNotice"
+class="referral-notice">
+🎁 You were referred to CreateLK Academy.
+Your referral has been recorded.
+</div>
+
+
+<form
+id="registerForm"
+autocomplete="on">
 
 
 <div class="name-row">
@@ -520,7 +543,7 @@ Contact Us
 <script>
 
 /* =====================================
-   API
+   API CONFIGURATION
 ===================================== */
 
 const API_URL =
@@ -528,6 +551,9 @@ const API_URL =
 
 const AFFILIATE_API =
 "https://createlk-affiliate-referral.createlk.workers.dev";
+
+const REFERRAL_KEY =
+"createlk_referral_code";
 
 
 /* =====================================
@@ -543,10 +569,15 @@ document.getElementById("message");
 const button =
 document.getElementById("registerButton");
 
+const referralNotice =
+document.getElementById("referralNotice");
+
 
 /* =====================================
-   SAVE REFERRAL
+   GET REFERRAL FROM URL
 ===================================== */
+
+function captureReferral(){
 
 const params =
 new URLSearchParams(
@@ -557,21 +588,84 @@ const urlReferral =
 params.get("ref");
 
 
-if(urlReferral){
+if(!urlReferral){
+
+return null;
+
+}
+
 
 const code =
 urlReferral
 .trim()
 .toUpperCase();
 
-if(/^CLK[0-9]{5}$/.test(code)){
 
-localStorage.setItem(
-"createlk_referral_code",
+/*
+Only accept valid CreateLK
+affiliate codes.
+*/
+
+if(
+!/^CLK[0-9]{5}$/.test(code)
+){
+
+console.warn(
+"Invalid affiliate code:",
 code
 );
 
+return null;
+
 }
+
+
+/*
+Save referral locally.
+*/
+
+localStorage.setItem(
+REFERRAL_KEY,
+code
+);
+
+
+return code;
+
+}
+
+
+/* =====================================
+   LOAD STORED REFERRAL
+===================================== */
+
+const urlCode =
+captureReferral();
+
+const storedCode =
+localStorage.getItem(
+REFERRAL_KEY
+);
+
+const referralCode =
+urlCode ||
+storedCode ||
+null;
+
+
+/* =====================================
+   SHOW REFERRAL NOTICE
+===================================== */
+
+if(referralCode){
+
+referralNotice.style.display =
+"block";
+
+console.log(
+"Affiliate referral:",
+referralCode
+);
 
 }
 
@@ -621,6 +715,10 @@ document.getElementById(
 ).value;
 
 
+/* =====================================
+   VALIDATION
+===================================== */
+
 if(
 !firstName ||
 !lastName ||
@@ -660,6 +758,10 @@ return;
 }
 
 
+/* =====================================
+   BUTTON
+===================================== */
+
 button.disabled = true;
 
 button.textContent =
@@ -670,7 +772,7 @@ try{
 
 
 /* =====================================
-   CREATE ACCOUNT
+   CREATE STUDENT ACCOUNT
 ===================================== */
 
 const response =
@@ -695,7 +797,15 @@ email:email,
 
 phone:phone,
 
-password:password
+password:password,
+
+/*
+Send referral code to the
+main registration API.
+*/
+
+referral_code:
+referralCode || null
 
 })
 
@@ -703,8 +813,24 @@ password:password
 );
 
 
-const data =
+/* =====================================
+   READ RESPONSE
+===================================== */
+
+let data;
+
+try{
+
+data =
 await response.json();
+
+}catch(error){
+
+throw new Error(
+"Invalid response from registration server."
+);
+
+}
 
 
 console.log(
@@ -746,12 +872,6 @@ data.student.id
 );
 
 
-const referralCode =
-localStorage.getItem(
-"createlk_referral_code"
-);
-
-
 console.log(
 "STUDENT ID:",
 studentId
@@ -766,6 +886,9 @@ referralCode
 /* =====================================
    REGISTER AFFILIATE REFERRAL
 ===================================== */
+
+let affiliateSuccess = false;
+
 
 if(
 studentId &&
@@ -801,8 +924,22 @@ Number(studentId)
 );
 
 
-const referralData =
+let referralData;
+
+try{
+
+referralData =
 await referralResponse.json();
+
+}catch(error){
+
+referralData = {
+success:false,
+message:
+"Invalid affiliate server response."
+};
+
+}
 
 
 console.log(
@@ -816,8 +953,17 @@ referralResponse.ok &&
 referralData.success
 ){
 
-localStorage.removeItem(
-"createlk_referral_code"
+affiliateSuccess = true;
+
+console.log(
+"Affiliate referral registered successfully."
+);
+
+}else{
+
+console.warn(
+"Affiliate referral failed:",
+referralData
 );
 
 }
@@ -825,11 +971,27 @@ localStorage.removeItem(
 }catch(error){
 
 console.error(
-"Affiliate error:",
+"Affiliate request error:",
 error
 );
 
 }
+
+}
+
+
+/* =====================================
+   REMOVE REFERRAL AFTER PROCESSING
+===================================== */
+
+if(
+affiliateSuccess &&
+referralCode
+){
+
+localStorage.removeItem(
+REFERRAL_KEY
+);
 
 }
 
@@ -865,6 +1027,7 @@ error
 );
 
 showError(
+error.message ||
 "Unable to connect to the server. Please try again."
 );
 
@@ -879,7 +1042,7 @@ button.textContent =
 
 
 /* =====================================
-   ERROR
+   ERROR MESSAGE
 ===================================== */
 
 function showError(text){
@@ -897,7 +1060,7 @@ message.style.display =
 
 
 /* =====================================
-   SUCCESS
+   SUCCESS MESSAGE
 ===================================== */
 
 function showSuccess(text){
