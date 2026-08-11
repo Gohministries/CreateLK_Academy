@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Admin V2 | CreateLK Academy</title>
+
+<style>
+*{
+box-sizing:border-box;
+margin:0;
+padding:0;
+}
+
+body{
+font-family:Arial,Helvetica,sans-serif;
+background:#f5f7fb;
+color:#172033;
+}
+
+header{
+background:#155eef;
+color:white;
+padding:18px 20px;
+}
+
+.header{
+max-width:1100px;
+margin:auto;
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:15px;
+}
+
+.logo{
+font-size:20px;
+font-weight:800;
+}
+
+.logout{
+background:white;
+color:#155eef;
+border:0;
+padding:9px 14px;
+border-radius:8px;
+font-weight:700;
+cursor:pointer;
+}
+
+main{
+max-width:1100px;
+margin:30px auto;
+padding:0 15px;
+}
+
+.login-box,
+.dashboard{
+background:white;
+border-radius:14px;
+padding:25px;
+box-shadow:0 8px 30px rgba(0,0,0,.07);
+}
+
+h1{
+font-size:25px;
+margin-bottom:8px;
+}
+
+.subtitle{
+color:#667085;
+font-size:14px;
+margin-bottom:25px;
+}
+
+input{
+width:100%;
+height:46px;
+border:1px solid #d9dee8;
+border-radius:8px;
+padding:0 12px;
+margin-bottom:14px;
+font-size:14px;
+}
+
+button{
+border:0;
+border-radius:8px;
+padding:11px 16px;
+font-weight:700;
+cursor:pointer;
+}
+
+.login-btn{
+width:100%;
+background:#155eef;
+color:white;
+}
+
+.message{
+margin-top:15px;
+padding:12px;
+border-radius:8px;
+font-size:13px;
+display:none;
+}
+
+.error{
+display:block;
+background:#fff1f2;
+color:#be123c;
+border:1px solid #fecdd3;
+}
+
+.success{
+display:block;
+background:#f0fdf4;
+color:#166534;
+border:1px solid #bbf7d0;
+}
+
+.dashboard{
+display:none;
+}
+
+.stats{
+display:grid;
+grid-template-columns:repeat(3,1fr);
+gap:15px;
+margin:20px 0;
+}
+
+.stat{
+background:#f8fafc;
+border:1px solid #eaecf0;
+border-radius:10px;
+padding:18px;
+}
+
+.stat strong{
+display:block;
+font-size:25px;
+margin-top:7px;
+}
+
+.toolbar{
+display:flex;
+gap:10px;
+margin-bottom:18px;
+}
+
+.refresh{
+background:#155eef;
+color:white;
+}
+
+.table-wrap{
+overflow-x:auto;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+min-width:850px;
+}
+
+th,
+td{
+padding:12px 10px;
+border-bottom:1px solid #eaecf0;
+text-align:left;
+font-size:13px;
+}
+
+th{
+background:#f8fafc;
+font-weight:800;
+}
+
+.status{
+font-weight:800;
+}
+
+.pending{
+color:#b54708;
+}
+
+.approved{
+color:#027a48;
+}
+
+.rejected{
+color:#b42318;
+}
+
+.action{
+padding:7px 10px;
+margin-right:5px;
+font-size:12px;
+}
+
+.approve{
+background:#12b76a;
+color:white;
+}
+
+.reject{
+background:#f04438;
+color:white;
+}
+
+.view{
+background:#eef4ff;
+color:#155eef;
+}
+
+.empty{
+text-align:center;
+padding:30px;
+color:#667085;
+}
+
+@media(max-width:700px){
+
+.stats{
+grid-template-columns:1fr;
+}
+
+.toolbar{
+flex-direction:column;
+}
+
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="header">
+
+<div class="logo">
+📚 CreateLK Academy V2
+</div>
+
+<button
+class="logout"
+onclick="logout()">
+Logout
+</button>
+
+</div>
+</header>
+
+
+<main>
+
+<!-- ADMIN LOGIN -->
+
+<div
+id="loginBox"
+class="login-box">
+
+<h1>🔐 Admin Login</h1>
+
+<p class="subtitle">
+CreateLK Academy V2 Administration
+</p>
+
+<input
+type="password"
+id="adminKey"
+placeholder="Enter admin key"
+autocomplete="current-password">
+
+<button
+class="login-btn"
+onclick="login()">
+Login
+</button>
+
+<div
+id="loginMessage"
+class="message">
+</div>
+
+</div>
+
+
+<!-- DASHBOARD -->
+
+<div
+id="dashboard"
+class="dashboard">
+
+<h1>Admin Dashboard</h1>
+
+<p class="subtitle">
+Student payments and affiliate payout management
+</p>
+
+
+<div class="stats">
+
+<div class="stat">
+Students
+<strong id="studentCount">0</strong>
+</div>
+
+<div class="stat">
+Pending Payments
+<strong id="pendingCount">0</strong>
+</div>
+
+<div class="stat">
+Approved Payments
+<strong id="approvedCount">0</strong>
+</div>
+
+</div>
+
+
+<div class="toolbar">
+
+<button
+class="refresh"
+onclick="loadPayments()">
+🔄 Refresh Payments
+</button>
+
+</div>
+
+
+<div
+id="dashboardMessage"
+class="message">
+</div>
+
+
+<div class="table-wrap">
+
+<table>
+
+<thead>
+
+<tr>
+<th>ID</th>
+<th>Student</th>
+<th>Email</th>
+<th>Amount</th>
+<th>Reference</th>
+<th>Status</th>
+<th>Date</th>
+<th>Action</th>
+</tr>
+
+</thead>
+
+<tbody id="paymentTable">
+
+<tr>
+<td colspan="8" class="empty">
+Loading...
+</td>
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+</div>
+
+</main>
+
+
+<script>
+
+/* =========================================================
+   CREATE LK ACADEMY V2 ADMIN
+========================================================= */
+
+
+/*
+   EXISTING V2 ADMIN WORKER
+
+   Keep your current Worker.
+   Do NOT replace the Worker.
+*/
+
+const ADMIN_API_URL =
+"https://createlk-academy-v2-api.createlk.workers.dev";
+
+
+let ADMIN_KEY =
+sessionStorage.getItem(
+"createlk_v2_admin_key"
+);
+
+
+/* =========================================================
+   MESSAGE
+========================================================= */
+
+function showMessage(
+elementId,
+message,
+type
+){
+
+const box =
+document.getElementById(
+elementId
+);
+
+box.textContent =
+message;
+
+box.className =
+"message " + type;
+
+}
+
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+async function login(){
+
+const key =
+document.getElementById(
+"adminKey"
+).value.trim();
+
+
+if(!key){
+
+showMessage(
+"loginMessage",
+"Please enter the admin key.",
+"error"
+);
+
+return;
+
+}
+
+
+try{
+
+const response =
+await fetch(
+ADMIN_API_URL +
+"/api/v2/admin/payments",
+{
+
+method:"GET",
+
+headers:{
+"X-Admin-Key":key
+}
+
+}
+);
+
+
+const data =
+await response.json();
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Invalid admin key."
+);
+
+}
+
+
+ADMIN_KEY =
+key;
+
+sessionStorage.setItem(
+"createlk_v2_admin_key",
+key
+);
+
+
+document.getElementById(
+"loginBox"
+).style.display =
+"none";
+
+document.getElementById(
+"dashboard"
+).style.display =
+"block";
+
+
+loadPayments();
+
+
+}catch(error){
+
+showMessage(
+"loginMessage",
+error.message ||
+"Admin login failed.",
+"error"
+);
+
+}
+
+}
+
+
+/* =========================================================
+   LOAD PAYMENTS
+========================================================= */
+
+async function loadPayments(){
+
+const table =
+document.getElementById(
+"paymentTable"
+);
+
+table.innerHTML =
+`
+<tr>
+<td colspan="8" class="empty">
+Loading payments...
+</td>
+</tr>
+`;
+
+
+try{
+
+const response =
+await fetch(
+ADMIN_API_URL +
+"/api/v2/admin/payments",
+{
+
+headers:{
+"X-Admin-Key":
+ADMIN_KEY
+}
+
+}
+);
+
+
+const data =
+await response.json();
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Unable to load payments."
+);
+
+}
+
+
+const payments =
+Array.isArray(data.payments)
+? data.payments
+: [];
+
+
+renderPayments(
+payments
+);
+
+
+}catch(error){
+
+table.innerHTML =
+`
+<tr>
+<td colspan="8" class="empty">
+${escapeHTML(
+error.message ||
+"Unable to load payments."
+)}
+</td>
+</tr>
+`;
+
+}
+
+}
+
+
+/* =========================================================
+   RENDER PAYMENTS
+========================================================= */
+
+function renderPayments(
+payments
+){
+
+const table =
+document.getElementById(
+"paymentTable"
+);
+
+
+let pending = 0;
+let approved = 0;
+
+
+if(!payments.length){
+
+table.innerHTML =
+`
+<tr>
+<td colspan="8" class="empty">
+No payment records found.
+</td>
+</tr>
+`;
+
+}else{
+
+table.innerHTML =
+payments.map(
+payment => {
+
+const status =
+String(
+payment.status || "PENDING"
+).toUpperCase();
+
+
+if(status === "PENDING"){
+pending++;
+}
+
+if(status === "APPROVED"){
+approved++;
+}
+
+
+return `
+<tr>
+
+<td>
+${escapeHTML(payment.id)}
+</td>
+
+<td>
+${escapeHTML(
+(payment.first_name || "") +
+" " +
+(payment.last_name || "")
+)}
+</td>
+
+<td>
+${escapeHTML(
+payment.email || ""
+)}
+</td>
+
+<td>
+LKR ${escapeHTML(
+payment.amount || "1500"
+)}
+</td>
+
+<td>
+${escapeHTML(
+payment.payment_reference || ""
+)}
+</td>
+
+<td class="status ${status.toLowerCase()}">
+${escapeHTML(status)}
+</td>
+
+<td>
+${escapeHTML(
+payment.created_at || ""
+)}
+</td>
+
+<td>
+
+${
+status === "PENDING"
+?
+`
+<button
+class="action approve"
+onclick="updatePayment(${payment.id},'APPROVED')">
+Approve
+</button>
+
+<button
+class="action reject"
+onclick="updatePayment(${payment.id},'REJECTED')">
+Reject
+</button>
+`
+:
+"-"
+}
+
+${
+payment.receipt_key
+?
+`
+<button
+class="action view"
+onclick="viewReceipt('${encodeURIComponent(payment.receipt_key)}')">
+Receipt
+</button>
+`
+:
+""
+}
+
+</td>
+
+</tr>
+`;
+
+}).join("");
+
+}
+
+
+document.getElementById(
+"pendingCount"
+).textContent =
+pending;
+
+
+document.getElementById(
+"approvedCount"
+).textContent =
+approved;
+
+
+document.getElementById(
+"studentCount"
+).textContent =
+new Set(
+payments.map(
+p => p.student_id
+).filter(Boolean)
+).size;
+
+}
+
+
+/* =========================================================
+   APPROVE / REJECT
+========================================================= */
+
+async function updatePayment(
+paymentId,
+status
+){
+
+const action =
+status === "APPROVED"
+? "approve"
+: "reject";
+
+
+if(
+!confirm(
+`Are you sure you want to ${action} payment #${paymentId}?`
+)
+){
+
+return;
+
+}
+
+
+try{
+
+const response =
+await fetch(
+ADMIN_API_URL +
+"/api/v2/admin/payment-status",
+{
+
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"X-Admin-Key":
+ADMIN_KEY
+},
+
+body:JSON.stringify({
+
+payment_id:
+paymentId,
+
+status:
+status
+
+})
+
+}
+);
+
+
+const data =
+await response.json();
+
+
+if(
+!response.ok ||
+!data.success
+){
+
+throw new Error(
+data.message ||
+"Unable to update payment."
+);
+
+}
+
+
+showMessage(
+"dashboardMessage",
+`Payment #${paymentId} ${status.toLowerCase()} successfully.`,
+"success"
+);
+
+
+loadPayments();
+
+
+}catch(error){
+
+showMessage(
+"dashboardMessage",
+error.message ||
+"Payment update failed.",
+"error"
+);
+
+}
+
+}
+
+
+/* =========================================================
+   RECEIPT
+========================================================= */
+
+function viewReceipt(
+receiptKey
+){
+
+const url =
+ADMIN_API_URL +
+"/api/v2/admin/receipt?key=" +
+receiptKey;
+
+
+window.open(
+url,
+"_blank"
+);
+
+}
+
+
+/* =========================================================
+   SECURITY
+========================================================= */
+
+function escapeHTML(
+value
+){
+
+return String(
+value ?? ""
+)
+.replace(
+/&/g,
+"&amp;"
+)
+.replace(
+/</g,
+"&lt;"
+)
+.replace(
+/>/g,
+"&gt;"
+)
+.replace(
+/"/g,
+"&quot;"
+)
+.replace(
+/'/g,
+"&#039;"
+);
+
+}
+
+
+/* =========================================================
+   LOGOUT
+========================================================= */
+
+function logout(){
+
+sessionStorage.removeItem(
+"createlk_v2_admin_key"
+);
+
+ADMIN_KEY = "";
+
+location.reload();
+
+}
+
+
+/* =========================================================
+   AUTO LOGIN
+========================================================= */
+
+if(ADMIN_KEY){
+
+document.getElementById(
+"loginBox"
+).style.display =
+"none";
+
+document.getElementById(
+"dashboard"
+).style.display =
+"block";
+
+loadPayments();
+
+}
+
+</script>
+
+</body>
+</html>
