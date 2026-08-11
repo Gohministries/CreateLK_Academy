@@ -1,12 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <title>CreateLK Admin Control</title>
 
 <style>
-*{box-sizing:border-box}
+
+*{
+ box-sizing:border-box;
+}
 
 body{
  margin:0;
@@ -196,6 +201,7 @@ button{
 }
 
 @media(max-width:500px){
+
  .actions button{
   width:100%;
  }
@@ -203,83 +209,132 @@ button{
  .tabs{
   flex-direction:column;
  }
+
 }
+
 </style>
+
 </head>
 
 <body>
 
 <header>
+
 <div class="nav">
-<div class="logo">📚 CreateLK Academy</div>
-<a href="dashboard.html" class="back">← Dashboard</a>
+
+<div class="logo">
+📚 CreateLK Academy
 </div>
+
+<a
+ href="dashboard.html"
+ class="back"
+>
+← Dashboard
+</a>
+
+</div>
+
 </header>
+
 
 <div class="container">
 
+
 <div class="hero">
-<h1>🔐 Admin Control</h1>
-<p>Student Payments & Affiliate Payouts</p>
+
+<h1>
+🔐 Admin Control
+</h1>
+
+<p>
+Student Payments & Affiliate Payouts
+</p>
+
 </div>
 
-<div id="loginBox" class="admin-box">
 
-<h3>🔐 Admin Access</h3>
+<!-- =========================
+     LOGIN
+========================= -->
+
+<div
+ id="loginBox"
+ class="admin-box"
+>
+
+<h3>
+🔐 Admin Access
+</h3>
 
 <input
  id="adminKey"
  type="password"
  placeholder="Enter Admin Key"
- autocomplete="off">
+ autocomplete="off"
+>
 
 <button
  class="login-btn"
- onclick="login()">
-
+ onclick="login()"
+>
 🔐 Login
-
 </button>
 
 <div id="loginStatus"></div>
 
 </div>
 
-<div id="panel" class="hidden">
+
+<!-- =========================
+     ADMIN PANEL
+========================= -->
+
+<div
+ id="panel"
+ class="hidden"
+>
 
 <div class="status success">
 Admin access granted.
 </div>
+
+
+<!-- =========================
+     TABS
+========================= -->
 
 <div class="tabs">
 
 <button
  id="paymentTab"
  class="active"
- onclick="showTab('payments')">
-
+ onclick="showTab('payments')"
+>
 💳 Payments
-
 </button>
 
 <button
  id="payoutTab"
- onclick="showTab('payouts')">
-
+ onclick="showTab('payouts')"
+>
 🤝 Payouts
-
 </button>
 
 </div>
 
 
-<!-- PAYMENTS -->
+<!-- =========================
+     PAYMENTS
+========================= -->
 
 <div id="paymentsSection">
 
 <div class="section">
 
-<h2>💳 Student Payments</h2>
+<h2>
+💳 Student Payments
+</h2>
 
 <p class="small">
 View, approve or reject Premium membership payments.
@@ -287,10 +342,9 @@ View, approve or reject Premium membership payments.
 
 <button
  class="load-btn"
- onclick="loadPayments()">
-
+ onclick="loadPayments()"
+>
 🔄 Load Payments
-
 </button>
 
 </div>
@@ -300,13 +354,20 @@ View, approve or reject Premium membership payments.
 </div>
 
 
-<!-- PAYOUTS -->
+<!-- =========================
+     PAYOUTS
+========================= -->
 
-<div id="payoutsSection" class="hidden">
+<div
+ id="payoutsSection"
+ class="hidden"
+>
 
 <div class="section">
 
-<h2>🤝 Affiliate Payouts</h2>
+<h2>
+🤝 Affiliate Payouts
+</h2>
 
 <p class="small">
 20% commission on approved LKR 1,500 Premium payments = LKR 300.
@@ -314,10 +375,9 @@ View, approve or reject Premium membership payments.
 
 <button
  class="load-btn"
- onclick="loadPayouts()">
-
+ onclick="loadPayouts()"
+>
 🔄 Load Payouts
-
 </button>
 
 </div>
@@ -326,21 +386,46 @@ View, approve or reject Premium membership payments.
 
 </div>
 
-</div>
 
 </div>
 
-<footer style="text-align:center;padding:25px;color:#98a2b3;font-size:12px">
+</div>
+
+
+<footer
+ style="
+ text-align:center;
+ padding:25px;
+ color:#98a2b3;
+ font-size:12px;
+"
+>
 © 2026 CreateLK Academy. All rights reserved.
 </footer>
 
 
 <script>
 
+
+/* =========================
+   API
+========================= */
+
 const API =
 "https://admin-control.createlk.workers.dev";
 
-let ADMIN_KEY = "";
+
+/* =========================
+   ADMIN KEY
+========================= */
+
+/*
+   Try to restore the Admin Key
+   from the current browser session.
+*/
+
+let ADMIN_KEY =
+sessionStorage.getItem("admin_key") || "";
 
 
 /* =========================
@@ -350,7 +435,11 @@ let ADMIN_KEY = "";
 function login(){
 
 const key =
-document.getElementById("adminKey").value.trim();
+document
+.getElementById("adminKey")
+.value
+.trim();
+
 
 if(!key){
 
@@ -362,9 +451,52 @@ false
 return;
 }
 
+
+/*
+   Store the key only for the
+   current browser session.
+*/
+
 ADMIN_KEY = key;
 
+sessionStorage.setItem(
+"admin_key",
+ADMIN_KEY
+);
+
+
+/*
+   Test the Admin Key by
+   loading payments.
+*/
+
 loadPayments(true);
+
+}
+
+
+/* =========================
+   LOGIN STATUS
+========================= */
+
+function showLoginStatus(
+message,
+success=false
+){
+
+const box =
+document.getElementById(
+"loginStatus"
+);
+
+box.innerHTML =
+`
+<div class="status ${success ? "success" : ""}">
+${success ? "✅ " : "❌ "}
+${escapeHTML(message)}
+</div>
+`;
+
 }
 
 
@@ -377,40 +509,77 @@ url,
 options={}
 ){
 
-options.headers = {
+/*
+   Get the latest key from
+   memory/session storage.
+*/
 
-...(options.headers || {}),
+const key =
+ADMIN_KEY ||
+sessionStorage.getItem(
+"admin_key"
+);
 
-"X-Admin-Key":ADMIN_KEY
 
-};
-
-const response =
-await fetch(API + url,options);
-
-const text =
-await response.text();
-
-let data;
-
-try{
- data = JSON.parse(text);
-}catch{
- throw new Error(
-  text || "Invalid server response"
- );
-}
-
-if(!response.ok){
+if(!key){
 
 throw new Error(
- data.message ||
- "Request failed"
+"Admin session expired. Please login again."
 );
 
 }
 
+
+options.headers = {
+
+...(options.headers || {}),
+
+"X-Admin-Key":key
+
+};
+
+
+const response =
+await fetch(
+API + url,
+options
+);
+
+
+const text =
+await response.text();
+
+
+let data;
+
+
+try{
+
+data =
+JSON.parse(text);
+
+}catch{
+
+throw new Error(
+text ||
+"Invalid server response"
+);
+
+}
+
+
+if(!response.ok){
+
+throw new Error(
+data.message ||
+"Request failed"
+);
+
+}
+
+
 return data;
+
 }
 
 
@@ -423,10 +592,14 @@ firstLogin=false
 ){
 
 const box =
-document.getElementById("payments");
+document.getElementById(
+"payments"
+);
+
 
 box.innerHTML =
 "<div class='empty'>Loading...</div>";
+
 
 try{
 
@@ -435,43 +608,69 @@ await request(
 "/api/admin/payments"
 );
 
+
 if(!data.success){
 
 throw new Error(
-data.message || "Failed"
+data.message ||
+"Failed to load payments"
 );
 
 }
 
-document.getElementById(
-"loginBox"
-).classList.add("hidden");
 
-document.getElementById(
-"panel"
-).classList.remove("hidden");
+/*
+   Login successful.
+*/
+
+document
+.getElementById("loginBox")
+.classList
+.add("hidden");
+
+
+document
+.getElementById("panel")
+.classList
+.remove("hidden");
+
 
 renderPayments(
 data.payments || []
 );
 
+
 }catch(error){
 
 box.innerHTML =
-"<div class='status'>❌ "+
-escapeHTML(error.message)+
-"</div>";
+`
+<div class="status">
+❌ ${escapeHTML(error.message)}
+</div>
+`;
+
 
 if(firstLogin){
 
-document.getElementById(
-"loginStatus"
-).innerHTML =
-"<div class='status'>❌ "+
-escapeHTML(error.message)+
-"</div>";
+showLoginStatus(
+error.message,
+false
+);
+
+
+/*
+   Wrong key:
+   remove invalid session key.
+*/
+
+sessionStorage.removeItem(
+"admin_key"
+);
+
+ADMIN_KEY = "";
 
 }
+
 }
 
 }
@@ -484,7 +683,10 @@ escapeHTML(error.message)+
 function renderPayments(list){
 
 const box =
-document.getElementById("payments");
+document.getElementById(
+"payments"
+);
+
 
 if(!list.length){
 
@@ -492,117 +694,229 @@ box.innerHTML =
 "<div class='empty'>No payments found.</div>";
 
 return;
+
 }
 
+
 box.innerHTML =
-list.map(p => {
+list.map(
+p => {
+
 
 const status =
-String(p.status || "")
+String(
+p.status || ""
+)
 .toUpperCase();
 
-const buttons =
-status === "PENDING"
 
-? `
+let buttons;
+
+
+/*
+   Pending payment:
+   View + Approve + Reject
+*/
+
+if(status === "PENDING"){
+
+buttons = `
+
 <div class="actions">
 
 <button
  class="view"
- onclick="viewReceipt(${p.id})">
-
+ onclick="viewReceipt(${p.id})"
+>
 👁 View Receipt
-
 </button>
 
 <button
  class="approve"
- onclick="updatePayment(${p.id},'APPROVED')">
-
+ onclick="updatePayment(${p.id},'APPROVED')"
+>
 ✅ Approve
-
 </button>
 
 <button
  class="reject"
- onclick="updatePayment(${p.id},'REJECTED')">
-
+ onclick="updatePayment(${p.id},'REJECTED')"
+>
 ❌ Reject
-
 </button>
 
 </div>
-`
 
-: `
+`;
+
+}
+
+
+/*
+   Approved / Rejected:
+   View receipt only
+*/
+
+else{
+
+buttons = `
+
 <div class="actions">
 
 <button
  class="view"
- onclick="viewReceipt(${p.id})">
-
+ onclick="viewReceipt(${p.id})"
+>
 👁 View Receipt
-
 </button>
 
 </div>
+
 `;
+
+}
+
 
 return `
 
 <div class="card">
 
-<h3>💳 Payment #${p.id}</h3>
+<h3>
+💳 Payment #${escapeHTML(p.id)}
+</h3>
+
 
 <div class="row">
-<span class="label">Student</span>
-${escapeHTML(p.student_name || "-")}
+
+<span class="label">
+Student
+</span>
+
+${escapeHTML(
+p.student_name || "-"
+)}
+
 </div>
 
-<div class="row">
-<span class="label">Email</span>
-${escapeHTML(p.email || "-")}
-</div>
 
 <div class="row">
-<span class="label">Phone</span>
-${escapeHTML(p.phone || "-")}
+
+<span class="label">
+Email
+</span>
+
+${escapeHTML(
+p.email || "-"
+)}
+
 </div>
 
-<div class="row">
-<span class="label">Student ID</span>
-${escapeHTML(p.student_id || "-")}
-</div>
 
 <div class="row">
-<span class="label">Payment ID</span>
-${escapeHTML(p.payment_id || "-")}
+
+<span class="label">
+Phone
+</span>
+
+${escapeHTML(
+p.phone || "-"
+)}
+
 </div>
 
-<div class="row">
-<span class="label">Amount</span>
-LKR ${Number(p.amount || 0).toLocaleString()}
-</div>
 
 <div class="row">
-<span class="label">Payment Reference</span>
-${escapeHTML(p.payment_reference || "-")}
+
+<span class="label">
+Student ID
+</span>
+
+${escapeHTML(
+p.student_id || "-"
+)}
+
 </div>
 
-<div class="row">
-<span class="label">Payment Date</span>
-${escapeHTML(p.payment_date || "-")}
-</div>
 
 <div class="row">
-<span class="label">Affiliate</span>
-${escapeHTML(p.affiliate_code || "-")}
+
+<span class="label">
+Payment ID
+</span>
+
+${escapeHTML(
+p.payment_id || "-"
+)}
+
 </div>
 
+
 <div class="row">
-<span class="label">Status</span>
-<strong>${escapeHTML(status)}</strong>
+
+<span class="label">
+Amount
+</span>
+
+LKR ${
+Number(
+p.amount || 0
+).toLocaleString()
+}
+
 </div>
+
+
+<div class="row">
+
+<span class="label">
+Payment Reference
+</span>
+
+${escapeHTML(
+p.payment_reference || "-"
+)}
+
+</div>
+
+
+<div class="row">
+
+<span class="label">
+Payment Date
+</span>
+
+${escapeHTML(
+p.payment_date || "-"
+)}
+
+</div>
+
+
+<div class="row">
+
+<span class="label">
+Affiliate
+</span>
+
+${escapeHTML(
+p.affiliate_code || "-"
+)}
+
+</div>
+
+
+<div class="row">
+
+<span class="label">
+Status
+</span>
+
+<strong>
+${escapeHTML(status)}
+</strong>
+
+</div>
+
 
 ${buttons}
 
@@ -623,44 +937,149 @@ async function viewReceipt(id){
 
 try{
 
+
+/*
+   Get Admin Key from session.
+*/
+
+const adminKey =
+sessionStorage.getItem(
+"admin_key"
+) || ADMIN_KEY;
+
+
+if(!adminKey){
+
+throw new Error(
+"Admin session expired. Please login again."
+);
+
+}
+
+
+/*
+   Request receipt from
+   Admin Control Worker.
+*/
+
 const response =
 await fetch(
 API +
-"/api/admin/receipt?id="+
+"/api/admin/receipt?id=" +
 encodeURIComponent(id),
 {
-headers:{
-"X-Admin-Key":
-ADMIN_KEY
-}
+ method:"GET",
+
+ headers:{
+  "X-Admin-Key":adminKey
+ }
 }
 );
+
+
+/*
+   Handle Worker error.
+*/
 
 if(!response.ok){
 
 const text =
 await response.text();
 
-throw new Error(
-text || "Receipt not found"
-);
+
+let message = text;
+
+
+try{
+
+const data =
+JSON.parse(text);
+
+message =
+data.message ||
+text;
+
+}catch{
+
+/* Response was not JSON */
+
 }
+
+
+throw new Error(
+message ||
+"Unable to open receipt"
+);
+
+}
+
+
+/*
+   Convert R2 response to Blob.
+*/
 
 const blob =
 await response.blob();
 
+
+if(!blob.size){
+
+throw new Error(
+"Receipt file is empty."
+);
+
+}
+
+
+/*
+   Create temporary browser URL.
+*/
+
 const url =
 URL.createObjectURL(blob);
 
+
+/*
+   Open receipt in new tab.
+*/
+
+const newWindow =
 window.open(
 url,
 "_blank"
 );
 
+
+if(!newWindow){
+
+URL.revokeObjectURL(url);
+
+throw new Error(
+"Popup blocked. Please allow popups for createlk.com."
+);
+
+}
+
+
+/*
+   Keep the URL available long enough
+   for the browser to load the receipt.
+*/
+
+setTimeout(
+function(){
+
+URL.revokeObjectURL(url);
+
+},
+60000
+);
+
+
 }catch(error){
 
 alert(
-"Unable to open receipt:\n"+
+"Unable to open receipt:\n" +
 error.message
 );
 
@@ -670,7 +1089,7 @@ error.message
 
 
 /* =========================
-   APPROVE / REJECT
+   APPROVE / REJECT PAYMENT
 ========================= */
 
 async function updatePayment(
@@ -683,16 +1102,19 @@ status === "APPROVED"
 ? "approve"
 : "reject";
 
+
 if(
 !confirm(
-"Are you sure you want to "+
-word+
+"Are you sure you want to " +
+word +
 " this payment?"
 )
 ){
 
 return;
+
 }
+
 
 try{
 
@@ -700,39 +1122,54 @@ const data =
 await request(
 "/api/admin/payment/update",
 {
-method:"POST",
+ method:"POST",
 
-headers:{
-"Content-Type":
-"application/json"
-},
+ headers:{
+  "Content-Type":
+  "application/json"
+ },
 
-body:JSON.stringify({
-payment_id:id,
-status:status
-})
+ body:
+ JSON.stringify({
+  payment_id:id,
+  status:status
+ })
+
 }
 );
+
 
 if(!data.success){
 
 throw new Error(
-data.message || "Update failed"
+data.message ||
+"Update failed"
 );
+
 }
+
 
 alert(
 status === "APPROVED"
-? "✅ Payment approved.\nAffiliate commission processed."
-: "❌ Payment rejected."
+?
+"✅ Payment approved.\nAffiliate commission processed."
+:
+"❌ Payment rejected."
 );
 
+
+/*
+   Refresh payments.
+*/
+
 loadPayments();
+
 
 }catch(error){
 
 alert(
-"❌ "+error.message
+"❌ " +
+error.message
 );
 
 }
@@ -751,58 +1188,72 @@ document.getElementById(
 "paymentsSection"
 );
 
+
 const payoutSection =
 document.getElementById(
 "payoutsSection"
 );
+
 
 const paymentTab =
 document.getElementById(
 "paymentTab"
 );
 
+
 const payoutTab =
 document.getElementById(
 "payoutTab"
 );
 
+
 if(tab === "payments"){
 
-paymentSection.classList.remove(
-"hidden"
-);
 
-payoutSection.classList.add(
-"hidden"
-);
+paymentSection
+.classList
+.remove("hidden");
 
-paymentTab.classList.add(
-"active"
-);
 
-payoutTab.classList.remove(
-"active"
-);
+payoutSection
+.classList
+.add("hidden");
+
+
+paymentTab
+.classList
+.add("active");
+
+
+payoutTab
+.classList
+.remove("active");
+
 
 loadPayments();
 
 }else{
 
-paymentSection.classList.add(
-"hidden"
-);
 
-payoutSection.classList.remove(
-"hidden"
-);
+paymentSection
+.classList
+.add("hidden");
 
-paymentTab.classList.remove(
-"active"
-);
 
-payoutTab.classList.add(
-"active"
-);
+payoutSection
+.classList
+.remove("hidden");
+
+
+paymentTab
+.classList
+.remove("active");
+
+
+payoutTab
+.classList
+.add("active");
+
 
 loadPayouts();
 
@@ -812,7 +1263,7 @@ loadPayouts();
 
 
 /* =========================
-   PAYOUTS
+   LOAD PAYOUTS
 ========================= */
 
 async function loadPayouts(){
@@ -822,8 +1273,10 @@ document.getElementById(
 "payouts"
 );
 
+
 box.innerHTML =
 "<div class='empty'>Loading...</div>";
+
 
 try{
 
@@ -832,23 +1285,30 @@ await request(
 "/api/admin/payouts"
 );
 
+
 if(!data.success){
 
 throw new Error(
-data.message || "Failed"
+data.message ||
+"Failed to load payouts"
 );
+
 }
+
 
 renderPayouts(
 data.payouts || []
 );
 
+
 }catch(error){
 
 box.innerHTML =
-"<div class='status'>❌ "+
-escapeHTML(error.message)+
-"</div>";
+`
+<div class="status">
+❌ ${escapeHTML(error.message)}
+</div>
+`;
 
 }
 
@@ -866,22 +1326,31 @@ document.getElementById(
 "payouts"
 );
 
+
 if(!list.length){
 
 box.innerHTML =
 "<div class='empty'>No affiliate payouts found.</div>";
 
 return;
+
 }
 
+
 box.innerHTML =
-list.map(p => {
+list.map(
+p => {
+
 
 const status =
-String(p.status || "")
+String(
+p.status || ""
+)
 .toUpperCase();
 
+
 let buttons = "";
+
 
 if(status === "PENDING"){
 
@@ -891,18 +1360,16 @@ buttons = `
 
 <button
  class="paid"
- onclick="updatePayout(${p.id},'PAID')">
-
+ onclick="updatePayout(${p.id},'PAID')"
+>
 ✅ Mark Paid
-
 </button>
 
 <button
  class="payout-reject"
- onclick="updatePayout(${p.id},'REJECTED')">
-
+ onclick="updatePayout(${p.id},'REJECTED')"
+>
 ❌ Reject
-
 </button>
 
 </div>
@@ -911,58 +1378,84 @@ buttons = `
 
 }
 
+
 return `
 
 <div class="card">
 
-<h3>🤝 Payout #${p.id}</h3>
+<h3>
+🤝 Payout #${escapeHTML(p.id)}
+</h3>
+
 
 <div class="row">
+
 <span class="label">
 Affiliate Code
 </span>
+
 ${escapeHTML(
 p.affiliate_code || "-"
 )}
+
 </div>
 
+
 <div class="row">
+
 <span class="label">
 Student ID
 </span>
+
 ${escapeHTML(
 p.student_id || "-"
 )}
+
 </div>
 
+
 <div class="row">
+
 <span class="label">
 Email
 </span>
+
 ${escapeHTML(
 p.email || "-"
 )}
+
 </div>
 
+
 <div class="row">
+
 <span class="label">
 Commission
 </span>
+
 <strong>
-LKR ${Number(
+LKR ${
+Number(
 p.amount || 0
-).toLocaleString()}
+).toLocaleString()
+}
 </strong>
+
 </div>
 
+
 <div class="row">
+
 <span class="label">
 Status
 </span>
+
 <strong>
 ${escapeHTML(status)}
 </strong>
+
 </div>
+
 
 ${buttons}
 
@@ -987,13 +1480,17 @@ status
 if(
 !confirm(
 status === "PAID"
-? "Mark this payout as PAID?"
-: "Reject this payout?"
+?
+"Mark this payout as PAID?"
+:
+"Reject this payout?"
 )
 ){
 
 return;
+
 }
+
 
 try{
 
@@ -1001,19 +1498,22 @@ const data =
 await request(
 "/api/admin/payout/update",
 {
-method:"POST",
+ method:"POST",
 
-headers:{
-"Content-Type":
-"application/json"
-},
+ headers:{
+  "Content-Type":
+  "application/json"
+ },
 
-body:JSON.stringify({
-payout_id:id,
-status:status
-})
+ body:
+ JSON.stringify({
+  payout_id:id,
+  status:status
+ })
+
 }
 );
+
 
 if(!data.success){
 
@@ -1021,20 +1521,27 @@ throw new Error(
 data.message ||
 "Update failed"
 );
+
 }
+
 
 alert(
 status === "PAID"
-? "✅ Payout marked as PAID."
-: "❌ Payout rejected."
+?
+"✅ Payout marked as PAID."
+:
+"❌ Payout rejected."
 );
 
+
 loadPayouts();
+
 
 }catch(error){
 
 alert(
-"❌ "+error.message
+"❌ " +
+error.message
 );
 
 }
@@ -1043,17 +1550,56 @@ alert(
 
 
 /* =========================
-   ESCAPE
+   ESCAPE HTML
 ========================= */
 
 function escapeHTML(value){
 
-return String(value ?? "")
-.replace(/&/g,"&amp;")
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;")
-.replace(/"/g,"&quot;")
-.replace(/'/g,"&#039;");
+return String(
+value ?? ""
+)
+
+.replace(
+/&/g,
+"&amp;"
+)
+
+.replace(
+/</g,
+"&lt;"
+)
+
+.replace(
+/>/g,
+"&gt;"
+)
+
+.replace(
+/"/g,
+"&quot;"
+)
+
+.replace(
+/'/g,
+"&#039;"
+);
+
+}
+
+
+/* =========================
+   AUTO LOGIN FROM SESSION
+========================= */
+
+/*
+   If the Admin Key is already stored
+   in this browser session, automatically
+   test it when the page opens.
+*/
+
+if(ADMIN_KEY){
+
+loadPayments(true);
 
 }
 
