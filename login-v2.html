@@ -292,7 +292,9 @@ font-size:25px;
 
 </head>
 
+
 <body>
+
 
 <header>
 
@@ -300,9 +302,13 @@ font-size:25px;
 
 <a href="index.html" class="logo">
 
-<span class="logo-icon">📚</span>
+<span class="logo-icon">
+📚
+</span>
 
-<span>CreateLK Academy</span>
+<span>
+CreateLK Academy
+</span>
 
 </a>
 
@@ -323,6 +329,7 @@ font-size:25px;
 🔐
 </div>
 
+
 <div class="header">
 
 <div class="badge">
@@ -341,6 +348,7 @@ Sign in to continue your CreateLK Academy learning journey.
 
 
 <form id="loginForm">
+
 
 <div class="group">
 
@@ -459,7 +467,7 @@ All rights reserved.
 
 /* =========================================================
    CREATE LK ACADEMY
-   V2 LOGIN
+   V2 STUDENT LOGIN
 ========================================================= */
 
 
@@ -480,14 +488,20 @@ const DASHBOARD =
 
 
 /* =========================================================
-   V2 STORAGE KEYS
+   STORAGE KEYS
 ========================================================= */
 
 const STUDENT_KEY =
-"createlk_v2_student";
+"createlk_student";
 
 const LOGIN_KEY =
+"createlk_logged_in";
+
+const V2_LOGIN_KEY =
 "createlk_v2_logged_in";
+
+const TOKEN_KEY =
+"createlk_student_token";
 
 
 /* =========================================================
@@ -517,7 +531,10 @@ document.getElementById("showPassword");
    MESSAGE
 ========================================================= */
 
-function showMessage(text,type){
+function showMessage(
+text,
+type
+){
 
 messageBox.textContent =
 text;
@@ -529,24 +546,30 @@ messageBox.className =
 
 
 /* =========================================================
-   PASSWORD SHOW/HIDE
+   SHOW PASSWORD
 ========================================================= */
 
 showPassword.addEventListener(
 "click",
 function(){
 
-if(passwordInput.type === "password"){
+if(
+passwordInput.type === "password"
+){
 
-passwordInput.type = "text";
+passwordInput.type =
+"text";
 
-showPassword.textContent = "Hide";
+showPassword.textContent =
+"Hide";
 
 }else{
 
-passwordInput.type = "password";
+passwordInput.type =
+"password";
 
-showPassword.textContent = "Show";
+showPassword.textContent =
+"Show";
 
 }
 
@@ -554,17 +577,69 @@ showPassword.textContent = "Show";
 
 
 /* =========================================================
+   CLEAR OLD BROKEN SESSION
+========================================================= */
+
+function clearOldSession(){
+
+sessionStorage.removeItem(
+STUDENT_KEY
+);
+
+sessionStorage.removeItem(
+LOGIN_KEY
+);
+
+sessionStorage.removeItem(
+V2_LOGIN_KEY
+);
+
+sessionStorage.removeItem(
+TOKEN_KEY
+);
+
+sessionStorage.removeItem(
+"createlk_token"
+);
+
+localStorage.removeItem(
+STUDENT_KEY
+);
+
+localStorage.removeItem(
+LOGIN_KEY
+);
+
+localStorage.removeItem(
+V2_LOGIN_KEY
+);
+
+localStorage.removeItem(
+TOKEN_KEY
+);
+
+localStorage.removeItem(
+"createlk_token"
+);
+
+}
+
+
+/* =========================================================
    SAVE V2 SESSION
 ========================================================= */
 
-function saveV2Session(student){
+function saveV2Session(
+student,
+token
+){
 
 const studentJSON =
 JSON.stringify(student);
 
 
 /*
-   SESSION STORAGE
+STUDENT
 */
 
 sessionStorage.setItem(
@@ -572,24 +647,96 @@ STUDENT_KEY,
 studentJSON
 );
 
+localStorage.setItem(
+STUDENT_KEY,
+studentJSON
+);
+
+
+/*
+LOGIN MARKER
+*/
+
 sessionStorage.setItem(
+LOGIN_KEY,
+"true"
+);
+
+localStorage.setItem(
 LOGIN_KEY,
 "true"
 );
 
 
 /*
-   LOCAL STORAGE
+V2 LOGIN MARKER
 */
 
-localStorage.setItem(
-STUDENT_KEY,
-studentJSON
+sessionStorage.setItem(
+V2_LOGIN_KEY,
+"true"
 );
 
 localStorage.setItem(
-LOGIN_KEY,
+V2_LOGIN_KEY,
 "true"
+);
+
+
+/*
+TOKEN IS OPTIONAL.
+
+The current V2 API may not return
+a token, so never fail login because
+token is missing.
+*/
+
+if(
+token &&
+typeof token === "string"
+){
+
+sessionStorage.setItem(
+TOKEN_KEY,
+token
+);
+
+localStorage.setItem(
+TOKEN_KEY,
+token
+);
+
+}
+
+}
+
+
+/* =========================================================
+   VERIFY LOCAL SESSION
+========================================================= */
+
+function verifySavedSession(){
+
+const student =
+localStorage.getItem(
+STUDENT_KEY
+);
+
+const login =
+localStorage.getItem(
+LOGIN_KEY
+);
+
+const v2 =
+localStorage.getItem(
+V2_LOGIN_KEY
+);
+
+
+return(
+!!student &&
+login === "true" &&
+v2 === "true"
 );
 
 }
@@ -647,10 +794,16 @@ return;
 }
 
 
-if(password.length < 8){
+/*
+Do not reject valid API passwords
+just because frontend length rules
+are different.
+*/
+
+if(password.length < 1){
 
 showMessage(
-"Password must contain at least 8 characters.",
+"Please enter your password.",
 "error"
 );
 
@@ -665,7 +818,8 @@ return;
    BUTTON
 ======================================================= */
 
-loginButton.disabled = true;
+loginButton.disabled =
+true;
 
 loginButton.textContent =
 "Signing In...";
@@ -685,8 +839,11 @@ API + "/api/v2/login",
 method:"POST",
 
 headers:{
-"Content-Type":"application/json",
-"Accept":"application/json"
+"Content-Type":
+"application/json",
+
+"Accept":
+"application/json"
 },
 
 body:JSON.stringify({
@@ -764,17 +921,19 @@ throw new Error(
 
 
 /* =======================================================
-   IMPORTANT
-=======================================================
+   CLEAR OLD SESSION
+======================================================= */
 
-   V2 API DOES NOT NEED TO RETURN A TOKEN.
+clearOldSession();
 
-   We use the V2 student object as the login session.
 
+/* =======================================================
+   SAVE NEW V2 SESSION
 ======================================================= */
 
 saveV2Session(
-data.student
+data.student,
+data.token || ""
 );
 
 
@@ -782,24 +941,12 @@ data.student
    VERIFY
 ======================================================= */
 
-const savedStudent =
-sessionStorage.getItem(
-STUDENT_KEY
-);
-
-const savedLogin =
-sessionStorage.getItem(
-LOGIN_KEY
-);
-
-
 if(
-!savedStudent ||
-savedLogin !== "true"
+!verifySavedSession()
 ){
 
 throw new Error(
-"Unable to create V2 login session."
+"Login succeeded, but the browser could not save your login session."
 );
 
 }
@@ -830,7 +977,7 @@ DASHBOARD
 );
 
 },
-500
+600
 );
 
 
@@ -847,7 +994,8 @@ error.message ||
 "error"
 );
 
-loginButton.disabled = false;
+loginButton.disabled =
+false;
 
 loginButton.textContent =
 "Student Login";
@@ -866,13 +1014,8 @@ console.log(
 );
 
 console.log(
-"V2 Login API:",
+"V2 API:",
 API + "/api/v2/login"
-);
-
-console.log(
-"V2 Student Storage:",
-STUDENT_KEY
 );
 
 console.log(
