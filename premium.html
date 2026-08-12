@@ -160,8 +160,7 @@ padding:7px 10px;
 border-radius:7px;
 font-size:11px;
 font-weight:700;
-cursor:pointer;
-white-space:nowrap
+cursor:pointer
 }
 
 .instructions{
@@ -194,14 +193,14 @@ padding:15px
 }
 
 .student-name{
-font-size:15px;
-font-weight:800;
-margin-bottom:5px
+font-size:16px;
+font-weight:800
 }
 
 .student-email{
 font-size:13px;
 color:#667085;
+margin-top:5px;
 word-break:break-word
 }
 
@@ -232,7 +231,7 @@ margin-top:18px;
 border:0;
 border-radius:11px;
 background:#155eef;
-color:white;
+color:#fff;
 font-size:15px;
 font-weight:800;
 cursor:pointer
@@ -281,7 +280,7 @@ border-radius:12px;
 background:#f8fafc;
 border:1px solid #e5e7eb;
 font-size:13px;
-line-height:1.6
+line-height:1.7
 }
 
 .status.active{
@@ -300,6 +299,19 @@ color:#9a3412
 background:#fff1f2;
 border-color:#fecdd3;
 color:#be123c
+}
+
+.premium-button{
+display:none;
+width:100%;
+margin-top:15px;
+padding:13px;
+border:0;
+border-radius:10px;
+background:#16a34a;
+color:white;
+font-weight:800;
+cursor:pointer
 }
 
 footer{
@@ -326,7 +338,6 @@ align-items:flex-start
 .logo{
 font-size:16px
 }
-
 }
 </style>
 </head>
@@ -373,9 +384,7 @@ Unlock AI English MCQ practice and premium learning features.
 30 Days Premium Membership
 </div>
 
-<strong>
-LKR 1,500
-</strong>
+<strong>LKR 1,500</strong>
 
 <small>
 Premium access for 30 days after approval.
@@ -383,8 +392,6 @@ Premium access for 30 days after approval.
 
 </div>
 
-
-<!-- BANK -->
 
 <div class="section">
 
@@ -394,7 +401,6 @@ Premium access for 30 days after approval.
 
 <div class="bank-card">
 
-
 <div class="bank-row">
 <div>
 <div class="bank-label">Bank</div>
@@ -402,7 +408,7 @@ Premium access for 30 days after approval.
 </div>
 
 <button class="copy"
-onclick="copyText(`People's Bank`,this)">
+onclick="copyText(&quot;People's Bank&quot;,this)">
 📋 Copy
 </button>
 </div>
@@ -450,7 +456,6 @@ onclick="copyText('292200280023178',this)">
 </button>
 </div>
 
-
 </div>
 
 
@@ -471,8 +476,6 @@ onclick="copyText('292200280023178',this)">
 
 </div>
 
-
-<!-- STUDENT -->
 
 <div class="section">
 
@@ -496,8 +499,6 @@ Loading...
 
 </div>
 
-
-<!-- PAYMENT -->
 
 <div class="section">
 
@@ -543,12 +544,18 @@ class="message">
 <div id="statusBox"
 class="status">
 
-<strong>
-Premium Status
-</strong>
+<strong>Membership Status</strong>
 
-<div id="statusText">
-</div>
+<div id="statusText"></div>
+
+<button
+id="premiumButton"
+class="premium-button"
+onclick="goToDashboard()">
+
+⭐ Premium Access
+
+</button>
 
 </div>
 
@@ -566,23 +573,21 @@ Premium Status
 
 <script>
 
-/* =========================================
-   CREATE LK ACADEMY V2
-========================================= */
-
 const PAYMENT_API =
 "https://createlk-v2-payment.createlk.workers.dev";
 
+
 const STUDENT_KEY =
 "createlk_student";
+
 
 const LOGIN_KEY =
 "createlk_v2_logged_in";
 
 
-/* =========================================
-   GET LOGIN STUDENT
-========================================= */
+/* =========================
+   GET LOGGED-IN STUDENT
+========================= */
 
 function getStudent(){
 
@@ -612,80 +617,39 @@ const student =
 getStudent();
 
 
-/* =========================================
-   LOGIN CHECK
-========================================= */
-
 if(
 !student ||
 sessionStorage.getItem(LOGIN_KEY) !== "true"
 ){
 
-window.location.replace("login-v2.html");
+window.location.replace(
+"login-v2.html"
+);
 
 }
 
 
-/* =========================================
-   STUDENT DATA
-========================================= */
-
-const studentName =
-String(
-student?.first_name ||
-student?.name ||
-(
-(student?.firstName || "") +
-" " +
-(student?.lastName || "")
-)
-).trim();
-
+/* =========================
+   EMAIL
+========================= */
 
 const email =
 String(
 student?.email || ""
-).trim().toLowerCase();
-
-
-document.getElementById(
-"studentName"
-).textContent =
-studentName ||
-"Student";
+)
+.trim()
+.toLowerCase();
 
 
 document.getElementById(
 "studentEmail"
 ).textContent =
-email ||
-"Registered email not found.";
+email || "Email not available.";
 
 
-/* =========================================
-   MESSAGE
-========================================= */
-
-function showMessage(
-text,
-type
-){
-
-const box =
-document.getElementById("message");
-
-box.textContent =
-text;
-
-box.className =
-"message " + type;
-
-}
-
-
-/* =========================================
+/* =========================
    COPY
-========================================= */
+========================= */
 
 async function copyText(
 text,
@@ -703,9 +667,11 @@ button.textContent =
 "✓ Copied";
 
 setTimeout(
-()=>{
+function(){
+
 button.textContent =
 old;
+
 },
 1500
 );
@@ -721,9 +687,281 @@ alert(
 }
 
 
-/* =========================================
-   SUBMIT
-========================================= */
+/* =========================
+   MESSAGE
+========================= */
+
+function showMessage(
+text,
+type
+){
+
+const box =
+document.getElementById(
+"message"
+);
+
+box.textContent =
+text;
+
+box.className =
+"message " + type;
+
+}
+
+
+/* =========================
+   LOAD STUDENT
+========================= */
+
+async function loadStudent(){
+
+if(!email){
+
+showMessage(
+"Your login email is missing. Please login again.",
+"error"
+);
+
+return;
+
+}
+
+
+try{
+
+const response =
+await fetch(
+PAYMENT_API +
+"/api/v2/student?email=" +
+encodeURIComponent(email)
+);
+
+
+const data =
+await response.json();
+
+
+if(
+!response.ok ||
+data.success !== true
+){
+
+throw new Error(
+data.message ||
+"Student account not found."
+);
+
+}
+
+
+const s =
+data.student;
+
+
+document.getElementById(
+"studentName"
+).textContent =
+(
+`${s.first_name || ""} ${s.last_name || ""}`
+).trim() ||
+"Student";
+
+
+document.getElementById(
+"studentEmail"
+).textContent =
+s.email;
+
+
+await loadStatus();
+
+
+}catch(error){
+
+document.getElementById(
+"studentName"
+).textContent =
+student?.first_name ||
+"Student";
+
+
+showMessage(
+error.message ||
+"Unable to load student account.",
+"error"
+);
+
+}
+
+}
+
+
+/* =========================
+   LOAD STATUS
+========================= */
+
+async function loadStatus(){
+
+if(!email)return;
+
+
+try{
+
+const response =
+await fetch(
+PAYMENT_API +
+"/api/v2/payment-status?email=" +
+encodeURIComponent(email)
+);
+
+
+const data =
+await response.json();
+
+
+if(
+!response.ok ||
+data.success !== true
+){
+
+return;
+
+}
+
+
+const box =
+document.getElementById(
+"statusBox"
+);
+
+const text =
+document.getElementById(
+"statusText"
+);
+
+const premiumButton =
+document.getElementById(
+"premiumButton"
+);
+
+
+const status =
+String(
+data.status || "NONE"
+).toUpperCase();
+
+
+box.style.display =
+"block";
+
+
+box.className =
+"status";
+
+
+if(data.active === true){
+
+box.classList.add("active");
+
+text.innerHTML =
+"✅ <b>Premium Active</b><br>" +
+"Your Premium membership is active until " +
+formatDate(data.membership_expiry) +
+".";
+
+
+premiumButton.style.display =
+"block";
+
+
+/* Hide payment form */
+
+document.getElementById(
+"paymentForm"
+).style.display =
+"none";
+
+
+}else if(status === "PENDING"){
+
+box.classList.add("pending");
+
+text.innerHTML =
+"⏳ <b>Payment Pending</b><br>" +
+"Your payment has been submitted and is waiting for admin approval.";
+
+
+premiumButton.style.display =
+"none";
+
+
+}else if(status === "REJECTED"){
+
+box.classList.add("rejected");
+
+text.innerHTML =
+"❌ <b>Payment Rejected</b><br>" +
+"Your previous payment was rejected. You can submit a new receipt.";
+
+
+premiumButton.style.display =
+"none";
+
+
+}else{
+
+box.style.display =
+"none";
+
+}
+
+}catch(error){
+
+console.error(
+"Status error:",
+error
+);
+
+}
+
+}
+
+
+/* =========================
+   FORMAT DATE
+========================= */
+
+function formatDate(value){
+
+if(!value)return "N/A";
+
+const date =
+new Date(value);
+
+if(isNaN(date.getTime())){
+
+return value;
+
+}
+
+return date.toLocaleString(
+undefined,
+{
+year:"numeric",
+month:"long",
+day:"numeric",
+hour:"2-digit",
+minute:"2-digit"
+}
+);
+
+}
+
+
+/* =========================
+   SUBMIT PAYMENT
+========================= */
 
 document.getElementById(
 "paymentForm"
@@ -737,7 +975,7 @@ e.preventDefault();
 if(!email){
 
 showMessage(
-"Registered email not found. Please login again.",
+"Please login again.",
 "error"
 );
 
@@ -779,10 +1017,16 @@ return;
 }
 
 
-/* FORM */
-
 const formData =
 new FormData();
+
+
+/*
+ IMPORTANT:
+ We send EMAIL only.
+ The Worker finds the correct
+ student ID from the database.
+*/
 
 formData.append(
 "email",
@@ -804,6 +1048,7 @@ const button =
 document.getElementById(
 "submitButton"
 );
+
 
 button.disabled =
 true;
@@ -834,7 +1079,9 @@ body:formData
 const text =
 await response.text();
 
+
 let data;
+
 
 try{
 
@@ -864,7 +1111,7 @@ data.message ||
 
 
 showMessage(
-"✅ Payment receipt submitted successfully. Your payment is waiting for admin approval.",
+"✅ Payment receipt submitted successfully. Your Premium membership is waiting for admin approval.",
 "success"
 );
 
@@ -878,7 +1125,7 @@ button.textContent =
 "✓ Payment Submitted";
 
 
-loadStatus();
+await loadStatus();
 
 
 }catch(error){
@@ -902,146 +1149,23 @@ button.textContent =
 });
 
 
-/* =========================================
-   STATUS BY EMAIL
-========================================= */
+/* =========================
+   DASHBOARD
+========================= */
 
-async function loadStatus(){
+function goToDashboard(){
 
-if(!email){
-return;
-}
-
-
-try{
-
-const response =
-await fetch(
-PAYMENT_API +
-"/api/v2/payment-status?email=" +
-encodeURIComponent(email)
-);
-
-
-const data =
-await response.json();
-
-
-if(
-!data.success
-){
-
-return;
+window.location.href =
+"dashboard-v2.html";
 
 }
 
 
-const box =
-document.getElementById(
-"statusBox"
-);
+/* =========================
+   INITIAL LOAD
+========================= */
 
-const text =
-document.getElementById(
-"statusText"
-);
-
-
-box.style.display =
-"block";
-
-
-box.className =
-"status";
-
-
-const status =
-String(
-data.status ||
-"NONE"
-).toUpperCase();
-
-
-if(
-data.active === true ||
-status === "ACTIVE"
-){
-
-box.classList.add("active");
-
-text.textContent =
-"✅ Your Premium membership is active until " +
-(
-data.membership_expiry ||
-"your expiry date"
-) +
-".";
-
-
-}else if(
-status === "PENDING"
-){
-
-box.classList.add("pending");
-
-text.textContent =
-"⏳ Your payment is pending admin approval.";
-
-
-}else if(
-status === "APPROVED"
-){
-
-box.classList.add("active");
-
-text.textContent =
-"✅ Payment approved. Premium membership is active.";
-
-
-}else if(
-status === "REJECTED"
-){
-
-box.classList.add("rejected");
-
-text.textContent =
-"❌ Your payment was rejected. Please submit a new receipt.";
-
-
-}else{
-
-box.style.display =
-"none";
-
-}
-
-}catch(error){
-
-console.error(
-"Status error:",
-error
-);
-
-}
-
-}
-
-
-/* =========================================
-   INITIAL STATUS
-========================================= */
-
-loadStatus();
-
-
-/* =========================================
-   REFRESH STATUS EVERY 10 SECONDS
-========================================= */
-
-setInterval(
-loadStatus,
-10000
-);
+loadStudent();
 
 </script>
 
