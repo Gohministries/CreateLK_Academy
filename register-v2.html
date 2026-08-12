@@ -349,6 +349,7 @@ font-size:25px;
 
 <body>
 
+
 <header>
 
 <div class="nav">
@@ -374,13 +375,16 @@ CreateLK Academy
 </header>
 
 
+
 <main>
 
 <div class="login-card">
 
+
 <div class="login-icon">
 🔐
 </div>
+
 
 <div class="form-header">
 
@@ -400,7 +404,9 @@ learning journey.
 </div>
 
 
+
 <form id="loginForm">
+
 
 <div class="form-group">
 
@@ -418,6 +424,7 @@ maxlength="120"
 required>
 
 </div>
+
 
 
 <div class="form-group">
@@ -451,6 +458,7 @@ Show
 </div>
 
 
+
 <button
 type="submit"
 class="submit-btn"
@@ -461,12 +469,15 @@ Student Login
 </button>
 
 
+
 <div
 id="formMessage"
 class="message">
 </div>
 
+
 </form>
+
 
 
 <div class="register-note">
@@ -478,6 +489,7 @@ Create Student Account
 </a>
 
 </div>
+
 
 
 <div class="help">
@@ -503,6 +515,7 @@ rel="noopener">
 </div>
 
 
+
 <div class="security-note">
 
 🔐 Keep your password private.
@@ -511,9 +524,11 @@ your password with another person.
 
 </div>
 
+
 </div>
 
 </main>
+
 
 
 <footer>
@@ -524,15 +539,23 @@ All rights reserved.
 </footer>
 
 
+
 <script>
 
 /* =========================================================
-   CREATE LK ACADEMY
-   V2 LOGIN
+   CREATE LK ACADEMY V2
+   STUDENT LOGIN
 ========================================================= */
 
+
+/*
+ IMPORTANT:
+ This is your NEW working V2 Membership Worker.
+*/
+
 const V2_API_URL =
-"https://createlk-academy-v2-api.createlk.workers.dev";
+"https://createlk-v2-membership.createlk.workers.dev";
+
 
 
 /* =========================================================
@@ -546,6 +569,7 @@ document.getElementById("password");
 
 const button =
 document.querySelector(".show-password");
+
 
 if(input.type === "password"){
 
@@ -562,6 +586,7 @@ button.textContent = "Show";
 }
 
 }
+
 
 
 /* =========================================================
@@ -583,6 +608,7 @@ box.className =
 "message " + type;
 
 }
+
 
 
 /* =========================================================
@@ -607,7 +633,8 @@ document.getElementById(
 const email =
 document.getElementById(
 "email"
-).value
+)
+.value
 .trim()
 .toLowerCase();
 
@@ -615,7 +642,9 @@ document.getElementById(
 const password =
 document.getElementById(
 "password"
-).value;
+)
+.value;
+
 
 
 /* =======================================================
@@ -646,12 +675,24 @@ return;
 }
 
 
+if(password.length < 8){
+
+showMessage(
+"Password must contain at least 8 characters.",
+"error"
+);
+
+return;
+
+}
+
+
+
 /* =======================================================
    BUTTON
 ======================================================= */
 
-button.disabled =
-true;
+button.disabled = true;
 
 button.textContent =
 "Signing In...";
@@ -659,6 +700,10 @@ button.textContent =
 
 try{
 
+
+/* =======================================================
+   API REQUEST
+======================================================= */
 
 const response =
 await fetch(
@@ -685,27 +730,39 @@ password:password
 );
 
 
+
+/* =======================================================
+   READ RESPONSE
+======================================================= */
+
+const text =
+await response.text();
+
 let data;
+
 
 try{
 
 data =
-await response.json();
+JSON.parse(text);
 
 }catch(error){
 
-data = {
-success:false,
-message:
-"Invalid server response."
-};
+throw new Error(
+"Invalid response from Membership API."
+);
 
 }
 
 
+
+/* =======================================================
+   CHECK RESPONSE
+======================================================= */
+
 if(
-!response.ok ||
-!data.success
+response.status === 401 ||
+response.status === 403
 ){
 
 throw new Error(
@@ -716,8 +773,22 @@ data.message ||
 }
 
 
+if(
+!response.ok ||
+data.success !== true
+){
+
+throw new Error(
+data.message ||
+"Invalid email or password."
+);
+
+}
+
+
+
 /* =======================================================
-   SAVE LOGIN SESSION
+   SAVE STUDENT SESSION
 ======================================================= */
 
 if(data.student){
@@ -732,6 +803,22 @@ data.student
 }
 
 
+/*
+ Also save token if your Worker
+ returns one.
+*/
+
+if(data.token){
+
+sessionStorage.setItem(
+"createlk_student_token",
+data.token
+);
+
+}
+
+
+
 /* =======================================================
    SUCCESS
 ======================================================= */
@@ -741,6 +828,11 @@ showMessage(
 "success"
 );
 
+
+
+/* =======================================================
+   REDIRECT
+======================================================= */
 
 setTimeout(
 function(){
@@ -753,10 +845,11 @@ window.location.href =
 );
 
 
+
 }catch(error){
 
 console.error(
-"CreateLK Academy login error:",
+"CreateLK Academy V2 login error:",
 error
 );
 
@@ -768,8 +861,7 @@ error.message ||
 );
 
 
-button.disabled =
-false;
+button.disabled = false;
 
 button.textContent =
 "Student Login";
@@ -779,8 +871,18 @@ button.textContent =
 });
 
 
+
+/* =========================================================
+   PAGE LOADED
+========================================================= */
+
 console.log(
-"CreateLK Academy V2 login loaded."
+"CreateLK Academy V2 Login loaded."
+);
+
+console.log(
+"Membership API:",
+V2_API_URL
 );
 
 </script>
