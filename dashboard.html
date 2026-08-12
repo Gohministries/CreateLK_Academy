@@ -155,6 +155,38 @@ background:#7c3aed;
 background:#155eef;
 }
 
+.orange{
+background:#ea580c;
+}
+
+.status-badge{
+margin-top:12px;
+padding:7px 12px;
+border-radius:20px;
+font-size:12px;
+font-weight:800;
+}
+
+.status-active{
+background:#dcfce7;
+color:#166534;
+}
+
+.status-pending{
+background:#fef3c7;
+color:#92400e;
+}
+
+.status-expired{
+background:#fee2e2;
+color:#991b1b;
+}
+
+.status-none{
+background:#eef2f7;
+color:#475467;
+}
+
 footer{
 text-align:center;
 padding:30px;
@@ -186,6 +218,7 @@ font-size:26px;
 
 <body>
 
+
 <header>
 
 <div class="nav">
@@ -209,6 +242,7 @@ Logout
 
 
 <main class="container">
+
 
 <div
 id="message"
@@ -235,9 +269,7 @@ Continue your learning journey with CreateLK Academy.
 <section class="grid">
 
 
-<!-- =================================================
-     PREMIUM MEMBERSHIP
-================================================= -->
+<!-- PREMIUM -->
 
 <div class="card">
 
@@ -253,6 +285,8 @@ Premium Membership
 Unlock AI English MCQ practice and premium
 learning features with a 30-day membership.
 </p>
+
+<div id="premiumStatus"></div>
 
 <div
 class="action"
@@ -271,9 +305,7 @@ class="btn green">
 </div>
 
 
-<!-- =================================================
-     ACHIEVEMENT CERTIFICATE
-================================================= -->
+<!-- CERTIFICATE -->
 
 <div class="card">
 
@@ -306,9 +338,7 @@ class="btn purple">
 </div>
 
 
-<!-- =================================================
-     AFFILIATE PROGRAM
-================================================= -->
+<!-- AFFILIATE -->
 
 <div class="card">
 
@@ -356,7 +386,24 @@ class="btn blue">
 <script>
 
 /* =====================================================
-   CREATE LK ACADEMY V2 DASHBOARD
+   CREATE LK ACADEMY V2
+   FIXED DASHBOARD
+===================================================== */
+
+
+/* =====================================================
+   API
+===================================================== */
+
+const API_URL =
+"https://createlk-academy-v2-api.createlk.workers.dev";
+
+const PAYMENT_API =
+"https://createlk-v2-payment.createlk.workers.dev";
+
+
+/* =====================================================
+   SESSION KEYS
 ===================================================== */
 
 const STUDENT_KEY =
@@ -365,12 +412,9 @@ const STUDENT_KEY =
 const LOGIN_KEY =
 "createlk_v2_logged_in";
 
-const MEMBERSHIP_API =
-"https://createlk-academy-v2-api.createlk.workers.dev";
-
 
 /* =====================================================
-   GET STUDENT
+   GET SAVED STUDENT
 ===================================================== */
 
 let student = null;
@@ -392,7 +436,7 @@ JSON.parse(saved);
 }catch(error){
 
 console.error(
-"Student data error:",
+"Session student error:",
 error
 );
 
@@ -402,16 +446,16 @@ student = null;
 
 
 /* =====================================================
-   CHECK LOGIN
+   LOGIN CHECK
 ===================================================== */
 
-const logged =
+const loggedIn =
 sessionStorage.getItem(
 LOGIN_KEY
 ) === "true";
 
 
-if(!student || !logged){
+if(!student || !loggedIn){
 
 window.location.replace(
 "login-v2.html"
@@ -419,50 +463,70 @@ window.location.replace(
 
 }else{
 
-loadStudent();
+initializeDashboard();
 
 }
 
 
 /* =====================================================
-   LOAD STUDENT
+   INITIALIZE
 ===================================================== */
 
-function loadStudent(){
+function initializeDashboard(){
 
-const first =
+const firstName =
 student.first_name ||
 student.firstName ||
 "Student";
 
+
 document.getElementById(
 "welcome"
 ).textContent =
-"Welcome, " + first + "!";
+"Welcome, " + firstName + "!";
+
 
 document.getElementById(
 "message"
 ).textContent =
-"📚 Welcome back, " + first + "!";
+"📚 Welcome back, " + firstName + "!";
 
-checkMembership();
+
+/*
+First show locally saved membership.
+*/
+
+showMembership(
+student.membership_status,
+student.membership_expiry
+);
+
+
+/*
+Then get the newest student data
+from the server.
+*/
+
+loadLatestStudent();
 
 }
 
 
 /* =====================================================
-   CHECK MEMBERSHIP
+   LOAD LATEST STUDENT
 ===================================================== */
 
-async function checkMembership(){
+async function loadLatestStudent(){
 
-const id =
-student.id ||
-student.student_id ||
-student.user_id;
+const email =
+String(
+student.email || ""
+)
+.trim()
+.toLowerCase();
 
 
-if(!id){
+if(!email){
 
 return;
 
@@ -471,12 +535,19 @@ return;
 
 try{
 
+
+/*
+=====================================================
+GET CURRENT STUDENT FROM PAYMENT API
+=====================================================
+*/
+
 const response =
 await fetch(
 
-MEMBERSHIP_API +
-"/api/v2/membership?student_id=" +
-encodeURIComponent(id),
+PAYMENT_API +
+"/api/v2/student?email=" +
+encodeURIComponent(email),
 
 {
 method:"GET",
@@ -494,88 +565,364 @@ const data =
 await response.json();
 
 
+console.log(
+"LATEST STUDENT:",
+data
+);
+
+
 if(
 !response.ok ||
-data.success !== true
+data.success !== true ||
+!data.student
 ){
 
-return;
-
-}
-
-
-const status =
-String(
-data.status || ""
-).toLowerCase();
-
-
-/* ACTIVE */
-
-if(
-data.active === true ||
-data.membership_active === true ||
-status === "active"
-){
-
-document.getElementById(
-"premiumAction"
-).innerHTML =
-
-'<a href="mcq.html" class="btn blue">🤖 Start AI MCQ</a>';
+console.warn(
+"Latest student not available:",
+data
+);
 
 return;
 
 }
 
 
-/* PENDING */
+const serverStudent =
+data.student;
 
-if(status === "pending"){
+
+/* =====================================================
+   UPDATE SESSION WITH LATEST DATA
+===================================================== */
+
+student = {
+
+...student,
+
+id:
+serverStudent.id ||
+student.id,
+
+student_id:
+serverStudent.id ||
+student.student_id,
+
+first_name:
+serverStudent.first_name ||
+student.first_name,
+
+last_name:
+serverStudent.last_name ||
+student.last_name,
+
+email:
+serverStudent.email ||
+student.email,
+
+phone:
+serverStudent.phone ||
+student.phone,
+
+membership_status:
+serverStudent.membership_status ||
+serverStudent.membershipStatus ||
+"NONE",
+
+membership_expiry:
+serverStudent.membership_expiry ||
+serverStudent.membershipExpiry ||
+null
+
+};
+
+
+sessionStorage.setItem(
+STUDENT_KEY,
+JSON.stringify(student)
+);
+
+
+/* =====================================================
+   UPDATE NAME
+===================================================== */
+
+const firstName =
+student.first_name ||
+"Student";
+
 
 document.getElementById(
-"premiumAction"
-).innerHTML =
+"welcome"
+).textContent =
+"Welcome, " + firstName + "!";
 
-'<a href="premium.html" class="btn green">⏳ View Payment</a>';
-
-return;
-
-}
-
-
-/* EXPIRED */
-
-if(status === "expired"){
 
 document.getElementById(
-"premiumAction"
-).innerHTML =
-
-'<a href="premium.html" class="btn green">⭐ Renew Premium</a>';
-
-return;
-
-}
+"message"
+).textContent =
+"📚 Welcome back, " + firstName + "!";
 
 
-/* REJECTED / FREE */
+/* =====================================================
+   SHOW CURRENT MEMBERSHIP
+===================================================== */
 
-document.getElementById(
-"premiumAction"
-).innerHTML =
-
-'<a href="premium.html" class="btn green">⭐ Get Premium</a>';
+showMembership(
+student.membership_status,
+student.membership_expiry
+);
 
 
 }catch(error){
 
 console.error(
-"Membership check error:",
+"Latest student error:",
 error
 );
 
 }
+
+}
+
+
+/* =====================================================
+   SHOW MEMBERSHIP
+===================================================== */
+
+function showMembership(
+membershipStatus,
+membershipExpiry
+){
+
+const statusBox =
+document.getElementById(
+"premiumStatus"
+);
+
+const action =
+document.getElementById(
+"premiumAction"
+);
+
+
+let status =
+String(
+membershipStatus || "NONE"
+)
+.trim()
+.toUpperCase();
+
+
+/*
+=====================================================
+ACTIVE
+=====================================================
+*/
+
+if(
+status === "ACTIVE"
+){
+
+statusBox.innerHTML =
+'<div class="status-badge status-active">' +
+'✅ PREMIUM ACTIVE' +
+'</div>';
+
+
+let expiryText =
+"";
+
+
+if(membershipExpiry){
+
+expiryText =
+'<div style="font-size:11px;color:#667085;margin-top:6px;">' +
+'Expires: ' +
+escapeHtml(
+formatDate(membershipExpiry)
+) +
+'</div>';
+
+}
+
+
+statusBox.innerHTML +=
+expiryText;
+
+
+action.innerHTML =
+
+'<a href="mcq.html" class="btn blue">' +
+'🤖 Start AI MCQ' +
+'</a>';
+
+return;
+
+}
+
+
+/*
+=====================================================
+PENDING
+=====================================================
+*/
+
+if(
+status === "PENDING"
+){
+
+statusBox.innerHTML =
+'<div class="status-badge status-pending">' +
+'⏳ PAYMENT PENDING' +
+'</div>';
+
+
+action.innerHTML =
+
+'<a href="premium.html" class="btn orange">' +
+'⏳ View Payment Status' +
+'</a>';
+
+return;
+
+}
+
+
+/*
+=====================================================
+EXPIRED
+=====================================================
+*/
+
+if(
+status === "EXPIRED"
+){
+
+statusBox.innerHTML =
+'<div class="status-badge status-expired">' +
+'⚠️ PREMIUM EXPIRED' +
+'</div>';
+
+
+action.innerHTML =
+
+'<a href="premium.html" class="btn green">' +
+'⭐ Renew Premium' +
+'</a>';
+
+return;
+
+}
+
+
+/*
+=====================================================
+REJECTED
+=====================================================
+*/
+
+if(
+status === "REJECTED"
+){
+
+statusBox.innerHTML =
+'<div class="status-badge status-expired">' +
+'❌ PAYMENT REJECTED' +
+'</div>';
+
+
+action.innerHTML =
+
+'<a href="premium.html" class="btn green">' +
+'⭐ Submit New Payment' +
+'</a>';
+
+return;
+
+}
+
+
+/*
+=====================================================
+NONE / FREE
+=====================================================
+*/
+
+statusBox.innerHTML =
+'<div class="status-badge status-none">' +
+'FREE ACCOUNT' +
+'</div>';
+
+
+action.innerHTML =
+
+'<a href="premium.html" class="btn green">' +
+'⭐ Get Premium' +
+'</a>';
+
+}
+
+
+/* =====================================================
+   DATE FORMAT
+===================================================== */
+
+function formatDate(value){
+
+if(!value){
+
+return "";
+
+}
+
+
+try{
+
+const date =
+new Date(value);
+
+
+if(
+isNaN(
+date.getTime()
+)
+){
+
+return value;
+
+}
+
+
+return date.toLocaleDateString(
+undefined,
+{
+year:"numeric",
+month:"long",
+day:"numeric"
+}
+);
+
+}catch(error){
+
+return value;
+
+}
+
+}
+
+
+/* =====================================================
+   HTML ESCAPE
+===================================================== */
+
+function escapeHtml(value){
+
+return String(value)
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
 
 }
 
@@ -604,6 +951,14 @@ sessionStorage.removeItem(
 
 sessionStorage.removeItem(
 "createlk_token"
+);
+
+sessionStorage.removeItem(
+"createlk_student_id"
+);
+
+sessionStorage.removeItem(
+"createlk_student_email"
 );
 
 window.location.replace(
