@@ -1,17 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <title>Student Login | CreateLK Academy</title>
 
-<meta name="description"
-content="Login to your CreateLK Academy student account.">
-
 <meta name="theme-color" content="#155eef">
 
 <style>
+
 *{
 box-sizing:border-box;
 margin:0;
@@ -280,7 +279,9 @@ font-size:25px;
 }
 
 }
+
 </style>
+
 </head>
 
 <body>
@@ -435,18 +436,12 @@ All rights reserved.
 
 <script>
 
-/* =========================================================
-   CREATE LK ACADEMY V2 LOGIN
-========================================================= */
-
 const API =
 "https://createlk-academy-v2-api.createlk.workers.dev";
 
 const LOGIN_URL =
 API + "/api/v2/login";
 
-
-/* ELEMENTS */
 
 const form =
 document.getElementById("loginForm");
@@ -467,7 +462,7 @@ const showPassword =
 document.getElementById("showPassword");
 
 
-/* PASSWORD SHOW/HIDE */
+/* SHOW PASSWORD */
 
 showPassword.addEventListener(
 "click",
@@ -477,15 +472,13 @@ if(password.type === "password"){
 
 password.type = "text";
 
-showPassword.textContent =
-"Hide";
+showPassword.textContent = "Hide";
 
 }else{
 
 password.type = "password";
 
-showPassword.textContent =
-"Show";
+showPassword.textContent = "Show";
 
 }
 
@@ -494,13 +487,9 @@ showPassword.textContent =
 
 /* MESSAGE */
 
-function showMessage(
-text,
-type
-){
+function showMessage(text,type){
 
-message.textContent =
-text;
+message.textContent = text;
 
 message.className =
 "message " + type;
@@ -522,7 +511,6 @@ email.value.trim().toLowerCase();
 const passwordValue =
 password.value;
 
-
 if(!emailValue || !passwordValue){
 
 showMessage(
@@ -534,9 +522,7 @@ return;
 
 }
 
-
-button.disabled =
-true;
+button.disabled = true;
 
 button.textContent =
 "Logging in...";
@@ -550,14 +536,9 @@ LOGIN_URL,
 {
 method:"POST",
 
-mode:"cors",
-
 headers:{
-"Content-Type":
-"application/json",
-
-"Accept":
-"application/json"
+"Content-Type":"application/json",
+"Accept":"application/json"
 },
 
 body:JSON.stringify({
@@ -572,7 +553,7 @@ password:passwordValue
 );
 
 
-/* READ RESPONSE */
+/* READ SERVER RESPONSE */
 
 const text =
 await response.text();
@@ -581,13 +562,12 @@ let data;
 
 try{
 
-data =
-JSON.parse(text);
+data = JSON.parse(text);
 
 }catch(error){
 
 console.error(
-"LOGIN RAW RESPONSE:",
+"LOGIN RESPONSE:",
 text
 );
 
@@ -598,7 +578,7 @@ throw new Error(
 }
 
 
-/* API ERROR */
+/* CHECK LOGIN */
 
 if(
 !response.ok ||
@@ -613,24 +593,16 @@ data.message ||
 }
 
 
-/* =======================================================
-   GET STUDENT
-======================================================= */
+/* =====================================================
+   GET STUDENT DATA
+===================================================== */
 
 const student =
 data.student ||
 data.user ||
 data.data ||
+data.profile ||
 null;
-
-
-/* TOKEN */
-
-const token =
-data.token ||
-data.access_token ||
-data.student_token ||
-"";
 
 
 if(!student){
@@ -641,39 +613,59 @@ throw new Error(
 
 }
 
-if(!token){
 
-throw new Error(
-"Login successful, but login token was not returned."
-);
-
-}
-
-
-/* =======================================================
-   SAVE V2 LOGIN SESSION
-======================================================= */
+/* =====================================================
+   SAVE STUDENT
+===================================================== */
 
 sessionStorage.setItem(
 "createlk_student",
 JSON.stringify(student)
 );
 
+
+/* =====================================================
+   TOKEN IS OPTIONAL
+===================================================== */
+
+const token =
+data.token ||
+data.access_token ||
+data.student_token ||
+"";
+
+
+if(token){
+
 sessionStorage.setItem(
 "createlk_student_token",
 token
 );
 
+}else{
+
+/*
+   Your current V2 login API does not appear
+   to return a token.
+
+   Do not reject a successful login.
+*/
+
+sessionStorage.removeItem(
+"createlk_student_token"
+);
+
+}
+
+
+/* =====================================================
+   LOGIN FLAGS
+===================================================== */
+
 sessionStorage.setItem(
 "createlk_v2_logged_in",
 "true"
 );
-
-
-/*
-   Keep these keys compatible
-   with the dashboard.
-*/
 
 sessionStorage.setItem(
 "createlk_logged_in",
@@ -681,9 +673,9 @@ sessionStorage.setItem(
 );
 
 
-/* =======================================================
+/* =====================================================
    SUCCESS
-======================================================= */
+===================================================== */
 
 showMessage(
 "Login successful. Opening your dashboard...",
@@ -713,27 +705,13 @@ console.error(
 error
 );
 
-if(
-error instanceof TypeError
-){
-
-showMessage(
-"Unable to connect to CreateLK Academy. Please check your internet connection or Cloudflare Worker.",
-"error"
-);
-
-}else{
-
 showMessage(
 error.message ||
 "Login failed. Please try again.",
 "error"
 );
 
-}
-
-button.disabled =
-false;
+button.disabled = false;
 
 button.textContent =
 "Login";
@@ -743,19 +721,12 @@ button.textContent =
 });
 
 
-/* DEBUG */
-
 console.log(
-"CreateLK Academy V2 Login loaded."
+"CreateLK Academy V2 Login"
 );
 
 console.log(
-"V2 API:",
-API
-);
-
-console.log(
-"Login endpoint:",
+"Login API:",
 LOGIN_URL
 );
 
