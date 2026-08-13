@@ -1,6 +1,9 @@
 const ALLOWED_ORIGIN = "https://createlk.com";
+const PAYHERE_ID = "257692";
+const PREMIUM_AMOUNT = 1500;
+const CURRENCY = "LKR";
 
-function corsHeaders() {
+function cors() {
   return {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
@@ -14,9 +17,18 @@ function json(data, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders()
+      ...cors()
     }
   });
+}
+
+async function md5(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest("MD5", data);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
 }
 
 async function hashPassword(password) {
@@ -28,12 +40,18 @@ async function hashPassword(password) {
     .join("");
 }
 
-async function verifyPassword(password, storedHash) {
-  return (await hashPassword(password)) === storedHash;
+async function verifyPassword(password, hash) {
+  return await hashPassword(password) === hash;
 }
 
-function createToken() {
+function token() {
   return crypto.randomUUID() + "-" + crypto.randomUUID();
+}
+
+function active(status, expiry) {
+  if (String(status).toUpperCase() !== "ACTIVE") return false;
+  if (!expiry) return true;
+  return new Date(expiry) > new Date();
 }
 
 export default {
@@ -44,56 +62,41 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
-    /* CORS */
-
     if (method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: corsHeaders()
+        headers: cors()
       });
     }
 
-    /* API TEST */
+    /* ===============================
+       TEST
+    =============================== */
 
     if (path === "/" && method === "GET") {
       return json({
         success: true,
-        message: "CreateLK Academy API is working",
-        worker: "createlk-academy-api"
+        worker: "createlk-academy-api",
+        message: "CreateLK Academy API is working"
       });
     }
 
-    /* =====================================================
+    /* ===============================
        REGISTER
-    ===================================================== */
+    =============================== */
 
     if (path === "/api/register" && method === "POST") {
-
       try {
 
-        const body = await request.json();
+        const b = await request.json();
 
-        const firstName = String(
-          body.first_name || body.firstName || ""
-        ).trim();
+        const first = String(b.first_name || "").trim();
+        const last = String(b.last_name || "").trim();
+        const email = String(b.email || "").trim().toLowerCase();
+        const phone = String(b.phone || "").trim();
+        const password = String(b.password || "");
 
-        const lastName = String(
-          body.last_name || body.lastName || ""
-        ).trim();
-
-        const email = String(
-          body.email || ""
-        ).trim().toLowerCase();
-
-        const phone = String(
-          body.phone || ""
-        ).trim();
-
-        const password = String(
-          body.password || ""
-        );
-
-        if (!firstName || !lastName || !email || !password) {
+        if (!first || !last || !email || !password) {
           return json({
             success: false,
             message: "Please complete all required fields."
@@ -107,108 +110,76 @@ export default {
           }, 400);
         }
 
-        const existing = await env.DB.prepare(`
-          SELECT id
-          FROM students
-          WHERE email=?
-          LIMIT 1
-        `)
-        .bind(email)
-        .first();
+        const exists = await env.DB.prepare(`
+          SELECT id FROM students WHERE email=? LIMIT 1
+        `).bind(email).first();
 
-        if (existing) {
+        if (exists) {
           return json({
             success: false,
             message: "An account with this email already exists."
           }, 409);
         }
 
-        const passwordHash =
-          await hashPassword(password);
+        const passwordHash = await hashPassword(password);
 
-        const result = await env.DB.prepare(`
+        const r = await env.DB.prepare(`
           INSERT INTO students
-          (
-            first_name,
-            last_name,
-            email,
-            phone,
-            password_hash,
-            membership_status
-          )
-          VALUES (?, ?, ?, ?, ?, 'NONE')
-        `)
-        .bind(
-          firstName,
-          lastName,
+          (first_name,last_name,email,phone,password_hash,membership_status)
+          VALUES (?,?,?,?,?,'NONE')
+        `).bind(
+          first,
+          last,
           email,
           phone,
           passwordHash
-        )
-        .run();
+        ).run();
 
-        const studentId =
-          result.meta.last_row_id;
+        const id = r.meta.last_row_id;
 
         return json({
           success: true,
           message: "Account created successfully.",
           student: {
-            id: studentId,
-            student_id: studentId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            phone: phone,
+            id,
+            student_id: id,
+            first_name: first,
+            last_name: last,
+            email,
+            phone,
             membership_status: "NONE"
           }
         });
 
-      } catch (error) {
-
-        console.error("REGISTER:", error);
-
+      } catch (e) {
         return json({
           success: false,
           message: "Registration failed.",
-          error: error.message
+          error: e.message
         }, 500);
       }
     }
 
-    /* =====================================================
+    /* ===============================
        LOGIN
-    ===================================================== */
+    =============================== */
 
     if (path === "/api/login" && method === "POST") {
-
       try {
 
-        const body = await request.json();
+        const b = await request.json();
 
-        const email = String(
-          body.email || ""
-        ).trim().toLowerCase();
+        const email = String(b.email || "")
+          .trim()
+          .toLowerCase();
 
-        const password = String(
-          body.password || ""
-        );
-
-        if (!email || !password) {
-          return json({
-            success: false,
-            message: "Email and password are required."
-          }, 400);
-        }
+        const password = String(b.password || "");
 
         const student = await env.DB.prepare(`
-          SELECT *
-          FROM students
+          SELECT * FROM students
           WHERE email=?
           LIMIT 1
-        `)
-        .bind(email)
-        .first();
+        `).bind(email).first();
 
         if (!student) {
           return json({
@@ -217,13 +188,10 @@ export default {
           }, 401);
         }
 
-        const valid =
-          await verifyPassword(
-            password,
-            student.password_hash
-          );
-
-        if (!valid) {
+        if (!await verifyPassword(
+          password,
+          student.password_hash
+        )) {
           return json({
             success: false,
             message: "Invalid email or password."
@@ -232,8 +200,7 @@ export default {
 
         return json({
           success: true,
-          message: "Login successful.",
-          token: createToken(),
+          token: token(),
           student: {
             id: student.id,
             student_id: student.id,
@@ -242,41 +209,32 @@ export default {
             email: student.email,
             phone: student.phone,
             membership_status:
-              student.membership_status,
+              student.membership_status || "NONE",
             membership_expiry:
-              student.membership_expiry
+              student.membership_expiry || null
           }
         });
 
-      } catch (error) {
-
+      } catch (e) {
         return json({
           success: false,
           message: "Login failed.",
-          error: error.message
+          error: e.message
         }, 500);
       }
     }
 
-    /* =====================================================
+    /* ===============================
        STUDENT
-    ===================================================== */
+    =============================== */
 
     if (path === "/api/student" && method === "GET") {
-
       try {
 
         const id = Number(
           url.searchParams.get("id") ||
           url.searchParams.get("student_id")
         );
-
-        if (!id) {
-          return json({
-            success: false,
-            message: "Student ID is required."
-          }, 400);
-        }
 
         const student = await env.DB.prepare(`
           SELECT
@@ -291,9 +249,7 @@ export default {
           FROM students
           WHERE id=?
           LIMIT 1
-        `)
-        .bind(id)
-        .first();
+        `).bind(id).first();
 
         if (!student) {
           return json({
@@ -310,175 +266,24 @@ export default {
           }
         });
 
-      } catch (error) {
-
+      } catch (e) {
         return json({
           success: false,
-          message: "Unable to load student.",
-          error: error.message
+          message: "Unable to load student."
         }, 500);
       }
     }
 
-    /* =====================================================
-       PAYMENT
-    ===================================================== */
-
-    if (path === "/api/payment" && method === "POST") {
-
-      try {
-
-        const body = await request.json();
-
-        const studentId =
-          Number(body.student_id);
-
-        const email =
-          String(body.email || "")
-          .trim()
-          .toLowerCase();
-
-        const reference =
-          String(
-            body.transaction_reference ||
-            body.reference ||
-            ""
-          ).trim();
-
-        const amount =
-          Number(body.amount || 1500);
-
-        const receiptKey =
-          body.receipt_key ||
-          body.receipt_url ||
-          null;
-
-        if (!studentId || !email) {
-          return json({
-            success: false,
-            message: "Student information is required."
-          }, 400);
-        }
-
-        const student = await env.DB.prepare(`
-          SELECT id
-          FROM students
-          WHERE id=?
-          LIMIT 1
-        `)
-        .bind(studentId)
-        .first();
-
-        if (!student) {
-          return json({
-            success: false,
-            message: "Student not found."
-          }, 404);
-        }
-
-        const result = await env.DB.prepare(`
-          INSERT INTO payment_requests
-          (
-            student_id,
-            email,
-            amount,
-            transaction_reference,
-            receipt_key,
-            status
-          )
-          VALUES (?, ?, ?, ?, ?, 'PENDING')
-        `)
-        .bind(
-          studentId,
-          email,
-          amount,
-          reference,
-          receiptKey
-        )
-        .run();
-
-        return json({
-          success: true,
-          message:
-            "Payment submitted successfully. Awaiting verification.",
-          payment_id:
-            result.meta.last_row_id,
-          status: "PENDING"
-        });
-
-      } catch (error) {
-
-        return json({
-          success: false,
-          message: "Payment submission failed.",
-          error: error.message
-        }, 500);
-      }
-    }
-
-    /* =====================================================
-       PAYMENT STATUS
-    ===================================================== */
-
-    if (
-      path === "/api/payment-status" &&
-      method === "GET"
-    ) {
-
-      try {
-
-        const studentId =
-          Number(
-            url.searchParams.get("student_id")
-          );
-
-        if (!studentId) {
-          return json({
-            success: false,
-            message: "Student ID is required."
-          }, 400);
-        }
-
-        const payment = await env.DB.prepare(`
-          SELECT *
-          FROM payment_requests
-          WHERE student_id=?
-          ORDER BY id DESC
-          LIMIT 1
-        `)
-        .bind(studentId)
-        .first();
-
-        return json({
-          success: true,
-          payment: payment || null
-        });
-
-      } catch (error) {
-
-        return json({
-          success: false,
-          message: "Unable to load payment status.",
-          error: error.message
-        }, 500);
-      }
-    }
-
-    /* =====================================================
+    /* ===============================
        MEMBERSHIP
-    ===================================================== */
+    =============================== */
 
-    if (
-      path === "/api/membership" &&
-      method === "GET"
-    ) {
-
+    if (path === "/api/membership" && method === "GET") {
       try {
 
-        const studentId =
-          Number(
-            url.searchParams.get("student_id")
-          );
+        const id = Number(
+          url.searchParams.get("student_id")
+        );
 
         const student = await env.DB.prepare(`
           SELECT
@@ -488,9 +293,7 @@ export default {
           FROM students
           WHERE id=?
           LIMIT 1
-        `)
-        .bind(studentId)
-        .first();
+        `).bind(id).first();
 
         if (!student) {
           return json({
@@ -499,342 +302,554 @@ export default {
           }, 404);
         }
 
-        let active =
-          student.membership_status === "ACTIVE";
+        let status =
+          String(student.membership_status || "NONE")
+            .toUpperCase();
 
-        if (student.membership_expiry) {
-          active =
-            new Date(student.membership_expiry) >
-            new Date();
+        const expiry =
+          student.membership_expiry || null;
+
+        if (
+          status === "ACTIVE" &&
+          expiry &&
+          new Date(expiry) <= new Date()
+        ) {
+          status = "EXPIRED";
+
+          await env.DB.prepare(`
+            UPDATE students
+            SET membership_status='EXPIRED'
+            WHERE id=?
+          `).bind(id).run();
         }
 
         return json({
           success: true,
           membership: {
-            status: active ? "ACTIVE" : "EXPIRED",
-            expiry: student.membership_expiry,
-            active: active
+            status,
+            expiry,
+            active: status === "ACTIVE"
           }
         });
 
-      } catch (error) {
-
+      } catch (e) {
         return json({
           success: false,
-          message: "Unable to load membership.",
-          error: error.message
+          message: "Unable to load membership."
         }, 500);
       }
     }
 
-    /* =====================================================
-       MCQ
-    ===================================================== */
-
-    if (path === "/api/mcq" && method === "GET") {
-
-      try {
-
-        const result = await env.DB.prepare(`
-          SELECT
-            id,
-            question,
-            option_a,
-            option_b,
-            option_c,
-            option_d,
-            category,
-            difficulty
-          FROM mcq_questions
-          ORDER BY RANDOM()
-          LIMIT 10
-        `).all();
-
-        return json({
-          success: true,
-          questions: result.results || []
-        });
-
-      } catch (error) {
-
-        return json({
-          success: false,
-          message: "Unable to load MCQ questions.",
-          error: error.message
-        }, 500);
-      }
-    }
-
-    /* =====================================================
-       CERTIFICATES
-    ===================================================== */
+    /* ===============================
+       PAYHERE CREATE PAYMENT
+    =============================== */
 
     if (
-      path === "/api/certificates" &&
-      method === "GET"
-    ) {
-
-      try {
-
-        const studentId =
-          Number(
-            url.searchParams.get("student_id")
-          );
-
-        const result = await env.DB.prepare(`
-          SELECT *
-          FROM certificates
-          WHERE student_id=?
-          ORDER BY id DESC
-        `)
-        .bind(studentId)
-        .all();
-
-        return json({
-          success: true,
-          certificates:
-            result.results || []
-        });
-
-      } catch (error) {
-
-        return json({
-          success: false,
-          message: "Unable to load certificates.",
-          error: error.message
-        }, 500);
-      }
-    }
-
-    /* =====================================================
-       ADMIN PAYMENT LIST
-    ===================================================== */
-
-    if (
-      path === "/api/admin/payments" &&
-      method === "GET"
-    ) {
-
-      if (
-        request.headers.get("X-Admin-Key") !==
-        env.ADMIN_KEY
-      ) {
-        return json({
-          success: false,
-          message: "Unauthorized."
-        }, 401);
-      }
-
-      try {
-
-        const result = await env.DB.prepare(`
-          SELECT
-            p.id,
-            p.student_id,
-            p.email,
-            p.amount,
-            p.transaction_reference,
-            p.receipt_key,
-            p.status,
-            p.created_at,
-            p.approved_at,
-            p.rejected_at,
-            s.first_name,
-            s.last_name
-          FROM payment_requests p
-          JOIN students s
-            ON s.id=p.student_id
-          WHERE p.status='PENDING'
-          ORDER BY p.id DESC
-        `).all();
-
-        return json({
-          success: true,
-          payments:
-            result.results || []
-        });
-
-      } catch (error) {
-
-        return json({
-          success: false,
-          message: "Unable to load payments.",
-          error: error.message
-        }, 500);
-      }
-    }
-
-    /* =====================================================
-       ADMIN APPROVE / REJECT
-    ===================================================== */
-
-    if (
-      path === "/api/admin/payment" &&
+      path === "/api/payhere/create" &&
       method === "POST"
     ) {
-
-      if (
-        request.headers.get("X-Admin-Key") !==
-        env.ADMIN_KEY
-      ) {
-        return json({
-          success: false,
-          message: "Unauthorized."
-        }, 401);
-      }
-
       try {
 
-        const body =
-          await request.json();
+        const b = await request.json();
 
-        const paymentId =
-          Number(body.payment_id);
+        const studentId = Number(b.student_id);
 
-        const status =
-          String(body.status || "")
-          .trim()
-          .toUpperCase();
+        const student = await env.DB.prepare(`
+          SELECT
+            id,
+            first_name,
+            last_name,
+            email,
+            phone
+          FROM students
+          WHERE id=?
+          LIMIT 1
+        `).bind(studentId).first();
 
-        if (
-          !paymentId ||
-          !["APPROVED", "REJECTED"]
-            .includes(status)
-        ) {
+        if (!student) {
           return json({
             success: false,
-            message: "Invalid payment request."
-          }, 400);
+            message: "Student not found."
+          }, 404);
+        }
+
+        const orderId =
+          "CLA-" +
+          Date.now() +
+          "-" +
+          student.id;
+
+        const amount =
+          PREMIUM_AMOUNT.toFixed(2);
+
+        const secretHash =
+          await md5(env.PAYHERE_MERCHANT_SECRET);
+
+        const hash =
+          await md5(
+            PAYHERE_ID +
+            orderId +
+            amount +
+            CURRENCY +
+            secretHash
+          );
+
+        await env.DB.prepare(`
+          INSERT INTO payhere_payments
+          (
+            student_id,
+            payment_id,
+            order_id,
+            amount,
+            currency,
+            status
+          )
+          VALUES (?, '', ?, ?, ?, 'INITIATED')
+        `).bind(
+          student.id,
+          orderId,
+          PREMIUM_AMOUNT,
+          CURRENCY
+        ).run();
+
+        return json({
+          success: true,
+
+          merchant_id: PAYHERE_ID,
+
+          order_id: orderId,
+
+          amount,
+
+          currency: CURRENCY,
+
+          hash,
+
+          first_name: student.first_name,
+
+          last_name: student.last_name,
+
+          email: student.email,
+
+          phone: student.phone,
+
+          items: "CreateLK Academy Premium - 30 Days",
+
+          return_url:
+            "https://createlk.com/payment-return.html",
+
+          cancel_url:
+            "https://createlk.com/payment-cancel.html",
+
+          notify_url:
+            "https://createlk-academy-api.createlk.workers.dev/api/payhere/notify"
+        });
+
+      } catch (e) {
+        return json({
+          success: false,
+          message: "Unable to create PayHere payment.",
+          error: e.message
+        }, 500);
+      }
+    }
+
+    /* ===============================
+       PAYHERE NOTIFY
+    =============================== */
+
+    if (
+      path === "/api/payhere/notify" &&
+      method === "POST"
+    ) {
+      try {
+
+        const form = await request.formData();
+
+        const merchantId =
+          String(form.get("merchant_id") || "");
+
+        const orderId =
+          String(form.get("order_id") || "");
+
+        const paymentId =
+          String(form.get("payment_id") || "");
+
+        const amount =
+          String(form.get("payhere_amount") || "");
+
+        const currency =
+          String(form.get("payhere_currency") || "");
+
+        const statusCode =
+          String(form.get("status_code") || "");
+
+        const received =
+          String(form.get("md5sig") || "");
+
+        if (merchantId !== PAYHERE_ID) {
+          return new Response("INVALID MERCHANT", {
+            status: 400
+          });
+        }
+
+        const secretHash =
+          await md5(env.PAYHERE_MERCHANT_SECRET);
+
+        const local =
+          await md5(
+            merchantId +
+            orderId +
+            amount +
+            currency +
+            statusCode +
+            secretHash
+          );
+
+        if (local !== received.toUpperCase()) {
+          return new Response("INVALID SIGNATURE", {
+            status: 400
+          });
         }
 
         const payment =
           await env.DB.prepare(`
             SELECT *
-            FROM payment_requests
-            WHERE id=?
+            FROM payhere_payments
+            WHERE order_id=?
             LIMIT 1
-          `)
-          .bind(paymentId)
-          .first();
+          `).bind(orderId).first();
 
         if (!payment) {
-          return json({
-            success: false,
-            message: "Payment not found."
-          }, 404);
-        }
-
-        if (payment.status !== "PENDING") {
-          return json({
-            success: false,
-            message: "Payment already processed."
-          }, 409);
-        }
-
-        /* REJECT */
-
-        if (status === "REJECTED") {
-
-          await env.DB.prepare(`
-            UPDATE payment_requests
-            SET
-              status='REJECTED',
-              rejected_at=CURRENT_TIMESTAMP
-            WHERE id=?
-          `)
-          .bind(paymentId)
-          .run();
-
-          return json({
-            success: true,
-            message: "Payment rejected."
+          return new Response("ORDER NOT FOUND", {
+            status: 404
           });
         }
 
-        /* APPROVE */
+        await env.DB.prepare(`
+          UPDATE payhere_payments
+          SET
+            payment_id=?,
+            status=?
+          WHERE order_id=?
+        `).bind(
+          paymentId,
+          statusCode === "2"
+            ? "SUCCESS"
+            : statusCode === "0"
+              ? "PENDING"
+              : "FAILED",
+          orderId
+        ).run();
 
-        const expiry = new Date();
+        /* SUCCESS */
 
-        expiry.setDate(
-          expiry.getDate() + 30
+        if (statusCode === "2") {
+
+          const expiry = new Date();
+
+          expiry.setDate(
+            expiry.getDate() + 30
+          );
+
+          const expiresAt =
+            expiry.toISOString();
+
+          await env.DB.prepare(`
+            UPDATE students
+            SET
+              membership_status='ACTIVE',
+              membership_expiry=?,
+              updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+          `).bind(
+            expiresAt,
+            payment.student_id
+          ).run();
+
+          await env.DB.prepare(`
+            INSERT INTO memberships
+            (
+              student_id,
+              status,
+              started_at,
+              expires_at
+            )
+            VALUES
+            (?, 'ACTIVE', CURRENT_TIMESTAMP, ?)
+          `).bind(
+            payment.student_id,
+            expiresAt
+          ).run();
+
+        }
+
+        return new Response("OK", {
+          status: 200
+        });
+
+      } catch (e) {
+
+        console.error(
+          "PAYHERE NOTIFY:",
+          e
         );
 
-        const expiresAt =
-          expiry.toISOString();
+        return new Response("ERROR", {
+          status: 500
+        });
+      }
+    }
 
-        await env.DB.prepare(`
-          UPDATE payment_requests
-          SET
-            status='APPROVED',
-            approved_at=CURRENT_TIMESTAMP
-          WHERE id=?
-        `)
-        .bind(paymentId)
-        .run();
+    /* ===============================
+       PAYMENT STATUS
+    =============================== */
 
-        await env.DB.prepare(`
-          INSERT INTO memberships
-          (
-            student_id,
-            status,
-            started_at,
-            expires_at
-          )
-          VALUES
-          (?, 'ACTIVE', CURRENT_TIMESTAMP, ?)
-        `)
-        .bind(
-          payment.student_id,
-          expiresAt
-        )
-        .run();
+    if (
+      path === "/api/payhere/status" &&
+      method === "GET"
+    ) {
+      try {
 
-        await env.DB.prepare(`
-          UPDATE students
-          SET
-            membership_status='ACTIVE',
-            membership_expiry=?,
-            updated_at=CURRENT_TIMESTAMP
-          WHERE id=?
-        `)
-        .bind(
-          expiresAt,
-          payment.student_id
-        )
-        .run();
+        const studentId = Number(
+          url.searchParams.get("student_id")
+        );
+
+        const payment =
+          await env.DB.prepare(`
+            SELECT *
+            FROM payhere_payments
+            WHERE student_id=?
+            ORDER BY id DESC
+            LIMIT 1
+          `).bind(studentId).first();
 
         return json({
           success: true,
-          message:
-            "Payment approved. Premium activated for 30 days.",
-          payment_id: paymentId,
-          student_id: payment.student_id,
-          expires_at: expiresAt
+          payment: payment || null
         });
 
-      } catch (error) {
-
-        console.error(
-          "ADMIN PAYMENT ERROR:",
-          error
-        );
-
+      } catch (e) {
         return json({
           success: false,
-          message: "Payment processing failed.",
-          error: error.message
+          message: "Unable to load payment status."
         }, 500);
       }
     }
 
-    /* =====================================================
-       NOT FOUND
-    ===================================================== */
+    /* ===============================
+       MCQ GET
+    =============================== */
+
+    if (path === "/api/mcq" && method === "GET") {
+      try {
+
+        const studentId = Number(
+          url.searchParams.get("student_id")
+        );
+
+        const student =
+          await env.DB.prepare(`
+            SELECT
+              membership_status,
+              membership_expiry
+            FROM students
+            WHERE id=?
+          `).bind(studentId).first();
+
+        if (!student ||
+            !active(
+              student.membership_status,
+              student.membership_expiry
+            )) {
+          return json({
+            success: false,
+            message: "Premium membership is required."
+          }, 403);
+        }
+
+        const q =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              question,
+              option_a,
+              option_b,
+              option_c,
+              option_d,
+              category,
+              difficulty
+            FROM mcq_questions
+            ORDER BY RANDOM()
+            LIMIT 1
+          `).first();
+
+        if (!q) {
+          return json({
+            success: false,
+            message: "No MCQ questions available."
+          }, 404);
+        }
+
+        const stats =
+          await env.DB.prepare(`
+            SELECT
+              COUNT(*) AS total_questions,
+              COALESCE(SUM(correct),0)
+              AS correct_answers
+            FROM mcq_attempts
+            WHERE student_id=?
+          `).bind(studentId).first();
+
+        return json({
+          success: true,
+
+          question: {
+            id: q.id,
+            question: q.question,
+            options: [
+              q.option_a,
+              q.option_b,
+              q.option_c,
+              q.option_d
+            ],
+            category: q.category,
+            difficulty: q.difficulty
+          },
+
+          total_questions:
+            Number(stats?.total_questions || 0),
+
+          correct_answers:
+            Number(stats?.correct_answers || 0)
+        });
+
+      } catch (e) {
+        return json({
+          success: false,
+          message: "Unable to load MCQ."
+        }, 500);
+      }
+    }
+
+    /* ===============================
+       MCQ POST
+    =============================== */
+
+    if (path === "/api/mcq" && method === "POST") {
+      try {
+
+        const b = await request.json();
+
+        const studentId = Number(b.student_id);
+        const questionId = Number(b.question_id);
+        const answer = Number(b.answer);
+
+        const q =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              correct_answer
+            FROM mcq_questions
+            WHERE id=?
+            LIMIT 1
+          `).bind(questionId).first();
+
+        if (!q) {
+          return json({
+            success: false,
+            message: "Question not found."
+          }, 404);
+        }
+
+        const correct =
+          answer === Number(q.correct_answer);
+
+        await env.DB.prepare(`
+          INSERT INTO mcq_attempts
+          (
+            student_id,
+            question_id,
+            selected_answer,
+            correct
+          )
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          studentId,
+          questionId,
+          answer,
+          correct ? 1 : 0
+        ).run();
+
+        const stats =
+          await env.DB.prepare(`
+            SELECT
+              COUNT(*) AS total_questions,
+              COALESCE(SUM(correct),0)
+              AS correct_answers
+            FROM mcq_attempts
+            WHERE student_id=?
+          `).bind(studentId).first();
+
+        return json({
+          success: true,
+          correct,
+          correct_answer:
+            Number(q.correct_answer),
+          total_questions:
+            Number(stats?.total_questions || 0),
+          correct_answers:
+            Number(stats?.correct_answers || 0)
+        });
+
+      } catch (e) {
+        return json({
+          success: false,
+          message: "Unable to submit answer.",
+          error: e.message
+        }, 500);
+      }
+    }
+
+    /* ===============================
+       CERTIFICATES
+    =============================== */
+
+    if (
+      path === "/api/certificates" &&
+      method === "GET"
+    ) {
+      try {
+
+        const studentId = Number(
+          url.searchParams.get("student_id")
+        );
+
+        const r =
+          await env.DB.prepare(`
+            SELECT *
+            FROM certificates
+            WHERE student_id=?
+            ORDER BY id DESC
+          `).bind(studentId).all();
+
+        return json({
+          success: true,
+          certificates: r.results || []
+        });
+
+      } catch (e) {
+        return json({
+          success: false,
+          message: "Unable to load certificates."
+        }, 500);
+      }
+    }
 
     return json({
       success: false,
       message: "API endpoint not found.",
-      path: path
+      path
     }, 404);
   }
 };
