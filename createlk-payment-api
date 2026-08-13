@@ -1,0 +1,899 @@
+const ALLOWED_ORIGIN = "https://createlk.com";
+
+const HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: HEADERS
+  });
+}
+
+function cors() {
+  return new Response(null, {
+    status: 204,
+    headers: HEADERS
+  });
+}
+
+
+/* =========================================================
+   HEALTH
+========================================================= */
+
+async function health(env) {
+
+  try {
+
+    const result =
+      await env.DB
+        .prepare("SELECT 1 AS test")
+        .first();
+
+    return json({
+      success: true,
+      message: "CreateLK Payment API is working",
+      database: "connected",
+      result
+    });
+
+  } catch (error) {
+
+    return json({
+      success: false,
+      message: "Database connection failed",
+      error: error.message
+    }, 500);
+  }
+}
+
+
+/* =========================================================
+   FIND STUDENT
+========================================================= */
+
+async function findStudent(env, email, studentId) {
+
+  if (studentId) {
+
+    return await env.DB.prepare(`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        membership_status,
+        membership_expiry
+      FROM students
+      WHERE id = ?
+    `)
+    .bind(studentId)
+    .first();
+
+  }
+
+  if (email) {
+
+    return await env.DB.prepare(`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        membership_status,
+        membership_expiry
+      FROM students
+      WHERE email = ?
+    `)
+    .bind(
+      email.trim().toLowerCase()
+    )
+    .first();
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   SUBMIT PAYMENT
+========================================================= */
+
+async function submitPayment(request, env) {
+
+  const form =
+    await request.formData();
+
+  const email =
+    String(
+      form.get("email") || ""
+    )
+    .trim()
+    .toLowerCase();
+
+  const studentId =
+    String(
+      form.get("student_id") || ""
+    ).trim();
+
+  const amount =
+    Number(
+      form.get("amount") || 1500
+    );
+
+  const receipt =
+    form.get("receipt");
+
+
+  if (!email && !studentId) {
+
+    return json({
+      success: false,
+      message: "Student email is required."
+    }, 400);
+  }
+
+
+  if (
+    !receipt ||
+    typeof receipt.arrayBuffer !== "function"
+  ) {
+
+    return json({
+      success: false,
+      message: "Payment receipt is required."
+    }, 400);
+  }
+
+
+  /* -----------------------------------------
+     FILE SIZE
+  ----------------------------------------- */
+
+  if (
+    receipt.size >
+    10 * 1024 * 1024
+  ) {
+
+    return json({
+      success: false,
+      message: "Receipt must be smaller than 10 MB."
+    }, 400);
+  }
+
+
+  /* -----------------------------------------
+     FILE TYPE
+  ----------------------------------------- */
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf"
+  ];
+
+  if (
+    receipt.type &&
+    !allowedTypes.includes(
+      receipt.type
+    )
+  ) {
+
+    return json({
+      success: false,
+      message:
+        "Only JPG, PNG, WEBP or PDF receipts are allowed."
+    }, 400);
+  }
+
+
+  /* -----------------------------------------
+     STUDENT
+  ----------------------------------------- */
+
+  const student =
+    await findStudent(
+      env,
+      email,
+      studentId
+    );
+
+
+  if (!student) {
+
+    return json({
+      success: false,
+      message:
+        "Student account not found. Please register first."
+    }, 404);
+  }
+
+
+  /* -----------------------------------------
+     PAYMENT KEY
+  ----------------------------------------- */
+
+  const extension =
+    receipt.name &&
+    receipt.name.includes(".")
+      ? receipt.name
+          .split(".")
+          .pop()
+          .toLowerCase()
+      : "bin";
+
+
+  const safeEmail =
+    student.email
+      .replace(
+        /[^a-zA-Z0-9]/g,
+        "_"
+      );
+
+
+  const unique =
+    crypto.randomUUID();
+
+
+  const receiptKey =
+    `receipts/${student.id}/${Date.now()}-${unique}.${extension}`;
+
+
+  /* -----------------------------------------
+     UPLOAD R2
+  ----------------------------------------- */
+
+  await env.RECEIPTS.put(
+    receiptKey,
+    receipt.stream(),
+    {
+      httpMetadata: {
+        contentType:
+          receipt.type ||
+          "application/octet-stream"
+      },
+
+      customMetadata: {
+        student_id:
+          String(student.id),
+
+        email:
+          student.email,
+
+        original_name:
+          receipt.name || "",
+
+        amount:
+          String(amount)
+      }
+    }
+  );
+
+
+  /* -----------------------------------------
+     CREATE PAYMENT
+  ----------------------------------------- */
+
+  const result =
+    await env.DB.prepare(`
+      INSERT INTO payment_requests
+      (
+        student_id,
+        email,
+        amount,
+        receipt_key,
+        status
+      )
+      VALUES (?, ?, ?, ?, 'PENDING')
+    `)
+    .bind(
+      student.id,
+      student.email,
+      amount,
+      receiptKey
+    )
+    .run();
+
+
+  if (!result.success) {
+
+    /* Remove uploaded receipt if DB fails */
+
+    try {
+      await env.RECEIPTS.delete(
+        receiptKey
+      );
+    } catch {}
+
+    return json({
+      success: false,
+      message:
+        "Unable to create payment request."
+    }, 500);
+  }
+
+
+  /* -----------------------------------------
+     UPDATE STUDENT STATUS
+  ----------------------------------------- */
+
+  await env.DB.prepare(`
+    UPDATE students
+    SET membership_status = 'PENDING',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(student.id)
+  .run();
+
+
+  return json({
+    success: true,
+    message:
+      "Payment receipt submitted successfully.",
+    payment_id:
+      result.meta.last_row_id,
+    student_id:
+      student.id,
+    status:
+      "PENDING"
+  });
+}
+
+
+/* =========================================================
+   PAYMENT STATUS
+========================================================= */
+
+async function paymentStatus(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const studentId =
+    url.searchParams.get(
+      "student_id"
+    );
+
+  const email =
+    url.searchParams.get(
+      "email"
+    );
+
+
+  if (!studentId && !email) {
+
+    return json({
+      success: false,
+      message:
+        "Student ID or email is required."
+    }, 400);
+  }
+
+
+  const student =
+    await findStudent(
+      env,
+      email,
+      studentId
+    );
+
+
+  if (!student) {
+
+    return json({
+      success: false,
+      message:
+        "Student not found."
+    }, 404);
+  }
+
+
+  const payment =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        amount,
+        transaction_reference,
+        status,
+        created_at,
+        approved_at,
+        rejected_at
+      FROM payment_requests
+      WHERE student_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `)
+    .bind(student.id)
+    .first();
+
+
+  let status =
+    String(
+      student.membership_status ||
+      "NONE"
+    ).toUpperCase();
+
+
+  let active = false;
+
+
+  if (
+    status === "ACTIVE" &&
+    student.membership_expiry
+  ) {
+
+    const expiry =
+      new Date(
+        student.membership_expiry
+      );
+
+
+    if (
+      !isNaN(expiry.getTime()) &&
+      expiry > new Date()
+    ) {
+
+      active = true;
+
+    } else {
+
+      status = "EXPIRED";
+
+      await env.DB.prepare(`
+        UPDATE students
+        SET membership_status = 'EXPIRED'
+        WHERE id = ?
+      `)
+      .bind(student.id)
+      .run();
+    }
+  }
+
+
+  return json({
+    success: true,
+
+    student_id:
+      student.id,
+
+    status:
+
+      payment
+        ? payment.status
+        : status,
+
+    membership_status:
+      status,
+
+    active:
+      active,
+
+    membership_expiry:
+      student.membership_expiry ||
+      null,
+
+    payment:
+      payment || null
+  });
+}
+
+
+/* =========================================================
+   ADMIN PAYMENT LIST
+========================================================= */
+
+async function adminPayments(request, env) {
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        p.id,
+        p.student_id,
+        p.email,
+        p.amount,
+        p.transaction_reference,
+        p.receipt_key,
+        p.status,
+        p.created_at,
+        p.approved_at,
+        p.rejected_at,
+        s.first_name,
+        s.last_name,
+        s.phone
+      FROM payment_requests p
+      LEFT JOIN students s
+        ON p.student_id = s.id
+      ORDER BY p.id DESC
+      LIMIT 100
+    `)
+    .all();
+
+
+  return json({
+    success: true,
+    payments:
+      result.results || []
+  });
+}
+
+
+/* =========================================================
+   ADMIN APPROVE
+========================================================= */
+
+async function approvePayment(request, env) {
+
+  const data =
+    await request.json();
+
+  const paymentId =
+    Number(
+      data.payment_id
+    );
+
+
+  if (!paymentId) {
+
+    return json({
+      success: false,
+      message:
+        "Payment ID is required."
+    }, 400);
+  }
+
+
+  const payment =
+    await env.DB.prepare(`
+      SELECT *
+      FROM payment_requests
+      WHERE id = ?
+    `)
+    .bind(paymentId)
+    .first();
+
+
+  if (!payment) {
+
+    return json({
+      success: false,
+      message:
+        "Payment not found."
+    }, 404);
+  }
+
+
+  if (
+    String(
+      payment.status
+    ).toUpperCase() === "APPROVED"
+  ) {
+
+    return json({
+      success: false,
+      message:
+        "Payment is already approved."
+    }, 400);
+  }
+
+
+  /* -----------------------------------------
+     30 DAYS FROM NOW
+  ----------------------------------------- */
+
+  const expiry =
+    new Date();
+
+  expiry.setDate(
+    expiry.getDate() + 30
+  );
+
+
+  const expiryString =
+    expiry.toISOString();
+
+
+  /* -----------------------------------------
+     PAYMENT
+  ----------------------------------------- */
+
+  await env.DB.prepare(`
+    UPDATE payment_requests
+    SET
+      status = 'APPROVED',
+      approved_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(paymentId)
+  .run();
+
+
+  /* -----------------------------------------
+     MEMBERSHIP
+  ----------------------------------------- */
+
+  await env.DB.prepare(`
+    UPDATE students
+    SET
+      membership_status = 'ACTIVE',
+      membership_expiry = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(
+    expiryString,
+    payment.student_id
+  )
+  .run();
+
+
+  /* -----------------------------------------
+     OPTIONAL MEMBERSHIP RECORD
+  ----------------------------------------- */
+
+  try {
+
+    await env.DB.prepare(`
+      INSERT INTO memberships
+      (
+        student_id,
+        status,
+        start_date,
+        expiry_date,
+        created_at
+      )
+      VALUES (?, 'ACTIVE', CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+    `)
+    .bind(
+      payment.student_id,
+      expiryString
+    )
+    .run();
+
+  } catch (error) {
+
+    console.log(
+      "Membership table insert skipped:",
+      error.message
+    );
+  }
+
+
+  return json({
+    success: true,
+    message:
+      "Payment approved and Premium activated.",
+    student_id:
+      payment.student_id,
+    membership_status:
+      "ACTIVE",
+    membership_expiry:
+      expiryString
+  });
+}
+
+
+/* =========================================================
+   ADMIN REJECT
+========================================================= */
+
+async function rejectPayment(request, env) {
+
+  const data =
+    await request.json();
+
+  const paymentId =
+    Number(
+      data.payment_id
+    );
+
+
+  if (!paymentId) {
+
+    return json({
+      success: false,
+      message:
+        "Payment ID is required."
+    }, 400);
+  }
+
+
+  const payment =
+    await env.DB.prepare(`
+      SELECT *
+      FROM payment_requests
+      WHERE id = ?
+    `)
+    .bind(paymentId)
+    .first();
+
+
+  if (!payment) {
+
+    return json({
+      success: false,
+      message:
+        "Payment not found."
+    }, 404);
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE payment_requests
+    SET
+      status = 'REJECTED',
+      rejected_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(paymentId)
+  .run();
+
+
+  await env.DB.prepare(`
+    UPDATE students
+    SET
+      membership_status = 'NONE',
+      membership_expiry = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(payment.student_id)
+  .run();
+
+
+  return json({
+    success: true,
+    message:
+      "Payment rejected.",
+    student_id:
+      payment.student_id,
+    status:
+      "REJECTED"
+  });
+}
+
+
+/* =========================================================
+   MAIN
+========================================================= */
+
+export default {
+
+  async fetch(request, env) {
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+      return cors();
+    }
+
+
+    const url =
+      new URL(request.url);
+
+    const path =
+      url.pathname.replace(
+        /\/+$/,
+        ""
+      ) || "/";
+
+
+    try {
+
+
+      /* HEALTH */
+
+      if (
+        path === "/" ||
+        path === "/api"
+      ) {
+
+        return health(env);
+      }
+
+
+      /* PAYMENT */
+
+      if (
+        path === "/api/payment" &&
+        request.method === "POST"
+      ) {
+
+        return submitPayment(
+          request,
+          env
+        );
+      }
+
+
+      /* PAYMENT STATUS */
+
+      if (
+        path === "/api/payment-status" &&
+        request.method === "GET"
+      ) {
+
+        return paymentStatus(
+          request,
+          env
+        );
+      }
+
+
+      /* ADMIN PAYMENT LIST */
+
+      if (
+        path === "/api/admin/payments" &&
+        request.method === "GET"
+      ) {
+
+        return adminPayments(
+          request,
+          env
+        );
+      }
+
+
+      /* ADMIN APPROVE */
+
+      if (
+        path === "/api/admin/payment/approve" &&
+        request.method === "POST"
+      ) {
+
+        return approvePayment(
+          request,
+          env
+        );
+      }
+
+
+      /* ADMIN REJECT */
+
+      if (
+        path === "/api/admin/payment/reject" &&
+        request.method === "POST"
+      ) {
+
+        return rejectPayment(
+          request,
+          env
+        );
+      }
+
+
+      /* NOT FOUND */
+
+      return json({
+        success: false,
+        message:
+          "Payment API endpoint not found.",
+        path
+      }, 404);
+
+
+    } catch (error) {
+
+      console.error(
+        "PAYMENT API ERROR:",
+        error
+      );
+
+      return json({
+        success: false,
+        message:
+          "Server error.",
+        error:
+          error.message
+      }, 500);
+    }
+  }
+};
