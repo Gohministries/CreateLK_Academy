@@ -90,6 +90,17 @@ color:#667085;
 line-height:1.5;
 }
 
+.plan{
+display:inline-block;
+margin-top:12px;
+padding:6px 12px;
+border-radius:20px;
+font-size:12px;
+font-weight:800;
+background:#eef4ff;
+color:#155eef;
+}
+
 .progress{
 display:flex;
 justify-content:space-between;
@@ -182,6 +193,47 @@ display:block;
 background:#fff1f2;
 border:1px solid #fecdd3;
 color:#be123c;
+}
+
+.limit-card{
+display:none;
+margin-top:20px;
+padding:22px;
+border-radius:16px;
+background:linear-gradient(
+135deg,
+#fff7ed,
+#fff1f2
+);
+border:1px solid #fed7aa;
+text-align:center;
+}
+
+.limit-card .emoji{
+font-size:40px;
+margin-bottom:10px;
+}
+
+.limit-card h2{
+font-size:20px;
+margin-bottom:8px;
+}
+
+.limit-card p{
+font-size:14px;
+line-height:1.6;
+color:#667085;
+}
+
+.upgrade{
+display:block;
+text-decoration:none;
+background:#f59e0b;
+color:#fff;
+padding:13px;
+border-radius:10px;
+font-weight:800;
+margin-top:15px;
 }
 
 .stats{
@@ -286,18 +338,25 @@ AI English MCQ
 </h1>
 
 <div class="subtitle">
-Practise English and build your correct-answer achievement.
+Practise English with live AI-generated questions and build your correct-answer achievement.
+</div>
+
+<div id="planBadge" class="plan">
+Loading plan...
 </div>
 
 </div>
 
 
 <div id="loading" class="loading">
-⏳ Loading question...
+⏳ Loading AI question...
 </div>
 
 
-<div id="quiz" style="display:none;">
+<div
+id="quiz"
+style="display:none;"
+>
 
 <div class="progress">
 
@@ -324,17 +383,49 @@ class="question">
 <button
 id="submitButton"
 type="button"
-onclick="submitAnswer()"
-disabled>
-
+disabled
+>
 Check Answer
-
 </button>
 
 
 <div
 id="result"
 class="result">
+</div>
+
+
+<div
+id="limitCard"
+class="limit-card"
+>
+
+<div class="emoji">
+⭐
+</div>
+
+<h2>
+Free Daily Limit Reached
+</h2>
+
+<p>
+You have completed today's
+<strong>10 free AI questions</strong>.
+</p>
+
+<p style="margin-top:8px;">
+Upgrade to Premium and unlock
+<strong>100 AI questions every day</strong>,
+advanced AI progress and certificate eligibility.
+</p>
+
+<a
+href="https://payhere.lk/pay/oa930eb39"
+class="upgrade"
+>
+⭐ Upgrade to Premium
+</a>
+
 </div>
 
 
@@ -397,11 +488,16 @@ Certificate Progress
 <script>
 
 /* =========================================
-   CONFIGURATION
+   CREATE LK AI WORKER
 ========================================= */
 
 const API_URL =
-"https://createlk-academy-api.createlk.workers.dev";
+"https://createlk-ai-mcq.createlk.workers.dev";
+
+
+/* =========================================
+   STORAGE
+========================================= */
 
 const STUDENT_KEY =
 "createlk_student";
@@ -424,7 +520,10 @@ STUDENT_KEY
 );
 
 if(saved){
-student = JSON.parse(saved);
+
+student =
+JSON.parse(saved);
+
 }
 
 }catch(error){
@@ -436,10 +535,14 @@ console.error(error);
 
 if(
 !student ||
-sessionStorage.getItem(LOGIN_KEY) !== "true"
+sessionStorage.getItem(
+LOGIN_KEY
+) !== "true"
 ){
 
-window.location.replace("login.html");
+window.location.replace(
+"login.html"
+);
 
 }
 
@@ -451,13 +554,15 @@ student?.student_id;
 
 if(!studentId){
 
-window.location.replace("login.html");
+window.location.replace(
+"login.html"
+);
 
 }
 
 
 /* =========================================
-   QUIZ VARIABLES
+   VARIABLES
 ========================================= */
 
 let currentQuestion = null;
@@ -468,28 +573,52 @@ let correctAnswers = 0;
 
 let totalQuestions = 0;
 
+let answered = false;
+
 
 /* =========================================
    ELEMENTS
 ========================================= */
 
 const loading =
-document.getElementById("loading");
+document.getElementById(
+"loading"
+);
 
 const quiz =
-document.getElementById("quiz");
+document.getElementById(
+"quiz"
+);
 
 const question =
-document.getElementById("question");
+document.getElementById(
+"question"
+);
 
 const options =
-document.getElementById("options");
+document.getElementById(
+"options"
+);
 
 const submitButton =
-document.getElementById("submitButton");
+document.getElementById(
+"submitButton"
+);
 
 const result =
-document.getElementById("result");
+document.getElementById(
+"result"
+);
+
+const limitCard =
+document.getElementById(
+"limitCard"
+);
+
+const planBadge =
+document.getElementById(
+"planBadge"
+);
 
 
 /* =========================================
@@ -498,9 +627,21 @@ document.getElementById("result");
 
 async function loadQuestion(){
 
-loading.style.display = "block";
+answered = false;
 
-quiz.style.display = "none";
+selectedAnswer = null;
+
+limitCard.style.display =
+"none";
+
+loading.style.display =
+"block";
+
+quiz.style.display =
+"none";
+
+loading.innerHTML =
+"⏳ Generating your AI question...";
 
 try{
 
@@ -508,17 +649,37 @@ const response =
 await fetch(
 API_URL +
 "/api/mcq?student_id=" +
-encodeURIComponent(studentId),
+encodeURIComponent(
+studentId
+),
 {
 method:"GET",
 headers:{
-"Accept":"application/json"
+"Accept":
+"application/json"
 }
 }
 );
 
+
 const data =
 await response.json();
+
+
+/* DAILY LIMIT */
+
+if(
+data.limitReached === true
+){
+
+showLimit(
+data
+);
+
+return;
+
+}
+
 
 if(
 !response.ok ||
@@ -527,15 +688,34 @@ data.success !== true
 
 throw new Error(
 data.message ||
-"Unable to load question."
+"Unable to load AI question."
 );
 
 }
 
 
-currentQuestion =
-data.question;
+/* PLAN */
 
+const plan =
+String(
+data.plan || "FREE"
+).toUpperCase();
+
+
+if(plan === "PREMIUM"){
+
+planBadge.textContent =
+"⭐ PREMIUM • 100/DAY";
+
+}else{
+
+planBadge.textContent =
+"🆓 FREE • 10/DAY";
+
+}
+
+
+/* PROGRESS */
 
 correctAnswers =
 Number(
@@ -569,10 +749,14 @@ correctAnswers,
 );
 
 
+currentQuestion =
+data.question;
+
+
 if(!currentQuestion){
 
 throw new Error(
-"No MCQ question is available."
+"No AI question was returned."
 );
 
 }
@@ -580,9 +764,12 @@ throw new Error(
 
 renderQuestion();
 
-loading.style.display = "none";
 
-quiz.style.display = "block";
+loading.style.display =
+"none";
+
+quiz.style.display =
+"block";
 
 
 }catch(error){
@@ -591,7 +778,7 @@ loading.innerHTML =
 '<div class="error">' +
 escapeHtml(
 error.message ||
-"Unable to load MCQ."
+"Unable to load AI question."
 ) +
 '</div>';
 
@@ -601,23 +788,108 @@ error.message ||
 
 
 /* =========================================
-   DISPLAY QUESTION
+   SHOW LIMIT
+========================================= */
+
+function showLimit(data){
+
+loading.style.display =
+"none";
+
+quiz.style.display =
+"block";
+
+options.innerHTML =
+"";
+
+question.textContent =
+"";
+
+document.getElementById(
+"questionNumber"
+).textContent =
+"Daily limit";
+
+document.getElementById(
+"score"
+).textContent =
+"Correct: " +
+correctAnswers;
+
+submitButton.style.display =
+"none";
+
+limitCard.style.display =
+"block";
+
+
+if(
+data.premiumRequired === true
+){
+
+planBadge.textContent =
+"🆓 FREE • 10/DAY";
+
+}else{
+
+planBadge.textContent =
+"⭐ PREMIUM • 100/DAY";
+
+limitCard.querySelector(
+"h2"
+).textContent =
+"Daily AI Limit Reached";
+
+limitCard.querySelector(
+"p"
+).innerHTML =
+"You have completed today's <strong>100 AI questions</strong>.";
+
+limitCard.querySelectorAll(
+"p"
+)[1].innerHTML =
+"Come back tomorrow to continue your AI practice.";
+
+document.querySelector(
+".upgrade"
+).style.display =
+"none";
+
+}
+
+}
+
+
+/* =========================================
+   RENDER QUESTION
 ========================================= */
 
 function renderQuestion(){
 
-selectedAnswer = null;
+selectedAnswer =
+null;
 
-submitButton.disabled = true;
+answered =
+false;
+
+submitButton.style.display =
+"block";
+
+submitButton.disabled =
+true;
 
 submitButton.textContent =
 "Check Answer";
+
+submitButton.onclick =
+submitAnswer;
 
 result.className =
 "result";
 
 result.style.display =
 "none";
+
 
 document.getElementById(
 "questionNumber"
@@ -637,18 +909,22 @@ question.textContent =
 currentQuestion.question;
 
 
-options.innerHTML = "";
+options.innerHTML =
+"";
 
 
 const answers =
-currentQuestion.options || [];
+currentQuestion.options ||
+[];
 
 
 answers.forEach(
 function(answer,index){
 
 const button =
-document.createElement("button");
+document.createElement(
+"button"
+);
 
 button.type =
 "button";
@@ -687,11 +963,20 @@ index,
 button
 ){
 
-selectedAnswer = index;
+if(answered){
+
+return;
+
+}
+
+selectedAnswer =
+index;
 
 
 document
-.querySelectorAll(".option")
+.querySelectorAll(
+".option"
+)
 .forEach(
 function(item){
 
@@ -713,20 +998,20 @@ false;
 
 
 /* =========================================
-   SUBMIT
+   SUBMIT ANSWER
 ========================================= */
 
 async function submitAnswer(){
 
 if(
 selectedAnswer === null ||
-!currentQuestion
+!currentQuestion ||
+answered
 ){
 
 return;
 
 }
-
 
 submitButton.disabled =
 true;
@@ -739,7 +1024,8 @@ try{
 
 const response =
 await fetch(
-API_URL + "/api/mcq",
+API_URL +
+"/api/mcq",
 {
 method:"POST",
 
@@ -754,7 +1040,9 @@ student_id:
 Number(studentId),
 
 question_id:
-Number(currentQuestion.id),
+Number(
+currentQuestion.id
+),
 
 answer:
 selectedAnswer
@@ -766,6 +1054,21 @@ selectedAnswer
 
 const data =
 await response.json();
+
+
+/* LIMIT */
+
+if(
+data.limitReached === true
+){
+
+showLimit(
+data
+);
+
+return;
+
+}
 
 
 if(
@@ -781,6 +1084,10 @@ data.message ||
 }
 
 
+answered =
+true;
+
+
 const buttons =
 document.querySelectorAll(
 ".option"
@@ -788,9 +1095,10 @@ document.querySelectorAll(
 
 
 buttons.forEach(
-function(button,index){
+function(button){
 
-button.disabled = true;
+button.disabled =
+true;
 
 });
 
@@ -805,8 +1113,9 @@ if(
 data.correct === true
 ){
 
-buttons[selectedAnswer]
-?.classList.add(
+buttons[
+selectedAnswer
+]?.classList.add(
 "correct"
 );
 
@@ -816,18 +1125,17 @@ data.correct_answers ||
 correctAnswers + 1
 );
 
-
 result.className =
 "result correct";
 
 result.innerHTML =
 "✅ Correct! Well done.";
 
-
 }else{
 
-buttons[selectedAnswer]
-?.classList.add(
+buttons[
+selectedAnswer
+]?.classList.add(
 "wrong"
 );
 
@@ -835,8 +1143,9 @@ if(
 buttons[correctIndex]
 ){
 
-buttons[correctIndex]
-.classList.add(
+buttons[
+correctIndex
+].classList.add(
 "correct"
 );
 
@@ -879,40 +1188,33 @@ correctAnswers,
 );
 
 
+/* Certificate progress */
+
+if(
+data.certificate_reached === true
+){
+
+result.innerHTML +=
+"<br><br>🎓 You have reached 1,000 correct answers! Check your Premium status and final assessment eligibility for your certificate.";
+
+}
+
+
+/* Next */
+
 submitButton.textContent =
 "Next Question";
-
 
 submitButton.disabled =
 false;
 
-
 submitButton.onclick =
 function(){
-
-submitButton.onclick =
-null;
-
-submitButton.setAttribute(
-"onclick",
-"submitAnswer()"
-);
 
 loadQuestion();
 
 };
 
-
-/* Certificate reached */
-
-if(
-correctAnswers >= 1000
-){
-
-result.innerHTML +=
-"<br><br>🎓 Congratulations! You have reached 1,000 correct answers and are eligible for a certificate.";
-
-}
 
 }catch(error){
 
@@ -932,6 +1234,9 @@ false;
 submitButton.textContent =
 "Try Again";
 
+submitButton.onclick =
+submitAnswer;
+
 }
 
 }
@@ -943,12 +1248,29 @@ submitButton.textContent =
 
 function escapeHtml(value){
 
-return String(value || "")
-.replace(/&/g,"&amp;")
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;")
-.replace(/"/g,"&quot;")
-.replace(/'/g,"&#039;");
+return String(
+value || ""
+)
+.replace(
+/&/g,
+"&amp;"
+)
+.replace(
+/</g,
+"&lt;"
+)
+.replace(
+/>/g,
+"&gt;"
+)
+.replace(
+/"/g,
+"&quot;"
+)
+.replace(
+/'/g,
+"&#039;"
+);
 
 }
 
