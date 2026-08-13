@@ -4,31 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Premium Membership | CreateLK Academy</title>
-<script src="https://www.payhere.lk/lib/payhere.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial;background:#f4f7fb;color:#172033}
+body{font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}
 header{background:#fff;border-bottom:1px solid #e5e7eb}
 .nav{max-width:700px;margin:auto;padding:15px;display:flex;justify-content:space-between}
-.logo{font-size:18px;font-weight:800;color:#155eef}
+.logo{font-weight:800;color:#155eef}
 .back{text-decoration:none;color:#475467;font-size:13px;font-weight:700}
-.container{max-width:600px;margin:30px auto;padding:0 15px 50px}
-.card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:25px;box-shadow:0 8px 25px #0000000d;text-align:center}
-.icon{width:65px;height:65px;margin:auto;border-radius:17px;background:#fff7d6;display:flex;align-items:center;justify-content:center;font-size:32px}
+.container{max-width:600px;margin:30px auto;padding:0 15px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:25px;text-align:center;box-shadow:0 8px 25px #0000000d}
+.icon{font-size:32px}
 h1{font-size:25px;margin:15px 0 8px}
 .subtitle{font-size:14px;color:#667085;line-height:1.5;margin-bottom:25px}
-.price{font-size:32px;font-weight:900;color:#155eef;margin:10px 0}
-.plan{font-size:13px;color:#667085;margin-bottom:25px}
-.info{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left}
-.row{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;gap:15px}
+.price{font-size:32px;font-weight:900;color:#155eef}
+.plan{font-size:13px;color:#667085;margin:8px 0 25px}
+.info{text-align:left;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:20px}
+.row{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;gap:10px}
 .row span:first-child{color:#667085}
 .row span:last-child{font-weight:700;text-align:right}
-.pay{width:100%;height:50px;border:0;border-radius:10px;background:#155eef;color:#fff;font-size:15px;font-weight:800;cursor:pointer}
-.pay:disabled{opacity:.6}
-.message{display:none;margin-top:15px;padding:12px;border-radius:10px;font-size:13px}
-.success{display:block;background:#ecfdf3;color:#166534}
-.error{display:block;background:#fff1f2;color:#be123c}
+.pay{display:block;width:100%;padding:15px;border-radius:10px;background:#155eef;color:white;text-decoration:none;font-weight:800;font-size:15px}
 .note{margin-top:15px;font-size:11px;color:#98a2b3}
 footer{text-align:center;padding:25px;font-size:11px;color:#98a2b3}
 </style>
@@ -58,6 +53,7 @@ Unlock premium English learning features and AI English MCQ practice.
 <div class="plan">30-Day Premium Membership</div>
 
 <div class="info">
+
 <div class="row">
 <span>Student</span>
 <span id="studentName">Loading...</span>
@@ -72,13 +68,16 @@ Unlock premium English learning features and AI English MCQ practice.
 <span>Membership</span>
 <span>30 Days</span>
 </div>
+
 </div>
 
-<button id="payButton" class="pay">
+<a
+id="payButton"
+class="pay"
+href="#"
+>
 ⭐ Pay LKR 1,500 with PayHere
-</button>
-
-<div id="message" class="message"></div>
+</a>
 
 <div class="note">
 Secure payment powered by PayHere.
@@ -93,163 +92,40 @@ Secure payment powered by PayHere.
 
 <script>
 
-const API =
-"https://createlk-academy-api.createlk.workers.dev";
+const PAYMENT_LINK = "PASTE_YOUR_PAYHERE_PAYMENT_LINK_HERE";
 
-let student;
+const studentKey = "createlk_student";
+const loginKey = "createlk_logged_in";
+
+let student = null;
 
 try {
-student = JSON.parse(
-sessionStorage.getItem("createlk_student") || "null"
-);
-} catch {
-student = null;
-}
+  student = JSON.parse(
+    sessionStorage.getItem(studentKey) || "null"
+  );
+} catch(e) {}
 
 if (
-!student ||
-sessionStorage.getItem("createlk_logged_in") !== "true"
+  !student ||
+  sessionStorage.getItem(loginKey) !== "true"
 ) {
-location.href = "login.html";
+  location.href = "login.html";
 }
 
-const studentId =
-student?.id || student?.student_id;
-
-if (!studentId) {
-location.href = "login.html";
-}
+const name =
+[
+  student?.first_name,
+  student?.last_name
+].filter(Boolean).join(" ");
 
 document.getElementById("studentName").textContent =
-[
-student?.first_name,
-student?.last_name
-].filter(Boolean).join(" ") || "Student";
+  name || "Student";
 
 document.getElementById("studentEmail").textContent =
-student?.email || "";
+  student?.email || "";
 
-const button =
-document.getElementById("payButton");
-
-const message =
-document.getElementById("message");
-
-function show(text,type){
-message.textContent = text;
-message.className = "message " + type;
-}
-
-payhere.onCompleted = function(orderId){
-
-show(
-"Payment completed. PayHere is confirming your payment. Your 30-day Premium membership will activate after confirmation.",
-"success"
-);
-
-setTimeout(() => {
-location.href = "dashboard.html";
-},3000);
-
-};
-
-payhere.onDismissed = function(){
-
-button.disabled = false;
-button.textContent =
-"⭐ Pay LKR 1,500 with PayHere";
-
-};
-
-payhere.onError = function(error){
-
-button.disabled = false;
-button.textContent =
-"⭐ Pay LKR 1,500 with PayHere";
-
-show(
-"PayHere error: " + error,
-"error"
-);
-
-};
-
-button.onclick = async function(){
-
-button.disabled = true;
-button.textContent =
-"Connecting to PayHere...";
-
-message.className = "message";
-
-try {
-
-const res = await fetch(
-API + "/api/payhere/create",
-{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-student_id:Number(studentId)
-})
-}
-);
-
-const data = await res.json();
-
-if (!res.ok || !data.success) {
-throw new Error(
-data.message || "Unable to create payment."
-);
-}
-
-payhere.startPayment({
-
-sandbox:true,
-
-merchant_id:data.merchant_id,
-
-return_url:data.return_url,
-cancel_url:data.cancel_url,
-notify_url:data.notify_url,
-
-order_id:data.order_id,
-items:data.items,
-
-amount:data.amount,
-currency:data.currency,
-hash:data.hash,
-
-first_name:data.first_name,
-last_name:data.last_name,
-
-email:data.email,
-phone:data.phone || "",
-
-address:data.address || "Sri Lanka",
-city:data.city || "Nuwara Eliya",
-country:data.country || "Sri Lanka"
-
-});
-
-} catch(error) {
-
-console.error(error);
-
-button.disabled = false;
-button.textContent =
-"⭐ Pay LKR 1,500 with PayHere";
-
-show(
-error.message || "Unable to start PayHere payment.",
-"error"
-);
-
-}
-
-};
+document.getElementById("payButton").href =
+  PAYMENT_LINK;
 
 </script>
 
