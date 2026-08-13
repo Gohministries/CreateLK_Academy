@@ -1,0 +1,704 @@
+const ALLOWED_ORIGIN = "https://createlk.com";
+
+const JSON_HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: JSON_HEADERS
+  });
+}
+
+function cors() {
+  return new Response(null, {
+    status: 204,
+    headers: JSON_HEADERS
+  });
+}
+
+async function body(request) {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+
+
+/* =========================================================
+   PASSWORD HASH
+========================================================= */
+
+async function hashPassword(password) {
+
+  const data = new TextEncoder().encode(password);
+
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    data
+  );
+
+  return Array.from(
+    new Uint8Array(hash)
+  )
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+
+/* =========================================================
+   REGISTER
+========================================================= */
+
+async function register(request, env) {
+
+  const data = await body(request);
+
+  if (!data) {
+    return json({
+      success: false,
+      message: "Invalid request."
+    }, 400);
+  }
+
+  const first_name =
+    String(data.first_name || "").trim();
+
+  const last_name =
+    String(data.last_name || "").trim();
+
+  const email =
+    String(data.email || "")
+      .trim()
+      .toLowerCase();
+
+  const phone =
+    String(data.phone || "").trim();
+
+  const password =
+    String(data.password || "");
+
+  if (
+    !first_name ||
+    !last_name ||
+    !email ||
+    !password
+  ) {
+    return json({
+      success: false,
+      message: "First name, last name, email and password are required."
+    }, 400);
+  }
+
+  if (password.length < 6) {
+    return json({
+      success: false,
+      message: "Password must contain at least 6 characters."
+    }, 400);
+  }
+
+  const existing =
+    await env.DB.prepare(
+      "SELECT id FROM students WHERE email = ?"
+    )
+    .bind(email)
+    .first();
+
+  if (existing) {
+    return json({
+      success: false,
+      message: "An account with this email already exists."
+    }, 409);
+  }
+
+  const password_hash =
+    await hashPassword(password);
+
+  const result =
+    await env.DB.prepare(`
+      INSERT INTO students
+      (
+        first_name,
+        last_name,
+        email,
+        phone,
+        password_hash,
+        membership_status
+      )
+      VALUES (?, ?, ?, ?, ?, 'NONE')
+    `)
+    .bind(
+      first_name,
+      last_name,
+      email,
+      phone,
+      password_hash
+    )
+    .run();
+
+  if (!result.success) {
+    return json({
+      success: false,
+      message: "Unable to create student account."
+    }, 500);
+  }
+
+  const student =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        membership_status,
+        membership_expiry,
+        created_at
+      FROM students
+      WHERE email = ?
+    `)
+    .bind(email)
+    .first();
+
+  return json({
+    success: true,
+    message: "Account created successfully.",
+    student: student
+  }, 201);
+}
+
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+async function login(request, env) {
+
+  const data = await body(request);
+
+  if (!data) {
+    return json({
+      success: false,
+      message: "Invalid request."
+    }, 400);
+  }
+
+  const email =
+    String(data.email || "")
+      .trim()
+      .toLowerCase();
+
+  const password =
+    String(data.password || "");
+
+  if (!email || !password) {
+    return json({
+      success: false,
+      message: "Email and password are required."
+    }, 400);
+  }
+
+  const password_hash =
+    await hashPassword(password);
+
+  const student =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        password_hash,
+        membership_status,
+        membership_expiry,
+        created_at
+      FROM students
+      WHERE email = ?
+    `)
+    .bind(email)
+    .first();
+
+  if (!student) {
+    return json({
+      success: false,
+      message: "Invalid email or password."
+    }, 401);
+  }
+
+  if (
+    student.password_hash !== password_hash
+  ) {
+    return json({
+      success: false,
+      message: "Invalid email or password."
+    }, 401);
+  }
+
+  delete student.password_hash;
+
+  return json({
+    success: true,
+    message: "Login successful.",
+    student_id: student.id,
+    student: student
+  });
+}
+
+
+/* =========================================================
+   STUDENT
+========================================================= */
+
+async function getStudent(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const id =
+    url.searchParams.get("id");
+
+  const email =
+    url.searchParams.get("email");
+
+  let student;
+
+  if (id) {
+
+    student =
+      await env.DB.prepare(`
+        SELECT
+          id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          membership_status,
+          membership_expiry,
+          created_at
+        FROM students
+        WHERE id = ?
+      `)
+      .bind(id)
+      .first();
+
+  } else if (email) {
+
+    student =
+      await env.DB.prepare(`
+        SELECT
+          id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          membership_status,
+          membership_expiry,
+          created_at
+        FROM students
+        WHERE email = ?
+      `)
+      .bind(
+        email.trim().toLowerCase()
+      )
+      .first();
+
+  } else {
+
+    return json({
+      success: false,
+      message: "Student ID or email is required."
+    }, 400);
+  }
+
+  if (!student) {
+    return json({
+      success: false,
+      message: "Student not found."
+    }, 404);
+  }
+
+  return json({
+    success: true,
+    student: student
+  });
+}
+
+
+/* =========================================================
+   MEMBERSHIP
+========================================================= */
+
+async function membership(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const studentId =
+    url.searchParams.get("student_id");
+
+  const email =
+    url.searchParams.get("email");
+
+  let student;
+
+  if (studentId) {
+
+    student =
+      await env.DB.prepare(`
+        SELECT
+          id,
+          first_name,
+          last_name,
+          email,
+          membership_status,
+          membership_expiry
+        FROM students
+        WHERE id = ?
+      `)
+      .bind(studentId)
+      .first();
+
+  } else if (email) {
+
+    student =
+      await env.DB.prepare(`
+        SELECT
+          id,
+          first_name,
+          last_name,
+          email,
+          membership_status,
+          membership_expiry
+        FROM students
+        WHERE email = ?
+      `)
+      .bind(
+        email.trim().toLowerCase()
+      )
+      .first();
+
+  } else {
+
+    return json({
+      success: false,
+      message: "Student ID or email is required."
+    }, 400);
+  }
+
+  if (!student) {
+    return json({
+      success: false,
+      message: "Student not found."
+    }, 404);
+  }
+
+  let status =
+    String(
+      student.membership_status || "NONE"
+    ).toUpperCase();
+
+  let active = false;
+
+  if (
+    status === "ACTIVE" &&
+    student.membership_expiry
+  ) {
+
+    const expiry =
+      new Date(
+        student.membership_expiry
+      );
+
+    if (
+      !isNaN(expiry.getTime()) &&
+      expiry > new Date()
+    ) {
+
+      active = true;
+
+    } else {
+
+      status = "EXPIRED";
+
+      await env.DB.prepare(`
+        UPDATE students
+        SET membership_status = 'EXPIRED'
+        WHERE id = ?
+      `)
+      .bind(student.id)
+      .run();
+    }
+  }
+
+  return json({
+    success: true,
+    student_id: student.id,
+    status: status,
+    active: active,
+    membership_active: active,
+    membership_expiry:
+      student.membership_expiry || null
+  });
+}
+
+
+/* =========================================================
+   MCQ QUESTIONS
+========================================================= */
+
+async function mcq(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const limit =
+    Math.min(
+      Number(
+        url.searchParams.get("limit") || 10
+      ),
+      50
+    );
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        question,
+        option_a,
+        option_b,
+        option_c,
+        option_d,
+        correct_answer,
+        explanation,
+        category
+      FROM mcq_questions
+      ORDER BY RANDOM()
+      LIMIT ?
+    `)
+    .bind(limit)
+    .all();
+
+  return json({
+    success: true,
+    questions: result.results || []
+  });
+}
+
+
+/* =========================================================
+   CERTIFICATES
+========================================================= */
+
+async function certificates(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const studentId =
+    url.searchParams.get("student_id");
+
+  const email =
+    url.searchParams.get("email");
+
+  if (!studentId && !email) {
+
+    return json({
+      success: false,
+      message: "Student ID or email is required."
+    }, 400);
+  }
+
+  let result;
+
+  if (studentId) {
+
+    result =
+      await env.DB.prepare(`
+        SELECT *
+        FROM certificates
+        WHERE student_id = ?
+        ORDER BY id DESC
+      `)
+      .bind(studentId)
+      .all();
+
+  } else {
+
+    result =
+      await env.DB.prepare(`
+        SELECT c.*
+        FROM certificates c
+        JOIN students s
+          ON c.student_id = s.id
+        WHERE s.email = ?
+        ORDER BY c.id DESC
+      `)
+      .bind(
+        email.trim().toLowerCase()
+      )
+      .all();
+  }
+
+  return json({
+    success: true,
+    certificates:
+      result.results || []
+  });
+}
+
+
+/* =========================================================
+   HEALTH CHECK
+========================================================= */
+
+async function health(env) {
+
+  try {
+
+    const result =
+      await env.DB
+        .prepare("SELECT 1 AS test")
+        .first();
+
+    return json({
+      success: true,
+      message:
+        "CreateLK Academy API is working",
+      database: "connected",
+      result: result
+    });
+
+  } catch (error) {
+
+    return json({
+      success: false,
+      message: "Database connection failed.",
+      error: error.message
+    }, 500);
+  }
+}
+
+
+/* =========================================================
+   MAIN WORKER
+========================================================= */
+
+export default {
+
+  async fetch(request, env) {
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+      return cors();
+    }
+
+    const url =
+      new URL(request.url);
+
+    const path =
+      url.pathname.replace(/\/+$/, "") || "/";
+
+    try {
+
+      /* HEALTH */
+
+      if (
+        path === "/" ||
+        path === "/api"
+      ) {
+        return health(env);
+      }
+
+
+      /* REGISTER */
+
+      if (
+        path === "/api/register" &&
+        request.method === "POST"
+      ) {
+        return register(request, env);
+      }
+
+
+      /* LOGIN */
+
+      if (
+        path === "/api/login" &&
+        request.method === "POST"
+      ) {
+        return login(request, env);
+      }
+
+
+      /* STUDENT */
+
+      if (
+        path === "/api/student" &&
+        request.method === "GET"
+      ) {
+        return getStudent(request, env);
+      }
+
+
+      /* MEMBERSHIP */
+
+      if (
+        path === "/api/membership" &&
+        request.method === "GET"
+      ) {
+        return membership(request, env);
+      }
+
+
+      /* MCQ */
+
+      if (
+        path === "/api/mcq" &&
+        request.method === "GET"
+      ) {
+        return mcq(request, env);
+      }
+
+
+      /* CERTIFICATES */
+
+      if (
+        path === "/api/certificates" &&
+        request.method === "GET"
+      ) {
+        return certificates(request, env);
+      }
+
+
+      /* NOT FOUND */
+
+      return json({
+        success: false,
+        message: "API endpoint not found.",
+        path: path
+      }, 404);
+
+
+    } catch (error) {
+
+      console.error(
+        "API ERROR:",
+        error
+      );
+
+      return json({
+        success: false,
+        message: "Server error.",
+        error: error.message
+      }, 500);
+    }
+  }
+};
+
