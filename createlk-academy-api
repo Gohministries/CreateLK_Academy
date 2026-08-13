@@ -1,704 +1,840 @@
 const ALLOWED_ORIGIN = "https://createlk.com";
 
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
-};
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,X-Admin-Key",
+    "Access-Control-Max-Age": "86400"
+  };
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: JSON_HEADERS
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders()
+    }
   });
 }
-
-function cors() {
-  return new Response(null, {
-    status: 204,
-    headers: JSON_HEADERS
-  });
-}
-
-async function body(request) {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-}
-
-
-/* =========================================================
-   PASSWORD HASH
-========================================================= */
 
 async function hashPassword(password) {
-
   const data = new TextEncoder().encode(password);
+  const hash = await crypto.subtle.digest("SHA-256", data);
 
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    data
-  );
-
-  return Array.from(
-    new Uint8Array(hash)
-  )
+  return Array.from(new Uint8Array(hash))
     .map(b => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-
-/* =========================================================
-   REGISTER
-========================================================= */
-
-async function register(request, env) {
-
-  const data = await body(request);
-
-  if (!data) {
-    return json({
-      success: false,
-      message: "Invalid request."
-    }, 400);
-  }
-
-  const first_name =
-    String(data.first_name || "").trim();
-
-  const last_name =
-    String(data.last_name || "").trim();
-
-  const email =
-    String(data.email || "")
-      .trim()
-      .toLowerCase();
-
-  const phone =
-    String(data.phone || "").trim();
-
-  const password =
-    String(data.password || "");
-
-  if (
-    !first_name ||
-    !last_name ||
-    !email ||
-    !password
-  ) {
-    return json({
-      success: false,
-      message: "First name, last name, email and password are required."
-    }, 400);
-  }
-
-  if (password.length < 6) {
-    return json({
-      success: false,
-      message: "Password must contain at least 6 characters."
-    }, 400);
-  }
-
-  const existing =
-    await env.DB.prepare(
-      "SELECT id FROM students WHERE email = ?"
-    )
-    .bind(email)
-    .first();
-
-  if (existing) {
-    return json({
-      success: false,
-      message: "An account with this email already exists."
-    }, 409);
-  }
-
-  const password_hash =
-    await hashPassword(password);
-
-  const result =
-    await env.DB.prepare(`
-      INSERT INTO students
-      (
-        first_name,
-        last_name,
-        email,
-        phone,
-        password_hash,
-        membership_status
-      )
-      VALUES (?, ?, ?, ?, ?, 'NONE')
-    `)
-    .bind(
-      first_name,
-      last_name,
-      email,
-      phone,
-      password_hash
-    )
-    .run();
-
-  if (!result.success) {
-    return json({
-      success: false,
-      message: "Unable to create student account."
-    }, 500);
-  }
-
-  const student =
-    await env.DB.prepare(`
-      SELECT
-        id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        membership_status,
-        membership_expiry,
-        created_at
-      FROM students
-      WHERE email = ?
-    `)
-    .bind(email)
-    .first();
-
-  return json({
-    success: true,
-    message: "Account created successfully.",
-    student: student
-  }, 201);
+async function verifyPassword(password, storedHash) {
+  return (await hashPassword(password)) === storedHash;
 }
 
-
-/* =========================================================
-   LOGIN
-========================================================= */
-
-async function login(request, env) {
-
-  const data = await body(request);
-
-  if (!data) {
-    return json({
-      success: false,
-      message: "Invalid request."
-    }, 400);
-  }
-
-  const email =
-    String(data.email || "")
-      .trim()
-      .toLowerCase();
-
-  const password =
-    String(data.password || "");
-
-  if (!email || !password) {
-    return json({
-      success: false,
-      message: "Email and password are required."
-    }, 400);
-  }
-
-  const password_hash =
-    await hashPassword(password);
-
-  const student =
-    await env.DB.prepare(`
-      SELECT
-        id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        password_hash,
-        membership_status,
-        membership_expiry,
-        created_at
-      FROM students
-      WHERE email = ?
-    `)
-    .bind(email)
-    .first();
-
-  if (!student) {
-    return json({
-      success: false,
-      message: "Invalid email or password."
-    }, 401);
-  }
-
-  if (
-    student.password_hash !== password_hash
-  ) {
-    return json({
-      success: false,
-      message: "Invalid email or password."
-    }, 401);
-  }
-
-  delete student.password_hash;
-
-  return json({
-    success: true,
-    message: "Login successful.",
-    student_id: student.id,
-    student: student
-  });
+function createToken() {
+  return crypto.randomUUID() + "-" + crypto.randomUUID();
 }
-
-
-/* =========================================================
-   STUDENT
-========================================================= */
-
-async function getStudent(request, env) {
-
-  const url =
-    new URL(request.url);
-
-  const id =
-    url.searchParams.get("id");
-
-  const email =
-    url.searchParams.get("email");
-
-  let student;
-
-  if (id) {
-
-    student =
-      await env.DB.prepare(`
-        SELECT
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          membership_status,
-          membership_expiry,
-          created_at
-        FROM students
-        WHERE id = ?
-      `)
-      .bind(id)
-      .first();
-
-  } else if (email) {
-
-    student =
-      await env.DB.prepare(`
-        SELECT
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          membership_status,
-          membership_expiry,
-          created_at
-        FROM students
-        WHERE email = ?
-      `)
-      .bind(
-        email.trim().toLowerCase()
-      )
-      .first();
-
-  } else {
-
-    return json({
-      success: false,
-      message: "Student ID or email is required."
-    }, 400);
-  }
-
-  if (!student) {
-    return json({
-      success: false,
-      message: "Student not found."
-    }, 404);
-  }
-
-  return json({
-    success: true,
-    student: student
-  });
-}
-
-
-/* =========================================================
-   MEMBERSHIP
-========================================================= */
-
-async function membership(request, env) {
-
-  const url =
-    new URL(request.url);
-
-  const studentId =
-    url.searchParams.get("student_id");
-
-  const email =
-    url.searchParams.get("email");
-
-  let student;
-
-  if (studentId) {
-
-    student =
-      await env.DB.prepare(`
-        SELECT
-          id,
-          first_name,
-          last_name,
-          email,
-          membership_status,
-          membership_expiry
-        FROM students
-        WHERE id = ?
-      `)
-      .bind(studentId)
-      .first();
-
-  } else if (email) {
-
-    student =
-      await env.DB.prepare(`
-        SELECT
-          id,
-          first_name,
-          last_name,
-          email,
-          membership_status,
-          membership_expiry
-        FROM students
-        WHERE email = ?
-      `)
-      .bind(
-        email.trim().toLowerCase()
-      )
-      .first();
-
-  } else {
-
-    return json({
-      success: false,
-      message: "Student ID or email is required."
-    }, 400);
-  }
-
-  if (!student) {
-    return json({
-      success: false,
-      message: "Student not found."
-    }, 404);
-  }
-
-  let status =
-    String(
-      student.membership_status || "NONE"
-    ).toUpperCase();
-
-  let active = false;
-
-  if (
-    status === "ACTIVE" &&
-    student.membership_expiry
-  ) {
-
-    const expiry =
-      new Date(
-        student.membership_expiry
-      );
-
-    if (
-      !isNaN(expiry.getTime()) &&
-      expiry > new Date()
-    ) {
-
-      active = true;
-
-    } else {
-
-      status = "EXPIRED";
-
-      await env.DB.prepare(`
-        UPDATE students
-        SET membership_status = 'EXPIRED'
-        WHERE id = ?
-      `)
-      .bind(student.id)
-      .run();
-    }
-  }
-
-  return json({
-    success: true,
-    student_id: student.id,
-    status: status,
-    active: active,
-    membership_active: active,
-    membership_expiry:
-      student.membership_expiry || null
-  });
-}
-
-
-/* =========================================================
-   MCQ QUESTIONS
-========================================================= */
-
-async function mcq(request, env) {
-
-  const url =
-    new URL(request.url);
-
-  const limit =
-    Math.min(
-      Number(
-        url.searchParams.get("limit") || 10
-      ),
-      50
-    );
-
-  const result =
-    await env.DB.prepare(`
-      SELECT
-        id,
-        question,
-        option_a,
-        option_b,
-        option_c,
-        option_d,
-        correct_answer,
-        explanation,
-        category
-      FROM mcq_questions
-      ORDER BY RANDOM()
-      LIMIT ?
-    `)
-    .bind(limit)
-    .all();
-
-  return json({
-    success: true,
-    questions: result.results || []
-  });
-}
-
-
-/* =========================================================
-   CERTIFICATES
-========================================================= */
-
-async function certificates(request, env) {
-
-  const url =
-    new URL(request.url);
-
-  const studentId =
-    url.searchParams.get("student_id");
-
-  const email =
-    url.searchParams.get("email");
-
-  if (!studentId && !email) {
-
-    return json({
-      success: false,
-      message: "Student ID or email is required."
-    }, 400);
-  }
-
-  let result;
-
-  if (studentId) {
-
-    result =
-      await env.DB.prepare(`
-        SELECT *
-        FROM certificates
-        WHERE student_id = ?
-        ORDER BY id DESC
-      `)
-      .bind(studentId)
-      .all();
-
-  } else {
-
-    result =
-      await env.DB.prepare(`
-        SELECT c.*
-        FROM certificates c
-        JOIN students s
-          ON c.student_id = s.id
-        WHERE s.email = ?
-        ORDER BY c.id DESC
-      `)
-      .bind(
-        email.trim().toLowerCase()
-      )
-      .all();
-  }
-
-  return json({
-    success: true,
-    certificates:
-      result.results || []
-  });
-}
-
-
-/* =========================================================
-   HEALTH CHECK
-========================================================= */
-
-async function health(env) {
-
-  try {
-
-    const result =
-      await env.DB
-        .prepare("SELECT 1 AS test")
-        .first();
-
-    return json({
-      success: true,
-      message:
-        "CreateLK Academy API is working",
-      database: "connected",
-      result: result
-    });
-
-  } catch (error) {
-
-    return json({
-      success: false,
-      message: "Database connection failed.",
-      error: error.message
-    }, 500);
-  }
-}
-
-
-/* =========================================================
-   MAIN WORKER
-========================================================= */
 
 export default {
 
   async fetch(request, env) {
 
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+
+    /* CORS */
+
+    if (method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders()
+      });
+    }
+
+    /* API TEST */
+
+    if (path === "/" && method === "GET") {
+      return json({
+        success: true,
+        message: "CreateLK Academy API is working",
+        worker: "createlk-academy-api"
+      });
+    }
+
+    /* =====================================================
+       REGISTER
+    ===================================================== */
+
+    if (path === "/api/register" && method === "POST") {
+
+      try {
+
+        const body = await request.json();
+
+        const firstName = String(
+          body.first_name || body.firstName || ""
+        ).trim();
+
+        const lastName = String(
+          body.last_name || body.lastName || ""
+        ).trim();
+
+        const email = String(
+          body.email || ""
+        ).trim().toLowerCase();
+
+        const phone = String(
+          body.phone || ""
+        ).trim();
+
+        const password = String(
+          body.password || ""
+        );
+
+        if (!firstName || !lastName || !email || !password) {
+          return json({
+            success: false,
+            message: "Please complete all required fields."
+          }, 400);
+        }
+
+        if (password.length < 6) {
+          return json({
+            success: false,
+            message: "Password must contain at least 6 characters."
+          }, 400);
+        }
+
+        const existing = await env.DB.prepare(`
+          SELECT id
+          FROM students
+          WHERE email=?
+          LIMIT 1
+        `)
+        .bind(email)
+        .first();
+
+        if (existing) {
+          return json({
+            success: false,
+            message: "An account with this email already exists."
+          }, 409);
+        }
+
+        const passwordHash =
+          await hashPassword(password);
+
+        const result = await env.DB.prepare(`
+          INSERT INTO students
+          (
+            first_name,
+            last_name,
+            email,
+            phone,
+            password_hash,
+            membership_status
+          )
+          VALUES (?, ?, ?, ?, ?, 'NONE')
+        `)
+        .bind(
+          firstName,
+          lastName,
+          email,
+          phone,
+          passwordHash
+        )
+        .run();
+
+        const studentId =
+          result.meta.last_row_id;
+
+        return json({
+          success: true,
+          message: "Account created successfully.",
+          student: {
+            id: studentId,
+            student_id: studentId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            phone: phone,
+            membership_status: "NONE"
+          }
+        });
+
+      } catch (error) {
+
+        console.error("REGISTER:", error);
+
+        return json({
+          success: false,
+          message: "Registration failed.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       LOGIN
+    ===================================================== */
+
+    if (path === "/api/login" && method === "POST") {
+
+      try {
+
+        const body = await request.json();
+
+        const email = String(
+          body.email || ""
+        ).trim().toLowerCase();
+
+        const password = String(
+          body.password || ""
+        );
+
+        if (!email || !password) {
+          return json({
+            success: false,
+            message: "Email and password are required."
+          }, 400);
+        }
+
+        const student = await env.DB.prepare(`
+          SELECT *
+          FROM students
+          WHERE email=?
+          LIMIT 1
+        `)
+        .bind(email)
+        .first();
+
+        if (!student) {
+          return json({
+            success: false,
+            message: "Invalid email or password."
+          }, 401);
+        }
+
+        const valid =
+          await verifyPassword(
+            password,
+            student.password_hash
+          );
+
+        if (!valid) {
+          return json({
+            success: false,
+            message: "Invalid email or password."
+          }, 401);
+        }
+
+        return json({
+          success: true,
+          message: "Login successful.",
+          token: createToken(),
+          student: {
+            id: student.id,
+            student_id: student.id,
+            first_name: student.first_name,
+            last_name: student.last_name,
+            email: student.email,
+            phone: student.phone,
+            membership_status:
+              student.membership_status,
+            membership_expiry:
+              student.membership_expiry
+          }
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Login failed.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       STUDENT
+    ===================================================== */
+
+    if (path === "/api/student" && method === "GET") {
+
+      try {
+
+        const id = Number(
+          url.searchParams.get("id") ||
+          url.searchParams.get("student_id")
+        );
+
+        if (!id) {
+          return json({
+            success: false,
+            message: "Student ID is required."
+          }, 400);
+        }
+
+        const student = await env.DB.prepare(`
+          SELECT
+            id,
+            first_name,
+            last_name,
+            email,
+            phone,
+            membership_status,
+            membership_expiry,
+            created_at
+          FROM students
+          WHERE id=?
+          LIMIT 1
+        `)
+        .bind(id)
+        .first();
+
+        if (!student) {
+          return json({
+            success: false,
+            message: "Student not found."
+          }, 404);
+        }
+
+        return json({
+          success: true,
+          student: {
+            ...student,
+            student_id: student.id
+          }
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Unable to load student.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       PAYMENT
+    ===================================================== */
+
+    if (path === "/api/payment" && method === "POST") {
+
+      try {
+
+        const body = await request.json();
+
+        const studentId =
+          Number(body.student_id);
+
+        const email =
+          String(body.email || "")
+          .trim()
+          .toLowerCase();
+
+        const reference =
+          String(
+            body.transaction_reference ||
+            body.reference ||
+            ""
+          ).trim();
+
+        const amount =
+          Number(body.amount || 1500);
+
+        const receiptKey =
+          body.receipt_key ||
+          body.receipt_url ||
+          null;
+
+        if (!studentId || !email) {
+          return json({
+            success: false,
+            message: "Student information is required."
+          }, 400);
+        }
+
+        const student = await env.DB.prepare(`
+          SELECT id
+          FROM students
+          WHERE id=?
+          LIMIT 1
+        `)
+        .bind(studentId)
+        .first();
+
+        if (!student) {
+          return json({
+            success: false,
+            message: "Student not found."
+          }, 404);
+        }
+
+        const result = await env.DB.prepare(`
+          INSERT INTO payment_requests
+          (
+            student_id,
+            email,
+            amount,
+            transaction_reference,
+            receipt_key,
+            status
+          )
+          VALUES (?, ?, ?, ?, ?, 'PENDING')
+        `)
+        .bind(
+          studentId,
+          email,
+          amount,
+          reference,
+          receiptKey
+        )
+        .run();
+
+        return json({
+          success: true,
+          message:
+            "Payment submitted successfully. Awaiting verification.",
+          payment_id:
+            result.meta.last_row_id,
+          status: "PENDING"
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Payment submission failed.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       PAYMENT STATUS
+    ===================================================== */
+
     if (
-      request.method === "OPTIONS"
+      path === "/api/payment-status" &&
+      method === "GET"
     ) {
-      return cors();
+
+      try {
+
+        const studentId =
+          Number(
+            url.searchParams.get("student_id")
+          );
+
+        if (!studentId) {
+          return json({
+            success: false,
+            message: "Student ID is required."
+          }, 400);
+        }
+
+        const payment = await env.DB.prepare(`
+          SELECT *
+          FROM payment_requests
+          WHERE student_id=?
+          ORDER BY id DESC
+          LIMIT 1
+        `)
+        .bind(studentId)
+        .first();
+
+        return json({
+          success: true,
+          payment: payment || null
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Unable to load payment status.",
+          error: error.message
+        }, 500);
+      }
     }
 
-    const url =
-      new URL(request.url);
+    /* =====================================================
+       MEMBERSHIP
+    ===================================================== */
 
-    const path =
-      url.pathname.replace(/\/+$/, "") || "/";
+    if (
+      path === "/api/membership" &&
+      method === "GET"
+    ) {
 
-    try {
+      try {
 
-      /* HEALTH */
+        const studentId =
+          Number(
+            url.searchParams.get("student_id")
+          );
 
-      if (
-        path === "/" ||
-        path === "/api"
-      ) {
-        return health(env);
+        const student = await env.DB.prepare(`
+          SELECT
+            id,
+            membership_status,
+            membership_expiry
+          FROM students
+          WHERE id=?
+          LIMIT 1
+        `)
+        .bind(studentId)
+        .first();
+
+        if (!student) {
+          return json({
+            success: false,
+            message: "Student not found."
+          }, 404);
+        }
+
+        let active =
+          student.membership_status === "ACTIVE";
+
+        if (student.membership_expiry) {
+          active =
+            new Date(student.membership_expiry) >
+            new Date();
+        }
+
+        return json({
+          success: true,
+          membership: {
+            status: active ? "ACTIVE" : "EXPIRED",
+            expiry: student.membership_expiry,
+            active: active
+          }
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Unable to load membership.",
+          error: error.message
+        }, 500);
       }
-
-
-      /* REGISTER */
-
-      if (
-        path === "/api/register" &&
-        request.method === "POST"
-      ) {
-        return register(request, env);
-      }
-
-
-      /* LOGIN */
-
-      if (
-        path === "/api/login" &&
-        request.method === "POST"
-      ) {
-        return login(request, env);
-      }
-
-
-      /* STUDENT */
-
-      if (
-        path === "/api/student" &&
-        request.method === "GET"
-      ) {
-        return getStudent(request, env);
-      }
-
-
-      /* MEMBERSHIP */
-
-      if (
-        path === "/api/membership" &&
-        request.method === "GET"
-      ) {
-        return membership(request, env);
-      }
-
-
-      /* MCQ */
-
-      if (
-        path === "/api/mcq" &&
-        request.method === "GET"
-      ) {
-        return mcq(request, env);
-      }
-
-
-      /* CERTIFICATES */
-
-      if (
-        path === "/api/certificates" &&
-        request.method === "GET"
-      ) {
-        return certificates(request, env);
-      }
-
-
-      /* NOT FOUND */
-
-      return json({
-        success: false,
-        message: "API endpoint not found.",
-        path: path
-      }, 404);
-
-
-    } catch (error) {
-
-      console.error(
-        "API ERROR:",
-        error
-      );
-
-      return json({
-        success: false,
-        message: "Server error.",
-        error: error.message
-      }, 500);
     }
+
+    /* =====================================================
+       MCQ
+    ===================================================== */
+
+    if (path === "/api/mcq" && method === "GET") {
+
+      try {
+
+        const result = await env.DB.prepare(`
+          SELECT
+            id,
+            question,
+            option_a,
+            option_b,
+            option_c,
+            option_d,
+            category,
+            difficulty
+          FROM mcq_questions
+          ORDER BY RANDOM()
+          LIMIT 10
+        `).all();
+
+        return json({
+          success: true,
+          questions: result.results || []
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Unable to load MCQ questions.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       CERTIFICATES
+    ===================================================== */
+
+    if (
+      path === "/api/certificates" &&
+      method === "GET"
+    ) {
+
+      try {
+
+        const studentId =
+          Number(
+            url.searchParams.get("student_id")
+          );
+
+        const result = await env.DB.prepare(`
+          SELECT *
+          FROM certificates
+          WHERE student_id=?
+          ORDER BY id DESC
+        `)
+        .bind(studentId)
+        .all();
+
+        return json({
+          success: true,
+          certificates:
+            result.results || []
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Unable to load certificates.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       ADMIN PAYMENT LIST
+    ===================================================== */
+
+    if (
+      path === "/api/admin/payments" &&
+      method === "GET"
+    ) {
+
+      if (
+        request.headers.get("X-Admin-Key") !==
+        env.ADMIN_KEY
+      ) {
+        return json({
+          success: false,
+          message: "Unauthorized."
+        }, 401);
+      }
+
+      try {
+
+        const result = await env.DB.prepare(`
+          SELECT
+            p.id,
+            p.student_id,
+            p.email,
+            p.amount,
+            p.transaction_reference,
+            p.receipt_key,
+            p.status,
+            p.created_at,
+            p.approved_at,
+            p.rejected_at,
+            s.first_name,
+            s.last_name
+          FROM payment_requests p
+          JOIN students s
+            ON s.id=p.student_id
+          WHERE p.status='PENDING'
+          ORDER BY p.id DESC
+        `).all();
+
+        return json({
+          success: true,
+          payments:
+            result.results || []
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          message: "Unable to load payments.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       ADMIN APPROVE / REJECT
+    ===================================================== */
+
+    if (
+      path === "/api/admin/payment" &&
+      method === "POST"
+    ) {
+
+      if (
+        request.headers.get("X-Admin-Key") !==
+        env.ADMIN_KEY
+      ) {
+        return json({
+          success: false,
+          message: "Unauthorized."
+        }, 401);
+      }
+
+      try {
+
+        const body =
+          await request.json();
+
+        const paymentId =
+          Number(body.payment_id);
+
+        const status =
+          String(body.status || "")
+          .trim()
+          .toUpperCase();
+
+        if (
+          !paymentId ||
+          !["APPROVED", "REJECTED"]
+            .includes(status)
+        ) {
+          return json({
+            success: false,
+            message: "Invalid payment request."
+          }, 400);
+        }
+
+        const payment =
+          await env.DB.prepare(`
+            SELECT *
+            FROM payment_requests
+            WHERE id=?
+            LIMIT 1
+          `)
+          .bind(paymentId)
+          .first();
+
+        if (!payment) {
+          return json({
+            success: false,
+            message: "Payment not found."
+          }, 404);
+        }
+
+        if (payment.status !== "PENDING") {
+          return json({
+            success: false,
+            message: "Payment already processed."
+          }, 409);
+        }
+
+        /* REJECT */
+
+        if (status === "REJECTED") {
+
+          await env.DB.prepare(`
+            UPDATE payment_requests
+            SET
+              status='REJECTED',
+              rejected_at=CURRENT_TIMESTAMP
+            WHERE id=?
+          `)
+          .bind(paymentId)
+          .run();
+
+          return json({
+            success: true,
+            message: "Payment rejected."
+          });
+        }
+
+        /* APPROVE */
+
+        const expiry = new Date();
+
+        expiry.setDate(
+          expiry.getDate() + 30
+        );
+
+        const expiresAt =
+          expiry.toISOString();
+
+        await env.DB.prepare(`
+          UPDATE payment_requests
+          SET
+            status='APPROVED',
+            approved_at=CURRENT_TIMESTAMP
+          WHERE id=?
+        `)
+        .bind(paymentId)
+        .run();
+
+        await env.DB.prepare(`
+          INSERT INTO memberships
+          (
+            student_id,
+            status,
+            started_at,
+            expires_at
+          )
+          VALUES
+          (?, 'ACTIVE', CURRENT_TIMESTAMP, ?)
+        `)
+        .bind(
+          payment.student_id,
+          expiresAt
+        )
+        .run();
+
+        await env.DB.prepare(`
+          UPDATE students
+          SET
+            membership_status='ACTIVE',
+            membership_expiry=?,
+            updated_at=CURRENT_TIMESTAMP
+          WHERE id=?
+        `)
+        .bind(
+          expiresAt,
+          payment.student_id
+        )
+        .run();
+
+        return json({
+          success: true,
+          message:
+            "Payment approved. Premium activated for 30 days.",
+          payment_id: paymentId,
+          student_id: payment.student_id,
+          expires_at: expiresAt
+        });
+
+      } catch (error) {
+
+        console.error(
+          "ADMIN PAYMENT ERROR:",
+          error
+        );
+
+        return json({
+          success: false,
+          message: "Payment processing failed.",
+          error: error.message
+        }, 500);
+      }
+    }
+
+    /* =====================================================
+       NOT FOUND
+    ===================================================== */
+
+    return json({
+      success: false,
+      message: "API endpoint not found.",
+      path: path
+    }, 404);
   }
 };
-
