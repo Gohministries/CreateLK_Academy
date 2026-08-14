@@ -36,12 +36,6 @@ header{
   white-space:nowrap
 }
 
-.nav{
-  display:flex;
-  align-items:center;
-  gap:6px
-}
-
 .nav a{
   color:#fff;
   text-decoration:none;
@@ -54,26 +48,6 @@ header{
 .nav a:hover,
 .nav a.active{
   background:rgba(255,255,255,.18)
-}
-
-@media(max-width:600px){
-
-  header{
-    padding:12px 14px
-  }
-
-  .header{
-    align-items:center
-  }
-
-  .logo{
-    font-size:17px
-  }
-
-  .nav a{
-    font-size:12px;
-    padding:7px 8px
-  }
 }
 
 main{
@@ -160,6 +134,33 @@ button{
 .generate:disabled{
   opacity:.6;
   cursor:not-allowed
+}
+
+.premium{
+  display:none;
+  background:#7c3aed;
+  color:#fff;
+  margin-top:10px
+}
+
+.premium.show{
+  display:block
+}
+
+.limit{
+  display:none;
+  background:#fff7ed;
+  color:#9a3412;
+  border:1px solid #fed7aa;
+  padding:13px;
+  border-radius:10px;
+  margin-top:15px;
+  line-height:1.5;
+  text-align:center
+}
+
+.limit.show{
+  display:block
 }
 
 .question{
@@ -267,6 +268,19 @@ footer{
 
 @media(max-width:600px){
 
+  header{
+    padding:12px 14px
+  }
+
+  .logo{
+    font-size:17px
+  }
+
+  .nav a{
+    font-size:12px;
+    padding:7px 8px
+  }
+
   .stats{
     grid-template-columns:1fr 1fr
   }
@@ -333,6 +347,7 @@ footer{
 
 </div>
 
+
 <div class="card">
 
   <h2 style="margin-bottom:15px">
@@ -345,51 +360,20 @@ footer{
 
   <select id="category">
 
-    <option value="Mixed">
-      🎯 Mixed
-    </option>
-
-    <option value="Adjectives">
-      Adjectives
-    </option>
-
-    <option value="Adverbs">
-      Adverbs
-    </option>
-
-    <option value="Articles">
-      Articles
-    </option>
-
-    <option value="Conjunctions">
-      Conjunctions
-    </option>
-
-    <option value="Nouns">
-      Nouns
-    </option>
-
-    <option value="Prepositions">
-      Prepositions
-    </option>
-
-    <option value="Pronouns">
-      Pronouns
-    </option>
-
-    <option value="Tenses">
-      Tenses
-    </option>
-
-    <option value="Verbs">
-      Verbs
-    </option>
-
-    <option value="Vocabulary">
-      Vocabulary
-    </option>
+    <option value="Mixed">🎯 Mixed</option>
+    <option value="Adjectives">Adjectives</option>
+    <option value="Adverbs">Adverbs</option>
+    <option value="Articles">Articles</option>
+    <option value="Conjunctions">Conjunctions</option>
+    <option value="Nouns">Nouns</option>
+    <option value="Prepositions">Prepositions</option>
+    <option value="Pronouns">Pronouns</option>
+    <option value="Tenses">Tenses</option>
+    <option value="Verbs">Verbs</option>
+    <option value="Vocabulary">Vocabulary</option>
 
   </select>
+
 
   <button
     class="generate"
@@ -397,12 +381,33 @@ footer{
     🤖 Generate Question
   </button>
 
+
+  <button
+    class="premium"
+    id="premiumBtn"
+    onclick="window.location.href='premium.html'">
+    ⭐ Upgrade to Premium
+  </button>
+
+
+  <div
+    class="limit"
+    id="limitBox">
+
+    🎯 You have used all 10 free questions for today.
+    <br>
+    Upgrade to Premium for up to 100 AI questions per day.
+
+  </div>
+
+
   <div
     class="error"
     id="error">
   </div>
 
 </div>
+
 
 <div
   class="card"
@@ -442,6 +447,7 @@ footer{
 
 </div>
 
+
 <div class="card">
 
   <h2 style="margin-bottom:10px">
@@ -459,25 +465,25 @@ footer{
 
 </main>
 
+
 <footer>
   © 2026 CreateLK Academy. All rights reserved.
 </footer>
 
-<script>
 
-/* =========================
-   AI WORKER
-========================= */
+<script>
 
 const API_URL =
   "https://createlk-ai-mcq.createlk.workers.dev";
 
+let studentId = null;
+let currentQuestion = null;
+let answered = false;
+
 
 /* =========================
-   STUDENT
+   STUDENT ID
 ========================= */
-
-let studentId = null;
 
 function getStoredStudentId(){
 
@@ -524,11 +530,9 @@ function getStoredStudentId(){
   return null;
 }
 
+
 studentId =
   getStoredStudentId();
-
-let currentQuestion = null;
-let answered = false;
 
 
 /* =========================
@@ -541,7 +545,8 @@ const $ = id =>
 
 function showError(message){
 
-  const box = $("error");
+  const box =
+    $("error");
 
   box.textContent =
     message;
@@ -554,6 +559,34 @@ function hideError(){
 
   $("error")
     .classList.remove("show");
+}
+
+
+function showPremium(){
+
+  $("premiumBtn")
+    .classList.add("show");
+
+  $("limitBox")
+    .classList.add("show");
+
+  $("generateBtn").disabled =
+    true;
+
+  $("generateBtn").textContent =
+    "Daily Free Limit Reached";
+
+}
+
+
+function hidePremium(){
+
+  $("premiumBtn")
+    .classList.remove("show");
+
+  $("limitBox")
+    .classList.remove("show");
+
 }
 
 
@@ -618,11 +651,19 @@ async function api(url, options = {}){
 
   if(!response.ok){
 
-    throw new Error(
-      data.message ||
-      `Request failed (${response.status})`
-    );
+    const error =
+      new Error(
+        data.message ||
+        `Request failed (${response.status})`
+      );
 
+    error.status =
+      response.status;
+
+    error.data =
+      data;
+
+    throw error;
   }
 
 
@@ -636,13 +677,16 @@ async function api(url, options = {}){
 
 function updateStats(data){
 
+  const isPremium =
+    String(data.plan || "")
+      .toUpperCase() === "PREMIUM" ||
+    data.premium === true;
+
+
   $("plan").textContent =
-    data.plan ||
-    (
-      data.premium
-        ? "PREMIUM"
-        : "FREE"
-    );
+    isPremium
+      ? "PREMIUM"
+      : "FREE";
 
 
   $("used").textContent =
@@ -666,6 +710,39 @@ function updateStats(data){
   $("certificateTarget").textContent =
     data.certificate_target ??
     1000;
+
+
+  if(isPremium){
+
+    hidePremium();
+
+    $("generateBtn").disabled =
+      false;
+
+    $("generateBtn").textContent =
+      "🤖 Generate Question";
+
+    return;
+  }
+
+
+  if(
+    Number(data.remaining) <= 0
+  ){
+
+    showPremium();
+
+  }else{
+
+    hidePremium();
+
+    $("generateBtn").disabled =
+      false;
+
+    $("generateBtn").textContent =
+      "🤖 Generate Question";
+  }
+
 }
 
 
@@ -706,6 +783,7 @@ async function loadProgress(){
     );
 
   }
+
 }
 
 
@@ -719,6 +797,13 @@ async function generateQuestion(){
     getStudentId();
 
   if(!id){
+    return;
+  }
+
+
+  if(
+    $("generateBtn").disabled
+  ){
     return;
   }
 
@@ -803,26 +888,49 @@ async function generateQuestion(){
     console.error(error);
 
 
-    showError(
-      error.message ||
-      "Could not generate a new question."
-    );
+    const message =
+      error.message || "";
 
 
-    $("questionCard")
-      .style.display =
-      "none";
+    if(
+      message
+        .toLowerCase()
+        .includes("free daily limit") ||
+      message
+        .toLowerCase()
+        .includes("daily limit") ||
+      message
+        .toLowerCase()
+        .includes("limit of 10") ||
+      error.status === 429
+    ){
 
+      showPremium();
 
-  }finally{
+      $("questionCard")
+        .style.display =
+        "none";
 
-    btn.disabled =
-      false;
+    }else{
 
-    btn.textContent =
-      "🤖 Generate Question";
+      showError(
+        message ||
+        "Could not generate a new question."
+      );
+
+      $("questionCard")
+        .style.display =
+        "none";
+
+      btn.disabled =
+        false;
+
+      btn.textContent =
+        "🤖 Generate Question";
+    }
 
   }
+
 }
 
 
