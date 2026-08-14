@@ -1,0 +1,1032 @@
+const MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
+
+const FREE_LIMIT = 10;
+const PREMIUM_LIMIT = 100;
+const CERTIFICATE_TARGET = 1000;
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Accept"
+};
+
+
+/* =========================
+   RESPONSE
+========================= */
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...CORS,
+      "Content-Type": "application/json"
+    }
+  });
+}
+
+
+/* =========================
+   HELPERS
+========================= */
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+
+/* =========================
+   STUDENT
+========================= */
+
+async function getStudent(env, studentId) {
+
+  return await env.DB.prepare(`
+    SELECT
+      id,
+      membership_status,
+      membership_expiry
+    FROM students
+    WHERE id = ?
+    LIMIT 1
+  `)
+  .bind(studentId)
+  .first();
+}
+
+
+function isPremium(student) {
+
+  if (!student) return false;
+
+  if (
+    String(student.membership_status || "")
+      .toUpperCase() !== "ACTIVE"
+  ) {
+    return false;
+  }
+
+  if (!student.membership_expiry) {
+    return true;
+  }
+
+  return (
+    new Date(student.membership_expiry).getTime()
+    > Date.now()
+  );
+}
+
+
+/* =========================
+   DAILY USAGE
+========================= */
+
+async function getDailyUsage(env, studentId) {
+
+  const row = await env.DB.prepare(`
+    SELECT COUNT(*) AS count
+    FROM ai_mcq_questions
+    WHERE student_id = ?
+      AND substr(created_at,1,10) = ?
+  `)
+  .bind(
+    studentId,
+    today()
+  )
+  .first();
+
+  return Number(row?.count || 0);
+}
+
+
+/* =========================
+   ANSWER TABLE
+========================= */
+
+async function ensureAnswerTable(env) {
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS ai_mcq_answers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id TEXT NOT NULL,
+      question_id INTEGER NOT NULL,
+      answer INTEGER NOT NULL,
+      correct INTEGER NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+}
+
+
+/* =========================
+   CORRECT ANSWERS
+========================= */
+
+async function getCorrectAnswers(env, studentId) {
+
+  try {
+
+    await ensureAnswerTable(env);
+
+    const row = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM ai_mcq_answers
+      WHERE student_id = ?
+        AND correct = 1
+    `)
+    .bind(studentId)
+    .first();
+
+    return Number(row?.count || 0);
+
+  } catch (error) {
+
+    console.error(
+      "Correct answer count error:",
+      error
+    );
+
+    return 0;
+  }
+}
+
+
+/* =========================
+   PROGRESS
+========================= */
+
+async function getProgress(env, studentId) {
+
+  const student =
+    await getStudent(
+      env,
+      studentId
+    );
+
+  if (!student) {
+
+    return json({
+      success: false,
+      message: "Student not found."
+    }, 404);
+  }
+
+  const premium =
+    isPremium(student);
+
+  const limit =
+    premium
+      ? PREMIUM_LIMIT
+      : FREE_LIMIT;
+
+  const used =
+    await getDailyUsage(
+      env,
+      studentId
+    );
+
+  const correct =
+    await getCorrectAnswers(
+      env,
+      studentId
+    );
+
+  return json({
+    success: true,
+
+    plan:
+      premium
+        ? "PREMIUM"
+        : "FREE",
+
+    premium,
+
+    daily_used:
+      used,
+
+    remaining:
+      Math.max(
+        0,
+        limit - used
+      ),
+
+    daily_limit:
+      limit,
+
+    correct_answers:
+      correct,
+
+    certificate_progress:
+      correct,
+
+    certificate_target:
+      CERTIFICATE_TARGET
+  });
+}
+
+
+/* =========================
+   AI QUESTION
+========================= */
+
+async function generateAIQuestion(
+  env,
+  category
+) {
+
+  const prompt = `
+Create ONE English multiple-choice question.
+
+Category: ${category}
+
+Return ONLY valid JSON:
+
+{
+  "question": "Question text",
+  "options": [
+    "Option A",
+    "Option B",
+    "Option C",
+    "Option D"
+  ],
+  "correct_answer": 0,
+  "explanation": "Short explanation"
+}
+
+Rules:
+- Exactly 4 options.
+- correct_answer must be 0, 1, 2, or 3.
+- Only one option is correct.
+- Suitable for English learners.
+- No markdown.
+- No text outside JSON.
+`;
+
+
+  const result =
+    await env.AI.run(
+      MODEL,
+      {
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an English teacher. Return only valid JSON."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+
+        response_format: {
+          type: "json_object"
+        },
+
+        temperature: 0.7,
+
+        max_tokens: 400
+      }
+    );
+
+
+  let raw =
+    result?.response;
+
+
+  if (!raw) {
+
+    throw new Error(
+      "AI did not return a response."
+    );
+  }
+
+
+  if (
+    typeof raw !== "string"
+  ) {
+
+    raw =
+      JSON.stringify(raw);
+  }
+
+
+  raw =
+    raw
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+
+  let data;
+
+
+  try {
+
+    data =
+      JSON.parse(raw);
+
+  } catch {
+
+    const start =
+      raw.indexOf("{");
+
+    const end =
+      raw.lastIndexOf("}");
+
+
+    if (
+      start === -1 ||
+      end === -1
+    ) {
+
+      console.error(
+        "AI RAW RESPONSE:",
+        raw
+      );
+
+      throw new Error(
+        "AI returned invalid question data."
+      );
+    }
+
+
+    try {
+
+      data =
+        JSON.parse(
+          raw.slice(
+            start,
+            end + 1
+          )
+        );
+
+    } catch {
+
+      console.error(
+        "AI RAW RESPONSE:",
+        raw
+      );
+
+      throw new Error(
+        "AI returned invalid question data."
+      );
+    }
+  }
+
+
+  if (
+    !data ||
+    typeof data.question !== "string"
+  ) {
+
+    throw new Error(
+      "AI question is missing."
+    );
+  }
+
+
+  if (
+    !Array.isArray(data.options) ||
+    data.options.length !== 4
+  ) {
+
+    throw new Error(
+      "AI must return exactly 4 options."
+    );
+  }
+
+
+  const options =
+    data.options.map(
+      option =>
+        String(option).trim()
+    );
+
+
+  const correct =
+    Number(
+      data.correct_answer
+    );
+
+
+  if (
+    ![0,1,2,3].includes(correct)
+  ) {
+
+    throw new Error(
+      "AI returned an invalid correct answer."
+    );
+  }
+
+
+  return {
+
+    question:
+      data.question.trim(),
+
+    options,
+
+    correct_answer:
+      correct,
+
+    explanation:
+      String(
+        data.explanation ||
+        "Review the correct answer."
+      ).trim()
+  };
+}
+
+
+/* =========================
+   GENERATE QUESTION
+========================= */
+
+async function generateQuestion(
+  env,
+  studentId,
+  category
+) {
+
+  const student =
+    await getStudent(
+      env,
+      studentId
+    );
+
+
+  if (!student) {
+
+    return json({
+      success: false,
+      message:
+        "Student not found."
+    }, 404);
+  }
+
+
+  const premium =
+    isPremium(student);
+
+
+  const limit =
+    premium
+      ? PREMIUM_LIMIT
+      : FREE_LIMIT;
+
+
+  const used =
+    await getDailyUsage(
+      env,
+      studentId
+    );
+
+
+  if (used >= limit) {
+
+    return json({
+
+      success: false,
+
+      plan:
+        premium
+          ? "PREMIUM"
+          : "FREE",
+
+      premium,
+
+      daily_used:
+        used,
+
+      remaining:
+        0,
+
+      daily_limit:
+        limit,
+
+      message:
+        premium
+          ? "You have reached your Premium daily limit of 100 questions."
+          : "You have reached your Free daily limit of 10 questions."
+    }, 429);
+  }
+
+
+  const mcq =
+    await generateAIQuestion(
+      env,
+      category
+    );
+
+
+  const questionKey =
+    `${category}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+
+  /*
+    IMPORTANT:
+
+    id is INTEGER PRIMARY KEY.
+
+    Therefore we DO NOT insert id.
+    SQLite generates it automatically.
+  */
+
+  await env.DB.prepare(`
+    INSERT INTO ai_mcq_questions
+    (
+      student_id,
+      question_key,
+      category,
+      question,
+      options,
+      correct_answer,
+      explanation
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+  .bind(
+
+    studentId,
+
+    questionKey,
+
+    category,
+
+    mcq.question,
+
+    JSON.stringify(
+      mcq.options
+    ),
+
+    mcq.correct_answer,
+
+    mcq.explanation
+
+  )
+  .run();
+
+
+  /*
+    Get the automatically generated
+    INTEGER id.
+  */
+
+  const saved =
+    await env.DB.prepare(`
+      SELECT
+        id
+      FROM ai_mcq_questions
+      WHERE question_key = ?
+      LIMIT 1
+    `)
+    .bind(questionKey)
+    .first();
+
+
+  if (!saved) {
+
+    throw new Error(
+      "Question was saved but could not be retrieved."
+    );
+  }
+
+
+  const newUsed =
+    used + 1;
+
+
+  return json({
+
+    success: true,
+
+    plan:
+      premium
+        ? "PREMIUM"
+        : "FREE",
+
+    premium,
+
+    daily_used:
+      newUsed,
+
+    remaining:
+      Math.max(
+        0,
+        limit - newUsed
+      ),
+
+    daily_limit:
+      limit,
+
+    question: {
+
+      id:
+        saved.id,
+
+      question:
+        mcq.question,
+
+      options:
+        mcq.options
+    }
+  });
+}
+
+
+/* =========================
+   SUBMIT ANSWER
+========================= */
+
+async function submitAnswer(
+  env,
+  body
+) {
+
+  const studentId =
+    body.student_id;
+
+  const questionId =
+    Number(body.question_id);
+
+  const answer =
+    Number(body.answer);
+
+
+  if (
+    !studentId ||
+    !Number.isInteger(questionId)
+  ) {
+
+    return json({
+      success: false,
+      message:
+        "student_id and question_id are required."
+    }, 400);
+  }
+
+
+  if (
+    ![0,1,2,3].includes(answer)
+  ) {
+
+    return json({
+      success: false,
+      message:
+        "Invalid answer."
+    }, 400);
+  }
+
+
+  const question =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        correct_answer,
+        explanation
+      FROM ai_mcq_questions
+      WHERE id = ?
+        AND student_id = ?
+      LIMIT 1
+    `)
+    .bind(
+      questionId,
+      studentId
+    )
+    .first();
+
+
+  if (!question) {
+
+    return json({
+      success: false,
+      message:
+        "Question not found."
+    }, 404);
+  }
+
+
+  const correct =
+    answer ===
+    Number(
+      question.correct_answer
+    );
+
+
+  await ensureAnswerTable(env);
+
+
+  const existing =
+    await env.DB.prepare(`
+      SELECT id
+      FROM ai_mcq_answers
+      WHERE student_id = ?
+        AND question_id = ?
+      LIMIT 1
+    `)
+    .bind(
+      studentId,
+      questionId
+    )
+    .first();
+
+
+  if (!existing) {
+
+    await env.DB.prepare(`
+      INSERT INTO ai_mcq_answers
+      (
+        student_id,
+        question_id,
+        answer,
+        correct
+      )
+      VALUES (?, ?, ?, ?)
+    `)
+    .bind(
+      studentId,
+      questionId,
+      answer,
+      correct ? 1 : 0
+    )
+    .run();
+  }
+
+
+  const student =
+    await getStudent(
+      env,
+      studentId
+    );
+
+
+  const premium =
+    isPremium(student);
+
+
+  const limit =
+    premium
+      ? PREMIUM_LIMIT
+      : FREE_LIMIT;
+
+
+  const used =
+    await getDailyUsage(
+      env,
+      studentId
+    );
+
+
+  const correctAnswers =
+    await getCorrectAnswers(
+      env,
+      studentId
+    );
+
+
+  return json({
+
+    success: true,
+
+    correct,
+
+    correct_answer:
+      Number(
+        question.correct_answer
+      ),
+
+    explanation:
+      question.explanation ||
+      "",
+
+    plan:
+      premium
+        ? "PREMIUM"
+        : "FREE",
+
+    premium,
+
+    daily_used:
+      used,
+
+    remaining:
+      Math.max(
+        0,
+        limit - used
+      ),
+
+    daily_limit:
+      limit,
+
+    correct_answers:
+      correctAnswers,
+
+    certificate_progress:
+      correctAnswers,
+
+    certificate_target:
+      CERTIFICATE_TARGET
+  });
+}
+
+
+/* =========================
+   MAIN WORKER
+========================= */
+
+export default {
+
+  async fetch(
+    request,
+    env
+  ) {
+
+    if (
+      request.method ===
+      "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: CORS
+        }
+      );
+    }
+
+
+    const url =
+      new URL(
+        request.url
+      );
+
+
+    const path =
+      url.pathname;
+
+
+    try {
+
+      /* =====================
+         HEALTH
+      ===================== */
+
+      if (
+        path === "/" ||
+        path === "/health"
+      ) {
+
+        return json({
+
+          success: true,
+
+          service:
+            "CreateLK AI MCQ",
+
+          status:
+            "online"
+        });
+      }
+
+
+      /* =====================
+         PROGRESS
+      ===================== */
+
+      if (
+        path === "/api/progress" &&
+        request.method === "GET"
+      ) {
+
+        const studentId =
+          url.searchParams.get(
+            "student_id"
+          );
+
+
+        if (!studentId) {
+
+          return json({
+            success: false,
+            message:
+              "student_id is required."
+          }, 400);
+        }
+
+
+        return await getProgress(
+          env,
+          studentId
+        );
+      }
+
+
+      /* =====================
+         GENERATE MCQ
+      ===================== */
+
+      if (
+        path === "/api/mcq" &&
+        request.method === "GET"
+      ) {
+
+        const studentId =
+          url.searchParams.get(
+            "student_id"
+          );
+
+
+        const category =
+          url.searchParams.get(
+            "category"
+          ) || "Mixed";
+
+
+        if (!studentId) {
+
+          return json({
+            success: false,
+            message:
+              "student_id is required."
+          }, 400);
+        }
+
+
+        return await generateQuestion(
+          env,
+          studentId,
+          category
+        );
+      }
+
+
+      /* =====================
+         SUBMIT ANSWER
+      ===================== */
+
+      if (
+        path === "/api/mcq" &&
+        request.method === "POST"
+      ) {
+
+        let body;
+
+
+        try {
+
+          body =
+            await request.json();
+
+        } catch {
+
+          return json({
+            success: false,
+            message:
+              "Invalid JSON request."
+          }, 400);
+        }
+
+
+        return await submitAnswer(
+          env,
+          body
+        );
+      }
+
+
+      /* =====================
+         ROUTE NOT FOUND
+      ===================== */
+
+      return json({
+
+        success: false,
+
+        message:
+          "Route not found."
+      }, 404);
+
+
+    } catch (error) {
+
+      console.error(
+        "CREATE LK AI MCQ ERROR:",
+        error
+      );
+
+
+      return json({
+
+        success: false,
+
+        message:
+          error?.message ||
+          "Internal server error."
+      }, 500);
+    }
+  }
+};
