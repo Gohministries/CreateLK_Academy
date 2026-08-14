@@ -11,8 +11,6 @@
 :root{
 --blue:#155eef;
 --purple:#7c3aed;
---green:#16a34a;
---red:#dc2626;
 --text:#172033;
 --muted:#667085;
 --border:#e4e7ec;
@@ -96,9 +94,7 @@ margin:auto;
 padding:24px 15px 40px;
 }
 
-.top{
-margin-bottom:18px;
-}
+.top{margin-bottom:18px}
 
 .top h1{
 font-size:25px;
@@ -217,9 +213,7 @@ background:var(--blue);
 color:#fff;
 }
 
-.primary:hover{
-background:#1247b8;
-}
+.primary:hover{background:#1247b8}
 
 .btn:disabled{
 opacity:.6;
@@ -237,9 +231,7 @@ font-size:12px;
 margin-bottom:16px;
 }
 
-.question-card{
-display:none;
-}
+.question-card{display:none}
 
 .badge{
 display:inline-block;
@@ -287,9 +279,7 @@ background:#f8faff;
 border-color:#9bb8ff;
 }
 
-.option:disabled{
-cursor:default;
-}
+.option:disabled{cursor:default}
 
 .option.correct{
 background:#dcfce7;
@@ -389,7 +379,6 @@ color:#98a2b3;
 <a href="ai-mcq.html">🤖 AI Practice</a>
 <a href="certificate.html">🎓 Certificate</a>
 <a href="premium.html">⭐ Premium</a>
-
 <button class="logout" onclick="logout()">🚪 Logout</button>
 </div>
 
@@ -440,33 +429,31 @@ Today:
 <label>CATEGORY</label>
 
 <select id="category">
-
-<option>Mixed</option>
-<option>Grammar</option>
-<option>Vocabulary</option>
-<option>Tenses</option>
-<option>Articles</option>
-<option>Prepositions</option>
-<option>Pronouns</option>
-<option>Adjectives</option>
-<option>Adverbs</option>
-<option>Verbs</option>
-<option>Nouns</option>
-<option>Conjunctions</option>
-<option>Sentence Structure</option>
-<option>Synonyms</option>
-<option>Antonyms</option>
-<option>Idioms</option>
-<option>Phrasal Verbs</option>
-<option>Spelling</option>
-<option>Comprehension</option>
-<option>Conversation</option>
-<option>Business English</option>
-<option>Academic English</option>
-<option>Daily English</option>
-<option>Exam English</option>
-<option>Mixed Advanced</option>
-
+<option value="Mixed">Mixed</option>
+<option value="Grammar">Grammar</option>
+<option value="Vocabulary">Vocabulary</option>
+<option value="Tenses">Tenses</option>
+<option value="Articles">Articles</option>
+<option value="Prepositions">Prepositions</option>
+<option value="Pronouns">Pronouns</option>
+<option value="Adjectives">Adjectives</option>
+<option value="Adverbs">Adverbs</option>
+<option value="Verbs">Verbs</option>
+<option value="Nouns">Nouns</option>
+<option value="Conjunctions">Conjunctions</option>
+<option value="Sentence Structure">Sentence Structure</option>
+<option value="Synonyms">Synonyms</option>
+<option value="Antonyms">Antonyms</option>
+<option value="Idioms">Idioms</option>
+<option value="Phrasal Verbs">Phrasal Verbs</option>
+<option value="Spelling">Spelling</option>
+<option value="Comprehension">Comprehension</option>
+<option value="Conversation">Conversation</option>
+<option value="Business English">Business English</option>
+<option value="Academic English">Academic English</option>
+<option value="Daily English">Daily English</option>
+<option value="Exam English">Exam English</option>
+<option value="Mixed Advanced">Mixed Advanced</option>
 </select>
 
 <br><br>
@@ -570,20 +557,18 @@ document.getElementById("avatar").textContent=
 name.charAt(0).toUpperCase();
 
 
-/* MENU */
-
 function toggleMenu(){
 document.getElementById("menuList").classList.toggle("show");
 }
 
 document.addEventListener("click",function(e){
-if(!document.querySelector(".menu").contains(e.target)){
+const menu=document.querySelector(".menu");
+
+if(!menu.contains(e.target)){
 document.getElementById("menuList").classList.remove("show");
 }
 });
 
-
-/* LOGOUT */
 
 function logout(){
 sessionStorage.removeItem(STUDENT_KEY);
@@ -592,37 +577,45 @@ location.replace("login.html");
 }
 
 
-/* CATEGORY FROM DASHBOARD */
-
 const params=new URLSearchParams(location.search);
 const selectedCategory=params.get("category");
 
 if(selectedCategory){
+
 const select=document.getElementById("category");
 
 for(const option of select.options){
-if(option.value===selectedCategory){
+
+if(
+option.value.toLowerCase()===
+selectedCategory.toLowerCase()
+){
+
 option.selected=true;
 break;
-}
-}
+
 }
 
+}
 
-/* ERROR */
+}
+
 
 function showError(message){
+
 const box=document.getElementById("error");
+
 box.textContent=message;
 box.style.display="block";
+
 }
 
 function clearError(){
+
 document.getElementById("error").style.display="none";
+
 }
 
-
-/* GENERATE */
 
 async function generateQuestion(){
 
@@ -633,61 +626,73 @@ const next=document.getElementById("nextBtn");
 
 btn.disabled=true;
 next.disabled=true;
+
 btn.textContent="🤖 Generating...";
 
-const category=document.getElementById("category").value;
+const category=
+document.getElementById("category").value;
 
 try{
 
 const response=await fetch(
-`${API}/api/mcq?student_id=${encodeURIComponent(studentId)}&category=${encodeURIComponent(category)}`
+`${API}/api/mcq?student_id=${encodeURIComponent(studentId)}&category=${encodeURIComponent(category)}`,
+{
+method:"GET",
+headers:{
+"Accept":"application/json"
+}
+}
 );
 
-const data=await response.json();
+let data;
 
-if(!response.ok || !data.success){
+try{
+data=await response.json();
+}catch{
+throw new Error("Invalid response from AI server.");
+}
+
+if(!response.ok||!data.success){
+
+if(data.limitReached){
 
 throw new Error(
-data.message ||
-data.error ||
-(
-data.limitReached
-?"Daily limit reached."
-:"Unable to generate question."
-)
+data.message||
+"Daily question limit reached."
 );
+
 }
 
+throw new Error(
+data.message||
+data.error||
+"AI question generation failed. Please try again."
+);
 
-/*
-Worker response:
-
-data.question = {
-id,
-question,
-options,
-category,
-difficulty
 }
-*/
 
 if(
-!data.question ||
-typeof data.question.question!=="string" ||
-!Array.isArray(data.question.options) ||
+!data.question||
+typeof data.question.question!=="string"||
+!Array.isArray(data.question.options)||
 data.question.options.length!==4
 ){
 
 console.error("Invalid question:",data);
 
-throw new Error("AI returned an invalid question.");
+throw new Error(
+"AI returned an invalid question."
+);
+
 }
 
 current={
 id:Number(data.question.id),
-question:data.question.question,
-options:data.question.options,
-category:data.question.category||category
+question:String(data.question.question),
+options:data.question.options.map(String),
+category:String(
+data.question.category||category
+)
 };
 
 number++;
@@ -710,14 +715,13 @@ showError(error.message);
 
 btn.disabled=false;
 next.disabled=false;
+
 btn.textContent="🤖 Generate Question";
 
 }
 
 }
 
-
-/* DISPLAY */
 
 function showQuestion(){
 
@@ -734,26 +738,33 @@ document.getElementById("qno").textContent=
 document.getElementById("question").textContent=
 q.question;
 
-const options=document.getElementById("options");
+const options=
+document.getElementById("options");
 
 options.innerHTML="";
 
 q.options.forEach((text,index)=>{
 
-const button=document.createElement("button");
+const button=
+document.createElement("button");
 
 button.className="option";
+
+button.type="button";
 
 button.textContent=
 `${String.fromCharCode(65+index)}. ${text}`;
 
-button.onclick=()=>answer(index,button);
+button.onclick=()=>{
+answer(index,button);
+};
 
 options.appendChild(button);
 
 });
 
 document.getElementById("feedback").style.display="none";
+
 document.getElementById("nextBtn").style.display="none";
 
 document.getElementById("questionCard").scrollIntoView({
@@ -764,15 +775,17 @@ block:"start"
 }
 
 
-/* ANSWER */
-
 async function answer(index,clicked){
 
 const buttons=[
 ...document.querySelectorAll(".option")
 ];
 
-buttons.forEach(b=>b.disabled=true);
+buttons.forEach(
+button=>button.disabled=true
+);
+
+clearError();
 
 try{
 
@@ -781,7 +794,8 @@ API+"/api/mcq",
 {
 method:"POST",
 headers:{
-"Content-Type":"application/json"
+"Content-Type":"application/json",
+"Accept":"application/json"
 },
 body:JSON.stringify({
 student_id:String(studentId),
@@ -791,44 +805,65 @@ answer:index
 }
 );
 
-const data=await response.json();
+let data;
 
-if(!response.ok || !data.success){
+try{
+data=await response.json();
+}catch{
+throw new Error("Invalid response from server.");
+}
+
+if(!response.ok||!data.success){
 
 throw new Error(
-data.message||"Unable to submit answer."
+data.message||
+"Unable to submit answer."
 );
+
 }
 
 const correctIndex=
 Number(data.correct_answer);
 
 const isCorrect=
-Boolean(data.correct);
+data.correct===true;
 
 clicked.classList.add(
 isCorrect?"correct":"wrong"
 );
 
-if(!isCorrect && buttons[correctIndex]){
-buttons[correctIndex].classList.add("correct");
+if(
+!isCorrect&&
+buttons[correctIndex]
+){
+
+buttons[correctIndex]
+.classList.add("correct");
+
 }
 
-const feedback=document.getElementById("feedback");
+const feedback=
+document.getElementById("feedback");
 
 feedback.className=
-"feedback "+(isCorrect?"correct":"wrong");
+"feedback "+
+(isCorrect?"correct":"wrong");
 
 feedback.style.display="block";
 
-document.getElementById("feedbackTitle").textContent=
-isCorrect?"✅ Correct!":"❌ Incorrect!";
+document.getElementById("feedbackTitle")
+.textContent=
+isCorrect
+?"✅ Correct!"
+:"❌ Incorrect!";
 
-document.getElementById("explanation").textContent=
+document.getElementById("explanation")
+.textContent=
 data.explanation||
 "Review the correct answer.";
 
-document.getElementById("nextBtn").style.display="block";
+document.getElementById("nextBtn")
+.style.display="block";
 
 updateUsage(
 data.daily_used,
@@ -844,75 +879,99 @@ console.error("Answer error:",error);
 
 showError(error.message);
 
-buttons.forEach(b=>b.disabled=false);
+buttons.forEach(
+button=>button.disabled=false
+);
 
 }
 
 }
 
 
-/* USAGE */
-
-function updateUsage(used,limit,remaining){
+function updateUsage(
+used,
+limit,
+remaining
+){
 
 if(used!==undefined)
-document.getElementById("dailyUsed").textContent=used;
+document.getElementById("dailyUsed")
+.textContent=used;
 
 if(limit!==undefined)
-document.getElementById("dailyLimit").textContent=limit;
+document.getElementById("dailyLimit")
+.textContent=limit;
 
 if(remaining!==undefined)
-document.getElementById("remaining").textContent=remaining;
+document.getElementById("remaining")
+.textContent=remaining;
 
 }
 
-
-/* PROGRESS */
 
 function updateProgress(data){
 
-const correct=Number(data.correct_answers||0);
+const correct=
+Number(data.correct_answers||0);
 
-document.getElementById("certificateCard").style.display="block";
+document.getElementById(
+"certificateCard"
+).style.display="block";
 
-const count=Math.min(correct,1000);
+const count=
+Math.min(correct,1000);
 
-document.getElementById("certificateCount").textContent=
+document.getElementById(
+"certificateCount"
+).textContent=
 `${count.toLocaleString()} / 1,000`;
 
-document.getElementById("certificateBar").style.width=
+document.getElementById(
+"certificateBar"
+).style.width=
 (count/1000*100)+"%";
 
 }
 
-
-/* LOAD PROGRESS */
 
 async function loadProgress(){
 
 try{
 
 const response=await fetch(
-`${API}/api/progress?student_id=${encodeURIComponent(studentId)}`
+`${API}/api/progress?student_id=${encodeURIComponent(studentId)}`,
+{
+headers:{
+"Accept":"application/json"
+}
+}
 );
 
 const data=await response.json();
 
-if(!response.ok || !data.success)return;
+if(!response.ok||!data.success)return;
 
 const premium=
-data.premium===true ||
+data.premium===true||
 String(data.plan||"").toUpperCase()==="PREMIUM";
 
-const plan=document.getElementById("plan");
+const plan=
+document.getElementById("plan");
 
-plan.textContent=premium?"PREMIUM":"FREE";
+plan.textContent=
+premium?"PREMIUM":"FREE";
 
-plan.classList.toggle("premium",premium);
+plan.classList.toggle(
+"premium",
+premium
+);
 
 updateUsage(
 Number(data.daily_used||0),
-Number(data.daily_limit||(premium?100:10)),
+Number(
+data.daily_limit||
+(premium?100:10)
+),
 Number(data.remaining??0)
 );
 
@@ -920,7 +979,10 @@ updateProgress(data);
 
 }catch(error){
 
-console.error("Progress error:",error);
+console.error(
+"Progress error:",
+error
+);
 
 }
 
