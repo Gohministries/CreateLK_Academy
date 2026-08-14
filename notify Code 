@@ -1,0 +1,1173 @@
+// ============================================================
+// CreateLK Academy
+// PayHere Premium Notification Worker
+// ============================================================
+//
+// Uses the REAL CreateLK Academy D1 schema:
+//
+// students
+// memberships
+// payhere_payments
+//
+// PayHere SUCCESS:
+// status_code = 2
+//
+// custom_1 = student ID
+// custom_2 = premium days
+//
+// ============================================================
+
+
+// ============================================================
+// DEFAULT PREMIUM PERIOD
+// ============================================================
+
+const DEFAULT_PREMIUM_DAYS = 30;
+
+
+// ============================================================
+// CORS
+// ============================================================
+
+const CORS_HEADERS = {
+
+  "Access-Control-Allow-Origin":
+    "https://createlk.com",
+
+  "Access-Control-Allow-Methods":
+    "POST, OPTIONS",
+
+  "Access-Control-Allow-Headers":
+    "Content-Type"
+
+};
+
+
+// ============================================================
+// WORKER
+// ============================================================
+
+export default {
+
+  async fetch(request, env) {
+
+    // --------------------------------------------------------
+    // OPTIONS
+    // --------------------------------------------------------
+
+    if (request.method === "OPTIONS") {
+
+      return new Response(null, {
+
+        status: 204,
+
+        headers:
+          CORS_HEADERS
+
+      });
+
+    }
+
+
+    // --------------------------------------------------------
+    // GET
+    // --------------------------------------------------------
+
+    if (request.method === "GET") {
+
+      return text(
+        "CreateLK PayHere Premium Notification is online.",
+        200
+      );
+
+    }
+
+
+    // --------------------------------------------------------
+    // ONLY POST
+    // --------------------------------------------------------
+
+    if (request.method !== "POST") {
+
+      return text(
+        "POST required.",
+        405
+      );
+
+    }
+
+
+    try {
+
+      // ======================================================
+      // CHECK ENVIRONMENT
+      // ======================================================
+
+      if (
+        !env.PAYHERE_MERCHANT_ID
+      ) {
+
+        throw new Error(
+          "PAYHERE_MERCHANT_ID is missing."
+        );
+
+      }
+
+
+      if (
+        !env.PAYHERE_MERCHANT_SECRET
+      ) {
+
+        throw new Error(
+          "PAYHERE_MERCHANT_SECRET is missing."
+        );
+
+      }
+
+
+      if (!env.DB) {
+
+        throw new Error(
+          "DB binding is missing."
+        );
+
+      }
+
+
+      // ======================================================
+      // READ PAYHERE FORM DATA
+      // ======================================================
+
+      const form =
+        await request.formData();
+
+
+      const merchantId =
+        String(
+          form.get("merchant_id") || ""
+        ).trim();
+
+
+      const orderId =
+        String(
+          form.get("order_id") || ""
+        ).trim();
+
+
+      const paymentId =
+        String(
+          form.get("payment_id") || ""
+        ).trim();
+
+
+      const statusCode =
+        String(
+          form.get("status_code") || ""
+        ).trim();
+
+
+      const payhereAmount =
+        String(
+          form.get("payhere_amount") || ""
+        ).trim();
+
+
+      const payhereCurrency =
+        String(
+          form.get("payhere_currency") || ""
+        ).trim();
+
+
+      const md5sig =
+        String(
+          form.get("md5sig") || ""
+        )
+        .trim()
+        .toUpperCase();
+
+
+      const studentIdRaw =
+        String(
+          form.get("custom_1") || ""
+        ).trim();
+
+
+      const premiumDaysRaw =
+        String(
+          form.get("custom_2") || ""
+        ).trim();
+
+
+      // ======================================================
+      // LOG BASIC INFORMATION
+      // ======================================================
+
+      console.log(
+        "PayHere notification received",
+        {
+
+          merchantId,
+          orderId,
+          paymentId,
+          statusCode,
+          payhereAmount,
+          payhereCurrency,
+          studentId: studentIdRaw,
+          premiumDays: premiumDaysRaw
+
+        }
+      );
+
+
+      // ======================================================
+      // BASIC VALIDATION
+      // ======================================================
+
+      if (!merchantId) {
+
+        throw new Error(
+          "PayHere merchant_id missing."
+        );
+
+      }
+
+
+      if (!orderId) {
+
+        throw new Error(
+          "PayHere order_id missing."
+        );
+
+      }
+
+
+      if (!statusCode) {
+
+        throw new Error(
+          "PayHere status_code missing."
+        );
+
+      }
+
+
+      if (!md5sig) {
+
+        throw new Error(
+          "PayHere md5sig missing."
+        );
+
+      }
+
+
+      if (!studentIdRaw) {
+
+        throw new Error(
+          "PayHere custom_1 student ID missing."
+        );
+
+      }
+
+
+      // ======================================================
+      // VERIFY MERCHANT ID
+      // ======================================================
+
+      if (
+        merchantId !==
+        String(
+          env.PAYHERE_MERCHANT_ID
+        )
+      ) {
+
+        throw new Error(
+          "Merchant ID verification failed."
+        );
+
+      }
+
+
+      // ======================================================
+      // VERIFY PAYHERE SIGNATURE
+      // ======================================================
+      //
+      // MD5(
+      // merchant_id +
+      // order_id +
+      // payhere_amount +
+      // payhere_currency +
+      // status_code +
+      // UPPERCASE(MD5(merchant_secret))
+      // )
+      //
+      // ======================================================
+
+      const secretHash =
+        md5(
+          env.PAYHERE_MERCHANT_SECRET
+        );
+
+
+      const verifyString =
+        merchantId +
+        orderId +
+        payhereAmount +
+        payhereCurrency +
+        statusCode +
+        secretHash.toUpperCase();
+
+
+      const calculatedHash =
+        md5(
+          verifyString
+        ).toUpperCase();
+
+
+      console.log(
+        "PayHere signature verification",
+        {
+          received:
+            md5sig,
+
+          calculated:
+            calculatedHash
+        }
+      );
+
+
+      if (
+        calculatedHash !==
+        md5sig
+      ) {
+
+        throw new Error(
+          "PayHere signature verification failed."
+        );
+
+      }
+
+
+      // ======================================================
+      // ONLY SUCCESSFUL PAYMENTS
+      // ======================================================
+
+      if (
+        statusCode !== "2"
+      ) {
+
+        console.log(
+          "Payment is not successful. Status:",
+          statusCode
+        );
+
+
+        return text(
+          "Payment not successful.",
+          200
+        );
+
+      }
+
+
+      // ======================================================
+      // VERIFY CURRENCY
+      // ======================================================
+
+      if (
+        payhereCurrency !==
+        "LKR"
+      ) {
+
+        throw new Error(
+          "Invalid payment currency."
+        );
+
+      }
+
+
+      // ======================================================
+      // VALIDATE AMOUNT
+      // ======================================================
+
+      const amount =
+        Number(
+          payhereAmount
+        );
+
+
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+
+        throw new Error(
+          "Invalid payment amount."
+        );
+
+      }
+
+
+      // ======================================================
+      // STUDENT ID
+      // ======================================================
+
+      const studentId =
+        Number(
+          studentIdRaw
+        );
+
+
+      if (
+        !Number.isInteger(studentId) ||
+        studentId <= 0
+      ) {
+
+        throw new Error(
+          "Invalid student ID."
+        );
+
+      }
+
+
+      // ======================================================
+      // PREMIUM DAYS
+      // ======================================================
+
+      let premiumDays =
+        Number(
+          premiumDaysRaw
+        );
+
+
+      if (
+        !Number.isInteger(premiumDays) ||
+        premiumDays <= 0 ||
+        premiumDays > 3650
+      ) {
+
+        premiumDays =
+          DEFAULT_PREMIUM_DAYS;
+
+      }
+
+
+      // ======================================================
+      // FIND STUDENT
+      // ======================================================
+
+      const student =
+        await env.DB
+          .prepare(`
+            SELECT
+              id,
+              first_name,
+              last_name,
+              email,
+              membership_status,
+              membership_expiry,
+              payhere_reference
+            FROM students
+            WHERE id = ?
+            LIMIT 1
+          `)
+          .bind(
+            studentId
+          )
+          .first();
+
+
+      if (!student) {
+
+        throw new Error(
+          "Student not found: " +
+          studentId
+        );
+
+      }
+
+
+      console.log(
+        "Student found",
+        {
+          id:
+            student.id,
+
+          email:
+            student.email,
+
+          membership_status:
+            student.membership_status,
+
+          membership_expiry:
+            student.membership_expiry
+        }
+      );
+
+
+      // ======================================================
+      // DUPLICATE PAYMENT CHECK
+      // ======================================================
+
+      const existingPayment =
+        await env.DB
+          .prepare(`
+            SELECT
+              id,
+              status
+            FROM payhere_payments
+            WHERE payment_id = ?
+               OR order_id = ?
+            LIMIT 1
+          `)
+          .bind(
+            paymentId,
+            orderId
+          )
+          .first();
+
+
+      if (existingPayment) {
+
+        console.log(
+          "Payment already processed:",
+          orderId
+        );
+
+
+        return text(
+          "Payment already processed.",
+          200
+        );
+
+      }
+
+
+      // ======================================================
+      // CALCULATE PREMIUM START
+      // ======================================================
+
+      const now =
+        new Date();
+
+
+      let startDate =
+        new Date(
+          now
+        );
+
+
+      // ------------------------------------------------------
+      // If student already has active premium and it has not
+      // expired, extend from the existing expiry date.
+      // ------------------------------------------------------
+
+      if (
+        String(
+          student.membership_status
+        ).toUpperCase() ===
+        "ACTIVE"
+        &&
+        student.membership_expiry
+      ) {
+
+        const existingExpiry =
+          new Date(
+            student.membership_expiry
+          );
+
+
+        if (
+          !Number.isNaN(
+            existingExpiry.getTime()
+          )
+          &&
+          existingExpiry > now
+        ) {
+
+          startDate =
+            existingExpiry;
+
+        }
+
+      }
+
+
+      // ======================================================
+      // CALCULATE EXPIRY
+      // ======================================================
+
+      const expiryDate =
+        new Date(
+          startDate
+        );
+
+
+      expiryDate.setDate(
+        expiryDate.getDate() +
+        premiumDays
+      );
+
+
+      const startedAt =
+        startDate.toISOString();
+
+
+      const expiresAt =
+        expiryDate.toISOString();
+
+
+      const nowISO =
+        now.toISOString();
+
+
+      // ======================================================
+      // INSERT PAYHERE PAYMENT
+      // ======================================================
+
+      await env.DB
+        .prepare(`
+          INSERT INTO payhere_payments
+          (
+            student_id,
+            payment_id,
+            order_id,
+            amount,
+            currency,
+            status,
+            created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `)
+        .bind(
+
+          studentId,
+
+          paymentId ||
+            orderId,
+
+          orderId,
+
+          amount,
+
+          payhereCurrency,
+
+          "SUCCESS",
+
+          nowISO
+
+        )
+        .run();
+
+
+      // ======================================================
+      // UPDATE STUDENT
+      // ======================================================
+
+      await env.DB
+        .prepare(`
+          UPDATE students
+          SET
+            membership_status = 'ACTIVE',
+            membership_expiry = ?,
+            payhere_reference = ?,
+            updated_at = ?
+          WHERE id = ?
+        `)
+        .bind(
+
+          expiresAt,
+
+          paymentId ||
+            orderId,
+
+          nowISO,
+
+          studentId
+
+        )
+        .run();
+
+
+      // ======================================================
+      // CREATE MEMBERSHIP RECORD
+      // ======================================================
+
+      await env.DB
+        .prepare(`
+          INSERT INTO memberships
+          (
+            student_id,
+            plan_name,
+            amount,
+            status,
+            started_at,
+            expires_at,
+            created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `)
+        .bind(
+
+          studentId,
+
+          "Premium 30 Days",
+
+          Math.round(
+            amount
+          ),
+
+          "ACTIVE",
+
+          startedAt,
+
+          expiresAt,
+
+          nowISO
+
+        )
+        .run();
+
+
+      // ======================================================
+      // FINAL VERIFICATION
+      // ======================================================
+
+      const activatedStudent =
+        await env.DB
+          .prepare(`
+            SELECT
+              id,
+              membership_status,
+              membership_expiry,
+              payhere_reference
+            FROM students
+            WHERE id = ?
+            LIMIT 1
+          `)
+          .bind(
+            studentId
+          )
+          .first();
+
+
+      console.log(
+        "PREMIUM ACTIVATED",
+        activatedStudent
+      );
+
+
+      // ======================================================
+      // SUCCESS RESPONSE
+      // ======================================================
+
+      return text(
+        "OK",
+        200
+      );
+
+
+    } catch (error) {
+
+      console.error(
+        "PayHere notification error:",
+        error
+      );
+
+
+      return text(
+        "Notification processing error.",
+        500
+      );
+
+    }
+
+  }
+
+};
+
+
+// ============================================================
+// MD5
+// ============================================================
+
+function md5(input) {
+
+  const bytes =
+    new TextEncoder()
+      .encode(
+        String(input)
+      );
+
+
+  const originalLength =
+    bytes.length;
+
+
+  const bitLength =
+    originalLength * 8;
+
+
+  const paddingLength =
+    (
+      56 -
+      ((originalLength + 1) % 64) +
+      64
+    ) % 64;
+
+
+  const totalLength =
+    originalLength +
+    1 +
+    paddingLength +
+    8;
+
+
+  const buffer =
+    new Uint8Array(
+      totalLength
+    );
+
+
+  buffer.set(
+    bytes
+  );
+
+
+  buffer[originalLength] =
+    0x80;
+
+
+  const view =
+    new DataView(
+      buffer.buffer
+    );
+
+
+  view.setUint32(
+    totalLength - 8,
+    bitLength >>> 0,
+    true
+  );
+
+
+  view.setUint32(
+    totalLength - 4,
+    Math.floor(
+      bitLength /
+      0x100000000
+    ),
+    true
+  );
+
+
+  let a0 =
+    0x67452301;
+
+  let b0 =
+    0xefcdab89;
+
+  let c0 =
+    0x98badcfe;
+
+  let d0 =
+    0x10325476;
+
+
+  const K =
+    new Uint32Array(
+      64
+    );
+
+
+  for (
+    let i = 0;
+    i < 64;
+    i++
+  ) {
+
+    K[i] =
+      Math.floor(
+        Math.abs(
+          Math.sin(
+            i + 1
+          )
+        ) *
+        0x100000000
+      ) >>> 0;
+
+  }
+
+
+  const S = [
+
+    7, 12, 17, 22,
+    7, 12, 17, 22,
+    7, 12, 17, 22,
+    7, 12, 17, 22,
+
+    5, 9, 14, 20,
+    5, 9, 14, 20,
+    5, 9, 14, 20,
+    5, 9, 14, 20,
+
+    4, 11, 16, 23,
+    4, 11, 16, 23,
+    4, 11, 16, 23,
+    4, 11, 16, 23,
+
+    6, 10, 15, 21,
+    6, 10, 15, 21,
+    6, 10, 15, 21,
+    6, 10, 15, 21
+
+  ];
+
+
+  for (
+    let offset = 0;
+    offset < totalLength;
+    offset += 64
+  ) {
+
+    const M =
+      new Uint32Array(
+        16
+      );
+
+
+    for (
+      let i = 0;
+      i < 16;
+      i++
+    ) {
+
+      M[i] =
+        view.getUint32(
+          offset +
+          i * 4,
+          true
+        );
+
+    }
+
+
+    let A = a0;
+    let B = b0;
+    let C = c0;
+    let D = d0;
+
+
+    for (
+      let i = 0;
+      i < 64;
+      i++
+    ) {
+
+      let F;
+      let g;
+
+
+      if (i < 16) {
+
+        F =
+          (B & C) |
+          ((~B) & D);
+
+        g =
+          i;
+
+      }
+
+      else if (i < 32) {
+
+        F =
+          (D & B) |
+          ((~D) & C);
+
+        g =
+          (5 * i + 1) %
+          16;
+
+      }
+
+      else if (i < 48) {
+
+        F =
+          B ^
+          C ^
+          D;
+
+        g =
+          (3 * i + 5) %
+          16;
+
+      }
+
+      else {
+
+        F =
+          C ^
+          (B | (~D));
+
+        g =
+          (7 * i) %
+          16;
+
+      }
+
+
+      const temp =
+        D;
+
+
+      const value =
+        (
+          A +
+          F +
+          K[i] +
+          M[g]
+        ) >>> 0;
+
+
+      D =
+        C;
+
+
+      C =
+        B;
+
+
+      B =
+        (
+          B +
+          leftRotate(
+            value,
+            S[i]
+          )
+        ) >>> 0;
+
+
+      A =
+        temp;
+
+    }
+
+
+    a0 =
+      (a0 + A) >>> 0;
+
+    b0 =
+      (b0 + B) >>> 0;
+
+    c0 =
+      (c0 + C) >>> 0;
+
+    d0 =
+      (d0 + D) >>> 0;
+
+  }
+
+
+  return (
+
+    wordToHex(a0) +
+    wordToHex(b0) +
+    wordToHex(c0) +
+    wordToHex(d0)
+
+  ).toUpperCase();
+
+}
+
+
+// ============================================================
+// LEFT ROTATE
+// ============================================================
+
+function leftRotate(
+  value,
+  amount
+) {
+
+  return (
+    (
+      value << amount
+    ) |
+    (
+      value >>>
+      (32 - amount)
+    )
+  ) >>> 0;
+
+}
+
+
+// ============================================================
+// WORD TO HEX
+// ============================================================
+
+function wordToHex(
+  word
+) {
+
+  let result = "";
+
+
+  for (
+    let i = 0;
+    i < 4;
+    i++
+  ) {
+
+    result +=
+      (
+        (
+          word >>
+          (i * 8)
+        ) &
+        0xff
+      )
+      .toString(16)
+      .padStart(
+        2,
+        "0"
+      );
+
+  }
+
+
+  return result;
+
+}
+
+
+// ============================================================
+// TEXT RESPONSE
+// ============================================================
+
+function text(
+  message,
+  status = 200
+) {
+
+  return new Response(
+
+    message,
+
+    {
+
+      status,
+
+      headers: {
+
+        ...CORS_HEADERS,
+
+        "Content-Type":
+          "text/plain; charset=UTF-8"
+
+      }
+
+    }
+
+  );
+
+}
