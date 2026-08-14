@@ -1,57 +1,455 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CreateLK Academy</title>
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1"
+>
+
+<title>Payment Verification | CreateLK Academy</title>
+
 <style>
+
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+}
+
 body{
-margin:0;
-padding:20px;
-font-family:Arial,sans-serif;
-background:#f5f7fb;
-color:#172033;
-text-align:center;
+  min-height:100vh;
+  padding:20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#f5f7fb;
+  color:#172033;
 }
+
 .box{
-max-width:400px;
-margin:80px auto;
-padding:30px 20px;
-background:white;
-border-radius:16px;
-box-shadow:0 5px 20px rgba(0,0,0,.1);
+  width:100%;
+  max-width:420px;
+  padding:30px 22px;
+  background:#fff;
+  border:1px solid #e4e7ec;
+  border-radius:18px;
+  text-align:center;
+  box-shadow:0 8px 25px rgba(0,0,0,.08);
 }
-h1{font-size:22px}
-p{font-size:14px;color:#667085;line-height:1.6}
-a{
-display:block;
-margin-top:20px;
-padding:12px;
-background:#155eef;
-color:white;
-text-decoration:none;
-border-radius:8px;
-font-weight:bold;
+
+.icon{
+  width:68px;
+  height:68px;
+  margin:0 auto 18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  background:#eef4ff;
+  color:#155eef;
+  font-size:30px;
 }
+
+h1{
+  margin-bottom:10px;
+  font-size:22px;
+}
+
+p{
+  margin-bottom:14px;
+  font-size:13px;
+  line-height:1.6;
+  color:#667085;
+}
+
+.status{
+  margin:20px 0;
+  padding:13px;
+  border-radius:10px;
+  background:#f8fafc;
+  border:1px solid #eaecf0;
+  font-size:12px;
+  line-height:1.5;
+  color:#344054;
+}
+
+.loader{
+  width:26px;
+  height:26px;
+  margin:15px auto 20px;
+  border:3px solid #dbe5ff;
+  border-top-color:#155eef;
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+
+@keyframes spin{
+  to{
+    transform:rotate(360deg);
+  }
+}
+
+.btn{
+  display:block;
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border-radius:9px;
+  background:#155eef;
+  color:#fff;
+  text-decoration:none;
+  font-size:13px;
+  font-weight:800;
+}
+
+.btn:hover{
+  background:#1247b8;
+}
+
+.small{
+  margin-top:14px;
+  font-size:10px;
+  color:#98a2b3;
+}
+
+.success{
+  background:#dcfce7;
+  border-color:#bbf7d0;
+  color:#166534;
+}
+
+.warning{
+  background:#fff7ed;
+  border-color:#fed7aa;
+  color:#9a3412;
+}
+
+@media(max-width:480px){
+
+  body{
+    padding:14px;
+  }
+
+  .box{
+    padding:28px 18px;
+  }
+
+  h1{
+    font-size:21px;
+  }
+
+}
+
 </style>
+
 </head>
 
 <body>
 
 <div class="box">
 
-<h1>🔐 Payment Verification</h1>
+  <div class="icon" id="icon">
+    🔐
+  </div>
 
-<p>
-Please complete your CreateLK Premium payment
-through PayHere before continuing.
-</p>
+  <h1 id="title">
+    Payment Verification
+  </h1>
 
-<a href="dashboard.html">
-Back to Dashboard
-</a>
+  <p id="message">
+    Please complete your CreateLK Premium payment
+    through PayHere before continuing.
+  </p>
+
+  <div class="status" id="status">
+    Checking payment status...
+  </div>
+
+  <div class="loader" id="loader"></div>
+
+  <a
+    href="dashboard.html"
+    class="btn"
+    id="dashboardButton"
+  >
+    Back to Dashboard
+  </a>
+
+  <div class="small">
+    CreateLK Academy • Secure Payment Verification
+  </div>
 
 </div>
+
+
+<script>
+
+/*
+  IMPORTANT
+
+  This page does NOT activate Premium by itself.
+
+  Your Cloudflare Worker must verify the payment
+  before Premium is activated.
+*/
+
+
+const VERIFY_URL =
+"https://createlk-premium-verify.createlk.workers.dev";
+
+
+const STUDENT_KEY =
+"createlk_student";
+
+
+const statusBox =
+document.getElementById("status");
+
+const loader =
+document.getElementById("loader");
+
+const icon =
+document.getElementById("icon");
+
+const title =
+document.getElementById("title");
+
+const message =
+document.getElementById("message");
+
+
+let student = null;
+
+
+/* GET CURRENT STUDENT */
+
+try{
+
+  const saved =
+    sessionStorage.getItem(STUDENT_KEY);
+
+  if(saved){
+
+    student =
+      JSON.parse(saved);
+
+  }
+
+}catch(error){
+
+  console.error(
+    "Session error:",
+    error
+  );
+
+}
+
+
+/* STUDENT ID */
+
+const studentId =
+  student?.id ||
+  student?.student_id;
+
+
+/*
+  DIRECT OPEN
+
+  If there is no logged-in student,
+  do NOT activate anything.
+*/
+
+if(!studentId){
+
+  loader.style.display="none";
+
+  icon.textContent="🔐";
+
+  title.textContent=
+    "Payment Verification Required";
+
+  message.textContent=
+    "Please return to your dashboard and complete your Premium payment through PayHere.";
+
+  statusBox.className="status warning";
+
+  statusBox.textContent=
+    "No payment session was found.";
+
+}else{
+
+  verifyPayment();
+
+}
+
+
+/* VERIFY */
+
+async function verifyPayment(){
+
+  try{
+
+    statusBox.className="status";
+
+    statusBox.textContent=
+      "Checking your payment status...";
+
+
+    const url =
+      VERIFY_URL +
+      "/verify?student_id=" +
+      encodeURIComponent(studentId);
+
+
+    const response =
+      await fetch(url,{
+        method:"GET",
+        headers:{
+          "Accept":"application/json"
+        }
+      });
+
+
+    /*
+      Check response before JSON.
+      This prevents a blank page if Worker
+      returns HTML or another unexpected response.
+    */
+
+    const text =
+      await response.text();
+
+
+    let data;
+
+    try{
+
+      data =
+        JSON.parse(text);
+
+    }catch(error){
+
+      console.error(
+        "Worker returned:",
+        text
+      );
+
+      throw new Error(
+        "Invalid verification response"
+      );
+
+    }
+
+
+    console.log(
+      "Payment verification:",
+      data
+    );
+
+
+    /*
+      VERIFIED PREMIUM
+    */
+
+    if(
+      response.ok &&
+      data.success === true &&
+      data.premium === true
+    ){
+
+      loader.style.display="none";
+
+      icon.textContent="✓";
+
+      title.textContent=
+        "Premium Activated";
+
+      message.textContent=
+        "Your CreateLK Premium membership has been verified successfully.";
+
+      statusBox.className=
+        "status success";
+
+      statusBox.textContent=
+        "✅ Premium Active • 30-Day Membership";
+
+
+      /*
+        Redirect after confirmation
+      */
+
+      setTimeout(function(){
+
+        location.replace(
+          "dashboard.html"
+        );
+
+      },2000);
+
+      return;
+
+    }
+
+
+    /*
+      NOT VERIFIED
+    */
+
+    loader.style.display="none";
+
+    icon.textContent="⏳";
+
+    title.textContent=
+      "Payment Verification Pending";
+
+    message.textContent=
+      "Your payment has not been verified yet.";
+
+    statusBox.className=
+      "status warning";
+
+    statusBox.textContent=
+      data.message ||
+      "Please check your dashboard shortly.";
+
+
+  }catch(error){
+
+    console.error(
+      "Verification error:",
+      error
+    );
+
+
+    /*
+      NEVER activate Premium here.
+    */
+
+    loader.style.display="none";
+
+    icon.textContent="⚠️";
+
+    title.textContent=
+      "Verification Pending";
+
+    message.textContent=
+      "We could not verify the payment at this moment.";
+
+    statusBox.className=
+      "status warning";
+
+    statusBox.textContent=
+      "Please return to your dashboard and check your membership status.";
+
+  }
+
+}
+
+</script>
 
 </body>
 </html>
