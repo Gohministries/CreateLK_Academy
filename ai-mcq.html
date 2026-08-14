@@ -14,10 +14,6 @@ body{
   color:#172033
 }
 
-/* =========================
-   DASHBOARD NAVIGATION
-========================= */
-
 header{
   background:#155eef;
   color:#fff;
@@ -72,10 +68,6 @@ header{
 
   .logo{
     font-size:17px
-  }
-
-  .nav{
-    gap:2px;
   }
 
   .nav a{
@@ -292,10 +284,6 @@ footer{
 
 <body>
 
-<!-- =========================
-     DASHBOARD NAVIGATION
-========================= -->
-
 <header>
   <div class="header">
 
@@ -304,11 +292,9 @@ footer{
     </div>
 
     <nav class="nav">
-
       <a href="dashboard.html" class="active">
         Dashboard
       </a>
-
     </nav>
 
   </div>
@@ -463,12 +449,10 @@ footer{
   </h2>
 
   <p style="color:#667085">
-
     Correct answers:
     <strong id="certificateProgress">0</strong>
     /
     <strong id="certificateTarget">1000</strong>
-
   </p>
 
 </div>
@@ -493,11 +477,55 @@ const API_URL =
    STUDENT
 ========================= */
 
-let studentId =
-  sessionStorage.getItem("createlk_token") ||
-  sessionStorage.getItem("student_id") ||
-  sessionStorage.getItem("createlk_student");
+let studentId = null;
 
+function getStoredStudentId(){
+
+  const token =
+    sessionStorage.getItem("createlk_token");
+
+  if(token){
+    return token;
+  }
+
+  const directId =
+    sessionStorage.getItem("student_id");
+
+  if(directId){
+    return directId;
+  }
+
+  const student =
+    sessionStorage.getItem("createlk_student");
+
+  if(student){
+
+    try{
+
+      const data =
+        JSON.parse(student);
+
+      return (
+        data.id ||
+        data.student_id ||
+        data.user_id ||
+        data.email ||
+        null
+      );
+
+    }catch{
+
+      return student;
+
+    }
+
+  }
+
+  return null;
+}
+
+studentId =
+  getStoredStudentId();
 
 let currentQuestion = null;
 let answered = false;
@@ -515,7 +543,8 @@ function showError(message){
 
   const box = $("error");
 
-  box.textContent = message;
+  box.textContent =
+    message;
 
   box.classList.add("show");
 }
@@ -523,11 +552,15 @@ function showError(message){
 
 function hideError(){
 
-  $("error").classList.remove("show");
+  $("error")
+    .classList.remove("show");
 }
 
 
 function getStudentId(){
+
+  studentId =
+    getStoredStudentId();
 
   if(!studentId){
 
@@ -538,7 +571,7 @@ function getStudentId(){
     return null;
   }
 
-  return studentId;
+  return String(studentId);
 }
 
 
@@ -549,17 +582,22 @@ function getStudentId(){
 async function api(url, options = {}){
 
   const response =
-    await fetch(url,{
+    await fetch(
+      url,
+      {
+        ...options,
 
-      ...options,
+        headers:{
+          "Accept":
+            "application/json",
 
-      headers:{
-        "Accept":"application/json",
-        "Content-Type":"application/json",
-        ...(options.headers || {})
+          "Content-Type":
+            "application/json",
+
+          ...(options.headers || {})
+        }
       }
-
-    });
+    );
 
 
   let data;
@@ -600,9 +638,11 @@ function updateStats(data){
 
   $("plan").textContent =
     data.plan ||
-    (data.premium
-      ? "PREMIUM"
-      : "FREE");
+    (
+      data.premium
+        ? "PREMIUM"
+        : "FREE"
+    );
 
 
   $("used").textContent =
@@ -638,7 +678,9 @@ async function loadProgress(){
   const id =
     getStudentId();
 
-  if(!id) return;
+  if(!id){
+    return;
+  }
 
 
   try{
@@ -676,7 +718,9 @@ async function generateQuestion(){
   const id =
     getStudentId();
 
-  if(!id) return;
+  if(!id){
+    return;
+  }
 
 
   hideError();
@@ -690,33 +734,40 @@ async function generateQuestion(){
     $("generateBtn");
 
 
-  btn.disabled = true;
+  btn.disabled =
+    true;
 
   btn.textContent =
     "⏳ Generating...";
 
 
-  $("questionCard").style.display =
+  $("questionCard")
+    .style.display =
     "block";
 
 
-  $("loading").style.display =
+  $("loading")
+    .style.display =
     "block";
 
 
-  $("questionArea").style.display =
+  $("questionArea")
+    .style.display =
     "none";
 
 
-  $("nextBtn").style.display =
+  $("nextBtn")
+    .style.display =
     "none";
 
 
-  $("result").className =
+  $("result")
+    .className =
     "result";
 
 
-  answered = false;
+  answered =
+    false;
 
 
   try{
@@ -758,13 +809,15 @@ async function generateQuestion(){
     );
 
 
-    $("questionCard").style.display =
+    $("questionCard")
+      .style.display =
       "none";
 
 
   }finally{
 
-    btn.disabled = false;
+    btn.disabled =
+      false;
 
     btn.textContent =
       "🤖 Generate Question";
@@ -779,15 +832,18 @@ async function generateQuestion(){
 
 function displayQuestion(){
 
-  $("loading").style.display =
+  $("loading")
+    .style.display =
     "none";
 
 
-  $("questionArea").style.display =
+  $("questionArea")
+    .style.display =
     "block";
 
 
-  $("question").textContent =
+  $("question")
+    .textContent =
     currentQuestion.question;
 
 
@@ -795,14 +851,17 @@ function displayQuestion(){
     $("options");
 
 
-  options.innerHTML = "";
+  options.innerHTML =
+    "";
 
 
   currentQuestion.options.forEach(
     (text,index)=>{
 
       const button =
-        document.createElement("button");
+        document.createElement(
+          "button"
+        );
 
 
       button.className =
@@ -817,7 +876,9 @@ function displayQuestion(){
         () => submitAnswer(index);
 
 
-      options.appendChild(button);
+      options.appendChild(
+        button
+      );
 
     }
   );
@@ -835,6 +896,7 @@ async function submitAnswer(selected){
     answered ||
     !currentQuestion
   ){
+
     return;
   }
 
@@ -842,10 +904,13 @@ async function submitAnswer(selected){
   const id =
     getStudentId();
 
-  if(!id) return;
+  if(!id){
+    return;
+  }
 
 
-  answered = true;
+  answered =
+    true;
 
 
   const buttons =
@@ -856,7 +921,8 @@ async function submitAnswer(selected){
 
   buttons.forEach(
     button =>
-      button.disabled = true
+      button.disabled =
+        true
   );
 
 
@@ -868,16 +934,19 @@ async function submitAnswer(selected){
         {
           method:"POST",
 
-          body:JSON.stringify({
+          body:
+            JSON.stringify({
 
-            student_id:id,
+              student_id:
+                id,
 
-            question_id:
-              currentQuestion.id,
+              question_id:
+                currentQuestion.id,
 
-            answer:selected
+              answer:
+                selected
 
-          })
+            })
         }
       );
 
@@ -952,7 +1021,8 @@ async function submitAnswer(selected){
       )}`;
 
 
-    $("nextBtn").style.display =
+    $("nextBtn")
+      .style.display =
       "block";
 
 
@@ -964,12 +1034,14 @@ async function submitAnswer(selected){
     console.error(error);
 
 
-    answered = false;
+    answered =
+      false;
 
 
     buttons.forEach(
       button =>
-        button.disabled = false
+        button.disabled =
+          false
     );
 
 
@@ -990,7 +1062,9 @@ async function submitAnswer(selected){
 function escapeHTML(text){
 
   const div =
-    document.createElement("div");
+    document.createElement(
+      "div"
+    );
 
   div.textContent =
     String(text);
