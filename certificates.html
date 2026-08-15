@@ -25,6 +25,7 @@ body{
 font-family:Arial,Helvetica,sans-serif;
 background:#f4f7fb;
 color:#172033;
+line-height:1.5;
 }
 
 header{
@@ -107,7 +108,7 @@ border:1px solid #e5e7eb;
 border-radius:10px;
 text-align:center;
 font-size:13px;
-font-weight:600;
+font-weight:700;
 }
 
 .loading{
@@ -206,13 +207,8 @@ color:#fff;
 background:#1247b8;
 }
 
-.secondary{
-background:#eef2f7;
-color:#344054;
-}
-
 .message{
-display:none;
+display:block;
 margin-top:18px;
 padding:13px;
 border-radius:9px;
@@ -222,21 +218,18 @@ line-height:1.5;
 }
 
 .error{
-display:block;
 background:#fff1f2;
 border:1px solid #fecdd3;
 color:#be123c;
 }
 
 .info{
-display:block;
 background:#eff6ff;
 border:1px solid #bfdbfe;
 color:#1d4ed8;
 }
 
 .success{
-display:block;
 background:#ecfdf3;
 border:1px solid #bbf7d0;
 color:#166534;
@@ -247,6 +240,10 @@ text-align:center;
 padding:25px;
 font-size:11px;
 color:#98a2b3;
+}
+
+.hidden{
+display:none;
 }
 
 @media(max-width:500px){
@@ -340,12 +337,12 @@ class="loading">
 </div>
 
 
-<div id="certificates"></div>
+<div id="content"></div>
 
 
 <div
 id="message"
-class="message">
+class="hidden">
 </div>
 
 
@@ -371,11 +368,11 @@ All rights reserved.
 
 
 /* =====================================================
-   API
+   PROGRESS WORKER
 ===================================================== */
 
-const API_URL =
-"https://createlk-academy-api.createlk.workers.dev";
+const PROGRESS_API =
+"https://createlk-progress.createlk.workers.dev";
 
 
 /* =====================================================
@@ -387,52 +384,76 @@ const STUDENT_KEY =
 
 
 /* =====================================================
-   CERTIFICATE REQUIREMENT
+   CERTIFICATE TARGET
 ===================================================== */
 
-const REQUIRED_CORRECT = 1000;
+const DEFAULT_TARGET = 1000;
 
 
 /* =====================================================
-   STUDENT
+   STUDENT VARIABLES
 ===================================================== */
 
 let student = null;
 let studentId = null;
 
 
-/*
-   Session storage first.
-   Local storage is the fallback.
-
-   This means the student can leave this page,
-   return again, and the ID can still be recovered.
-*/
+/* =====================================================
+   LOAD STUDENT
+===================================================== */
 
 function loadStudent(){
 
-let saved =
+let saved = null;
+
+
+/*
+   First try sessionStorage.
+*/
+
+try{
+
+saved =
 sessionStorage.getItem(
 STUDENT_KEY
 );
 
+}catch(error){
 
-/*
-   Fallback to localStorage
-*/
-
-if(!saved){
-
-saved =
-localStorage.getItem(
-STUDENT_KEY
+console.warn(
+"Session storage unavailable."
 );
 
 }
 
 
 /*
-   Nothing found
+   If sessionStorage is empty,
+   try localStorage.
+*/
+
+if(!saved){
+
+try{
+
+saved =
+localStorage.getItem(
+STUDENT_KEY
+);
+
+}catch(error){
+
+console.warn(
+"Local storage unavailable."
+);
+
+}
+
+}
+
+
+/*
+   No student found.
 */
 
 if(!saved){
@@ -446,6 +467,7 @@ try{
 
 const data =
 JSON.parse(saved);
+
 
 if(
 !data ||
@@ -476,12 +498,11 @@ String(studentId);
 
 
 /*
-   If the student was found only in localStorage,
-   restore it to sessionStorage so navigation
-   during the current session remains stable.
-*/
+   Restore into sessionStorage.
 
-if(student){
+   This makes navigation inside
+   the website more reliable.
+*/
 
 try{
 
@@ -493,27 +514,23 @@ JSON.stringify(student)
 }catch(error){
 
 console.warn(
-"Could not restore student session:",
-error
+"Could not restore session."
 );
 
 }
 
-}
 
+return true;
 
-return !!student;
 
 }catch(error){
 
 console.error(
-"Student storage error:",
+"Student JSON error:",
 error
 );
 
 return false;
-
-}
 
 }
 
@@ -532,7 +549,7 @@ return String(studentId);
 
 
 /*
-   Reload from storage.
+   Try loading again.
 */
 
 loadStudent();
@@ -541,63 +558,6 @@ loadStudent();
 if(studentId){
 
 return String(studentId);
-
-}
-
-
-/*
-   Final fallback:
-   search storage directly.
-*/
-
-const sessionData =
-sessionStorage.getItem(
-STUDENT_KEY
-);
-
-const localData =
-localStorage.getItem(
-STUDENT_KEY
-);
-
-
-const saved =
-sessionData ||
-localData;
-
-
-if(saved){
-
-try{
-
-const data =
-JSON.parse(saved);
-
-const id =
-data?.id ||
-data?.student_id ||
-data?.user_id ||
-null;
-
-if(id){
-
-student = data;
-
-studentId =
-String(id);
-
-return studentId;
-
-}
-
-}catch(error){
-
-console.error(
-"Student ID recovery error:",
-error
-);
-
-}
 
 }
 
@@ -639,13 +599,13 @@ student.lastName ||
 "";
 
 
-const combined =
+const full =
 `${first} ${last}`.trim();
 
 
-if(combined){
+if(full){
 
-return combined;
+return full;
 
 }
 
@@ -670,14 +630,10 @@ return "Student";
 
 function displayStudent(){
 
-const name =
-getStudentName();
-
-
 document.getElementById(
 "studentBox"
 ).textContent =
-"👤 " + name;
+"👤 " + getStudentName();
 
 }
 
@@ -696,18 +652,14 @@ document.getElementById(
 "message"
 );
 
+box.className =
+type;
+
 box.textContent =
 text;
 
-box.className =
-"message " + type;
-
 }
 
-
-/* =====================================================
-   HIDE MESSAGE
-===================================================== */
 
 function hideMessage(){
 
@@ -716,529 +668,11 @@ document.getElementById(
 "message"
 );
 
-box.style.display =
-"none";
-
-}
-
-
-/* =====================================================
-   LOAD CERTIFICATE
-===================================================== */
-
-async function loadCertificates(){
-
-/*
-   Always attempt to recover the student
-   before making the API request.
-*/
-
-loadStudent();
-
-displayStudent();
-
-
-const id =
-getStudentId();
-
-
-/*
-   No ID.
-   Do NOT immediately say "login again".
-   Give a clear message instead.
-*/
-
-if(!id){
-
-document.getElementById(
-"loading"
-).style.display =
-"none";
-
-showMessage(
-"Your login session could not be found. Please return to the Dashboard and log in again.",
-"error"
-);
-
-return;
-
-}
-
-
-try{
-
-/* =================================================
-   API REQUEST
-================================================= */
-
-const url =
-API_URL +
-"/api/certificates?student_id=" +
-encodeURIComponent(id);
-
-
-const response =
-await fetch(
-url,
-{
-method:"GET",
-
-headers:{
-"Accept":
-"application/json"
-}
-}
-);
-
-
-/* =================================================
-   READ RESPONSE
-================================================= */
-
-const raw =
-await response.text();
-
-
-console.log(
-"Certificate API response:",
-raw
-);
-
-
-let data;
-
-
-try{
-
-data =
-JSON.parse(raw);
-
-}catch(error){
-
-throw new Error(
-"Invalid certificate server response."
-);
-
-}
-
-
-/* =================================================
-   API ERROR
-================================================= */
-
-if(
-!response.ok
-){
-
-throw new Error(
-data.message ||
-data.error ||
-`Certificate request failed (${response.status}).`
-);
-
-}
-
-
-/*
-   Some Workers return success:false
-   when the request is valid but there
-   is no certificate yet.
-*/
-
-if(
-data.success === false
-){
-
-throw new Error(
-data.message ||
-data.error ||
-"Unable to load certificate information."
-);
-
-}
-
-
-/* =================================================
-   HIDE LOADING
-================================================= */
-
-document.getElementById(
-"loading"
-).style.display =
-"none";
-
-
-/* =================================================
-   CORRECT ANSWERS
-================================================= */
-
-const correctAnswers =
-Number(
-data.correct_answers ??
-data.certificate_progress ??
-data.progress ??
-0
-);
-
-
-/* =================================================
-   REQUIRED ANSWERS
-================================================= */
-
-const required =
-Number(
-data.required_correct_answers ??
-data.certificate_target ??
-data.target ??
-REQUIRED_CORRECT
-);
-
-
-/* =================================================
-   ELIGIBILITY
-================================================= */
-
-const eligible =
-data.eligible === true ||
-correctAnswers >= required;
-
-
-/* =================================================
-   NOT ELIGIBLE
-================================================= */
-
-if(!eligible){
-
-showProgress(
-correctAnswers,
-required
-);
-
-return;
-
-}
-
-
-/* =================================================
-   CERTIFICATES
-================================================= */
-
-const certificates =
-Array.isArray(
-data.certificates
-)
-?
-data.certificates
-:
-[];
-
-
-/*
-   If API says eligible but does not return
-   a certificate record, show an informative message.
-*/
-
-if(
-certificates.length === 0
-){
-
-showMessage(
-"🎓 You have completed the requirement. Your certificate is being prepared.",
-"success"
-);
-
-return;
-
-}
-
-
-/* =================================================
-   DISPLAY
-================================================= */
-
-displayCertificates(
-certificates,
-correctAnswers
-);
-
-
-}catch(error){
-
-console.error(
-"Certificate error:",
-error
-);
-
-
-document.getElementById(
-"loading"
-).style.display =
-"none";
-
-
-showMessage(
-error.message ||
-"Unable to load certificate information.",
-"error"
-);
-
-}
-
-}
-
-
-/* =====================================================
-   SHOW PROGRESS
-===================================================== */
-
-function showProgress(
-correct,
-required
-){
-
-const percentage =
-required > 0
-?
-Math.min(
-100,
-Math.round(
-(correct / required) * 100
-)
-)
-:
-0;
-
-
-const remaining =
-Math.max(
-0,
-required - correct
-);
-
-
-const name =
-getStudentName();
-
-
-document.getElementById(
-"certificates"
-).innerHTML = `
-
-<div class="certificate">
-
-<div class="certificate-icon">
-🔒
-</div>
-
-<h2>
-Certificate Locked
-</h2>
-
-<div class="certificate-name">
-${escapeHtml(name)}
-</div>
-
-<p>
-
-Complete
-
-<strong>
-${required.toLocaleString()}
-correct answers
-</strong>
-
-to earn your
-CreateLK Academy
-Achievement Certificate.
-
-</p>
-
-
-<div class="progress-area">
-
-<div class="progress-bar">
-
-<div
-class="progress-fill"
-style="width:${percentage}%">
-</div>
-
-</div>
-
-
-<div class="progress-text">
-
-${correct.toLocaleString()}
-/
-${required.toLocaleString()}
-correct answers
-
-</div>
-
-
-<p style="margin-top:8px">
-
-Progress: ${percentage}%
-
-</p>
-
-
-<p style="margin-top:5px">
-
-${remaining.toLocaleString()}
-more correct answers needed.
-
-</p>
-
-</div>
-
-</div>
-
-`;
-
-}
-
-
-/* =====================================================
-   DISPLAY CERTIFICATES
-===================================================== */
-
-function displayCertificates(
-certificates,
-correctAnswers
-){
-
-const container =
-document.getElementById(
-"certificates"
-);
-
-
-container.innerHTML =
-"";
-
-
-const name =
-getStudentName();
-
-
-certificates.forEach(
-function(cert){
-
-const box =
-document.createElement(
-"div"
-);
-
-
 box.className =
-"certificate";
+"hidden";
 
-
-const certificateId =
-cert.certificate_id ||
-cert.id ||
+box.textContent =
 "";
-
-
-const title =
-cert.title ||
-"English Learning Achievement Certificate";
-
-
-const issued =
-cert.issued_at ||
-cert.created_at ||
-"";
-
-
-const completedAnswers =
-Number(
-cert.correct_answers ??
-correctAnswers ??
-0
-);
-
-
-box.innerHTML = `
-
-<div class="certificate-icon">
-🏆
-</div>
-
-
-<h2>
-${escapeHtml(title)}
-</h2>
-
-
-<div class="certificate-name">
-
-${escapeHtml(
-cert.student_name ||
-name
-)}
-
-</div>
-
-
-<p>
-
-Congratulations!
-
-You have successfully completed
-
-<strong>
-${completedAnswers.toLocaleString()}
-correct English answers
-</strong>
-
-through CreateLK Academy.
-
-</p>
-
-
-<div class="certificate-id">
-
-Certificate ID:
-${escapeHtml(
-String(certificateId)
-)}
-
-</div>
-
-
-<div class="certificate-id">
-
-Issued:
-${escapeHtml(
-formatDate(issued)
-)}
-
-</div>
-
-
-<div class="buttons">
-
-<button
-class="btn primary"
-type="button"
-onclick="printCertificate(this)">
-
-🖨️ Print Certificate
-
-</button>
-
-</div>
-
-`;
-
-
-container.appendChild(
-box
-);
-
-});
 
 }
 
@@ -1284,6 +718,648 @@ value ?? ""
 
 
 /* =====================================================
+   LOAD PROGRESS
+===================================================== */
+
+async function loadProgress(){
+
+loadStudent();
+
+displayStudent();
+
+
+const id =
+getStudentId();
+
+
+/*
+   IMPORTANT:
+
+   We do not ask the user to type
+   a Student ID.
+
+   The ID comes automatically from
+   createlk_student.
+*/
+
+if(!id){
+
+document.getElementById(
+"loading"
+).style.display =
+"none";
+
+showMessage(
+"Your login session could not be found. Please return to the Dashboard and log in again.",
+"error"
+);
+
+return;
+
+}
+
+
+try{
+
+
+/* =================================================
+   CALL PROGRESS WORKER
+================================================= */
+
+const url =
+PROGRESS_API +
+"/api/progress?student_id=" +
+encodeURIComponent(id);
+
+
+console.log(
+"Progress request:",
+url
+);
+
+
+const response =
+await fetch(
+url,
+{
+method:"GET",
+
+headers:{
+"Accept":
+"application/json"
+}
+}
+);
+
+
+/* =================================================
+   READ RESPONSE
+================================================= */
+
+const raw =
+await response.text();
+
+
+console.log(
+"Progress Worker response:",
+raw
+);
+
+
+let data;
+
+
+try{
+
+data =
+JSON.parse(raw);
+
+}catch(error){
+
+throw new Error(
+"Progress Worker returned invalid JSON."
+);
+
+}
+
+
+/* =================================================
+   SERVER ERROR
+================================================= */
+
+if(!response.ok){
+
+throw new Error(
+data.message ||
+data.error ||
+`Server error (${response.status})`
+);
+
+}
+
+
+/* =================================================
+   SUCCESS CHECK
+================================================= */
+
+if(
+data.success === false
+){
+
+throw new Error(
+data.message ||
+data.error ||
+"Unable to load progress."
+);
+
+}
+
+
+/* =================================================
+   HIDE LOADING
+================================================= */
+
+document.getElementById(
+"loading"
+).style.display =
+"none";
+
+
+hideMessage();
+
+
+/* =================================================
+   FIND CORRECT ANSWERS
+================================================= */
+
+
+/*
+   Different versions of your Worker
+   may use different field names.
+
+   We support all of these.
+*/
+
+let correct =
+Number(
+data.certificate_progress ??
+data.correct_answers ??
+data.progress ??
+data.total_correct ??
+data.certificate?.correct_answers ??
+0
+);
+
+
+/* =================================================
+   TARGET
+===================================================== */
+
+let target =
+Number(
+data.certificate_target ??
+data.required_correct_answers ??
+data.target ??
+data.certificate?.target ??
+DEFAULT_TARGET
+);
+
+
+if(!target || target < 1){
+
+target =
+DEFAULT_TARGET;
+
+}
+
+
+/* =================================================
+   ELIGIBILITY
+===================================================== */
+
+const eligible =
+data.eligible === true ||
+data.certificate_unlocked === true ||
+data.certificate?.unlocked === true ||
+correct >= target;
+
+
+/* =================================================
+   CERTIFICATE RECORD
+===================================================== */
+
+let certificates =
+Array.isArray(
+data.certificates
+)
+?
+data.certificates
+:
+[];
+
+
+/* =================================================
+   DISPLAY
+===================================================== */
+
+if(
+certificates.length > 0
+){
+
+displayCertificates(
+certificates,
+correct
+);
+
+return;
+
+}
+
+
+/*
+   No certificate record returned.
+
+   If the user has reached 1,000,
+   show the unlocked state.
+*/
+
+if(eligible){
+
+showUnlocked(
+correct,
+target
+);
+
+return;
+
+}
+
+
+/*
+   User has not reached target.
+*/
+
+showLocked(
+correct,
+target
+);
+
+
+}catch(error){
+
+console.error(
+"Certificate progress error:",
+error
+);
+
+
+document.getElementById(
+"loading"
+).style.display =
+"none";
+
+
+showMessage(
+error.message ||
+"Unable to load certificate progress.",
+"error"
+);
+
+}
+
+}
+
+
+/* =====================================================
+   SHOW LOCKED
+===================================================== */
+
+function showLocked(
+correct,
+target
+){
+
+const percentage =
+target > 0
+?
+Math.min(
+100,
+Math.round(
+(correct / target) * 100
+)
+)
+:
+0;
+
+
+const remaining =
+Math.max(
+0,
+target - correct
+);
+
+
+const name =
+getStudentName();
+
+
+document.getElementById(
+"content"
+).innerHTML = `
+
+<div class="certificate">
+
+<div class="certificate-icon">
+🔒
+</div>
+
+<h2>
+Certificate Locked
+</h2>
+
+<div class="certificate-name">
+${escapeHtml(name)}
+</div>
+
+<p>
+
+Complete
+
+<strong>
+${target.toLocaleString()}
+correct answers
+</strong>
+
+to earn your
+CreateLK Academy
+Achievement Certificate.
+
+</p>
+
+
+<div class="progress-area">
+
+<div class="progress-bar">
+
+<div
+class="progress-fill"
+style="width:${percentage}%">
+</div>
+
+</div>
+
+
+<div class="progress-text">
+
+${correct.toLocaleString()}
+/
+${target.toLocaleString()}
+correct answers
+
+</div>
+
+
+<p style="margin-top:8px">
+
+Progress: ${percentage}%
+
+</p>
+
+
+<p style="margin-top:5px">
+
+${remaining.toLocaleString()}
+more correct answers needed.
+
+</p>
+
+</div>
+
+</div>
+
+`;
+
+}
+
+
+/* =====================================================
+   SHOW UNLOCKED
+===================================================== */
+
+function showUnlocked(
+correct,
+target
+){
+
+const name =
+getStudentName();
+
+
+document.getElementById(
+"content"
+).innerHTML = `
+
+<div class="certificate">
+
+<div class="certificate-icon">
+🎓
+</div>
+
+<h2>
+Certificate Unlocked
+</h2>
+
+<div class="certificate-name">
+${escapeHtml(name)}
+</div>
+
+<p>
+
+Congratulations!
+
+You have completed
+
+<strong>
+${correct.toLocaleString()}
+correct English answers
+</strong>
+
+and reached the
+CreateLK Academy
+certificate requirement.
+
+</p>
+
+
+<div class="progress-area">
+
+<div class="progress-bar">
+
+<div
+class="progress-fill"
+style="width:100%">
+</div>
+
+</div>
+
+
+<div class="progress-text">
+
+${correct.toLocaleString()}
+/
+${target.toLocaleString()}
+correct answers
+
+</div>
+
+</div>
+
+
+<div class="buttons">
+
+<button
+type="button"
+class="btn primary"
+onclick="printUnlockedCertificate()">
+
+🖨️ Print Certificate
+
+</button>
+
+</div>
+
+</div>
+
+`;
+
+}
+
+
+/* =====================================================
+   DISPLAY CERTIFICATE RECORD
+===================================================== */
+
+function displayCertificates(
+certificates,
+correctAnswers
+){
+
+const container =
+document.getElementById(
+"content"
+);
+
+
+container.innerHTML =
+"";
+
+
+const defaultName =
+getStudentName();
+
+
+certificates.forEach(
+function(cert){
+
+const box =
+document.createElement(
+"div"
+);
+
+
+box.className =
+"certificate";
+
+
+const id =
+cert.certificate_id ||
+cert.id ||
+"";
+
+
+const title =
+cert.title ||
+"English Learning Achievement Certificate";
+
+
+const name =
+cert.student_name ||
+defaultName;
+
+
+const issued =
+cert.issued_at ||
+cert.created_at ||
+"";
+
+
+const answers =
+Number(
+cert.correct_answers ??
+correctAnswers ??
+0
+);
+
+
+box.innerHTML = `
+
+<div class="certificate-icon">
+🏆
+</div>
+
+
+<h2>
+${escapeHtml(title)}
+</h2>
+
+
+<div class="certificate-name">
+
+${escapeHtml(name)}
+
+</div>
+
+
+<p>
+
+Congratulations!
+
+You have successfully completed
+
+<strong>
+${answers.toLocaleString()}
+correct English answers
+</strong>
+
+through CreateLK Academy.
+
+</p>
+
+
+<div class="certificate-id">
+
+Certificate ID:
+${escapeHtml(id)}
+
+</div>
+
+
+<div class="certificate-id">
+
+Issued:
+${escapeHtml(
+formatDate(issued)
+)}
+
+</div>
+
+
+<div class="buttons">
+
+<button
+type="button"
+class="btn primary"
+onclick="printCertificate(this)">
+
+🖨️ Print Certificate
+
+</button>
+
+</div>
+
+`;
+
+
+container.appendChild(
+box
+);
+
+});
+
+}
+
+
+/* =====================================================
    DATE
 ===================================================== */
 
@@ -1297,8 +1373,6 @@ return "—";
 
 }
 
-
-try{
 
 const date =
 new Date(value);
@@ -1324,17 +1398,11 @@ day:"numeric"
 }
 );
 
-}catch(error){
-
-return String(value);
-
-}
-
 }
 
 
 /* =====================================================
-   PRINT CERTIFICATE
+   PRINT EXISTING CERTIFICATE
 ===================================================== */
 
 function printCertificate(
@@ -1354,6 +1422,42 @@ return;
 }
 
 
+const name =
+certificate.querySelector(
+".certificate-name"
+)?.textContent.trim()
+||
+getStudentName();
+
+
+printCertificateDocument(
+name
+);
+
+}
+
+
+/* =====================================================
+   PRINT UNLOCKED CERTIFICATE
+===================================================== */
+
+function printUnlockedCertificate(){
+
+printCertificateDocument(
+getStudentName()
+);
+
+}
+
+
+/* =====================================================
+   PRINT DOCUMENT
+===================================================== */
+
+function printCertificateDocument(
+name
+){
+
 const printWindow =
 window.open(
 "",
@@ -1371,10 +1475,6 @@ alert(
 return;
 
 }
-
-
-const name =
-getStudentName();
 
 
 printWindow.document.write(`
@@ -1406,21 +1506,21 @@ sans-serif;
 
 padding:40px;
 
-text-align:center;
-
 background:#fff;
+
+text-align:center;
 
 }
 
 .certificate{
 
-border:10px solid #d8b45a;
-
-padding:70px 40px;
-
 max-width:850px;
 
 margin:auto;
+
+padding:70px 40px;
+
+border:10px solid #d8b45a;
 
 background:#fffdf5;
 
@@ -1488,8 +1588,6 @@ padding:0;
 
 max-width:none;
 
-width:100%;
-
 min-height:90vh;
 
 }
@@ -1499,7 +1597,6 @@ min-height:90vh;
 </style>
 
 </head>
-
 
 <body>
 
@@ -1587,7 +1684,7 @@ loadStudent();
 
 displayStudent();
 
-loadCertificates();
+loadProgress();
 
 </script>
 
