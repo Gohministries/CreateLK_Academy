@@ -6,7 +6,11 @@
 <title>Login | CreateLK Academy</title>
 
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
+*{
+box-sizing:border-box;
+margin:0;
+padding:0;
+}
 
 body{
 font-family:Arial,Helvetica,sans-serif;
@@ -183,8 +187,15 @@ color:#98a2b3;
 }
 
 @media(max-width:500px){
-.card{padding:23px 18px}
-h1{font-size:24px}
+
+.card{
+padding:23px 18px;
+}
+
+h1{
+font-size:24px;
+}
+
 }
 </style>
 </head>
@@ -192,6 +203,7 @@ h1{font-size:24px}
 <body>
 
 <header>
+
 <div class="nav">
 
 <a href="index.html" class="logo">
@@ -203,7 +215,9 @@ h1{font-size:24px}
 </a>
 
 </div>
+
 </header>
+
 
 <main>
 
@@ -211,9 +225,13 @@ h1{font-size:24px}
 
 <div class="header">
 
-<div class="icon">🔐</div>
+<div class="icon">
+🔐
+</div>
 
-<h1>Welcome Back</h1>
+<h1>
+Welcome Back
+</h1>
 
 <div class="subtitle">
 Login to your CreateLK Academy account.
@@ -221,56 +239,81 @@ Login to your CreateLK Academy account.
 
 </div>
 
+
 <div id="message" class="message"></div>
+
 
 <form id="loginForm">
 
 <div class="group">
 
-<label>Email Address</label>
+<label for="email">
+Email Address
+</label>
 
 <input
 id="email"
 type="email"
 placeholder="you@example.com"
 autocomplete="email"
-required>
+required
+>
 
 </div>
 
+
 <div class="group">
 
-<label>Password</label>
+<label for="password">
+Password
+</label>
 
 <input
 id="password"
 type="password"
 placeholder="Enter your password"
 autocomplete="current-password"
-required>
+required
+>
 
 </div>
 
-<button id="loginButton" type="submit">
+
+<button
+id="loginButton"
+type="submit"
+>
 🔐 Login
 </button>
 
 </form>
 
+
 <div class="register">
+
 Don't have an account?
-<a href="register.html">Create Account</a>
+
+<a href="register.html">
+Create Account
+</a>
+
 </div>
 
 </div>
 
 </main>
 
+
 <footer>
 © 2026 CreateLK Academy. All rights reserved.
 </footer>
 
+
 <script>
+
+/* ================================
+   CREATE LK ACADEMY LOGIN
+================================ */
 
 const API_URL =
 "https://createlk-academy-api.createlk.workers.dev";
@@ -281,6 +324,7 @@ const STUDENT_KEY =
 const LOGIN_KEY =
 "createlk_logged_in";
 
+
 const form =
 document.getElementById("loginForm");
 
@@ -290,6 +334,10 @@ document.getElementById("message");
 const button =
 document.getElementById("loginButton");
 
+
+/* ================================
+   MESSAGE
+================================ */
 
 function showMessage(text,type){
 
@@ -305,18 +353,57 @@ message.style.display =
 }
 
 
-form.addEventListener("submit",async function(e){
+/* ================================
+   CHECK EXISTING LOGIN
+   KEEP USER LOGGED IN
+================================ */
+
+(function checkExistingLogin(){
+
+const loggedIn =
+localStorage.getItem(LOGIN_KEY);
+
+const student =
+localStorage.getItem(STUDENT_KEY);
+
+if(
+loggedIn === "true" &&
+student
+){
+
+window.location.replace(
+"dashboard.html"
+);
+
+}
+
+})();
+
+
+/* ================================
+   LOGIN
+================================ */
+
+form.addEventListener(
+"submit",
+async function(e){
 
 e.preventDefault();
 
+
 const email =
-document.getElementById("email")
-.value.trim()
+document
+.getElementById("email")
+.value
+.trim()
 .toLowerCase();
 
+
 const password =
-document.getElementById("password")
+document
+.getElementById("password")
 .value;
+
 
 if(!email || !password){
 
@@ -326,80 +413,130 @@ showMessage(
 );
 
 return;
+
 }
 
-button.disabled=true;
-button.textContent="⏳ Logging in...";
+
+button.disabled = true;
+
+button.textContent =
+"⏳ Logging in...";
+
 
 showMessage(
 "Checking your account...",
 "info"
 );
 
+
 try{
+
+
+/* ================================
+   API REQUEST
+================================ */
 
 const response =
 await fetch(
 API_URL + "/api/login",
 {
 method:"POST",
+
 headers:{
 "Content-Type":"application/json",
 "Accept":"application/json"
 },
+
 body:JSON.stringify({
+
 email:email,
+
 password:password
+
 })
+
 }
 );
+
 
 const raw =
 await response.text();
 
-console.log("LOGIN:",raw);
+
+console.log(
+"LOGIN RESPONSE:",
+raw
+);
+
 
 let data;
 
+
 try{
-data=JSON.parse(raw);
+
+data =
+JSON.parse(raw);
+
 }catch{
+
 throw new Error(
 "Invalid response from server."
 );
+
 }
 
-if(!response.ok || data.success !== true){
+
+/* ================================
+   CHECK LOGIN RESULT
+================================ */
+
+if(
+!response.ok ||
+data.success !== true
+){
 
 throw new Error(
 data.message ||
 "Invalid email or password."
 );
+
 }
 
 
-/* Student object */
+/* ================================
+   STUDENT DATA
+================================ */
 
 const s =
 data.student || {};
+
 
 const studentId =
 data.student_id ||
 data.studentId ||
 s.id;
 
+
 if(!studentId){
 
 throw new Error(
 "Login successful, but student ID was not returned."
 );
+
 }
 
-const student={
 
-id:Number(studentId),
+/* ================================
+   CREATE STUDENT OBJECT
+================================ */
 
-student_id:Number(studentId),
+const student = {
+
+id:
+Number(studentId),
+
+student_id:
+Number(studentId),
 
 first_name:
 data.first_name ||
@@ -434,49 +571,76 @@ null
 };
 
 
-/* Save session */
+/* ================================
+   SAVE LOGIN
+   LOCALSTORAGE = STAYS AFTER
+   BROWSER CLOSE / REOPEN
+================================ */
 
-sessionStorage.setItem(
+localStorage.setItem(
 STUDENT_KEY,
 JSON.stringify(student)
 );
 
-sessionStorage.setItem(
+localStorage.setItem(
 LOGIN_KEY,
 "true"
 );
 
-sessionStorage.setItem(
+
+/* ================================
+   SAVE QUICK ACCESS DATA
+================================ */
+
+localStorage.setItem(
 "createlk_student_id",
 String(student.id)
 );
 
-sessionStorage.setItem(
+localStorage.setItem(
 "createlk_student_email",
 student.email
 );
 
 
-/* Success */
+/* ================================
+   SUCCESS
+================================ */
 
 showMessage(
 "✅ Login successful. Opening dashboard...",
 "success"
 );
 
-button.textContent="✓ Login Successful";
 
-setTimeout(function(){
+button.textContent =
+"✓ Login Successful";
 
-window.location.href =
-"dashboard.html";
 
-},700);
+/* ================================
+   OPEN DASHBOARD
+================================ */
+
+setTimeout(
+function(){
+
+window.location.replace(
+"dashboard.html"
+);
+
+},
+700
+);
 
 
 }catch(error){
 
-console.error(error);
+
+console.error(
+"LOGIN ERROR:",
+error
+);
+
 
 showMessage(
 error.message ||
@@ -484,8 +648,13 @@ error.message ||
 "error"
 );
 
-button.disabled=false;
-button.textContent="🔐 Login";
+
+button.disabled =
+false;
+
+
+button.textContent =
+"🔐 Login";
 
 }
 
