@@ -10,11 +10,10 @@
 
 :root{
 --primary:#155eef;
---dark:#1247b8;
 --purple:#7c3aed;
 --text:#172033;
 --muted:#667085;
---border:#e4e7ec;
+--border:#e4e7ec
 }
 
 body{
@@ -316,6 +315,75 @@ padding:20px;
 color:var(--muted)
 }
 
+/* CERTIFICATE */
+
+.certificate-box{
+margin-top:16px;
+padding:16px;
+border-radius:13px;
+background:linear-gradient(135deg,#fffbeb,#fff7ed);
+border:1px solid #f3dfb0
+}
+
+.certificate-title{
+font-size:17px;
+font-weight:800;
+color:#92400e;
+margin-bottom:8px
+}
+
+.certificate-number{
+font-size:24px;
+font-weight:900;
+color:#b45309
+}
+
+.progress{
+height:9px;
+background:#eadfc8;
+border-radius:20px;
+overflow:hidden;
+margin-top:12px
+}
+
+.progress-bar{
+height:100%;
+width:0;
+background:linear-gradient(90deg,#f59e0b,#d97706);
+transition:.4s
+}
+
+.certificate-status{
+margin-top:10px;
+padding:8px;
+border-radius:20px;
+text-align:center;
+font-size:12px;
+font-weight:bold;
+background:#fef3c7;
+color:#92400e
+}
+
+.certificate-link{
+display:block;
+margin-top:10px;
+padding:11px;
+border-radius:9px;
+text-align:center;
+text-decoration:none;
+font-size:12px;
+font-weight:bold;
+background:#d0d5dd;
+color:#667085;
+pointer-events:none
+}
+
+.certificate-link.unlocked{
+background:#f59e0b;
+color:#fff;
+pointer-events:auto
+}
+
 footer{
 text-align:center;
 color:#98a2b3;
@@ -368,7 +436,6 @@ grid-template-columns:1fr
 <body>
 
 <header>
-
 <div class="header">
 
 <div class="logo">
@@ -376,13 +443,10 @@ grid-template-columns:1fr
 </div>
 
 <nav class="nav">
-<a href="dashboard.html">
-Dashboard
-</a>
+<a href="dashboard.html">Dashboard</a>
 </nav>
 
 </div>
-
 </header>
 
 <main>
@@ -395,9 +459,7 @@ Dashboard
 Practise English with smart AI-generated multiple-choice questions.
 </p>
 
-<span class="badge" id="plan">
-FREE
-</span>
+<span class="badge" id="plan">FREE</span>
 
 <div class="stats" style="margin-top:15px">
 
@@ -454,20 +516,13 @@ id="generateBtn">
 </button>
 
 
-<div
-class="premium-box"
-id="premiumBox">
+<div class="premium-box" id="premiumBox">
 
 <div class="premium-top">
 
 <div>
-
 <h3>⭐ CreateLK Premium</h3>
-
-<p>
-Unlock the full AI learning experience.
-</p>
-
+<p>Unlock the full AI learning experience.</p>
 </div>
 
 <div class="price">
@@ -495,9 +550,7 @@ id="premiumButton">
 
 </button>
 
-<div
-class="limit"
-id="limitBox">
+<div class="limit" id="limitBox">
 
 🎯 You have used all 10 free questions for today.
 
@@ -509,11 +562,7 @@ Upgrade to Premium for up to 100 AI questions per day.
 
 </div>
 
-
-<div
-class="error"
-id="error">
-</div>
+<div class="error" id="error"></div>
 
 </div>
 
@@ -561,21 +610,44 @@ Next Question
 </div>
 
 
-<div class="card">
+<!-- CERTIFICATE -->
 
-<h2 style="margin-bottom:10px">
+<div class="certificate-box">
+
+<div class="certificate-title">
 🏆 Certificate Progress
-</h2>
+</div>
 
-<p style="color:#667085">
-
+<p style="color:#667085;font-size:13px">
 Correct answers:
-
 <strong id="certificateProgress">0</strong>
 /
 <strong id="certificateTarget">1000</strong>
-
 </p>
+
+<div class="progress">
+<div
+class="progress-bar"
+id="certificateBar">
+</div>
+</div>
+
+<div
+class="certificate-status"
+id="certificateStatus">
+
+🔒 Complete 1,000 correct answers
+
+</div>
+
+<a
+id="certificateLink"
+class="certificate-link"
+href="javascript:void(0)">
+
+🔒 Certificate Locked
+
+</a>
 
 </div>
 
@@ -589,18 +661,21 @@ Correct answers:
 <script>
 
 /* =========================
-   API
+   WORKERS
 ========================= */
 
 const API =
 "https://createlk-ai-mcq.createlk.workers.dev";
+
+const PROGRESS_API =
+"https://createlk-progress.createlk.workers.dev";
 
 const CHECKOUT_API =
 "https://createlk-payhere-checkout.createlk.workers.dev";
 
 
 /* =========================
-   STORAGE KEYS
+   STORAGE
 ========================= */
 
 const STUDENT_KEY =
@@ -614,133 +689,55 @@ const STUDENT_KEY =
 let student=null;
 let studentId=null;
 
-
 function loadStudent(){
-
-student=null;
-studentId=null;
-
-
-/* Session first */
 
 let stored=
 sessionStorage.getItem(STUDENT_KEY);
-
-
-/* Local fallback */
 
 if(!stored){
 stored=
 localStorage.getItem(STUDENT_KEY);
 }
 
-
-if(stored){
+if(!stored)return null;
 
 try{
 
-const data=
+student=
 JSON.parse(stored);
 
-if(data && typeof data==="object"){
-
-student=data;
-
 studentId=
-data.id||
-data.student_id||
-data.user_id||
+student?.id||
+student?.student_id||
+student?.user_id||
 null;
 
-}
+if(studentId)
+studentId=String(studentId);
+
+return student;
 
 }catch(error){
 
-console.error(
-"Student storage error:",
-error
-);
-
-}
-
-}
-
-
-/* Normalize */
-
-if(studentId){
-
-studentId=
-String(studentId);
-
-return studentId;
-
-}
-
+console.error(error);
 return null;
 
 }
 
+}
 
 loadStudent();
 
-
-/* =========================
-   STUDENT ID
-========================= */
 
 function getStudentId(){
 
-if(studentId){
-
+if(studentId)
 return String(studentId);
-
-}
 
 loadStudent();
 
-if(studentId){
-
+if(studentId)
 return String(studentId);
-
-}
-
-
-/*
- Try one more time from
- the current login object
-*/
-
-const stored=
-sessionStorage.getItem(
-STUDENT_KEY
-);
-
-if(stored){
-
-try{
-
-const data=
-JSON.parse(stored);
-
-const id=
-data?.id||
-data?.student_id||
-data?.user_id;
-
-if(id){
-
-student=data;
-studentId=String(id);
-
-return studentId;
-
-}
-
-}catch{}
-
-}
-
 
 showError(
 "Student ID is required. Please log in again."
@@ -761,9 +758,7 @@ id=>document.getElementById(id);
 
 function showError(message){
 
-$("error").textContent=
-message;
-
+$("error").textContent=message;
 $("error").classList.add("show");
 
 }
@@ -777,40 +772,29 @@ $("error").classList.remove("show");
 
 
 /* =========================
-   API
+   API HELPER
 ========================= */
 
-async function api(
-url,
-options={}
-){
+async function api(url,options={}){
 
 const response=
 await fetch(
 url,
 {
 ...options,
-
 headers:{
-"Accept":
-"application/json",
-
-"Content-Type":
-"application/json",
-
+"Accept":"application/json",
+"Content-Type":"application/json",
 ...(options.headers||{})
 }
-
 }
 );
-
 
 let data;
 
 try{
 
-data=
-await response.json();
+data=await response.json();
 
 }catch{
 
@@ -820,20 +804,17 @@ throw new Error(
 
 }
 
-
 if(!response.ok){
 
 const error=
 new Error(
 data.message||
+data.error||
 `Request failed (${response.status})`
 );
 
-error.status=
-response.status;
-
-error.data=
-data;
+error.status=response.status;
+error.data=data;
 
 throw error;
 
@@ -845,19 +826,15 @@ return data;
 
 
 /* =========================
-   PREMIUM
+   PREMIUM BOX
 ========================= */
 
 function showPremium(){
 
-$("premiumBox")
-.classList.add("show");
-
-$("limitBox")
-.classList.add("show");
+$("premiumBox").classList.add("show");
+$("limitBox").classList.add("show");
 
 $("generateBtn").disabled=true;
-
 $("generateBtn").textContent=
 "Daily Free Limit Reached";
 
@@ -866,30 +843,25 @@ $("generateBtn").textContent=
 
 function hidePremium(){
 
-$("premiumBox")
-.classList.remove("show");
-
-$("limitBox")
-.classList.remove("show");
+$("premiumBox").classList.remove("show");
+$("limitBox").classList.remove("show");
 
 }
 
 
 /* =========================
-   UPDATE STATS
+   AI MCQ STATS
 ========================= */
 
 function updateStats(data){
 
 const status=
-String(
-data.membership_status||""
-).toUpperCase();
+String(data.membership_status||"")
+.toUpperCase();
 
 const plan=
-String(
-data.plan||""
-).toUpperCase();
+String(data.plan||"")
+.toUpperCase();
 
 const premium=
 data.premium===true||
@@ -897,56 +869,21 @@ status==="ACTIVE"||
 status==="PREMIUM"||
 plan==="PREMIUM";
 
-
 $("plan").textContent=
-premium?
-"PREMIUM":
-"FREE";
-
+premium?"PREMIUM":"FREE";
 
 $("used").textContent=
 data.daily_used??0;
 
-
 $("remaining").textContent=
 data.remaining??0;
-
 
 $("correct").textContent=
 data.correct_answers??0;
 
-
-$("certificateProgress").textContent=
-data.certificate_progress??
-data.correct_answers??
-0;
-
-
-$("certificateTarget").textContent=
-data.certificate_target??
-1000;
-
-
-/* Premium */
-
-if(premium){
-
-hidePremium();
-
-$("generateBtn").disabled=false;
-
-$("generateBtn").textContent=
-"🤖 Generate Question";
-
-return;
-
-}
-
-
-/* Free */
-
 if(
-Number(data.remaining)<=0
+Number(data.remaining)<=0 &&
+!premium
 ){
 
 showPremium();
@@ -956,7 +893,6 @@ showPremium();
 hidePremium();
 
 $("generateBtn").disabled=false;
-
 $("generateBtn").textContent=
 "🤖 Generate Question";
 
@@ -966,20 +902,14 @@ $("generateBtn").textContent=
 
 
 /* =========================
-   LOAD PROGRESS
+   LOAD AI MCQ PROGRESS
 ========================= */
 
-async function loadProgress(){
+async function loadAIProgress(){
 
-const id=
-getStudentId();
+const id=getStudentId();
 
-if(!id){
-
-return;
-
-}
-
+if(!id)return;
 
 try{
 
@@ -988,25 +918,10 @@ await api(
 `${API}/api/progress?student_id=${encodeURIComponent(id)}`
 );
 
-
 if(data.success){
 
-/*
- Backend may return
- canonical student ID.
-*/
-
-if(data.student_id){
-
-studentId=
-String(data.student_id);
-
-}
-
-/*
- If backend gives plan
- information, use it.
-*/
+if(data.student_id)
+studentId=String(data.student_id);
 
 updateStats(data);
 
@@ -1015,13 +930,13 @@ updateStats(data);
 }catch(error){
 
 console.error(
-"Progress error:",
+"AI progress error:",
 error
 );
 
 showError(
 error.message||
-"Could not load your progress."
+"Could not load AI progress."
 );
 
 }
@@ -1030,7 +945,139 @@ error.message||
 
 
 /* =========================
-   GENERATE
+   LOAD CERTIFICATE PROGRESS
+========================= */
+
+async function loadCertificateProgress(){
+
+const id=getStudentId();
+
+if(!id)return;
+
+try{
+
+const data=
+await api(
+`${PROGRESS_API}/api/progress?student_id=${encodeURIComponent(id)}`
+);
+
+if(!data.success){
+
+throw new Error(
+data.message||
+data.error||
+"Could not load certificate progress."
+);
+
+}
+
+
+/*
+Progress Worker is responsible
+for certificate progress.
+*/
+
+const certificate=
+data.certificate||{};
+
+const target=
+Number(
+data.certificate_target||
+certificate.target||
+1000
+);
+
+const correct=
+Number(
+data.certificate_progress||
+certificate.correct_answers||
+data.correct_answers||
+0
+);
+
+const progress=
+Math.min(correct,target);
+
+const percent=
+target>0?
+Math.min(
+(progress/target)*100,
+100
+):0;
+
+
+$("certificateProgress").textContent=
+progress.toLocaleString();
+
+$("certificateTarget").textContent=
+target.toLocaleString();
+
+$("certificateBar").style.width=
+percent+"%";
+
+
+/*
+FREE AND PREMIUM USERS
+CAN BOTH GET CERTIFICATE
+AT 1000 CORRECT ANSWERS.
+*/
+
+if(correct>=target){
+
+$("certificateStatus").textContent=
+"🎓 Certificate Unlocked";
+
+$("certificateStatus").style.background=
+"#dcfce7";
+
+$("certificateStatus").style.color=
+"#166534";
+
+$("certificateLink").textContent=
+"🎓 Open Certificate";
+
+$("certificateLink").href=
+"certificates.html";
+
+$("certificateLink")
+.classList.add("unlocked");
+
+}else{
+
+$("certificateStatus").textContent=
+`🔒 ${target.toLocaleString()} correct answers required`;
+
+$("certificateStatus").style.background=
+"#fef3c7";
+
+$("certificateStatus").style.color=
+"#92400e";
+
+$("certificateLink").textContent=
+"🔒 Certificate Locked";
+
+$("certificateLink").href=
+"javascript:void(0)";
+
+$("certificateLink")
+.classList.remove("unlocked");
+
+}
+
+}catch(error){
+
+console.error(
+"Certificate progress error:",
+error
+);
+
+}
+
+}
+
+
+/* =========================
+   GENERATE QUESTION
 ========================= */
 
 let currentQuestion=null;
@@ -1039,21 +1086,13 @@ let answered=false;
 
 async function generateQuestion(){
 
-const id=
-getStudentId();
+const id=getStudentId();
 
-if(!id){
-return;
-}
+if(!id)return;
 
-
-if($("generateBtn").disabled){
-return;
-}
-
+if($("generateBtn").disabled)return;
 
 hideError();
-
 
 const category=
 $("category").value;
@@ -1062,28 +1101,15 @@ const btn=
 $("generateBtn");
 
 btn.disabled=true;
+btn.textContent="⏳ Generating...";
 
-btn.textContent=
-"⏳ Generating...";
-
-
-$("questionCard").style.display=
-"block";
-
-$("loading").style.display=
-"block";
-
-$("questionArea").style.display=
-"none";
-
-$("nextBtn").style.display=
-"none";
-
-$("result").className=
-"result";
+$("questionCard").style.display="block";
+$("loading").style.display="block";
+$("questionArea").style.display="none";
+$("nextBtn").style.display="none";
+$("result").className="result";
 
 answered=false;
-
 
 try{
 
@@ -1091,7 +1117,6 @@ const data=
 await api(
 `${API}/api/mcq?student_id=${encodeURIComponent(id)}&category=${encodeURIComponent(category)}`
 );
-
 
 if(!data.success){
 
@@ -1102,28 +1127,14 @@ data.message||
 
 }
 
+currentQuestion=data.question;
 
-currentQuestion=
-data.question;
-
-
-/*
- If backend confirms student ID,
- keep it.
-*/
-
-if(data.student_id){
-
-studentId=
-String(data.student_id);
-
-}
-
+if(data.student_id)
+studentId=String(data.student_id);
 
 updateStats(data);
 
 displayQuestion();
-
 
 }catch(error){
 
@@ -1132,14 +1143,11 @@ console.error(
 error
 );
 
-
 const message=
 String(error.message||"");
 
-
 const lower=
 message.toLowerCase();
-
 
 if(
 lower.includes("daily limit")||
@@ -1150,28 +1158,20 @@ error.status===429
 
 showPremium();
 
-$("questionCard")
-.style.display=
-"none";
+$("questionCard").style.display="none";
 
 return;
 
 }
-
 
 showError(
 message||
 "Could not generate a new question."
 );
 
-
-$("questionCard")
-.style.display=
-"none";
-
+$("questionCard").style.display="none";
 
 btn.disabled=false;
-
 btn.textContent=
 "🤖 Generate Question";
 
@@ -1181,26 +1181,20 @@ btn.textContent=
 
 
 /* =========================
-   DISPLAY
+   DISPLAY QUESTION
 ========================= */
 
 function displayQuestion(){
 
-$("loading").style.display=
-"none";
-
-$("questionArea").style.display=
-"block";
+$("loading").style.display="none";
+$("questionArea").style.display="block";
 
 $("question").textContent=
 currentQuestion.question;
 
-
-const options=
-$("options");
+const options=$("options");
 
 options.innerHTML="";
-
 
 currentQuestion.options.forEach(
 (text,index)=>{
@@ -1230,33 +1224,21 @@ options.appendChild(button);
 
 async function submitAnswer(selected){
 
-if(
-answered||
-!currentQuestion
-){
+if(answered||!currentQuestion)
 return;
-}
 
+const id=getStudentId();
 
-const id=
-getStudentId();
-
-if(!id){
-return;
-}
-
+if(!id)return;
 
 answered=true;
-
 
 const buttons=
 document.querySelectorAll(".option");
 
 buttons.forEach(
-button=>
-button.disabled=true
+button=>button.disabled=true
 );
-
 
 try{
 
@@ -1265,7 +1247,6 @@ await api(
 `${API}/api/mcq`,
 {
 method:"POST",
-
 body:JSON.stringify({
 
 student_id:id,
@@ -1276,10 +1257,8 @@ currentQuestion.id,
 answer:selected
 
 })
-
 }
 );
-
 
 if(!data.success){
 
@@ -1290,54 +1269,32 @@ data.message||
 
 }
 
-
-const correct=
-data.correct;
-
+const correct=data.correct;
 
 buttons.forEach(
 (button,index)=>{
 
-if(
-index===
-data.correct_answer
-){
-
+if(index===data.correct_answer)
 button.classList.add("correct");
 
-}
-
 if(
-index===selected&&
+index===selected &&
 !correct
-){
-
+)
 button.classList.add("wrong");
 
 }
-
-}
 );
 
-
-const result=
-$("result");
-
+const result=$("result");
 
 result.className=
 "result show "+
-(
-correct?
-"correct":
-"wrong"
-);
-
+(correct?"correct":"wrong");
 
 result.innerHTML=
 `<strong>${
-correct?
-"✓ Correct!":
-"✗ Incorrect"
+correct?"✓ Correct!":"✗ Incorrect"
 }</strong>
 <br>
 ${escapeHTML(
@@ -1345,13 +1302,16 @@ data.explanation||
 "Review the correct answer."
 )}`;
 
-
-$("nextBtn").style.display=
-"block";
-
+$("nextBtn").style.display="block";
 
 updateStats(data);
 
+/*
+Refresh certificate progress
+after every correct answer.
+*/
+
+await loadCertificateProgress();
 
 }catch(error){
 
@@ -1363,8 +1323,7 @@ error
 answered=false;
 
 buttons.forEach(
-button=>
-button.disabled=false
+button=>button.disabled=false
 );
 
 showError(
@@ -1386,8 +1345,7 @@ function escapeHTML(text){
 const div=
 document.createElement("div");
 
-div.textContent=
-String(text);
+div.textContent=String(text);
 
 return div.innerHTML;
 
@@ -1400,17 +1358,10 @@ return div.innerHTML;
 
 async function startPremiumPayment(){
 
-/*
- Reload student immediately
- before payment.
-*/
-
 loadStudent();
-
 
 const button=
 $("premiumButton");
-
 
 if(!student){
 
@@ -1422,13 +1373,11 @@ return;
 
 }
 
-
 const id=
 student.id||
 student.student_id||
 student.user_id||
 studentId;
-
 
 if(!id){
 
@@ -1440,12 +1389,11 @@ return;
 
 }
 
-
 const name=
 student.name||
-`${student.first_name||""} ${student.last_name||""}`.trim()||
+`${student.first_name||""} ${student.last_name||""}`
+.trim()||
 "Student";
-
 
 if(!student.email){
 
@@ -1457,12 +1405,10 @@ return;
 
 }
 
-
 button.disabled=true;
 
 button.textContent=
 "Connecting to PayHere...";
-
 
 try{
 
@@ -1479,8 +1425,7 @@ headers:{
 
 body:JSON.stringify({
 
-student_id:
-String(id),
+student_id:String(id),
 
 first_name:
 student.first_name||
@@ -1488,26 +1433,20 @@ name.split(" ")[0]||
 "Student",
 
 last_name:
-student.last_name||
-"",
+student.last_name||"",
 
 email:
-student.email||
-"",
+student.email||"",
 
 phone:
-student.phone||
-""
+student.phone||""
 
 })
-
 }
 );
 
-
 const data=
 await response.json();
-
 
 if(
 !response.ok||
@@ -1521,7 +1460,6 @@ data.message||
 
 }
 
-
 if(!data.payment){
 
 throw new Error(
@@ -1529,7 +1467,6 @@ throw new Error(
 );
 
 }
-
 
 const form=
 document.createElement("form");
@@ -1540,7 +1477,6 @@ form.action=
 data.action||
 "https://www.payhere.lk/pay/checkout";
 
-
 Object.entries(data.payment)
 .forEach(
 ([key,value])=>{
@@ -1549,9 +1485,7 @@ const input=
 document.createElement("input");
 
 input.type="hidden";
-
 input.name=key;
-
 input.value=
 value==null?
 "":
@@ -1562,14 +1496,12 @@ form.appendChild(input);
 }
 );
 
-
 document.body.appendChild(form);
 
 button.textContent=
 "Redirecting to PayHere...";
 
 form.submit();
-
 
 }catch(error){
 
@@ -1603,13 +1535,11 @@ $("generateBtn")
 generateQuestion
 );
 
-
 $("nextBtn")
 .addEventListener(
 "click",
 generateQuestion
 );
-
 
 $("premiumButton")
 .addEventListener(
@@ -1622,7 +1552,8 @@ startPremiumPayment
    START
 ========================= */
 
-loadProgress();
+loadAIProgress();
+loadCertificateProgress();
 
 </script>
 
