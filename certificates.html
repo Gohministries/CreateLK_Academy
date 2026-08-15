@@ -54,6 +54,10 @@ font-size:13px;
 font-weight:700;
 }
 
+.back:hover{
+color:#155eef;
+}
+
 .container{
 max-width:800px;
 margin:25px auto;
@@ -103,6 +107,7 @@ border:1px solid #e5e7eb;
 border-radius:10px;
 text-align:center;
 font-size:13px;
+font-weight:600;
 }
 
 .loading{
@@ -164,6 +169,7 @@ overflow:hidden;
 height:100%;
 background:#155eef;
 border-radius:20px;
+transition:width .5s ease;
 }
 
 .progress-text{
@@ -194,6 +200,10 @@ text-align:center;
 .primary{
 background:#155eef;
 color:#fff;
+}
+
+.primary:hover{
+background:#1247b8;
 }
 
 .secondary{
@@ -249,6 +259,14 @@ padding:20px 15px;
 flex-direction:column;
 }
 
+h1{
+font-size:23px;
+}
+
+.certificate-name{
+font-size:20px;
+}
+
 }
 
 </style>
@@ -256,6 +274,7 @@ flex-direction:column;
 </head>
 
 <body>
+
 
 <header>
 
@@ -321,9 +340,7 @@ class="loading">
 </div>
 
 
-<div
-id="certificates">
-</div>
+<div id="certificates"></div>
 
 
 <div
@@ -349,7 +366,7 @@ All rights reserved.
 
 /* =====================================================
    CREATE LK ACADEMY
-   CERTIFICATE SYSTEM
+   CERTIFICATE PAGE
 ===================================================== */
 
 
@@ -362,111 +379,307 @@ const API_URL =
 
 
 /* =====================================================
-   SESSION KEYS
+   STORAGE
 ===================================================== */
 
 const STUDENT_KEY =
 "createlk_student";
-
-const LOGIN_KEY =
-"createlk_logged_in";
 
 
 /* =====================================================
    CERTIFICATE REQUIREMENT
 ===================================================== */
 
-const REQUIRED_CORRECT =
-1000;
+const REQUIRED_CORRECT = 1000;
 
 
 /* =====================================================
-   GET STUDENT
+   STUDENT
 ===================================================== */
 
 let student = null;
+let studentId = null;
 
-try{
 
-const saved =
+/*
+   Session storage first.
+   Local storage is the fallback.
+
+   This means the student can leave this page,
+   return again, and the ID can still be recovered.
+*/
+
+function loadStudent(){
+
+let saved =
 sessionStorage.getItem(
 STUDENT_KEY
 );
 
+
+/*
+   Fallback to localStorage
+*/
+
+if(!saved){
+
+saved =
+localStorage.getItem(
+STUDENT_KEY
+);
+
+}
+
+
+/*
+   Nothing found
+*/
+
+if(!saved){
+
+return false;
+
+}
+
+
+try{
+
+const data =
+JSON.parse(saved);
+
+if(
+!data ||
+typeof data !== "object"
+){
+
+return false;
+
+}
+
+
+student = data;
+
+
+studentId =
+data.id ||
+data.student_id ||
+data.user_id ||
+null;
+
+
+if(studentId){
+
+studentId =
+String(studentId);
+
+}
+
+
+/*
+   If the student was found only in localStorage,
+   restore it to sessionStorage so navigation
+   during the current session remains stable.
+*/
+
+if(student){
+
+try{
+
+sessionStorage.setItem(
+STUDENT_KEY,
+JSON.stringify(student)
+);
+
+}catch(error){
+
+console.warn(
+"Could not restore student session:",
+error
+);
+
+}
+
+}
+
+
+return !!student;
+
+}catch(error){
+
+console.error(
+"Student storage error:",
+error
+);
+
+return false;
+
+}
+
+}
+
+
+/* =====================================================
+   GET STUDENT ID
+===================================================== */
+
+function getStudentId(){
+
+if(studentId){
+
+return String(studentId);
+
+}
+
+
+/*
+   Reload from storage.
+*/
+
+loadStudent();
+
+
+if(studentId){
+
+return String(studentId);
+
+}
+
+
+/*
+   Final fallback:
+   search storage directly.
+*/
+
+const sessionData =
+sessionStorage.getItem(
+STUDENT_KEY
+);
+
+const localData =
+localStorage.getItem(
+STUDENT_KEY
+);
+
+
+const saved =
+sessionData ||
+localData;
+
+
 if(saved){
 
-student =
+try{
+
+const data =
 JSON.parse(saved);
+
+const id =
+data?.id ||
+data?.student_id ||
+data?.user_id ||
+null;
+
+if(id){
+
+student = data;
+
+studentId =
+String(id);
+
+return studentId;
 
 }
 
 }catch(error){
 
 console.error(
-"Student session error:",
+"Student ID recovery error:",
 error
 );
 
 }
 
-
-/* =====================================================
-   LOGIN CHECK
-===================================================== */
-
-if(
-!student ||
-sessionStorage.getItem(
-LOGIN_KEY
-) !== "true"
-){
-
-window.location.replace(
-"login.html"
-);
-
 }
 
 
-/* =====================================================
-   STUDENT ID
-===================================================== */
+return null;
 
-const studentId =
-student?.id ||
-student?.student_id;
+}
 
 
 /* =====================================================
    STUDENT NAME
 ===================================================== */
 
-const firstName =
-student?.first_name ||
-student?.firstName ||
-"Student";
+function getStudentName(){
 
-const lastName =
-student?.last_name ||
-student?.lastName ||
+if(!student){
+
+loadStudent();
+
+}
+
+
+if(!student){
+
+return "Student";
+
+}
+
+
+const first =
+student.first_name ||
+student.firstName ||
 "";
 
-const fullName =
-(
-firstName +
-" " +
-lastName
+
+const last =
+student.last_name ||
+student.lastName ||
+"";
+
+
+const combined =
+`${first} ${last}`.trim();
+
+
+if(combined){
+
+return combined;
+
+}
+
+
+if(student.name){
+
+return String(
+student.name
 ).trim();
+
+}
+
+
+return "Student";
+
+}
 
 
 /* =====================================================
    DISPLAY STUDENT
 ===================================================== */
 
+function displayStudent(){
+
+const name =
+getStudentName();
+
+
 document.getElementById(
 "studentBox"
 ).textContent =
-"👤 " + fullName;
+"👤 " + name;
+
+}
 
 
 /* =====================================================
@@ -493,12 +706,49 @@ box.className =
 
 
 /* =====================================================
+   HIDE MESSAGE
+===================================================== */
+
+function hideMessage(){
+
+const box =
+document.getElementById(
+"message"
+);
+
+box.style.display =
+"none";
+
+}
+
+
+/* =====================================================
    LOAD CERTIFICATE
 ===================================================== */
 
 async function loadCertificates(){
 
-if(!studentId){
+/*
+   Always attempt to recover the student
+   before making the API request.
+*/
+
+loadStudent();
+
+displayStudent();
+
+
+const id =
+getStudentId();
+
+
+/*
+   No ID.
+   Do NOT immediately say "login again".
+   Give a clear message instead.
+*/
+
+if(!id){
 
 document.getElementById(
 "loading"
@@ -506,7 +756,7 @@ document.getElementById(
 "none";
 
 showMessage(
-"Student ID is missing. Please login again.",
+"Your login session could not be found. Please return to the Dashboard and log in again.",
 "error"
 );
 
@@ -517,20 +767,19 @@ return;
 
 try{
 
-
-/* =====================================================
+/* =================================================
    API REQUEST
-===================================================== */
+================================================= */
+
+const url =
+API_URL +
+"/api/certificates?student_id=" +
+encodeURIComponent(id);
+
 
 const response =
 await fetch(
-
-API_URL +
-"/api/certificates?student_id=" +
-encodeURIComponent(
-studentId
-),
-
+url,
 {
 method:"GET",
 
@@ -538,26 +787,26 @@ headers:{
 "Accept":
 "application/json"
 }
-
 }
-
 );
 
 
-/* =====================================================
-   RESPONSE
-===================================================== */
+/* =================================================
+   READ RESPONSE
+================================================= */
 
 const raw =
 await response.text();
 
+
 console.log(
-"CERTIFICATE API:",
+"Certificate API response:",
 raw
 );
 
 
 let data;
+
 
 try{
 
@@ -573,26 +822,45 @@ throw new Error(
 }
 
 
-/* =====================================================
+/* =================================================
    API ERROR
-===================================================== */
+================================================= */
 
 if(
-!response.ok ||
-data.success !== true
+!response.ok
 ){
 
 throw new Error(
 data.message ||
+data.error ||
+`Certificate request failed (${response.status}).`
+);
+
+}
+
+
+/*
+   Some Workers return success:false
+   when the request is valid but there
+   is no certificate yet.
+*/
+
+if(
+data.success === false
+){
+
+throw new Error(
+data.message ||
+data.error ||
 "Unable to load certificate information."
 );
 
 }
 
 
-/* =====================================================
+/* =================================================
    HIDE LOADING
-===================================================== */
+================================================= */
 
 document.getElementById(
 "loading"
@@ -600,36 +868,44 @@ document.getElementById(
 "none";
 
 
-/* =====================================================
+/* =================================================
    CORRECT ANSWERS
-===================================================== */
+================================================= */
 
 const correctAnswers =
 Number(
-data.correct_answers ||
+data.correct_answers ??
+data.certificate_progress ??
+data.progress ??
 0
 );
 
 
+/* =================================================
+   REQUIRED ANSWERS
+================================================= */
+
 const required =
 Number(
-data.required_correct_answers ||
+data.required_correct_answers ??
+data.certificate_target ??
+data.target ??
 REQUIRED_CORRECT
 );
 
 
-/* =====================================================
+/* =================================================
    ELIGIBILITY
-===================================================== */
+================================================= */
 
 const eligible =
 data.eligible === true ||
 correctAnswers >= required;
 
 
-/* =====================================================
+/* =================================================
    NOT ELIGIBLE
-===================================================== */
+================================================= */
 
 if(!eligible){
 
@@ -643,9 +919,9 @@ return;
 }
 
 
-/* =====================================================
-   CERTIFICATE
-===================================================== */
+/* =================================================
+   CERTIFICATES
+================================================= */
 
 const certificates =
 Array.isArray(
@@ -657,13 +933,18 @@ data.certificates
 [];
 
 
+/*
+   If API says eligible but does not return
+   a certificate record, show an informative message.
+*/
+
 if(
 certificates.length === 0
 ){
 
 showMessage(
-"Certificate is eligible but has not been created yet.",
-"info"
+"🎓 You have completed the requirement. Your certificate is being prepared.",
+"success"
 );
 
 return;
@@ -671,9 +952,9 @@ return;
 }
 
 
-/* =====================================================
+/* =================================================
    DISPLAY
-===================================================== */
+================================================= */
 
 displayCertificates(
 certificates,
@@ -697,7 +978,7 @@ document.getElementById(
 
 showMessage(
 error.message ||
-"Unable to load certificates.",
+"Unable to load certificate information.",
 "error"
 );
 
@@ -716,12 +997,16 @@ required
 ){
 
 const percentage =
+required > 0
+?
 Math.min(
 100,
 Math.round(
 (correct / required) * 100
 )
-);
+)
+:
+0;
 
 
 const remaining =
@@ -729,6 +1014,10 @@ Math.max(
 0,
 required - correct
 );
+
+
+const name =
+getStudentName();
 
 
 document.getElementById(
@@ -746,7 +1035,7 @@ Certificate Locked
 </h2>
 
 <div class="certificate-name">
-${escapeHtml(fullName)}
+${escapeHtml(name)}
 </div>
 
 <p>
@@ -786,11 +1075,15 @@ correct answers
 
 </div>
 
-<p>
+
+<p style="margin-top:8px">
+
 Progress: ${percentage}%
+
 </p>
 
-<p>
+
+<p style="margin-top:5px">
 
 ${remaining.toLocaleString()}
 more correct answers needed.
@@ -820,8 +1113,13 @@ document.getElementById(
 "certificates"
 );
 
+
 container.innerHTML =
 "";
+
+
+const name =
+getStudentName();
 
 
 certificates.forEach(
@@ -831,6 +1129,7 @@ const box =
 document.createElement(
 "div"
 );
+
 
 box.className =
 "certificate";
@@ -853,6 +1152,14 @@ cert.created_at ||
 "";
 
 
+const completedAnswers =
+Number(
+cert.correct_answers ??
+correctAnswers ??
+0
+);
+
+
 box.innerHTML = `
 
 <div class="certificate-icon">
@@ -869,7 +1176,7 @@ ${escapeHtml(title)}
 
 ${escapeHtml(
 cert.student_name ||
-fullName
+name
 )}
 
 </div>
@@ -882,10 +1189,7 @@ Congratulations!
 You have successfully completed
 
 <strong>
-${Number(
-cert.correct_answers ||
-correctAnswers
-).toLocaleString()}
+${completedAnswers.toLocaleString()}
 correct English answers
 </strong>
 
@@ -918,6 +1222,7 @@ formatDate(issued)
 
 <button
 class="btn primary"
+type="button"
 onclick="printCertificate(this)">
 
 🖨️ Print Certificate
@@ -947,7 +1252,7 @@ value
 ){
 
 return String(
-value || ""
+value ?? ""
 )
 
 .replace(
@@ -988,19 +1293,40 @@ value
 
 if(!value){
 
-return "";
+return "—";
 
 }
 
+
 try{
 
-return new Date(
-value
-).toLocaleDateString();
+const date =
+new Date(value);
+
+
+if(
+Number.isNaN(
+date.getTime()
+)
+){
+
+return String(value);
+
+}
+
+
+return date.toLocaleDateString(
+undefined,
+{
+year:"numeric",
+month:"long",
+day:"numeric"
+}
+);
 
 }catch(error){
 
-return value;
+return String(value);
 
 }
 
@@ -1019,6 +1345,7 @@ const certificate =
 button.closest(
 ".certificate"
 );
+
 
 if(!certificate){
 
@@ -1046,6 +1373,10 @@ return;
 }
 
 
+const name =
+getStudentName();
+
+
 printWindow.document.write(`
 
 <!DOCTYPE html>
@@ -1054,11 +1385,17 @@ printWindow.document.write(`
 
 <head>
 
+<meta charset="UTF-8">
+
 <title>
 CreateLK Academy Certificate
 </title>
 
 <style>
+
+*{
+box-sizing:border-box;
+}
 
 body{
 
@@ -1139,12 +1476,33 @@ color:#667085;
 
 }
 
+@media print{
+
+body{
+
+padding:0;
+
+}
+
+.certificate{
+
+max-width:none;
+
+width:100%;
+
+min-height:90vh;
+
+}
+
+}
+
 </style>
 
 </head>
 
 
 <body>
+
 
 <div class="certificate">
 
@@ -1166,7 +1524,7 @@ Achievement Certificate
 
 <div class="name">
 
-${escapeHtml(fullName)}
+${escapeHtml(name)}
 
 </div>
 
@@ -1196,6 +1554,7 @@ Issued by CreateLK Academy
 
 </div>
 
+
 </body>
 
 </html>
@@ -1223,6 +1582,10 @@ printWindow.print();
 /* =====================================================
    START
 ===================================================== */
+
+loadStudent();
+
+displayStudent();
 
 loadCertificates();
 
