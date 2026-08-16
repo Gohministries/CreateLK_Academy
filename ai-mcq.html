@@ -809,9 +809,7 @@ sessionStorage.getItem(STUDENT_KEY) ||
 localStorage.getItem(STUDENT_KEY);
 
 if(!stored){
-
 return false;
-
 }
 
 try{
@@ -826,10 +824,8 @@ student?.user_id ||
 null;
 
 if(studentId){
-
 studentId =
 String(studentId);
-
 }
 
 return !!studentId;
@@ -937,69 +933,70 @@ $("error").classList.remove("show");
 }
 
 
-/* VOICE */
+/* EXACT VOICE */
 
-function speak(text){
+function speakExact(text){
 
 if(!text){
-
 return;
-
 }
 
 lastSpeech =
 String(text);
 
-
 if(!("speechSynthesis" in window)){
-
 return;
-
 }
 
 
-/*
- Stop previous voice.
-*/
+/* Stop previous speech */
 
 speechSynthesis.cancel();
 
 
-const u =
+/*
+Keep the text exactly as supplied.
+Only collapse accidental
+multiple spaces.
+*/
+
+const cleanText =
+String(text)
+.replace(/\s+/g," ")
+.trim();
+
+
+const utterance =
 new SpeechSynthesisUtterance(
-lastSpeech
+cleanText
 );
 
-
-u.lang =
+utterance.lang =
 "en-US";
 
-u.rate =
-.92;
+utterance.rate =
+0.88;
 
-u.pitch =
+utterance.pitch =
+1;
+
+utterance.volume =
 1;
 
 
 /*
- Speech finished.
+Wait briefly before speaking.
+This improves speech reliability
+on some Android browsers.
 */
 
-u.onend = () => {
+setTimeout(()=>{
 
-};
+speechSynthesis.speak(
+utterance
+);
 
-
-/*
- Speech stopped/error.
-*/
-
-u.onerror = () => {
-
-};
-
-
-speechSynthesis.speak(u);
+},100);
 
 }
 
@@ -1011,7 +1008,7 @@ function teacherSpeak(text){
 $("teacherMessage").textContent =
 text;
 
-speak(text);
+speakExact(text);
 
 }
 
@@ -1021,7 +1018,7 @@ speak(text);
 $("speakButton").onclick =
 ()=>{
 
-speak(
+speakExact(
 
 lastSpeech ||
 
@@ -1263,9 +1260,7 @@ currentQuestion =
 data.question;
 
 
-/*
- Update progress.
-*/
+/* Update progress */
 
 updateStats(data);
 
@@ -1366,6 +1361,11 @@ throw new Error(
 }
 
 
+/*
+Create answer buttons.
+The displayed text remains unchanged.
+*/
+
 currentQuestion.options.forEach(
 
 (text,index)=>{
@@ -1401,11 +1401,27 @@ $("options")
 
 
 /*
- Speak the question.
+READ EXACT QUESTION + OPTIONS
 */
 
-speak(
-currentQuestion.question
+let speechText =
+`Question. ${currentQuestion.question}. `;
+
+
+currentQuestion.options.forEach(
+
+(text,index)=>{
+
+speechText +=
+`Option ${String.fromCharCode(65+index)}. ${text}. `;
+
+}
+
+);
+
+
+speakExact(
+speechText
 );
 
 }
@@ -1523,6 +1539,10 @@ const correct =
 data.correct === true;
 
 
+/*
+ Display result.
+*/
+
 $("result").className =
 "result show " +
 (correct ? "correct" : "wrong");
@@ -1541,18 +1561,31 @@ data.explanation ||
 )}`;
 
 
-teacherSpeak(
+/*
+ Read exact answer feedback
+ and explanation.
+*/
+
+const explanation =
+data.explanation ||
+"Review the correct answer.";
+
+
+const speechResult =
 
 correct
 
 ?
 
-"Excellent! Your answer is correct."
+`Correct! ${explanation}`
 
 :
 
-"Good try. Review the correct answer."
+`Incorrect. ${explanation}`;
 
+
+teacherSpeak(
+speechResult
 );
 
 
@@ -1561,8 +1594,8 @@ $("nextBtn").style.display =
 
 
 /*
- Update progress if the
- POST response contains it.
+ Update progress if POST
+ response contains it.
 */
 
 if(
