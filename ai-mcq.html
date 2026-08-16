@@ -17,8 +17,10 @@
 
 html,body{
 width:100%;
-height:100%;
-overflow:hidden;
+min-height:100%;
+overflow-x:hidden;
+overflow-y:auto;
+-webkit-overflow-scrolling:touch;
 }
 
 body{
@@ -30,13 +32,13 @@ color:var(--text);
 .app{
 width:100%;
 max-width:430px;
-height:100svh;
+min-height:100svh;
 margin:auto;
 padding:7px 10px;
 display:flex;
 flex-direction:column;
 gap:7px;
-overflow:hidden;
+overflow:visible;
 }
 
 /* HEADER */
@@ -114,7 +116,7 @@ color:var(--p);
 margin-top:5px;
 }
 
-/* AI SECTION */
+/* AI */
 
 .ai{
 flex:none;
@@ -195,6 +197,11 @@ font-weight:bold;
 cursor:pointer;
 }
 
+button:disabled{
+opacity:.65;
+cursor:not-allowed;
+}
+
 .generate{
 width:100%;
 height:36px;
@@ -210,7 +217,7 @@ font-size:12px;
 .question-card{
 flex:1;
 min-height:0;
-overflow:hidden;
+overflow:visible;
 padding:10px;
 display:flex;
 flex-direction:column;
@@ -303,6 +310,7 @@ padding:7px;
 border-radius:8px;
 background:#fef3f2;
 color:#b42318;
+margin-top:6px;
 }
 
 .error.show{
@@ -335,7 +343,7 @@ background:#fff;
 font-size:10px;
 }
 
-/* SMALL HEIGHT PHONES */
+/* MOBILE */
 
 @media(max-height:700px){
 
@@ -376,7 +384,6 @@ height:33px;
 }
 
 }
-
 </style>
 </head>
 
@@ -416,8 +423,7 @@ height:33px;
 
 </div>
 
-
-<!-- AI TEACHER + 1:1 VIDEO -->
+<!-- AI TEACHER -->
 
 <div class="card ai">
 
@@ -453,7 +459,6 @@ type="button">
 
 </div>
 
-
 <!-- SETTINGS -->
 
 <div class="card settings">
@@ -478,7 +483,8 @@ type="button">
 
 <button
 class="generate"
-id="generateBtn">
+id="generateBtn"
+type="button">
 🤖 Generate Question
 </button>
 
@@ -490,7 +496,9 @@ id="generateBtn">
 100 AI questions/day • Certificate • 30 Days
 </div>
 
-<button id="premiumButton">
+<button
+id="premiumButton"
+type="button">
 ⭐ Get Premium — LKR 1,500
 </button>
 
@@ -499,7 +507,6 @@ id="generateBtn">
 <div class="error" id="error"></div>
 
 </div>
-
 
 <!-- QUESTION -->
 
@@ -519,7 +526,8 @@ Generate a question to begin.
 
 <button
 class="next"
-id="nextBtn">
+id="nextBtn"
+type="button">
 Next Question
 </button>
 
@@ -528,7 +536,6 @@ Next Question
 </div>
 
 </div>
-
 
 <script>
 
@@ -573,8 +580,9 @@ studentId=String(studentId);
 
 return !!studentId;
 
-}catch{
+}catch(e){
 
+console.error(e);
 return false;
 
 }
@@ -592,6 +600,7 @@ async function api(url,options={}){
 
 const res=await fetch(url,{
 ...options,
+cache:"no-store",
 headers:{
 "Accept":"application/json",
 "Content-Type":"application/json",
@@ -646,7 +655,13 @@ $("error").classList.remove("show");
 
 const video=$("teacherVideo");
 
+function playVideo(){
+
 video.play().catch(()=>{});
+
+}
+
+playVideo();
 
 document.addEventListener("visibilitychange",()=>{
 
@@ -656,7 +671,7 @@ video.pause();
 
 }else{
 
-video.play().catch(()=>{});
+playVideo();
 
 }
 
@@ -691,6 +706,7 @@ speechSynthesis.speak(u);
 function teacherSpeak(text){
 
 $("teacherMessage").textContent=text;
+
 speak(text);
 
 }
@@ -760,9 +776,11 @@ $("generateBtn").textContent=
 }
 
 
-/* PROGRESS */
+/* LOAD PROGRESS */
 
 async function loadProgress(){
+
+if(!studentId)return;
 
 try{
 
@@ -775,7 +793,7 @@ updateStats(data);
 
 }catch(e){
 
-console.error(e);
+console.error("Progress error:",e);
 
 }
 
@@ -786,10 +804,9 @@ console.error(e);
 
 async function generateQuestion(){
 
-if(
-!studentId||
-$("generateBtn").disabled
-)return;
+if(!studentId||
+$("generateBtn").disabled)
+return;
 
 hideError();
 
@@ -797,8 +814,6 @@ const btn=$("generateBtn");
 
 btn.disabled=true;
 btn.textContent="⏳ Generating...";
-
-$("questionCard").style.display="flex";
 
 $("loading").style.display="block";
 
@@ -830,6 +845,14 @@ data.message||
 
 }
 
+if(!data.question){
+
+throw new Error(
+"Question was not returned by the server."
+);
+
+}
+
 currentQuestion=data.question;
 
 updateStats(data);
@@ -842,7 +865,7 @@ teacherSpeak(
 
 }catch(e){
 
-console.error(e);
+console.error("Generate error:",e);
 
 if(
 e.status===429||
@@ -881,13 +904,25 @@ $("options").innerHTML="";
 
 $("result").className="result";
 
+$("result").innerHTML="";
+
 $("nextBtn").style.display="none";
+
+if(
+!Array.isArray(currentQuestion.options)
+){
+
+throw new Error("Invalid question options.");
+
+}
 
 currentQuestion.options.forEach(
 (text,index)=>{
 
 const b=
 document.createElement("button");
+
+b.type="button";
 
 b.className="option";
 
@@ -912,6 +947,8 @@ async function submitAnswer(selected){
 if(answered||!currentQuestion)return;
 
 answered=true;
+
+hideError();
 
 const buttons=
 document.querySelectorAll(".option");
@@ -957,14 +994,20 @@ buttons.forEach(
 
 if(
 index===Number(data.correct_answer)
-)
+){
+
 button.classList.add("correct");
+
+}
 
 if(
 index===selected&&
 data.correct!==true
-)
+){
+
 button.classList.add("wrong");
+
+}
 
 });
 
@@ -994,6 +1037,8 @@ await loadProgress();
 
 }catch(e){
 
+console.error("Answer error:",e);
+
 answered=false;
 
 buttons.forEach(
@@ -1014,7 +1059,8 @@ e.message||
 
 function escapeHTML(text){
 
-const d=document.createElement("div");
+const d=
+document.createElement("div");
 
 d.textContent=String(text);
 
@@ -1029,7 +1075,7 @@ async function startPremiumPayment(){
 
 loadStudent();
 
-if(!student?.email){
+if(!studentId||!student?.email){
 
 showError("Please log in again.");
 
@@ -1054,6 +1100,7 @@ const res=await fetch(
 CHECKOUT_API,
 {
 method:"POST",
+cache:"no-store",
 headers:{
 "Content-Type":"application/json"
 },
@@ -1081,11 +1128,14 @@ student.phone||""
 
 const data=await res.json();
 
-if(!res.ok||data.success!==true)
+if(!res.ok||data.success!==true){
+
 throw new Error(
 data.message||
 "Unable to create payment."
 );
+
+}
 
 const form=
 document.createElement("form");
@@ -1116,6 +1166,8 @@ form.submit();
 
 }catch(e){
 
+console.error("Payment error:",e);
+
 showError(
 "Unable to start payment. "+e.message
 );
@@ -1132,14 +1184,20 @@ button.textContent=
 
 /* EVENTS */
 
-$("generateBtn").onclick=
-generateQuestion;
+$("generateBtn").addEventListener(
+"click",
+generateQuestion
+);
 
-$("nextBtn").onclick=
-generateQuestion;
+$("nextBtn").addEventListener(
+"click",
+generateQuestion
+);
 
-$("premiumButton").onclick=
-startPremiumPayment;
+$("premiumButton").addEventListener(
+"click",
+startPremiumPayment
+);
 
 
 /* START */
