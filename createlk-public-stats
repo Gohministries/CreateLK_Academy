@@ -1,0 +1,127 @@
+export default {
+  async fetch(request, env) {
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Cache-Control": "no-store"
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers });
+    }
+
+    if (request.method !== "GET") {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Method not allowed"
+        }),
+        {
+          status: 405,
+          headers
+        }
+      );
+    }
+
+    try {
+
+      /* ==============================
+         TOTAL REGISTERED STUDENTS
+      ============================== */
+
+      const studentsResult = await env.DB
+        .prepare(`
+          SELECT COUNT(*) AS total
+          FROM students
+        `)
+        .first();
+
+      const totalStudents =
+        Number(studentsResult?.total || 0);
+
+
+      /* ==============================
+         ACTIVE PREMIUM STUDENTS
+
+         memberships:
+         student_id
+         status
+         expires_at
+      ============================== */
+
+      const premiumResult = await env.DB
+        .prepare(`
+          SELECT COUNT(DISTINCT student_id) AS total
+          FROM memberships
+          WHERE status = 'ACTIVE'
+          AND expires_at IS NOT NULL
+          AND expires_at > datetime('now')
+        `)
+        .first();
+
+      const premiumStudents =
+        Number(premiumResult?.total || 0);
+
+
+      /* ==============================
+         FREE STUDENTS
+      ============================== */
+
+      const freeStudents =
+        Math.max(
+          0,
+          totalStudents - premiumStudents
+        );
+
+
+      /* ==============================
+         CERTIFICATES ISSUED
+      ============================== */
+
+      const certificateResult = await env.DB
+        .prepare(`
+          SELECT COUNT(*) AS total
+          FROM certificates
+        `)
+        .first();
+
+      const certificatesIssued =
+        Number(certificateResult?.total || 0);
+
+
+      /* ==============================
+         RESPONSE
+      ============================== */
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          freeStudents,
+          premiumStudents,
+          certificatesIssued,
+          totalStudents
+        }),
+        {
+          status: 200,
+          headers
+        }
+      );
+
+    } catch (error) {
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: error.message
+        }),
+        {
+          status: 500,
+          headers
+        }
+      );
+
+    }
+  }
+};
