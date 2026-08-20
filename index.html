@@ -3,14 +3,23 @@
 <head>
 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<meta name="viewport"
+      content="width=device-width,initial-scale=1">
 
 <title>CreateLK Academy | AI English Learning</title>
 
 <meta name="description"
 content="CreateLK Academy helps students improve English with AI-powered practice, learning resources and digital certificates.">
 
-<meta name="theme-color" content="#155eef">
+<meta name="theme-color"
+content="#155eef">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+
+<link rel="apple-touch-icon"
+      href="https://assets.createlk.com/file_0000000018e08208b00cf7445bca7027.png">
 
 <style>
 
@@ -559,6 +568,31 @@ place-items:center;
 font-size:27px;
 box-shadow:0 5px 18px rgba(0,0,0,.22);
 z-index:99
+}
+
+
+/* INSTALL BUTTON */
+
+.install-btn{
+display:none;
+position:fixed;
+left:14px;
+right:14px;
+bottom:14px;
+z-index:2000;
+height:50px;
+border:0;
+border-radius:12px;
+background:#155eef;
+color:#fff;
+font-size:14px;
+font-weight:800;
+box-shadow:0 8px 25px rgba(0,0,0,.22);
+cursor:pointer
+}
+
+.install-btn.show{
+display:block
 }
 
 
@@ -1320,7 +1354,112 @@ aria-label="Contact CreateLK Academy"
 </a>
 
 
+<!-- PWA INSTALL BUTTON -->
+
+<button
+id="installButton"
+class="install-btn"
+type="button"
+>
+📲 Install CreateLK Academy
+</button>
+
+
 <script>
+
+/* =========================================
+   PWA SERVICE WORKER
+========================================= */
+
+if("serviceWorker" in navigator){
+
+window.addEventListener("load",function(){
+
+navigator.serviceWorker
+.register("sw.js")
+.then(function(registration){
+
+console.log(
+"CreateLK Academy service worker registered:",
+registration.scope
+);
+
+})
+.catch(function(error){
+
+console.error(
+"Service worker registration failed:",
+error
+);
+
+});
+
+});
+
+}
+
+
+/* =========================================
+   PWA INSTALL
+========================================= */
+
+let deferredPrompt=null;
+
+const installButton=
+document.getElementById("installButton");
+
+
+window.addEventListener(
+"beforeinstallprompt",
+function(event){
+
+event.preventDefault();
+
+deferredPrompt=event;
+
+installButton.classList.add("show");
+
+}
+);
+
+
+installButton.addEventListener(
+"click",
+async function(){
+
+if(!deferredPrompt)return;
+
+deferredPrompt.prompt();
+
+const result=
+await deferredPrompt.userChoice;
+
+console.log(
+"Install result:",
+result.outcome
+);
+
+deferredPrompt=null;
+
+installButton.classList.remove("show");
+
+}
+);
+
+
+window.addEventListener(
+"appinstalled",
+function(){
+
+console.log(
+"CreateLK Academy installed."
+);
+
+installButton.classList.remove("show");
+
+}
+);
+
 
 /* =========================================
    REFERRAL SYSTEM
@@ -1342,27 +1481,27 @@ params.get("ref");
 
 if(referral){
 
-  const code =
-    referral
-      .trim()
-      .toUpperCase();
+const code=
+referral
+.trim()
+.toUpperCase();
 
 
-  if(
-    /^CLK[0-9]{5}$/.test(code)
-  ){
+if(
+/^CLK[0-9]{5}$/.test(code)
+){
 
-    localStorage.setItem(
-      REFERRAL_KEY,
-      code
-    );
+localStorage.setItem(
+REFERRAL_KEY,
+code
+);
 
 
-    location.href =
-      "register.html?ref=" +
-      encodeURIComponent(code);
+location.href=
+"register.html?ref="+
+encodeURIComponent(code);
 
-  }
+}
 
 }
 
