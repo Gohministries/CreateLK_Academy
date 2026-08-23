@@ -7,6 +7,7 @@
 <title>CreateLK Academy | Dashboard</title>
 
 <style>
+
 *{
 box-sizing:border-box;
 margin:0;
@@ -97,6 +98,8 @@ color:#fff;
 text-decoration:none;
 font-size:13px;
 font-weight:900;
+border:0;
+cursor:pointer;
 }
 
 .account-title{
@@ -135,6 +138,65 @@ color:#027a48;
 color:#b42318;
 }
 
+
+/* CERTIFICATE */
+
+.progress-info{
+display:flex;
+justify-content:space-between;
+align-items:center;
+font-size:12px;
+margin-bottom:8px;
+}
+
+.progress-info span{
+color:#667085;
+}
+
+.progress-track{
+height:9px;
+background:#eaecf0;
+border-radius:20px;
+overflow:hidden;
+}
+
+.progress-fill{
+height:100%;
+width:0%;
+background:#155eef;
+border-radius:20px;
+transition:width .3s ease;
+}
+
+.certificate-message{
+font-size:11px;
+color:#667085;
+margin-top:10px;
+line-height:1.5;
+}
+
+.certificate-button{
+width:100%;
+height:42px;
+margin-top:12px;
+border:0;
+border-radius:9px;
+background:#eaecf0;
+color:#667085;
+font-size:12px;
+font-weight:900;
+cursor:not-allowed;
+}
+
+.certificate-button.unlocked{
+background:#155eef;
+color:#fff;
+cursor:pointer;
+}
+
+
+/* ERROR */
+
 .error{
 display:none;
 margin-top:12px;
@@ -149,18 +211,24 @@ font-size:11px;
 display:block;
 }
 
+
+/* FOOTER */
+
 footer{
 text-align:center;
 font-size:10px;
 color:#98a2b3;
 padding:20px 0;
 }
+
 </style>
 </head>
+
 
 <body>
 
 <div class="app">
+
 
 <header>
 
@@ -172,7 +240,9 @@ padding:20px 0;
 id="logout"
 class="logout"
 type="button">
+
 Logout
+
 </button>
 
 </header>
@@ -194,7 +264,7 @@ with CreateLK Academy.
 </section>
 
 
-<!-- ONLY ONE COURSE NAVIGATION -->
+<!-- COURSE -->
 
 <section class="card course">
 
@@ -214,7 +284,9 @@ from Day 1 to Day 365.
 <a
 href="365.html"
 class="btn">
+
 Open Course →
+
 </a>
 
 </section>
@@ -228,6 +300,7 @@ Open Course →
 👤 My Account
 </h2>
 
+
 <div class="account-row">
 
 <span class="account-label">
@@ -237,7 +310,9 @@ Student ID
 <span
 class="account-value"
 id="studentId">
+
 -
+
 </span>
 
 </div>
@@ -252,7 +327,9 @@ Email
 <span
 class="account-value"
 id="email">
+
 -
+
 </span>
 
 </div>
@@ -267,7 +344,9 @@ Membership
 <span
 class="account-value"
 id="membership">
+
 Checking...
+
 </span>
 
 </div>
@@ -282,7 +361,9 @@ Expiry
 <span
 class="account-value"
 id="expiry">
+
 -
+
 </span>
 
 </div>
@@ -296,9 +377,72 @@ id="error">
 </section>
 
 
+<!-- CERTIFICATE PROGRESS -->
+
+<section class="card">
+
+<h2 class="account-title">
+🎓 Certificate Progress
+</h2>
+
+
+<div class="progress-info">
+
+<div>
+
+<b id="completedDays">
+0
+</b>
+
+<span>
+ / 365 days completed
+</span>
+
+</div>
+
+
+<b id="progressPercent">
+0%
+</b>
+
+</div>
+
+
+<div class="progress-track">
+
+<div
+class="progress-fill"
+id="progressFill">
+</div>
+
+</div>
+
+
+<p
+class="certificate-message"
+id="certificateMessage">
+
+Complete all 365 days to unlock your certificate.
+
+</p>
+
+
+<button
+id="certificateButton"
+class="certificate-button"
+disabled>
+
+🔒 Certificate Locked
+
+</button>
+
+</section>
+
+
 <footer>
 © 2026 CreateLK Academy
 </footer>
+
 
 </div>
 
@@ -325,7 +469,7 @@ id => document.getElementById(id);
 
 
 /* =========================
-   GET LOGGED-IN STUDENT
+   LOGIN SESSION
 ========================= */
 
 let student = null;
@@ -371,7 +515,7 @@ location.replace("login.html");
 
 
 /* =========================
-   BASIC INFORMATION
+   BASIC INFO
 ========================= */
 
 $("studentId").textContent =
@@ -406,7 +550,7 @@ $("error").classList.add("show");
 
 
 /* =========================
-   CHECK MEMBERSHIP
+   MEMBERSHIP
 ========================= */
 
 async function checkMembership(){
@@ -417,44 +561,28 @@ const response =
 await fetch(
 API +
 "/api/course-access?student_id=" +
-encodeURIComponent(studentId),
+encodeURIComponent(studentId) +
+"&t=" +
+Date.now(),
 {
 method:"GET",
 cache:"no-store",
 headers:{
-"Accept":"application/json"
+"Accept":"application/json",
+"Cache-Control":"no-cache"
 }
 }
 );
 
 
-let data;
-
-try{
-
-data =
+const data =
 await response.json();
 
-}catch(error){
 
-throw new Error(
-"Invalid response from Course API."
-);
-
-}
-
-
-if(!response.ok){
-
-throw new Error(
-data.message ||
-"Unable to check membership."
-);
-
-}
-
-
-if(data.success !== true){
+if(
+!response.ok ||
+data.success !== true
+){
 
 throw new Error(
 data.message ||
@@ -465,40 +593,42 @@ data.message ||
 
 
 /* =========================
-   MEMBERSHIP STATUS
+   STATUS
 ========================= */
 
-const status =
+const rawStatus =
 String(
 data.membership_status || ""
-).toUpperCase();
+).trim().toUpperCase();
+
+
+let displayStatus =
+"INACTIVE";
 
 
 if(
-status === "ACTIVE" ||
-status === "PREMIUM"
+rawStatus === "ACTIVE" ||
+rawStatus === "PREMIUM"
 ){
 
-$("membership").textContent =
-status;
-
-$("membership").className =
-"account-value active";
-
-}else{
-
-/*
-NONE, empty, expired, etc.
-are displayed as INACTIVE.
-*/
-
-$("membership").textContent =
-"INACTIVE";
-
-$("membership").className =
-"account-value inactive";
+displayStatus =
+rawStatus;
 
 }
+
+
+$("membership").textContent =
+displayStatus;
+
+
+$("membership").className =
+"account-value " +
+(
+displayStatus === "ACTIVE" ||
+displayStatus === "PREMIUM"
+? "active"
+: "inactive"
+);
 
 
 /* =========================
@@ -533,6 +663,7 @@ $("expiry").textContent =
 
 }
 
+
 }catch(error){
 
 $("membership").textContent =
@@ -548,6 +679,172 @@ showError(
 error.message ||
 "Unable to connect to Course API."
 );
+
+}
+
+}
+
+
+/* =========================
+   CERTIFICATE PROGRESS
+========================= */
+
+function updateCertificateProgress(
+completedDays
+){
+
+completedDays =
+Math.max(
+0,
+Math.min(
+365,
+Number(completedDays) || 0
+)
+);
+
+
+const percent =
+Math.round(
+completedDays / 365 * 100
+);
+
+
+$("completedDays").textContent =
+completedDays;
+
+
+$("progressPercent").textContent =
+percent + "%";
+
+
+$("progressFill").style.width =
+percent + "%";
+
+
+if(
+completedDays >= 365
+){
+
+$("certificateMessage").textContent =
+"🎉 You completed all 365 days! Your certificate is unlocked.";
+
+
+$("certificateButton").disabled =
+false;
+
+
+$("certificateButton").classList.add(
+"unlocked"
+);
+
+
+$("certificateButton").textContent =
+"🎓 Get Certificate";
+
+
+$("certificateButton").onclick =
+function(){
+
+location.href =
+"certificate.html";
+
+};
+
+}else{
+
+const remaining =
+365 - completedDays;
+
+
+$("certificateMessage").textContent =
+`Complete ${remaining} more day${
+remaining === 1 ? "" : "s"
+} to unlock your certificate.`;
+
+
+$("certificateButton").disabled =
+true;
+
+
+$("certificateButton").classList.remove(
+"unlocked"
+);
+
+
+$("certificateButton").textContent =
+"🔒 Certificate Locked";
+
+}
+
+}
+
+
+/* =========================
+   LOAD COURSE PROGRESS
+========================= */
+
+async function loadProgress(){
+
+try{
+
+const response =
+await fetch(
+API +
+"/api/course-progress?student_id=" +
+encodeURIComponent(studentId) +
+"&t=" +
+Date.now(),
+{
+method:"GET",
+cache:"no-store",
+headers:{
+"Accept":"application/json",
+"Cache-Control":"no-cache"
+}
+}
+);
+
+
+if(!response.ok){
+
+/*
+Endpoint not created yet.
+Keep certificate locked.
+*/
+
+updateCertificateProgress(0);
+
+return;
+
+}
+
+
+const data =
+await response.json();
+
+
+if(
+data.success === true
+){
+
+updateCertificateProgress(
+data.completed_days
+);
+
+}else{
+
+updateCertificateProgress(0);
+
+}
+
+}catch(error){
+
+/*
+Do not unlock the certificate
+if progress cannot be verified.
+*/
+
+updateCertificateProgress(0);
 
 }
 
@@ -581,6 +878,8 @@ location.replace(
 ========================= */
 
 checkMembership();
+
+loadProgress();
 
 </script>
 
