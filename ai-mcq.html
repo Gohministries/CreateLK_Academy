@@ -9,7 +9,7 @@
 *{
 box-sizing:border-box;
 margin:0;
-padding:0
+padding:0;
 }
 
 body{
@@ -171,9 +171,36 @@ background:#12b76a;
 background:#039855;
 }
 
-.locked{
-background:#f9fafb;
-color:#667085;
+.pay-btn:disabled{
+opacity:.65;
+cursor:not-allowed;
+}
+
+.message{
+display:none;
+margin-top:12px;
+padding:10px;
+border-radius:9px;
+font-size:11px;
+}
+
+.message.show{
+display:block;
+}
+
+.error{
+background:#fef3f2;
+color:#b42318;
+}
+
+.success{
+background:#ecfdf3;
+color:#027a48;
+}
+
+.warning{
+background:#fffaeb;
+color:#b54708;
 }
 
 .course-icon{
@@ -286,33 +313,6 @@ border-color:#f04438;
 background:#fef3f2;
 }
 
-.message{
-display:none;
-margin-top:12px;
-padding:10px;
-border-radius:9px;
-font-size:11px;
-}
-
-.message.show{
-display:block;
-}
-
-.error{
-background:#fef3f2;
-color:#b42318;
-}
-
-.success{
-background:#ecfdf3;
-color:#027a48;
-}
-
-.warning{
-background:#fffaeb;
-color:#b54708;
-}
-
 footer{
 text-align:center;
 font-size:10px;
@@ -369,9 +369,7 @@ Continue your English learning journey with CreateLK Academy.
 </section>
 
 
-<!-- CERTIFICATE PROGRESS
-     MOVED TO TOP
--->
+<!-- CERTIFICATE PROGRESS -->
 
 <section class="card">
 
@@ -505,7 +503,7 @@ class="message">
 </section>
 
 
-<!-- PREMIUM PAYMENT -->
+<!-- PREMIUM -->
 
 <section class="card">
 
@@ -514,16 +512,16 @@ class="message">
 </h2>
 
 <p class="small">
-Unlock Days 8–365 and continue your complete English learning journey.
+Days 1–7 are free. Premium unlocks Days 8–365.
 </p>
 
 <div class="certificate">
 
-🔓 Days 1–7 — Free
+🔓 Days 1–7 — FREE
 
 <br>
 
-⭐ Days 8–365 — Premium
+⭐ Days 8–365 — PREMIUM
 
 </div>
 
@@ -661,22 +659,19 @@ const PROGRESS_API =
 
 
 /*
- IMPORTANT:
+   PAYHERE CHECKOUT WORKER
 
- Replace this with your actual
- PayHere checkout URL/Worker endpoint.
+   This is your checkout Worker.
 
- Example:
+   The premium-notify Worker is NOT
+   called by the browser.
 
- const PAYMENT_API =
- "https://your-payhere-worker.workers.dev";
-
- Do NOT put your PayHere secret
- key in this HTML.
+   PayHere calls your notify Worker
+   after payment.
 */
 
 const PAYMENT_API =
-"YOUR_PAYHERE_CHECKOUT_URL";
+"https://createlk-payhere-checkout.createlk.workers.dev";
 
 
 /* =====================================
@@ -736,7 +731,7 @@ location.replace("login.html");
 
 
 /* =====================================
-   STUDENT DISPLAY
+   STUDENT
 ===================================== */
 
 $("studentId").textContent =
@@ -759,14 +754,14 @@ firstName +
 
 
 /* =====================================
-   PREMIUM
+   MEMBERSHIP STATE
 ===================================== */
 
 let premiumActive = false;
 
 
 /* =====================================
-   MEMBERSHIP API
+   MEMBERSHIP
 ===================================== */
 
 async function loadMembership(){
@@ -824,6 +819,10 @@ data.membership_status || ""
 .trim()
 .toUpperCase();
 
+
+/*
+   NONE -> INACTIVE
+*/
 
 if(
 !status ||
@@ -891,7 +890,7 @@ $("expiry").textContent =
 
 
 /*
- Hide payment button if already Premium.
+   PAYMENT BUTTON
 */
 
 if(premiumActive){
@@ -901,9 +900,6 @@ $("payButton").textContent =
 
 $("payButton").disabled =
 true;
-
-$("payButton").style.opacity =
-"0.7";
 
 }else{
 
@@ -927,6 +923,7 @@ $("membership").className =
 $("expiry").textContent =
 "-";
 
+
 showMessage(
 "membershipMessage",
 error.message ||
@@ -940,7 +937,7 @@ error.message ||
 
 
 /* =====================================
-   PAYMENT BUTTON
+   PAYHERE
 ===================================== */
 
 $("payButton").onclick =
@@ -953,34 +950,20 @@ return;
 }
 
 
-if(
-PAYMENT_API ===
-"YOUR_PAYHERE_CHECKOUT_URL"
-){
-
-showMessage(
-"paymentMessage",
-"Add your PayHere checkout Worker URL to PAYMENT_API first.",
-"warning"
-);
-
-return;
-
-}
-
-
 try{
 
 $("payButton").disabled =
 true;
 
 $("payButton").textContent =
-"Opening payment...";
+"Creating payment...";
 
 
 const response =
 await fetch(
+
 PAYMENT_API,
+
 {
 method:"POST",
 
@@ -1006,48 +989,76 @@ firstName
 
 })
 }
+
 );
 
 
-const data =
-await response.json();
+const text =
+await response.text();
+
+
+let data;
+
+try{
+
+data =
+JSON.parse(text);
+
+}catch{
+
+throw new Error(
+"Payment Worker returned invalid JSON."
+);
+
+}
 
 
 if(!response.ok){
 
 throw new Error(
 data.message ||
-"Unable to create payment."
+"Payment Worker HTTP " +
+response.status
 );
 
 }
 
 
 /*
- Your Worker should return:
+   Accept common response names.
 
- {
-   success:true,
-   checkout_url:"https://..."
- }
+   Your Worker can return:
+
+   checkout_url
+   payment_url
+   url
+   redirect_url
 */
 
+const checkoutUrl =
+data.checkout_url ||
+data.payment_url ||
+data.redirect_url ||
+data.url;
+
+
 if(
-data.success &&
-data.checkout_url
+data.success === true &&
+checkoutUrl
 ){
 
-location.href =
-data.checkout_url;
+window.location.href =
+checkoutUrl;
 
-}else{
+return;
+
+}
+
 
 throw new Error(
 data.message ||
-"Payment URL was not returned."
+"Payment Worker did not return a checkout URL."
 );
-
-}
 
 
 }catch(error){
@@ -1058,10 +1069,11 @@ false;
 $("payButton").textContent =
 "⭐ Upgrade to Premium";
 
+
 showMessage(
 "paymentMessage",
 error.message ||
-"Payment failed.",
+"Unable to start payment.",
 "error"
 );
 
@@ -1071,7 +1083,7 @@ error.message ||
 
 
 /* =====================================
-   BUILD 365 DAYS
+   BUILD DAYS
 ===================================== */
 
 function buildDays(){
@@ -1141,7 +1153,7 @@ button
 
 
 /* =====================================
-   OPEN LESSON
+   LESSON
 ===================================== */
 
 async function openLesson(day){
@@ -1268,9 +1280,9 @@ item => {
 const li =
 document.createElement("li");
 
+
 if(
-typeof item ===
-"string"
+typeof item === "string"
 ){
 
 li.textContent =
@@ -1278,19 +1290,20 @@ item;
 
 }else{
 
-li.innerHTML =
-"<strong>" +
-escapeHtml(
-item.word || ""
+li.textContent =
+(
+item.word ||
+""
 ) +
-"</strong> — " +
-escapeHtml(
+" — " +
+(
 item.meaning ||
 item.definition ||
 ""
 );
 
 }
+
 
 $("vocabulary")
 .appendChild(li);
@@ -1441,8 +1454,6 @@ $("questions")
 }
 
 
-/* COMPLETE */
-
 $("completeButton").onclick =
 function(){
 
@@ -1454,8 +1465,13 @@ lesson.day
 
 
 window.scrollTo({
-top:$("lessonBox").offsetTop - 20,
-behavior:"smooth"
+
+top:
+$("lessonBox").offsetTop - 20,
+
+behavior:
+"smooth"
+
 });
 
 
@@ -1467,6 +1483,7 @@ $("lessonTitle").textContent =
 $("lessonText").textContent =
 error.message ||
 "Unable to load lesson.";
+
 
 showMessage(
 "lessonMessage",
@@ -1500,6 +1517,7 @@ method:"POST",
 headers:{
 "Content-Type":
 "application/json",
+
 "Accept":
 "application/json"
 },
@@ -1569,7 +1587,7 @@ error.message ||
 
 
 /* =====================================
-   LOAD PROGRESS
+   PROGRESS
 ===================================== */
 
 async function loadProgress(){
@@ -1588,8 +1606,7 @@ Date.now(),
 {
 cache:"no-store",
 headers:{
-"Accept":
-"application/json"
+"Accept":"application/json"
 }
 }
 
@@ -1706,6 +1723,7 @@ remaining === 1
 $("progressText").textContent =
 "Unable to check course progress.";
 
+
 showMessage(
 "progressMessage",
 error.message ||
@@ -1743,7 +1761,7 @@ type +
 
 
 /* =====================================
-   ESCAPE HTML
+   ESCAPE
 ===================================== */
 
 function escapeHtml(value){
