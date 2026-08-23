@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
@@ -138,9 +139,6 @@ color:#027a48;
 color:#b42318;
 }
 
-
-/* CERTIFICATE */
-
 .progress-info{
 display:flex;
 justify-content:space-between;
@@ -194,9 +192,6 @@ color:#fff;
 cursor:pointer;
 }
 
-
-/* ERROR */
-
 .error{
 display:none;
 margin-top:12px;
@@ -211,9 +206,6 @@ font-size:11px;
 display:block;
 }
 
-
-/* FOOTER */
-
 footer{
 text-align:center;
 font-size:10px;
@@ -222,6 +214,7 @@ padding:20px 0;
 }
 
 </style>
+
 </head>
 
 
@@ -377,7 +370,7 @@ id="error">
 </section>
 
 
-<!-- CERTIFICATE PROGRESS -->
+<!-- CERTIFICATE -->
 
 <section class="card">
 
@@ -411,18 +404,18 @@ id="error">
 <div class="progress-track">
 
 <div
-class="progress-fill"
-id="progressFill">
+id="progressFill"
+class="progress-fill">
 </div>
 
 </div>
 
 
 <p
-class="certificate-message"
-id="certificateMessage">
+id="certificateMessage"
+class="certificate-message">
 
-Complete all 365 days to unlock your certificate.
+Loading your course progress...
 
 </p>
 
@@ -449,28 +442,32 @@ disabled>
 
 <script>
 
-/* =========================
-   CONFIG
-========================= */
+/* =================================
+   API CONFIGURATION
+================================= */
 
-const API =
+const COURSE_API =
 "https://createlk-course-api.createlk.workers.dev";
+
+const PROGRESS_API =
+"https://createlk-course-progress.createlk.workers.dev";
+
 
 const STORAGE_KEY =
 "createlk_student";
 
 
-/* =========================
+/* =================================
    HELPER
-========================= */
+================================= */
 
 const $ =
 id => document.getElementById(id);
 
 
-/* =========================
-   LOGIN SESSION
-========================= */
+/* =================================
+   GET LOGIN SESSION
+================================= */
 
 let student = null;
 
@@ -490,9 +487,9 @@ student = null;
 }
 
 
-/* =========================
+/* =================================
    STUDENT ID
-========================= */
+================================= */
 
 const studentId =
 String(
@@ -503,9 +500,9 @@ student?.user_id ||
 );
 
 
-/* =========================
+/* =================================
    LOGIN REQUIRED
-========================= */
+================================= */
 
 if(!studentId){
 
@@ -514,12 +511,13 @@ location.replace("login.html");
 }
 
 
-/* =========================
-   BASIC INFO
-========================= */
+/* =================================
+   BASIC STUDENT INFO
+================================= */
 
 $("studentId").textContent =
 studentId;
+
 
 $("email").textContent =
 student?.email || "-";
@@ -535,9 +533,9 @@ $("welcome").textContent =
 `Welcome, ${firstName} 👋`;
 
 
-/* =========================
+/* =================================
    ERROR
-========================= */
+================================= */
 
 function showError(message){
 
@@ -549,9 +547,9 @@ $("error").classList.add("show");
 }
 
 
-/* =========================
+/* =================================
    MEMBERSHIP
-========================= */
+================================= */
 
 async function checkMembership(){
 
@@ -559,19 +557,25 @@ try{
 
 const response =
 await fetch(
-API +
+
+COURSE_API +
 "/api/course-access?student_id=" +
 encodeURIComponent(studentId) +
 "&t=" +
 Date.now(),
+
 {
 method:"GET",
+
 cache:"no-store",
+
 headers:{
 "Accept":"application/json",
 "Cache-Control":"no-cache"
 }
+
 }
+
 );
 
 
@@ -592,14 +596,12 @@ data.message ||
 }
 
 
-/* =========================
-   STATUS
-========================= */
-
 const rawStatus =
 String(
 data.membership_status || ""
-).trim().toUpperCase();
+)
+.trim()
+.toUpperCase();
 
 
 let displayStatus =
@@ -631,9 +633,9 @@ displayStatus === "PREMIUM"
 );
 
 
-/* =========================
+/* =================================
    EXPIRY
-========================= */
+================================= */
 
 if(data.membership_expiry){
 
@@ -675,6 +677,7 @@ $("membership").className =
 $("expiry").textContent =
 "-";
 
+
 showError(
 error.message ||
 "Unable to connect to Course API."
@@ -685,11 +688,11 @@ error.message ||
 }
 
 
-/* =========================
-   CERTIFICATE PROGRESS
-========================= */
+/* =================================
+   UPDATE PROGRESS DISPLAY
+================================= */
 
-function updateCertificateProgress(
+function updateProgress(
 completedDays
 ){
 
@@ -705,7 +708,9 @@ Number(completedDays) || 0
 
 const percent =
 Math.round(
-completedDays / 365 * 100
+completedDays /
+365 *
+100
 );
 
 
@@ -721,6 +726,10 @@ $("progressFill").style.width =
 percent + "%";
 
 
+/* =================================
+   CERTIFICATE UNLOCK
+================================= */
+
 if(
 completedDays >= 365
 ){
@@ -733,9 +742,8 @@ $("certificateButton").disabled =
 false;
 
 
-$("certificateButton").classList.add(
-"unlocked"
-);
+$("certificateButton")
+.classList.add("unlocked");
 
 
 $("certificateButton").textContent =
@@ -766,9 +774,8 @@ $("certificateButton").disabled =
 true;
 
 
-$("certificateButton").classList.remove(
-"unlocked"
-);
+$("certificateButton")
+.classList.remove("unlocked");
 
 
 $("certificateButton").textContent =
@@ -779,9 +786,9 @@ $("certificateButton").textContent =
 }
 
 
-/* =========================
-   LOAD COURSE PROGRESS
-========================= */
+/* =================================
+   LOAD PROGRESS
+================================= */
 
 async function loadProgress(){
 
@@ -789,34 +796,26 @@ try{
 
 const response =
 await fetch(
-API +
+
+PROGRESS_API +
 "/api/course-progress?student_id=" +
 encodeURIComponent(studentId) +
 "&t=" +
 Date.now(),
+
 {
 method:"GET",
+
 cache:"no-store",
+
 headers:{
 "Accept":"application/json",
 "Cache-Control":"no-cache"
 }
+
 }
+
 );
-
-
-if(!response.ok){
-
-/*
-Endpoint not created yet.
-Keep certificate locked.
-*/
-
-updateCertificateProgress(0);
-
-return;
-
-}
 
 
 const data =
@@ -824,36 +823,38 @@ await response.json();
 
 
 if(
-data.success === true
+!response.ok ||
+data.success !== true
 ){
 
-updateCertificateProgress(
+throw new Error(
+data.message ||
+"Unable to load course progress."
+);
+
+}
+
+
+updateProgress(
 data.completed_days
 );
 
-}else{
-
-updateCertificateProgress(0);
-
-}
 
 }catch(error){
 
-/*
-Do not unlock the certificate
-if progress cannot be verified.
-*/
+updateProgress(0);
 
-updateCertificateProgress(0);
+$("certificateMessage").textContent =
+"Unable to check course progress.";
 
 }
 
 }
 
 
-/* =========================
+/* =================================
    LOGOUT
-========================= */
+================================= */
 
 $("logout").onclick =
 function(){
@@ -873,9 +874,9 @@ location.replace(
 };
 
 
-/* =========================
+/* =================================
    START
-========================= */
+================================= */
 
 checkMembership();
 
