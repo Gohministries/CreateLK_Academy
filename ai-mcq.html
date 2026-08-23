@@ -55,10 +55,12 @@ button{cursor:pointer}
 .result.show{display:block}
 .good{background:#ecfdf3;color:#027a48}
 .bad{background:#fef3f2;color:#b42318}
+.error{background:#fef3f2;color:#b42318;padding:10px;border-radius:8px;font-size:10px;margin-top:8px}
 </style>
 </head>
 
 <body>
+
 <div class="app">
 
 <div class="logo">📚 CreateLK Academy</div>
@@ -113,439 +115,908 @@ button{cursor:pointer}
 
 </div>
 
+
 <section class="card" id="lessonList">
+
 <button class="back" onclick="home()">← Back</button>
+
 <div class="title" id="monthTitle"></div>
+
 <div id="lessonItems"></div>
+
 </section>
+
 
 <section class="card" id="lessonPage">
 
 <button class="back" onclick="month()">← Lessons</button>
 
 <div class="lessonTitle" id="lessonTitle"></div>
+
 <small id="lessonMeta"></small>
 
 <div class="tabs">
-<button class="tab active" onclick="tab('learn',this)">📖 Learn</button>
-<button class="tab" onclick="tab('vocab',this)">🧠 Words</button>
-<button class="tab" onclick="tab('quiz',this)">✍️ Daily Assessment</button>
+
+<button class="tab active"
+onclick="tab('learn',this)">
+📖 Learn
+</button>
+
+<button class="tab"
+onclick="tab('vocab',this)">
+🧠 Words
+</button>
+
+<button class="tab"
+onclick="tab('quiz',this)">
+✍️ Daily Assessment
+</button>
+
 </div>
 
+
 <div class="panel show" id="learn">
+
 <div class="learn">
+
 <b id="explanation">Loading...</b>
+
 <div id="examples"></div>
+
 </div>
+
 </div>
+
 
 <div class="panel" id="vocab"></div>
 
+
 <div class="panel" id="quiz">
+
 <div id="questionsBox"></div>
+
 <div class="result" id="result"></div>
-<button class="btn" id="complete" disabled>
+
+<button class="btn"
+id="complete"
+disabled>
 Complete Daily Assessment
 </button>
+
 </div>
 
 </section>
 
+<div id="error"></div>
+
 </div>
+
 
 <script>
 
-const API="https://createlk-ai-mcq.createlk.workers.dev";
-const KEY="createlk_student";
+/* =========================
+   CURRENT CLOUDFLARE WORKER
+========================= */
+
+const API =
+"https://createlk-daily-mcq.createlk.workers.dev";
+
+const KEY =
+"createlk_student";
+
 const DAYS=365;
 
-let student,currentDay=0,currentMonth=0;
+let student=null;
+let currentDay=0;
+let currentMonth=0;
 let progress={};
 let lesson=null;
 let score=0;
 let answered=0;
 
-const $=x=>document.getElementById(x);
+const $=id=>document.getElementById(id);
+
+
+/* =========================
+   LOGIN
+========================= */
 
 try{
- student=JSON.parse(
-  sessionStorage.getItem(KEY)||
-  localStorage.getItem(KEY)||"null"
- );
-}catch(e){}
 
-if(!student)location.href="login.html";
-
-const studentId=String(
- student?.id||student?.student_id||student?.user_id||""
+student=JSON.parse(
+sessionStorage.getItem(KEY)||
+localStorage.getItem(KEY)||
+"null"
 );
 
+}catch(e){}
+
+if(!student){
+
+location.href="login.html";
+
+}
+
+
+const studentId=String(
+student?.id||
+student?.student_id||
+student?.user_id||
+""
+);
+
+if(!studentId){
+
+location.href="login.html";
+
+}
+
+
+/* =========================
+   MONTHS
+========================= */
+
 const months=[
+
 ["Month 1","Beginner English",1,30],
+
 ["Month 2","Grammar Foundations",31,60],
+
 ["Month 3","Nouns & Pronouns",61,90],
+
 ["Month 4","Verbs & Tenses",91,120],
+
 ["Month 5","Adjectives & Adverbs",121,150],
+
 ["Month 6","Prepositions",151,180],
+
 ["Month 7","Sentence Building",181,210],
+
 ["Month 8","Conversation",211,240],
+
 ["Month 9","Vocabulary",241,270],
+
 ["Month 10","Reading",271,300],
+
 ["Month 11","Writing",301,330],
+
 ["Month 12","Review",331,365]
+
 ];
+
+
+/* =========================
+   TOPICS
+========================= */
 
 const topics=[
-"Introducing Yourself","Greetings","Family","Daily Routine",
-"Time and Dates","Numbers","Food and Drinks","Places",
-"Shopping","Weather","Common Questions","Everyday Verbs",
-"Nouns","Pronouns","Articles","Plural Nouns","Possessives",
-"Present Simple","Present Continuous","Past Simple","Past Continuous",
-"Future Forms","Modal Verbs","Adjectives","Adverbs",
-"Comparatives","Superlatives","Prepositions","Conjunctions",
-"Sentence Structure","Questions","Negative Sentences","Conversation",
-"Travel English","Workplace English","Telephone English",
-"Vocabulary Building","Reading Practice","Writing Practice","Review"
+
+"Introducing Yourself",
+"Greetings",
+"Family",
+"Daily Routine",
+"Time and Dates",
+"Numbers",
+"Food and Drinks",
+"Places",
+"Shopping",
+"Weather",
+"Common Questions",
+"Everyday Verbs",
+"Nouns",
+"Pronouns",
+"Articles",
+"Plural Nouns",
+"Possessives",
+"Present Simple",
+"Present Continuous",
+"Past Simple",
+"Past Continuous",
+"Future Forms",
+"Modal Verbs",
+"Adjectives",
+"Adverbs",
+"Comparatives",
+"Superlatives",
+"Prepositions",
+"Conjunctions",
+"Sentence Structure",
+"Questions",
+"Negative Sentences",
+"Conversation",
+"Travel English",
+"Workplace English",
+"Telephone English",
+"Vocabulary Building",
+"Reading Practice",
+"Writing Practice",
+"Review"
+
 ];
 
+
+/* =========================
+   API
+========================= */
+
 async function api(url,opt={}){
- const r=await fetch(url,{
-  ...opt,
-  cache:"no-store",
-  headers:{
-   "Content-Type":"application/json",
-   ...(opt.headers||{})
-  }
- });
- const d=await r.json();
- if(!r.ok)throw Error(d.message||d.error||"Request failed");
- return d;
+
+const r=await fetch(url,{
+
+...opt,
+
+cache:"no-store",
+
+headers:{
+"Content-Type":"application/json",
+"Accept":"application/json",
+...(opt.headers||{})
 }
+
+});
+
+const text=await r.text();
+
+let data={};
+
+try{
+data=JSON.parse(text);
+}catch(e){
+
+throw Error("Invalid server response.");
+
+}
+
+if(!r.ok){
+
+throw Error(
+data.message||
+data.error||
+"Request failed"
+);
+
+}
+
+return data;
+
+}
+
+
+/* =========================
+   PROGRESS
+========================= */
 
 async function load(){
- try{
-  progress=await api(
-   `${API}/api/progress?student_id=${encodeURIComponent(studentId)}`
-  );
-  update();
- }catch(e){
-  console.log(e);
- }
+
+try{
+
+progress=await api(
+
+`${API}/api/progress?student_id=${encodeURIComponent(studentId)}`
+
+);
+
+update();
+
+}catch(e){
+
+console.error(e);
+
+$("error").textContent=e.message;
+
+$("error").style.display="block";
+
 }
 
-function completed(){
- return Number(
-  progress.completed_days||
-  progress.completed||
-  progress.completedLessons||
-  progress.progress?.completed_days||
-  0
- );
 }
+
+
+function completed(){
+
+return Number(
+
+progress.completed_days||
+
+progress.completed||
+
+progress.completedLessons||
+
+progress.progress?.completed_days||
+
+0
+
+);
+
+}
+
 
 function update(){
 
- const done=Math.min(DAYS,completed());
- const percent=Math.round(done/DAYS*100);
+const done=Math.min(
+DAYS,
+completed()
+);
 
- $("progressText").textContent=`${done} / ${DAYS}`;
- $("courseFill").style.width=percent+"%";
- $("completed").textContent=done;
- $("questions").textContent=
-  progress.questions||
-  progress.total_questions||
-  0;
- $("average").textContent=
-  Math.round(progress.average_score||progress.average||0)+"%";
- $("daysLeft").textContent=DAYS-done;
+const percent=Math.round(
+done/DAYS*100
+);
 
- $("todayTitle").textContent=`Day ${Math.min(DAYS,done+1)}`;
+$("progressText").textContent=
+`${done} / ${DAYS}`;
 
- const today=
-  progress.today_completed===true||
-  progress.daily_completed===true;
+$("courseFill").style.width=
+percent+"%";
 
- $("todayStatus").textContent=
-  today?"Completed ✓":"Not completed";
+$("completed").textContent=
+done;
 
- $("dailyFill").style.width=today?"100%":"0%";
+$("questions").textContent=
+Number(
+progress.questions||
+progress.total_questions||
+0
+);
+
+$("average").textContent=
+Math.round(
+progress.average_score||
+progress.average||
+0
+)+"%";
+
+$("daysLeft").textContent=
+DAYS-done;
+
+
+const next=Math.min(
+DAYS,
+done+1
+);
+
+$("todayTitle").textContent=
+`Day ${next}`;
+
+
+const today=
+progress.today_completed===true||
+progress.daily_completed===true;
+
+
+$("todayStatus").textContent=
+today?
+"Completed ✓":
+"Not completed";
+
+$("dailyFill").style.width=
+today?"100%":"0%";
+
 }
+
+
+/* =========================
+   MONTHS
+========================= */
 
 function renderMonths(){
 
- $("months").innerHTML="";
+$("months").innerHTML="";
 
- months.forEach((m,i)=>{
-  const b=document.createElement("button");
-  b.className="month";
-  b.innerHTML=`<b>${m[0]}</b><small>${m[1]} · Days ${m[2]}–${m[3]}</small>`;
-  b.onclick=()=>openMonth(i);
-  $("months").appendChild(b);
- });
+months.forEach((m,i)=>{
+
+const b=
+document.createElement("button");
+
+b.className="month";
+
+b.innerHTML=
+`<b>${m[0]}</b>
+<small>${m[1]} · Days ${m[2]}–${m[3]}</small>`;
+
+b.onclick=
+()=>openMonth(i);
+
+$("months").appendChild(b);
+
+});
 
 }
+
+
+/* =========================
+   OPEN MONTH
+========================= */
 
 function openMonth(i){
 
- currentMonth=i;
+currentMonth=i;
 
- $("home").style.display="none";
- $("lessonList").style.display="block";
- $("lessonPage").style.display="none";
+$("home").style.display="none";
 
- const m=months[i];
+$("lessonList").style.display="block";
 
- $("monthTitle").textContent=`${m[0]} — ${m[1]}`;
+$("lessonPage").style.display="none";
 
- const list=$("lessonItems");
- list.innerHTML="";
 
- const done=completed();
- const next=done+1;
+const m=months[i];
 
- for(let d=m[2];d<=m[3];d++){
+$("monthTitle").textContent=
+`${m[0]} — ${m[1]}`;
 
-  const b=document.createElement("button");
-  b.className="lesson";
+const list=$("lessonItems");
 
-  if(d<=done)b.classList.add("done");
-  if(d===next)b.classList.add("current");
-  if(d>next)b.classList.add("locked");
+list.innerHTML="";
 
-  b.innerHTML=
-   `<b>${d<=done?"✓ ":d>next?"🔒 ":""}Day ${d} — ${topic(d)}</b>
-    <small>${d<=done?"Completed":d===next?"Start lesson":"Locked"}</small>`;
 
-  b.onclick=()=>{
-   if(d<=next)openLesson(d);
-   else alert("Complete the previous daily assessment first.");
-  };
+const done=completed();
 
-  list.appendChild(b);
- }
+const next=done+1;
+
+
+for(
+let d=m[2];
+d<=m[3];
+d++
+){
+
+const b=
+document.createElement("button");
+
+b.className="lesson";
+
+
+if(d<=done)
+b.classList.add("done");
+
+if(d===next)
+b.classList.add("current");
+
+if(d>next)
+b.classList.add("locked");
+
+
+b.innerHTML=
+`<b>
+${d<=done?"✓ ":d>next?"🔒 ":""}
+Day ${d} — ${topics[(d-1)%topics.length]}
+</b>
+<small>
+${d<=done?
+"Completed":
+d===next?
+"Start lesson":
+"Complete previous assessment first"}
+</small>`;
+
+
+b.onclick=()=>{
+
+if(d<=next){
+
+openLesson(d);
+
+}else{
+
+alert(
+"Complete the previous daily assessment first."
+);
+
 }
+
+};
+
+
+list.appendChild(b);
+
+}
+
+}
+
+
+/* =========================
+   OPEN LESSON
+========================= */
 
 async function openLesson(day){
 
- currentDay=day;
- score=0;
- answered=0;
- lesson=null;
+currentDay=day;
 
- $("lessonList").style.display="none";
- $("lessonPage").style.display="block";
+score=0;
 
- $("lessonTitle").textContent=
-  `Day ${day} — ${topic(day)}`;
+answered=0;
 
- $("lessonMeta").textContent=
-  `Daily English Lesson ${day} / ${DAYS}`;
+lesson=null;
 
- $("explanation").textContent="Loading...";
- $("examples").innerHTML="";
- $("vocab").innerHTML="";
- $("questionsBox").innerHTML="";
- $("result").className="result";
- $("complete").disabled=true;
 
- try{
+$("lessonList").style.display="none";
 
-  lesson=await api(
-   `${API}/api/lesson?student_id=${encodeURIComponent(studentId)}&day=${day}`
-  );
+$("lessonPage").style.display="block";
 
-  $("explanation").textContent=
-   lesson.explanation||
-   lesson.lesson||
-   lesson.content||
-   `Learn about ${topic(day)}.`;
 
-  $("examples").innerHTML=
-   lesson.example||
-   lesson.examples||
-   "";
+$("lessonTitle").textContent=
+`Day ${day} — ${topics[(day-1)%topics.length]}`;
 
-  renderVocab(lesson.vocabulary||lesson.words||[]);
-  renderQuiz(
-   lesson.questions||
-   lesson.quiz||
-   []
-  );
+$("lessonMeta").textContent=
+`Daily English Lesson ${day} / ${DAYS}`;
 
- }catch(e){
 
-  $("explanation").textContent=
-   `Today's lesson: ${topic(day)}.`;
+$("explanation").textContent=
+"Loading...";
 
-  $("questionsBox").innerHTML=
-   "<p>Daily assessment is unavailable right now.</p>";
- }
+$("examples").innerHTML="";
+
+$("vocab").innerHTML="";
+
+$("questionsBox").innerHTML="";
+
+$("result").className="result";
+
+$("complete").disabled=true;
+
+
+try{
+
+lesson=await api(
+
+`${API}/api/lesson?student_id=${encodeURIComponent(studentId)}&day=${day}`
+
+);
+
+
+$("explanation").textContent=
+
+lesson.explanation||
+lesson.lesson||
+lesson.content||
+`Learn about ${topics[(day-1)%topics.length]}.`;
+
+
+$("examples").innerHTML=
+
+lesson.example||
+lesson.examples||
+"";
+
+
+renderVocab(
+lesson.vocabulary||
+lesson.words||
+[]
+);
+
+
+renderQuiz(
+lesson.questions||
+lesson.quiz||
+[]
+);
+
+
+}catch(e){
+
+$("explanation").textContent=
+`Today's lesson: ${topics[(day-1)%topics.length]}.`;
+
+$("questionsBox").innerHTML=
+`<p>${e.message}</p>`;
+
 }
+
+}
+
+
+/* =========================
+   VOCABULARY
+========================= */
 
 function renderVocab(words){
 
- const box=$("vocab");
- box.innerHTML="";
+const box=$("vocab");
 
- words.forEach(w=>{
-  const d=document.createElement("div");
-  d.className="word";
-  d.innerHTML=
-   `<b>${w.word||w.term||""}</b>
-    <p>${w.meaning||w.definition||""}</p>`;
-  box.appendChild(d);
- });
+box.innerHTML="";
+
+words.forEach(w=>{
+
+const d=
+document.createElement("div");
+
+d.className="word";
+
+d.innerHTML=
+`<b>${w.word||w.term||""}</b>
+<p>${w.meaning||w.definition||""}</p>`;
+
+box.appendChild(d);
+
+});
+
 }
+
+
+/* =========================
+   QUIZ
+========================= */
 
 function renderQuiz(qs){
 
- const box=$("questionsBox");
- box.innerHTML="";
+const box=$("questionsBox");
 
- if(!qs.length){
-  box.innerHTML="<p>No assessment questions available.</p>";
-  return;
- }
+box.innerHTML="";
 
- qs.forEach((q,i)=>{
+if(!qs.length){
 
-  const div=document.createElement("div");
-  div.className="question";
+box.innerHTML=
+"<p>No daily assessment questions available.</p>";
 
-  div.innerHTML=
-   `<p>${i+1}. ${q.question}</p>`;
+return;
 
-  (q.options||[]).forEach((option,j)=>{
-
-   const b=document.createElement("button");
-   b.className="option";
-   b.textContent=option;
-
-   b.onclick=()=>answer(
-    b,
-    q,
-    option,
-    div
-   );
-
-   div.appendChild(b);
-  });
-
-  box.appendChild(div);
- });
 }
+
+
+qs.forEach((q,i)=>{
+
+const div=
+document.createElement("div");
+
+div.className="question";
+
+div.innerHTML=
+`<p>${i+1}. ${q.question}</p>`;
+
+
+(q.options||[]).forEach(option=>{
+
+const b=
+document.createElement("button");
+
+b.className="option";
+
+b.textContent=option;
+
+b.onclick=()=>
+answer(
+b,
+q,
+option,
+div
+);
+
+div.appendChild(b);
+
+});
+
+
+box.appendChild(div);
+
+});
+
+}
+
+
+/* =========================
+   ANSWER
+========================= */
 
 function answer(button,q,answer,box){
 
- if(box.dataset.done)return;
+if(box.dataset.done)
+return;
 
- box.dataset.done="1";
- answered++;
+box.dataset.done="1";
 
- const correct=
-  String(answer).trim().toLowerCase()===
-  String(
-   q.answer||
-   q.correct_answer||
-   q.correct||
-   ""
-  ).trim().toLowerCase();
+answered++;
 
- if(correct){
-  button.classList.add("correct");
-  score++;
- }else{
-  button.classList.add("wrong");
 
-  [...box.querySelectorAll(".option")].forEach(b=>{
-   if(b.textContent.trim().toLowerCase()===
-      String(q.answer||q.correct_answer||"").trim().toLowerCase())
-    b.classList.add("correct");
-  });
- }
+const correct=
+String(answer)
+.trim()
+.toLowerCase()===
 
- if(answered>=
-    document.querySelectorAll(".question").length){
+String(
+q.answer||
+q.correct_answer||
+q.correct||
+""
+)
+.trim()
+.toLowerCase();
 
-  const total=document.querySelectorAll(".question").length;
-  const percent=Math.round(score/total*100);
 
-  $("result").textContent=
-   `Daily Assessment: ${score}/${total} (${percent}%)`;
+if(correct){
 
-  $("result").className=
-   "result show "+(percent>=70?"good":"bad");
+button.classList.add("correct");
 
-  $("complete").disabled=false;
- }
+score++;
+
+}else{
+
+button.classList.add("wrong");
+
+[...box.querySelectorAll(".option")]
+.forEach(b=>{
+
+if(
+b.textContent.trim().toLowerCase()===
+
+String(
+q.answer||
+q.correct_answer||
+q.correct||
+""
+)
+.trim().toLowerCase()
+){
+
+b.classList.add("correct");
+
 }
+
+});
+
+}
+
+
+const total=
+document.querySelectorAll(".question").length;
+
+
+if(answered>=total){
+
+const percent=
+Math.round(score/total*100);
+
+$("result").textContent=
+`Daily Assessment: ${score}/${total} (${percent}%)`;
+
+$("result").className=
+"result show "+
+(percent>=70?"good":"bad");
+
+$("complete").disabled=false;
+
+}
+
+}
+
+
+/* =========================
+   COMPLETE DAILY ASSESSMENT
+========================= */
 
 $("complete").onclick=async()=>{
 
- if(!lesson)return;
+if(!lesson)
+return;
 
- const total=document.querySelectorAll(".question").length;
- const percent=Math.round(score/total*100);
 
- if(percent<70){
-  alert("You need at least 70% to complete today's assessment.");
-  return;
- }
+const total=
+document.querySelectorAll(".question").length;
 
- try{
+const percent=
+Math.round(score/total*100);
 
-  await api(`${API}/api/progress`,{
-   method:"POST",
-   body:JSON.stringify({
-    student_id:studentId,
-    day:currentDay,
-    score:percent,
-    questions:total,
-    completed:true,
-    assessment:"daily"
-   })
-  });
 
-  alert(`Day ${currentDay} completed ✓`);
+if(percent<70){
 
-  await load();
-  openMonth(currentMonth);
+alert(
+"You need at least 70% to complete today's assessment."
+);
 
- }catch(e){
-  alert(e.message);
- }
+return;
+
+}
+
+
+$("complete").disabled=true;
+
+
+try{
+
+await api(
+`${API}/api/progress`,
+{
+
+method:"POST",
+
+body:JSON.stringify({
+
+student_id:studentId,
+
+day:currentDay,
+
+score:percent,
+
+questions:total,
+
+completed:true,
+
+assessment:"daily"
+
+})
+
+});
+
+
+alert(
+`Day ${currentDay} completed ✓`
+);
+
+
+await load();
+
+openMonth(currentMonth);
+
+
+}catch(e){
+
+$("complete").disabled=false;
+
+alert(e.message);
+
+}
+
 };
+
+
+/* =========================
+   TABS
+========================= */
 
 function tab(name,button){
 
- document.querySelectorAll(".panel")
-  .forEach(x=>x.classList.remove("show"));
+document.querySelectorAll(".panel")
+.forEach(x=>
+x.classList.remove("show")
+);
 
- document.querySelectorAll(".tab")
-  .forEach(x=>x.classList.remove("active"));
+document.querySelectorAll(".tab")
+.forEach(x=>
+x.classList.remove("active")
+);
 
- $(name).classList.add("show");
- button.classList.add("active");
+$(name).classList.add("show");
+
+button.classList.add("active");
+
 }
+
+
+/* =========================
+   NAVIGATION
+========================= */
 
 function home(){
 
- $("lessonList").style.display="none";
- $("lessonPage").style.display="none";
- $("home").style.display="block";
- load();
+$("lessonList").style.display="none";
+
+$("lessonPage").style.display="none";
+
+$("home").style.display="block";
+
+load();
+
 }
+
 
 function month(){
 
- $("lessonPage").style.display="none";
- $("lessonList").style.display="block";
- openMonth(currentMonth);
+$("lessonPage").style.display="none";
+
+$("lessonList").style.display="block";
+
+openMonth(currentMonth);
+
 }
 
+
+/* =========================
+   START
+========================= */
+
 renderMonths();
+
 load();
 
 </script>
+
 </body>
 </html>
