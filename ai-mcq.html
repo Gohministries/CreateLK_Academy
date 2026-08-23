@@ -8,26 +8,27 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f5f7fb;font-family:Arial;color:#172033}
-.app{max-width:600px;margin:auto;padding:14px}
-header,.row,.progress-top{display:flex;justify-content:space-between;align-items:center}
+.app{max-width:650px;margin:auto;padding:14px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}
 .logo{font-weight:900;color:#155eef}
 .logout{border:0;background:none;color:#b42318;font-weight:bold}
-.card{background:white;border:1px solid #e4e7ec;border-radius:15px;padding:18px;margin:12px 0}
+.card{background:#fff;border:1px solid #e4e7ec;border-radius:15px;padding:18px;margin-bottom:12px}
 h1{font-size:22px;margin:0 0 5px}
 h2{font-size:17px;margin:0 0 12px}
-p,.row{font-size:12px;color:#667085}
-.row{padding:9px 0;border-bottom:1px solid #eee}
-.value{font-weight:bold;color:#172033}
-.active{color:#087443}.inactive{color:#b42318}
-.track{height:9px;background:#eaecf0;border-radius:20px;overflow:hidden}
-.fill{height:100%;width:0;background:#155eef}
-.free,.premium{padding:9px;border-radius:8px;font-size:12px;font-weight:bold;margin:6px 0}
-.free{background:#ecfdf3;color:#087443}
-.premium{background:#fff7ed;color:#c2410c}
-button,.btn{width:100%;padding:12px;border:0;border-radius:9px;background:#155eef;color:white;font-weight:bold;margin-top:10px;cursor:pointer}
-button:disabled{opacity:.6}
-.error{display:none;background:#fef3f2;color:#b42318;padding:9px;margin-top:10px;border-radius:8px;font-size:11px}
-iframe{width:100%;height:650px;border:0;border-radius:10px;margin-top:12px}
+p{font-size:12px;color:#667085}
+.row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee;font-size:12px}
+.row b{word-break:break-word;text-align:right}
+.free{background:#ecfdf3;color:#087443;padding:9px;border-radius:8px;font-size:12px;font-weight:bold;margin:6px 0}
+.premium{background:#fff7ed;color:#c2410c;padding:9px;border-radius:8px;font-size:12px;font-weight:bold}
+.pay{width:100%;padding:13px;border:0;border-radius:9px;background:#155eef;color:#fff;font-weight:900;margin-top:10px;cursor:pointer}
+.pay:disabled{opacity:.6}
+.error{display:none;background:#fef3f2;color:#b42318;padding:9px;border-radius:8px;margin-top:10px;font-size:11px}
+.lesson{border:1px solid #e4e7ec;border-radius:10px;padding:12px;margin:8px 0;background:#fff}
+.lesson button{width:100%;padding:10px;border:0;border-radius:8px;background:#155eef;color:#fff;font-weight:bold}
+.locked{color:#c2410c;font-size:12px;font-weight:bold}
+.content{display:none;margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px;font-size:13px}
+.progress{height:8px;background:#eaecf0;border-radius:20px;overflow:hidden}
+.fill{height:100%;background:#155eef;width:0}
 footer{text-align:center;color:#98a2b3;font-size:10px;padding:15px}
 </style>
 </head>
@@ -42,22 +43,7 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:15px}
 
 <section class="card">
   <h1 id="welcome">Welcome 👋</h1>
-  <p>Continue your English learning journey with CreateLK Academy.</p>
-</section>
-
-<section class="card">
-  <h2>🎓 Certificate Progress</h2>
-
-  <div class="progress-top">
-    <b><span id="done">0</span> / 365 days</b>
-    <b id="pct">0%</b>
-  </div>
-
-  <div class="track">
-    <div id="fill" class="fill"></div>
-  </div>
-
-  <p id="certificate">Loading progress...</p>
+  <p>Continue your English learning journey.</p>
 </section>
 
 <section class="card">
@@ -65,7 +51,7 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:15px}
 
   <div class="row">
     <span>Student ID</span>
-    <b id="id">-</b>
+    <b id="studentId">-</b>
   </div>
 
   <div class="row">
@@ -86,22 +72,27 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:15px}
 
 <section class="card">
   <h2>⭐ Premium Membership</h2>
-  <p>Days 1–7 are free. Days 8–365 require Premium.</p>
 
   <div class="free">🔓 Days 1–7 — FREE</div>
   <div class="premium">⭐ Days 8–365 — PREMIUM</div>
 
-  <button id="pay" onclick="pay()">⭐ Upgrade to Premium</button>
+  <button id="pay" class="pay" onclick="pay()">
+    ⭐ Pay for Premium
+  </button>
+
   <div id="error" class="error"></div>
 </section>
 
 <section class="card">
   <h2>📖 365-Day English Course</h2>
-  <p>Access your lessons without leaving the dashboard.</p>
 
-  <button onclick="openCourse()">Open Course</button>
+  <div class="progress">
+    <div id="fill" class="fill"></div>
+  </div>
 
-  <iframe id="course" style="display:none" src=""></iframe>
+  <p id="progressText">Loading lessons...</p>
+
+  <div id="lessons"></div>
 </section>
 
 <footer>© 2026 CreateLK Academy</footer>
@@ -109,9 +100,12 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:15px}
 </div>
 
 <script>
-const COURSE_API="https://createlk-course-api.createlk.workers.dev";
-const PROGRESS_API="https://createlk-course-progress.createlk.workers.dev";
-const PAYMENT_API="https://createlk-payhere-checkout.createlk.workers.dev";
+const COURSE_API =
+"https://createlk-course-api.createlk.workers.dev";
+
+const PAYMENT_API =
+"https://createlk-payhere-checkout.createlk.workers.dev";
+
 const KEY="createlk_student";
 
 let student;
@@ -122,7 +116,9 @@ try{
     localStorage.getItem(KEY)||
     "null"
   );
-}catch(e){student=null}
+}catch(e){
+  student=null;
+}
 
 const studentId=String(
   student?.id||
@@ -131,90 +127,241 @@ const studentId=String(
   ""
 );
 
-if(!studentId) location.href="login.html";
+if(!studentId)location.href="login.html";
 
-id.textContent=studentId;
-email.textContent=student?.email||"-";
-welcome.textContent=
-"Welcome, "+
-(student?.first_name||student?.name?.split(" ")[0]||"Student")+" 👋";
+studentIdEl();
+
+function studentIdEl(){
+  document.getElementById("studentId").textContent=studentId;
+  document.getElementById("email").textContent=student?.email||"-";
+
+  document.getElementById("welcome").textContent=
+    "Welcome, "+
+    (student?.first_name||
+     student?.name?.split(" ")[0]||
+     "Student")+" 👋";
+}
 
 
-async function membership(){
+/* MEMBERSHIP */
+
+async function loadMembership(){
+
   try{
+
     const r=await fetch(
-      COURSE_API+"/api/course-access?student_id="+
-      encodeURIComponent(studentId)
+      COURSE_API+
+      "/api/course-access?student_id="+
+      encodeURIComponent(studentId)+
+      "&_="+Date.now(),
+      {cache:"no-store"}
     );
 
     const d=await r.json();
 
     if(!r.ok||d.success!==true)throw 0;
 
-    const active=["ACTIVE","PREMIUM"].includes(
-      String(d.membership_status||"").toUpperCase()
-    );
+    const active=
+      ["ACTIVE","PREMIUM"].includes(
+        String(d.membership_status||"").toUpperCase()
+      );
 
-    membership.textContent=active?"ACTIVE":"INACTIVE";
-    membership.className=active?"active":"inactive";
+    document.getElementById("membership").textContent=
+      active?"ACTIVE":"INACTIVE";
 
-    expiry.textContent=d.membership_expiry
+    document.getElementById("membership").className=
+      active?"active":"";
+
+    document.getElementById("expiry").textContent=
+      d.membership_expiry
       ?new Date(d.membership_expiry).toLocaleString()
       :"Not active";
 
-    if(active){
-      pay.textContent="✓ Premium Active";
-      pay.disabled=true;
-    }
+    window.premium=active;
+
   }catch(e){
-    membership.textContent="Unable to check";
-    membership.className="inactive";
+
+    document.getElementById("membership").textContent=
+      "Unable to check";
+
+    window.premium=false;
   }
 }
 
 
-async function progress(){
+/* 365 LESSONS */
+
+async function loadLessons(){
+
+  const box=document.getElementById("lessons");
+
   try{
+
+    /*
+      Existing Course API.
+      It returns the student's available course data.
+    */
+
     const r=await fetch(
-      PROGRESS_API+"/api/course-progress?student_id="+
-      encodeURIComponent(studentId)
+      COURSE_API+
+      "/api/course?student_id="+
+      encodeURIComponent(studentId)+
+      "&_="+Date.now(),
+      {cache:"no-store"}
     );
-
-    const d=await r.json();
-    if(!r.ok||d.success!==true)throw 0;
-
-    const days=Math.min(365,Math.max(0,+d.completed_days||0));
-    const percent=Math.round(days/365*100);
-
-    done.textContent=days;
-    pct.textContent=percent+"%";
-    fill.style.width=percent+"%";
-
-    certificate.textContent=days>=365
-      ?"🎉 Certificate unlocked!"
-      :(365-days)+" more days to unlock your certificate.";
-  }catch(e){
-    certificate.textContent="Unable to load progress.";
-  }
-}
-
-
-async function pay(){
-  pay.disabled=true;
-  pay.textContent="Opening payment...";
-  error.classList.remove("show");
-
-  try{
-    const r=await fetch(PAYMENT_API,{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({student_id:studentId})
-    });
 
     const d=await r.json();
 
     if(!r.ok||d.success===false)
-      throw new Error(d.message||"Payment failed.");
+      throw new Error(
+        d.message||"Unable to load course."
+      );
+
+    const lessons=
+      d.lessons||
+      d.course||
+      d.days||
+      [];
+
+    if(!Array.isArray(lessons))
+      throw new Error("Invalid lesson response.");
+
+    box.innerHTML="";
+
+    let completed=0;
+
+    for(let i=1;i<=365;i++){
+
+      const lesson=
+        lessons.find(x=>
+          Number(
+            x.day||
+            x.day_number||
+            x.id
+          )===i
+        );
+
+      const free=i<=7;
+      const unlocked=free||window.premium;
+
+      const item=document.createElement("div");
+      item.className="lesson";
+
+      if(!unlocked){
+
+        item.innerHTML=
+          "<b>Day "+i+"</b>"+
+          "<div class='locked'>🔒 Premium required</div>";
+
+      }else{
+
+        item.innerHTML=
+          "<b>Day "+i+"</b>"+
+          "<button>Open Lesson</button>"+
+          "<div class='content'></div>";
+
+        const button=item.querySelector("button");
+        const content=item.querySelector(".content");
+
+        button.onclick=()=>{
+
+          content.style.display=
+            content.style.display==="block"
+            ?"none"
+            :"block";
+
+          if(!content.innerHTML){
+
+            content.innerHTML=
+              lesson?.content||
+              lesson?.lesson||
+              lesson?.description||
+              "Lesson content is not available.";
+          }
+        };
+
+      }
+
+      box.appendChild(item);
+
+      if(lesson?.completed)completed++;
+    }
+
+    document.getElementById("fill").style.width=
+      Math.round(completed/365*100)+"%";
+
+    document.getElementById("progressText").textContent=
+      completed+" / 365 days completed";
+
+  }catch(e){
+
+    box.innerHTML=
+      "<p>Unable to load lessons: "+
+      e.message+
+      "</p>";
+  }
+}
+
+
+/* PAYMENT */
+
+async function pay(){
+
+  const button=document.getElementById("pay");
+  const error=document.getElementById("error");
+
+  error.style.display="none";
+
+  if(window.premium){
+    error.textContent="Premium is already active.";
+    error.style.display="block";
+    return;
+  }
+
+  button.disabled=true;
+  button.textContent="Opening PayHere...";
+
+  try{
+
+    const r=await fetch(
+      PAYMENT_API,
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "Accept":"application/json"
+        },
+        body:JSON.stringify({
+          student_id:studentId
+        })
+      }
+    );
+
+    const text=await r.text();
+
+    let d;
+
+    try{
+      d=JSON.parse(text);
+    }catch(e){
+      /*
+        Worker may directly return a
+        PayHere checkout HTML page.
+      */
+      if(text.includes("<form")||text.includes("payhere")){
+        document.open();
+        document.write(text);
+        document.close();
+        return;
+      }
+
+      throw new Error("Invalid payment response.");
+    }
+
+    if(!r.ok||d.success===false)
+      throw new Error(
+        d.message||"Payment could not be started."
+      );
 
     const url=
       d.checkout_url||
@@ -222,34 +369,48 @@ async function pay(){
       d.redirect_url||
       d.url;
 
-    if(!url)throw new Error("Payment URL not returned.");
+    if(url){
+      location.href=url;
+      return;
+    }
 
-    location.href=url;
+    if(d.html){
+      document.open();
+      document.write(d.html);
+      document.close();
+      return;
+    }
+
+    throw new Error(
+      "PayHere checkout was not returned."
+    );
 
   }catch(e){
-    pay.disabled=false;
-    pay.textContent="⭐ Upgrade to Premium";
+
+    button.disabled=false;
+    button.textContent="⭐ Pay for Premium";
+
     error.textContent=e.message;
-    error.classList.add("show");
+    error.style.display="block";
   }
 }
 
 
-function openCourse(){
-  course.src="365.html";
-  course.style.display="block";
-}
-
+/* LOGOUT */
 
 function logout(){
+
   sessionStorage.removeItem(KEY);
   localStorage.removeItem(KEY);
+
   location.href="login.html";
 }
 
 
-membership();
-progress();
+/* START */
+
+loadMembership().then(loadLessons);
+
 </script>
 
 </body>
