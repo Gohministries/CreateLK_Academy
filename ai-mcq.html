@@ -220,13 +220,14 @@ header{
   margin-top:12px;
 }
 
-.btn.secondary{
-  background:#344054;
-}
-
 .btn:disabled{
   opacity:.6;
   cursor:not-allowed;
+}
+
+.btn.active-btn{
+  background:#027a48;
+  cursor:default;
 }
 
 /* COURSE */
@@ -247,37 +248,31 @@ header{
   margin-bottom:16px;
 }
 
-/* ERROR */
+/* MESSAGE */
 
-.error{
-  display:none;
-  margin-top:12px;
-  padding:10px;
-  border-radius:9px;
-  background:#fef3f2;
-  color:#b42318;
-  font-size:11px;
-}
-
-.error.show{
-  display:block;
-}
-
+.error,
 .success{
   display:none;
   margin-top:12px;
   padding:10px;
   border-radius:9px;
-  background:#ecfdf3;
-  color:#027a48;
   font-size:11px;
 }
 
+.error{
+  background:#fef3f2;
+  color:#b42318;
+}
+
+.success{
+  background:#ecfdf3;
+  color:#027a48;
+}
+
+.error.show,
 .success.show{
   display:block;
 }
-
-/* FOOTER */
 
 footer{
   text-align:center;
@@ -354,9 +349,7 @@ class="progress-fill">
 <p
 id="certificateMessage"
 class="certificate-message">
-
 Checking course progress...
-
 </p>
 
 <button
@@ -482,7 +475,7 @@ type="button">
 </button>
 
 <div
-id="paymentMessage"
+id="paymentSuccess"
 class="success">
 </div>
 
@@ -530,9 +523,9 @@ Open Course →
 
 <script>
 
-/* ==================================================
-   CONFIGURATION
-================================================== */
+/* =====================================================
+   API CONFIG
+===================================================== */
 
 const COURSE_API =
 "https://createlk-course-api.createlk.workers.dev";
@@ -540,34 +533,25 @@ const COURSE_API =
 const PROGRESS_API =
 "https://createlk-course-progress.createlk.workers.dev";
 
-/*
-Your PayHere checkout Worker.
-
-IMPORTANT:
-The Worker should NOT require a phone number.
-It should accept student_id, email and name.
-*/
-
 const PAYMENT_API =
 "https://createlk-payhere-checkout.createlk.workers.dev";
-
 
 const STORAGE_KEY =
 "createlk_student";
 
 
-/* ==================================================
+/* =====================================================
    HELPER
-================================================== */
+===================================================== */
 
 function $(id){
   return document.getElementById(id);
 }
 
 
-/* ==================================================
-   GET STUDENT
-================================================== */
+/* =====================================================
+   GET STUDENT SESSION
+===================================================== */
 
 let student = null;
 
@@ -587,9 +571,9 @@ try{
 }
 
 
-/* ==================================================
+/* =====================================================
    STUDENT ID
-================================================== */
+===================================================== */
 
 const studentId =
 String(
@@ -600,9 +584,9 @@ String(
 );
 
 
-/* ==================================================
-   LOGIN REQUIRED
-================================================== */
+/* =====================================================
+   LOGIN CHECK
+===================================================== */
 
 if(!studentId){
 
@@ -611,9 +595,9 @@ if(!studentId){
 }
 
 
-/* ==================================================
-   DISPLAY BASIC INFORMATION
-================================================== */
+/* =====================================================
+   BASIC STUDENT DISPLAY
+===================================================== */
 
 $("studentId").textContent =
 studentId;
@@ -632,57 +616,32 @@ $("welcome").textContent =
 `Welcome, ${firstName} 👋`;
 
 
-/* ==================================================
+/* =====================================================
    ERROR HELPERS
-================================================== */
+===================================================== */
 
-function showMembershipError(message){
+function showError(elementId,message){
 
-  $("membershipError").textContent =
+  $(elementId).textContent =
     message;
 
-  $("membershipError")
+  $(elementId)
     .classList.add("show");
 
 }
 
 
-function showProgressError(message){
+function hideMessage(elementId){
 
-  $("progressError").textContent =
-    message;
-
-  $("progressError")
-    .classList.add("show");
+  $(elementId)
+    .classList.remove("show");
 
 }
 
 
-function showPaymentError(message){
-
-  $("paymentError").textContent =
-    message;
-
-  $("paymentError")
-    .classList.add("show");
-
-}
-
-
-function showPaymentSuccess(message){
-
-  $("paymentMessage").textContent =
-    message;
-
-  $("paymentMessage")
-    .classList.add("show");
-
-}
-
-
-/* ==================================================
+/* =====================================================
    MEMBERSHIP
-================================================== */
+===================================================== */
 
 let membershipActive = false;
 
@@ -756,19 +715,13 @@ async function checkMembership(){
       .toUpperCase();
 
 
-    /*
-      ACTIVE/PREMIUM = Premium
-
-      NONE/empty/expired/inactive =
-      INACTIVE
-    */
-
     if(
       status === "ACTIVE" ||
       status === "PREMIUM"
     ){
 
-      membershipActive = true;
+      membershipActive =
+        true;
 
       $("membership").textContent =
         "ACTIVE";
@@ -776,9 +729,20 @@ async function checkMembership(){
       $("membership").className =
         "account-value active";
 
+
+      $("upgradeButton").textContent =
+        "✓ Premium Active";
+
+      $("upgradeButton").disabled =
+        true;
+
+      $("upgradeButton")
+        .classList.add("active-btn");
+
     }else{
 
-      membershipActive = false;
+      membershipActive =
+        false;
 
       $("membership").textContent =
         "INACTIVE";
@@ -789,9 +753,9 @@ async function checkMembership(){
     }
 
 
-    /* ==================================================
+    /* =================================================
        EXPIRY
-    ================================================== */
+    ================================================= */
 
     if(data.membership_expiry){
 
@@ -825,29 +789,10 @@ async function checkMembership(){
     }
 
 
-    /*
-      If Premium is already active,
-      change the button.
-    */
-
-    if(membershipActive){
-
-      $("upgradeButton").textContent =
-        "✓ Premium Active";
-
-      $("upgradeButton").disabled =
-        true;
-
-      $("upgradeButton").classList.add(
-        "secondary"
-      );
-
-    }
-
-
   }catch(error){
 
-    membershipActive = false;
+    membershipActive =
+      false;
 
     $("membership").textContent =
       "Unable to check";
@@ -859,7 +804,8 @@ async function checkMembership(){
       "-";
 
 
-    showMembershipError(
+    showError(
+      "membershipError",
       error.message ||
       "Unable to connect to Course API."
     );
@@ -869,9 +815,9 @@ async function checkMembership(){
 }
 
 
-/* ==================================================
+/* =====================================================
    COURSE PROGRESS
-================================================== */
+===================================================== */
 
 async function loadProgress(){
 
@@ -955,32 +901,27 @@ async function loadProgress(){
     $("completedDays").textContent =
       completed;
 
-
     $("progressPercent").textContent =
       percent + "%";
-
 
     $("progressFill").style.width =
       percent + "%";
 
 
-    /* ==================================================
+    /* =================================================
        CERTIFICATE
-    ================================================== */
+    ================================================= */
 
     if(completed >= 365){
 
       $("certificateMessage").textContent =
         "🎉 You completed all 365 days! Your certificate is unlocked.";
 
-
       $("certificateButton").disabled =
         false;
 
-
       $("certificateButton")
         .classList.add("unlocked");
-
 
       $("certificateButton").textContent =
         "🎓 Get Certificate";
@@ -993,7 +934,6 @@ async function loadProgress(){
             "certificate.html";
 
         };
-
 
     }else{
 
@@ -1021,7 +961,8 @@ async function loadProgress(){
       "Unable to check course progress.";
 
 
-    showProgressError(
+    showError(
+      "progressError",
       error.message ||
       "Unable to connect to Progress API."
     );
@@ -1031,26 +972,37 @@ async function loadProgress(){
 }
 
 
-/* ==================================================
-   PREMIUM PAYMENT
-================================================== */
+/* =====================================================
+   PAYHERE CHECKOUT
+===================================================== */
 
-async function startPremiumPayment(){
+/*
+   IMPORTANT:
 
-  /*
-    Do NOT request phone number.
-  */
+   The dashboard sends ONLY the student ID.
 
-  $("paymentError")
-    .classList.remove("show");
+   The PayHere Worker gets:
 
-  $("paymentMessage")
-    .classList.remove("show");
+   - name
+   - email
+   - phone
+
+   directly from Cloudflare D1.
+
+   Therefore the student never needs
+   to enter a phone number here.
+*/
+
+async function startPayment(){
+
+  hideMessage("paymentError");
+  hideMessage("paymentSuccess");
 
 
   if(membershipActive){
 
-    showPaymentSuccess(
+    showError(
+      "paymentError",
       "Your Premium membership is already active."
     );
 
@@ -1072,45 +1024,6 @@ async function startPremiumPayment(){
 
   try{
 
-    const name =
-      student?.name ||
-      (
-        student?.first_name
-          ? (
-              student.first_name +
-              (
-                student?.last_name
-                  ? " " + student.last_name
-                  : ""
-              )
-            )
-          : "CreateLK Student"
-      );
-
-
-    const email =
-      student?.email || "";
-
-
-    /*
-      Only send information that is
-      already available in the account.
-    */
-
-    const payload = {
-
-      student_id:
-        studentId,
-
-      email:
-        email,
-
-      name:
-        name
-
-    };
-
-
     const response =
       await fetch(
         PAYMENT_API,
@@ -1125,10 +1038,17 @@ async function startPremiumPayment(){
               "application/json"
           },
 
+          /*
+             ONLY student_id is sent.
+          */
+
           body:
-            JSON.stringify(
-              payload
-            )
+            JSON.stringify({
+
+              student_id:
+                studentId
+
+            })
         }
       );
 
@@ -1143,7 +1063,7 @@ async function startPremiumPayment(){
     }catch(error){
 
       throw new Error(
-        "Invalid response from payment server."
+        "Invalid response from PayHere Worker."
       );
 
     }
@@ -1153,7 +1073,7 @@ async function startPremiumPayment(){
 
       throw new Error(
         data.message ||
-        "Unable to create payment."
+        "Unable to create PayHere payment."
       );
 
     }
@@ -1172,14 +1092,15 @@ async function startPremiumPayment(){
 
 
     /*
-      Support common checkout URL names.
+       Support different checkout URL
+       names returned by your Worker.
     */
 
     const checkoutUrl =
       data.checkout_url ||
       data.payment_url ||
-      data.url ||
-      data.redirect_url;
+      data.redirect_url ||
+      data.url;
 
 
     if(checkoutUrl){
@@ -1193,8 +1114,8 @@ async function startPremiumPayment(){
 
 
     /*
-      Some Workers may return
-      an HTML payment form instead.
+       Some Workers may return
+       an HTML checkout form.
     */
 
     if(data.html){
@@ -1212,8 +1133,14 @@ async function startPremiumPayment(){
     }
 
 
+    /*
+       If your Worker returns a PayHere
+       form object instead of a URL,
+       this section can be adapted to it.
+    */
+
     throw new Error(
-      "Payment checkout URL was not returned by the Worker."
+      "PayHere checkout URL was not returned."
     );
 
 
@@ -1226,9 +1153,10 @@ async function startPremiumPayment(){
       "⭐ Upgrade to Premium";
 
 
-    showPaymentError(
+    showError(
+      "paymentError",
       error.message ||
-      "Unable to start payment."
+      "Unable to start PayHere payment."
     );
 
   }
@@ -1237,12 +1165,12 @@ async function startPremiumPayment(){
 
 
 $("upgradeButton").onclick =
-  startPremiumPayment;
+  startPayment;
 
 
-/* ==================================================
+/* =====================================================
    LOGOUT
-================================================== */
+===================================================== */
 
 $("logout").onclick =
 function(){
@@ -1262,9 +1190,9 @@ function(){
 };
 
 
-/* ==================================================
+/* =====================================================
    START
-================================================== */
+===================================================== */
 
 checkMembership();
 
