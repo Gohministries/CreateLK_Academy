@@ -1,0 +1,572 @@
+export default {
+  async fetch(request, env) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Accept",
+      "Content-Type": "application/json"
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: cors });
+    }
+
+    const url = new URL(request.url);
+
+    try {
+
+      /* =========================
+         REGISTER
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/register"
+      ) {
+
+        const body = await request.json();
+
+        const first_name = String(body.first_name || "").trim();
+        const last_name = String(body.last_name || "").trim();
+        const email = String(body.email || "").trim().toLowerCase();
+        const phone = String(body.phone || "").trim();
+        const password = String(body.password || "");
+
+        if (
+          !first_name ||
+          !last_name ||
+          !email ||
+          !phone ||
+          !password
+        ) {
+          return json(
+            {
+              success: false,
+              message: "Please complete all fields."
+            },
+            400,
+            cors
+          );
+        }
+
+        if (password.length < 6) {
+          return json(
+            {
+              success: false,
+              message: "Password must contain at least 6 characters."
+            },
+            400,
+            cors
+          );
+        }
+
+        /* Check existing email */
+
+        const existing = await env.DB
+          .prepare(
+            "SELECT id FROM students WHERE email = ? LIMIT 1"
+          )
+          .bind(email)
+          .first();
+
+        if (existing) {
+          return json(
+            {
+              success: false,
+              message: "An account with this email already exists."
+            },
+            409,
+            cors
+          );
+        }
+
+        /* Hash password */
+
+        const password_hash =
+          await hashPassword(password);
+
+        /* Create student */
+
+        const result = await env.DB
+          .prepare(`
+            INSERT INTO students
+            (
+              first_name,
+              last_name,
+              email,
+              phone,
+              password_hash,
+              membership_status,
+              membership_expiry
+            )
+            VALUES (?, ?, ?, ?, ?, 'NONE', NULL)
+          `)
+          .bind(
+            first_name,
+            last_name,
+            email,
+            phone,
+            password_hash
+          )
+          .run();
+
+        const studentId =
+          result.meta.last_row_id;
+
+        return json(
+          {
+            success: true,
+            message: "Account created successfully.",
+            student_id: studentId
+          },
+          201,
+          cors
+        );
+      }
+
+
+      /* =========================
+         LOGIN
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/login"
+      ) {
+
+        const body = await request.json();
+
+        const email =
+          String(body.email || "")
+            .trim()
+            .toLowerCase();
+
+        const password =
+          String(body.password || "");
+
+        if (!email || !password) {
+          return json(
+            {
+              success: false,
+              message: "Email and password are required."
+            },
+            400,
+            cors
+          );
+        }
+
+        /* Find student */
+
+        const student = await env.DB
+          .prepare(`
+            SELECT
+              id,
+              first_name,
+              last_name,
+              email,
+              phone,
+              password_hash,
+              membership_status,
+              membership_expiry,
+              created_at,
+              updated_at
+            FROM students
+            WHERE email = ?
+            LIMIT 1
+          `)
+          .bind(email)
+          .first();
+
+        if (!student) {
+          return json(
+            {
+              success: false,
+              message: "Invalid email or password."
+            },
+            401,
+            cors
+          );
+        }
+
+        /* Verify password */
+
+        const valid =
+          await verifyPassword(
+            password,
+            student.password_hash
+          );
+
+        if (!valid) {
+          return json(
+            {
+              success: false,
+              message: "Invalid email or password."
+            },
+            401,
+            cors
+          );
+        }
+
+        /* Never send password_hash to browser */
+
+        return json(
+          {
+            success: true,
+            message: "Login successful.",
+
+            student_id: student.id,
+
+            student: {
+              id: student.id,
+              student_id: student.id,
+              first_name: student.first_name,
+              last_name: student.last_name,
+              name:
+                `${student.first_name} ${student.last_name}`.trim(),
+              email: student.email,
+              phone: student.phone,
+              membership_status:
+                student.membership_status || "NONE",
+              membership_expiry:
+                student.membership_expiry || null
+            },
+
+            first_name: student.first_name,
+            last_name: student.last_name,
+            email: student.email,
+            phone: student.phone,
+            membership_status:
+              student.membership_status || "NONE",
+            membership_expiry:
+              student.membership_expiry || null
+          },
+          200,
+          cors
+        );
+      }
+
+
+      /* =========================
+         GET STUDENT
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/student"
+      ) {
+
+        const id =
+          url.searchParams.get("id");
+
+        if (!id) {
+          return json(
+            {
+              success: false,
+              message: "Student ID is required."
+            },
+            400,
+            cors
+          );
+        }
+
+        const student = await env.DB
+          .prepare(`
+            SELECT
+              id,
+              first_name,
+              last_name,
+              email,
+              phone,
+              membership_status,
+              membership_expiry,
+              created_at,
+              updated_at
+            FROM students
+            WHERE id = ?
+            LIMIT 1
+          `)
+          .bind(id)
+          .first();
+
+        if (!student) {
+          return json(
+            {
+              success: false,
+              message: "Student not found."
+            },
+            404,
+            cors
+          );
+        }
+
+        return json(
+          {
+            success: true,
+            student: student
+          },
+          200,
+          cors
+        );
+      }
+
+
+      /* =========================
+         HEALTH CHECK
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/"
+      ) {
+
+        return json(
+          {
+            success: true,
+            service: "CreateLK Academy API",
+            status: "online"
+          },
+          200,
+          cors
+        );
+      }
+
+
+      /* =========================
+         NOT FOUND
+      ========================= */
+
+      return json(
+        {
+          success: false,
+          message: "API route not found."
+        },
+        404,
+        cors
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      return json(
+        {
+          success: false,
+          message: "Server error. Please try again."
+        },
+        500,
+        cors
+      );
+    }
+  }
+};
+
+
+/* ==========================================
+   JSON RESPONSE
+========================================== */
+
+function json(data, status, cors) {
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status: status,
+      headers: cors
+    }
+  );
+}
+
+
+/* ==========================================
+   PASSWORD HASH
+   PBKDF2 + SHA-256
+========================================== */
+
+async function hashPassword(password) {
+
+  const encoder =
+    new TextEncoder();
+
+  const salt =
+    crypto.getRandomValues(
+      new Uint8Array(16)
+    );
+
+  const key =
+    await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(password),
+      {
+        name: "PBKDF2"
+      },
+      false,
+      [
+        "deriveBits"
+      ]
+    );
+
+  const bits =
+    await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 100000,
+        hash: "SHA-256"
+      },
+      key,
+      256
+    );
+
+  const hash =
+    new Uint8Array(bits);
+
+  return [
+    "pbkdf2",
+    "sha256",
+    "100000",
+    bytesToBase64(salt),
+    bytesToBase64(hash)
+  ].join("$");
+}
+
+
+/* ==========================================
+   PASSWORD VERIFY
+========================================== */
+
+async function verifyPassword(
+  password,
+  stored
+) {
+
+  try {
+
+    const parts =
+      stored.split("$");
+
+    if (
+      parts.length !== 5 ||
+      parts[0] !== "pbkdf2"
+    ) {
+      return false;
+    }
+
+    const iterations =
+      Number(parts[2]);
+
+    const salt =
+      base64ToBytes(parts[3]);
+
+    const expected =
+      base64ToBytes(parts[4]);
+
+    const encoder =
+      new TextEncoder();
+
+    const key =
+      await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(password),
+        {
+          name: "PBKDF2"
+        },
+        false,
+        [
+          "deriveBits"
+        ]
+      );
+
+    const bits =
+      await crypto.subtle.deriveBits(
+        {
+          name: "PBKDF2",
+          salt: salt,
+          iterations: iterations,
+          hash: "SHA-256"
+        },
+        key,
+        256
+      );
+
+    const actual =
+      new Uint8Array(bits);
+
+    return constantTimeEqual(
+      actual,
+      expected
+    );
+
+  } catch (error) {
+
+    console.error(error);
+
+    return false;
+  }
+}
+
+
+/* ==========================================
+   BASE64
+========================================== */
+
+function bytesToBase64(bytes) {
+
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
+}
+
+
+function base64ToBytes(value) {
+
+  const binary =
+    atob(value);
+
+  const bytes =
+    new Uint8Array(
+      binary.length
+    );
+
+  for (
+    let i = 0;
+    i < binary.length;
+    i++
+  ) {
+    bytes[i] =
+      binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+
+/* ==========================================
+   CONSTANT-TIME COMPARISON
+========================================== */
+
+function constantTimeEqual(
+  a,
+  b
+) {
+
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  let result = 0;
+
+  for (
+    let i = 0;
+    i < a.length;
+    i++
+  ) {
+    result |=
+      a[i] ^ b[i];
+  }
+
+  return result === 0;
+}
