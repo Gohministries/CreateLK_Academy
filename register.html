@@ -20,7 +20,6 @@ padding:0
 --purple:#7c3aed;
 --pink:#ec4899;
 --green:#10b981;
---orange:#f97316;
 --dark:#172033;
 --muted:#667085;
 --line:#e5e7eb;
@@ -53,7 +52,7 @@ z-index:10
 .nav{
 max-width:900px;
 margin:auto;
-padding:15px 18px;
+padding:14px 18px;
 display:flex;
 justify-content:space-between;
 align-items:center
@@ -179,6 +178,33 @@ display:block;
 background:#eff6ff;
 border:1px solid #bfdbfe;
 color:#1d4ed8
+}
+
+.student-id{
+display:none;
+margin-bottom:20px;
+padding:18px;
+border-radius:16px;
+background:linear-gradient(135deg,#eef4ff,#f5f0ff);
+border:1px solid #dbe7ff;
+text-align:center;
+position:relative;
+z-index:2
+}
+
+.student-id small{
+display:block;
+color:var(--muted);
+font-size:12px;
+font-weight:700;
+margin-bottom:6px
+}
+
+.student-id strong{
+display:block;
+font-size:22px;
+color:var(--blue);
+letter-spacing:.5px
 }
 
 form{
@@ -333,6 +359,7 @@ font-size:18px
 
 </header>
 
+
 <main>
 
 <div class="card">
@@ -343,9 +370,7 @@ font-size:18px
 👤
 </div>
 
-<h1>
-Create Account
-</h1>
+<h1>Create Account</h1>
 
 <div class="subtitle">
 Join CreateLK Academy and start your
@@ -354,7 +379,20 @@ Join CreateLK Academy and start your
 
 </div>
 
+
 <div id="message" class="message"></div>
+
+
+<div id="studentIdBox" class="student-id">
+
+<small>Your Student ID</small>
+
+<strong id="studentId">
+CLA-2026-0001
+</strong>
+
+</div>
+
 
 <form id="registerForm">
 
@@ -373,6 +411,7 @@ autocomplete="given-name">
 
 </div>
 
+
 <div class="group">
 
 <label for="lastName">
@@ -387,6 +426,7 @@ required
 autocomplete="family-name">
 
 </div>
+
 
 <div class="group">
 
@@ -403,6 +443,7 @@ autocomplete="email">
 
 </div>
 
+
 <div class="group">
 
 <label for="phone">
@@ -417,6 +458,7 @@ required
 autocomplete="tel">
 
 </div>
+
 
 <div class="group">
 
@@ -433,6 +475,7 @@ autocomplete="new-password">
 
 </div>
 
+
 <div class="group">
 
 <label for="confirmPassword">
@@ -448,13 +491,17 @@ autocomplete="new-password">
 
 </div>
 
+
 <button
 id="registerButton"
 type="submit">
+
 🚀 Create Account
+
 </button>
 
 </form>
+
 
 <div class="login">
 
@@ -465,6 +512,7 @@ Login
 </a>
 
 </div>
+
 
 <div class="terms">
 
@@ -481,9 +529,11 @@ and
 
 </main>
 
+
 <footer>
 © 2026 CreateLK Academy. All rights reserved.
 </footer>
+
 
 <a
 class="whatsapp"
@@ -491,30 +541,16 @@ href="https://wa.me/94771190395"
 target="_blank"
 rel="noopener"
 aria-label="WhatsApp">
+
 💬
+
 </a>
+
 
 <script>
 
-/* ==============================
-   NEW AUTHENTICATION API
-============================== */
-
 const ACCOUNT_API =
 "https://createlk-auth.createlk.workers.dev";
-
-
-/* ==============================
-   COURSE API
-============================== */
-
-const COURSE_API =
-"https://createlk-course-lessons.createlk.workers.dev";
-
-
-/* ==============================
-   ELEMENTS
-============================== */
 
 const form =
 document.getElementById("registerForm");
@@ -525,10 +561,12 @@ document.getElementById("message");
 const button =
 document.getElementById("registerButton");
 
+const studentIdBox =
+document.getElementById("studentIdBox");
 
-/* ==============================
-   MESSAGE
-============================== */
+const studentIdElement =
+document.getElementById("studentId");
+
 
 function showMessage(text,type){
 
@@ -540,6 +578,23 @@ text;
 
 message.style.display =
 "block";
+
+}
+
+
+/* ==============================
+   STUDENT ID
+============================== */
+
+function formatStudentId(id){
+
+const year =
+new Date().getFullYear();
+
+return "CLA-" +
+year +
+"-" +
+String(id).padStart(4,"0");
 
 }
 
@@ -580,8 +635,6 @@ document.getElementById("confirmPassword")
 .value;
 
 
-/* VALIDATION */
-
 if(
 !first_name ||
 !last_name ||
@@ -599,6 +652,7 @@ return;
 
 }
 
+
 if(password.length < 6){
 
 showMessage(
@@ -609,6 +663,7 @@ showMessage(
 return;
 
 }
+
 
 if(password !== confirmPassword){
 
@@ -621,6 +676,7 @@ return;
 
 }
 
+
 button.disabled = true;
 
 button.textContent =
@@ -631,12 +687,14 @@ showMessage(
 "info"
 );
 
+
 try{
 
 const response =
 await fetch(
 ACCOUNT_API + "/api/register",
 {
+
 method:"POST",
 
 headers:{
@@ -656,6 +714,7 @@ password:password
 
 });
 
+
 const raw =
 await response.text();
 
@@ -663,6 +722,7 @@ console.log(
 "REGISTER RESPONSE:",
 raw
 );
+
 
 let data;
 
@@ -679,6 +739,7 @@ throw new Error(
 
 }
 
+
 if(
 !response.ok ||
 data.success !== true
@@ -693,23 +754,118 @@ data.message ||
 
 
 /* ==============================
-   SUCCESS
+   GET STUDENT ID
 ============================== */
 
+let databaseId =
+data.id ||
+data.student_id ||
+data.studentId ||
+(data.student && data.student.id);
+
+
+/*
+If the Worker returns an already-formatted
+student ID, use it directly.
+*/
+
+let finalStudentId =
+data.student_id ||
+data.studentId ||
+(data.student && data.student.student_id);
+
+
+/*
+If Worker only returns database ID,
+format it as CLA-2026-0001.
+*/
+
+if(!finalStudentId && databaseId){
+
+finalStudentId =
+formatStudentId(databaseId);
+
+}
+
+
+/*
+If the Worker does not currently return
+an ID, show a temporary reference.
+
+The permanent ID should be generated
+by the Worker/D1.
+*/
+
+if(!finalStudentId){
+
+finalStudentId =
+"Your Student ID will appear after login";
+
+}
+
+
+/* ==============================
+   SAVE LOCAL STUDENT DATA
+============================== */
+
+const studentData = {
+
+first_name:first_name,
+
+last_name:last_name,
+
+email:email,
+
+phone:phone,
+
+student_id:finalStudentId,
+
+membership_status:
+data.membership_status ||
+"FREE",
+
+membership_expiry:
+data.membership_expiry ||
+null
+
+};
+
+
+localStorage.setItem(
+"createlk_student",
+JSON.stringify(studentData)
+);
+
+
+/* ==============================
+   SHOW SUCCESS
+============================== */
+
+form.style.display =
+"none";
+
+studentIdElement.textContent =
+finalStudentId;
+
+studentIdBox.style.display =
+"block";
+
 showMessage(
-"✅ Account created successfully! Redirecting to login...",
+"✅ Account created successfully!",
 "success"
 );
 
+
 button.textContent =
 "✓ Account Created";
+
 
 setTimeout(function(){
 
 window.location.href =
 "login.html";
 
-},1200);
+},2500);
 
 
 }catch(error){
