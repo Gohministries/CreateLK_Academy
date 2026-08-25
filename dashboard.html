@@ -45,12 +45,13 @@ main{padding:12px}
 .vocab{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
 .vocab span{padding:4px 8px;border:1px solid var(--l);border-radius:7px;font-size:10px}
 .material{margin-top:10px;padding:11px;background:#f8fafc;border:1px solid var(--l);border-radius:9px;font-size:12px;line-height:1.7}
+.lock{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:11px;margin-top:10px;font-size:12px;font-weight:700}
 .question{border:1px solid var(--l);border-radius:10px;padding:11px;margin-top:8px}
 .q{font-size:12px;font-weight:700;margin-bottom:7px}
 .option{display:block;background:#f8fafc;border:1px solid var(--l);padding:8px;border-radius:8px;margin:5px 0;font-size:11px}
 .option input{margin-right:6px}
 .btn{width:100%;height:43px;border:0;border-radius:9px;margin-top:11px;font-weight:800;font-size:12px;cursor:pointer}
-.btn:disabled{opacity:.6}
+.btn:disabled{opacity:.55;cursor:not-allowed}
 .dark{background:var(--d);color:#fff}
 .pay{background:linear-gradient(135deg,var(--b),var(--p));color:#fff}
 .share{background:var(--g);color:#fff}
@@ -59,7 +60,7 @@ main{padding:12px}
 .refbox input{flex:1;min-width:0;padding:9px;border:1px solid var(--l);border-radius:8px;font-size:10px}
 .copy{background:#f59e0b;color:#fff;border:0;border-radius:8px;padding:0 12px;font-weight:800}
 footer{text-align:center;color:var(--m);font-size:9px;padding:5px 0 15px}
-.msg{display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--d);color:#fff;padding:9px 14px;border-radius:9px;font-size:11px;z-index:20}
+.msg{display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--d);color:#fff;padding:9px 14px;border-radius:9px;font-size:11px;z-index:20;max-width:90%;text-align:center}
 @media(max-width:480px){
  main{padding:9px}.card{padding:13px}.account{grid-template-columns:1fr}
 }
@@ -148,6 +149,8 @@ Loading today's lesson...
 
 <div class="material" id="material" style="display:none"></div>
 
+<div class="lock" id="lock" style="display:none"></div>
+
 </section>
 
 <section class="card">
@@ -231,7 +234,6 @@ Earn 20% commission from verified Premium payments.
 </div>
 
 </div>
-
 </section>
 
 <section class="card">
@@ -261,7 +263,6 @@ Earn 20% commission from verified Premium payments.
 </div>
 
 </div>
-
 </section>
 
 <footer>© 2026 CreateLK Academy</footer>
@@ -272,573 +273,724 @@ Earn 20% commission from verified Premium payments.
 
 <script>
 
-const API="https://createlk-course-lessons.createlk.workers.dev";
-const PAY="https://createlk-premium-payments.createlk.workers.dev";
-const REF="https://createlk-referrals.createlk.workers.dev";
+const API=
+"https://createlk-course-lessons.createlk.workers.dev";
 
-let student=JSON.parse(
- localStorage.getItem("createlk_student")||"{}"
+const PAY=
+"https://createlk-premium-payments.createlk.workers.dev";
+
+const REF=
+"https://createlk-referrals.createlk.workers.dev";
+
+let student=
+JSON.parse(
+localStorage.getItem("createlk_student")||"{}"
 );
 
 let questions=[];
-let currentDay=1;
 let completedDays=0;
+let currentDay=1;
+let locked=false;
+let unlockTimer=null;
 
 const ID=()=>Number(
- student.id||
- student.database_id||
- student.student_id_number||
- 0
+student.id||
+student.database_id||
+student.student_id_number||
+0
 );
 
-const premium=()=>String(
- student.membership_status||"FREE"
+const isPremium=()=>String(
+student.membership_status||"FREE"
 ).toUpperCase()==="PREMIUM";
 
 const $=id=>document.getElementById(id);
 
 function set(id,value){
- $(id).textContent=value;
+$(id).textContent=value;
 }
 
 function escapeHTML(s){
- return String(s||"").replace(
-  /[&<>"']/g,
-  x=>({
-   "&":"&amp;",
-   "<":"&lt;",
-   ">":"&gt;",
-   '"':"&quot;",
-   "'":"&#039;"
-  }[x])
- );
+return String(s||"").replace(
+/[&<>"']/g,
+x=>({
+"&":"&amp;",
+"<":"&lt;",
+">":"&gt;",
+'"':"&quot;",
+"'":"&#039;"
+}[x])
+);
 }
 
-/* LOAD REAL PROGRESS */
+/* Sri Lanka time */
+
+function sriLankaDate(){
+return new Date(
+new Date().toLocaleString(
+"en-US",
+{timeZone:"Asia/Colombo"}
+)
+);
+}
+
+function dateKey(date){
+return date.getFullYear()+"-"+
+String(date.getMonth()+1).padStart(2,"0")+"-"+
+String(date.getDate()).padStart(2,"0");
+}
+
+/*
+ Returns true if the completed lesson
+ was completed today in Sri Lanka.
+*/
+
+function completedToday(lastCompleted){
+
+if(!lastCompleted)return false;
+
+const d=new Date(lastCompleted);
+
+if(isNaN(d.getTime()))return false;
+
+return dateKey(
+new Date(
+d.toLocaleString(
+"en-US",
+{timeZone:"Asia/Colombo"}
+)
+)
+)===dateKey(sriLankaDate());
+
+}
+
+/* Find midnight */
+
+function nextMidnight(){
+
+const now=sriLankaDate();
+
+const next=new Date(now);
+
+next.setHours(24,0,0,0);
+
+return next-now;
+}
+
+function countdown(){
+
+const ms=nextMidnight();
+
+const total=Math.max(1,
+Math.floor(ms/1000));
+
+const h=Math.floor(total/3600);
+const m=Math.floor((total%3600)/60);
+const s=total%60;
+
+return `${h}h ${m}m ${s}s`;
+}
+
+/* PROGRESS */
 
 async function getProgress(){
 
- try{
+try{
 
-  const r=await fetch(
-   `${API}/api/progress?student_id=${ID()}`
-  );
+const r=await fetch(
+`${API}/api/progress?student_id=${ID()}`
+);
 
-  const d=await r.json();
+const d=await r.json();
 
-  if(r.ok&&d.success){
+if(r.ok&&d.success){
 
-   completedDays=Number(
-    d.completed_lessons||
-    d.completed_days_count||
-    (Array.isArray(d.completed_days)
-      ?d.completed_days.length:0)
-   );
+completedDays=Number(
+d.completed_lessons||
+d.completed_days_count||
+(Array.isArray(d.completed_days)
+?d.completed_days.length:0)
+);
 
-   return;
-  }
-
- }catch(e){}
-
- /* fallback only for old saved login data */
-
- completedDays=Math.min(
-  365,
-  Number(
-   student.completed_lessons||
-   student.completedLessons||
-   0
-  )
- );
+return d;
 }
 
+}catch(e){}
 
-/* DASHBOARD */
+/*
+Fallback only for old accounts.
+The Worker should be the
+source of truth.
+*/
+
+completedDays=Math.min(
+365,
+Number(
+student.completed_lessons||
+student.completedLessons||
+0
+)
+);
+
+return {};
+}
+
+/* START */
 
 async function start(){
 
- if(!ID()){
-  location.href="login.html";
-  return;
- }
-
- await getProgress();
-
- currentDay=Math.min(
-  365,
-  completedDays+1
- );
-
- const name=(
-  `${student.first_name||""} ${student.last_name||""}`
- ).trim()||"Student";
-
- const pct=Math.round(
-  completedDays/365*100
- );
-
- set("welcome",`Welcome, ${name} 👋`);
- set("sid",
-  student.student_id||
-  student.studentId||
-  ID()
- );
-
- set("done",completedDays);
- set("pd",completedDays);
- set("day",currentDay);
- set("ld",currentDay);
-
- set("hp",pct+"%");
- set("pct",pct+"%");
-
- $("hb").style.width=pct+"%";
- $("bar").style.width=pct+"%";
-
- set("member",premium()?"Premium":"Free");
-
- set("name",name);
- set("email",student.email||"-");
- set("phone",student.phone||"-");
- set(
-  "expiry",
-  student.membership_expiry||"Not active"
- );
-
- $("pay").style.display=
-  premium()?"none":"block";
-
- $("ref").value=
-  `${location.origin}/register.html?ref=${encodeURIComponent(ID())}`;
-
- await loadLesson();
- await loadQuestions();
- await earnings();
+if(!ID()){
+location.href="login.html";
+return;
 }
 
+const progress=await getProgress();
+
+const lastCompleted=
+progress.last_completed_at||
+progress.completed_at||
+progress.lastCompletedAt||
+null;
+
+const name=(
+`${student.first_name||""} ${student.last_name||""}`
+).trim()||"Student";
+
+set("welcome",`Welcome, ${name} 👋`);
+
+set(
+"sid",
+student.student_id||
+student.studentId||
+ID()
+);
+
+set("done",completedDays);
+set("pd",completedDays);
+
+set("member",isPremium()?"Premium":"Free");
+
+set("name",name);
+set("email",student.email||"-");
+set("phone",student.phone||"-");
+set(
+"expiry",
+student.membership_expiry||"Not active"
+);
+
+const pct=Math.round(
+completedDays/365*100
+);
+
+set("hp",pct+"%");
+set("pct",pct+"%");
+$("hb").style.width=pct+"%";
+$("bar").style.width=pct+"%";
+
+$("pay").style.display=
+isPremium()?"none":"block";
+
+$("ref").value=
+`${location.origin}/register.html?ref=${encodeURIComponent(ID())}`;
+
+/*
+ If today's lesson was already completed,
+ lock the next lesson until midnight.
+*/
+
+if(
+completedDays>0 &&
+completedToday(lastCompleted)
+){
+
+currentDay=completedDays;
+locked=true;
+
+}else{
+
+currentDay=Math.min(
+365,
+completedDays+1
+);
+
+locked=false;
+}
+
+set("day",currentDay);
+set("ld",currentDay);
+
+if(locked){
+
+showCompletedUntilMidnight();
+
+}else{
+
+await loadLesson();
+await loadQuestions();
+}
+
+earn();
+}
+
+/* LOCK SCREEN */
+
+function showCompletedUntilMidnight(){
+
+set(
+"lt",
+`🎉 Day ${currentDay} Completed`
+);
+
+set(
+"ldesc",
+"You have completed today's lesson and 5 questions."
+);
+
+$("vocab").innerHTML="";
+
+$("material").style.display="none";
+
+$("lock").style.display="block";
+
+$("lock").innerHTML=
+`🔒 Next lesson unlocks at 12:00 AM Sri Lanka time.<br>
+Please wait <b id="timer">${countdown()}</b>.`;
+
+$("questions").innerHTML=
+`<div class="lock">
+✅ Day ${currentDay} has been completed.<br>
+Tomorrow's lesson will be available after midnight.
+</div>`;
+
+$("submit").disabled=true;
+$("submit").style.display="none";
+
+unlockTimer=setInterval(()=>{
+
+const t=$("timer");
+
+if(t)t.textContent=countdown();
+
+if(nextMidnight()<=1000){
+
+clearInterval(unlockTimer);
+
+location.reload();
+
+}
+
+},1000);
+}
 
 /* LESSON */
 
 async function loadLesson(){
 
- set("lt","Loading...");
- set("ldesc","Loading today's lesson...");
+$("lock").style.display="none";
 
- try{
+set("lt","Loading...");
+set("ldesc","Loading today's lesson...");
 
-  const r=await fetch(
-   `${API}/api/lesson?day=${currentDay}`
-  );
+try{
 
-  const d=await r.json();
+const r=await fetch(
+`${API}/api/lesson?day=${currentDay}`
+);
 
-  if(!r.ok||!d.success||!d.lesson)
-   throw Error();
+const d=await r.json();
 
-  const l=d.lesson;
+if(
+!r.ok||
+!d.success||
+!d.lesson
+)throw Error();
 
-  set("lt",l.title);
-  set("ldesc",l.description||"");
+const l=d.lesson;
 
-  $("vocab").innerHTML="";
+set("lt",l.title);
+set("ldesc",l.description||"");
 
-  (l.vocabulary||[]).forEach(v=>{
+$("vocab").innerHTML="";
 
-   const s=document.createElement("span");
+(l.vocabulary||[]).forEach(v=>{
 
-   s.textContent=
-    typeof v==="object"
-     ?v.word||""
-     :v;
+const s=document.createElement("span");
 
-   if(s.textContent)
-    $("vocab").appendChild(s);
-  });
+s.textContent=
+typeof v==="object"
+?v.word||""
+:v;
 
-  if(l.content){
+if(s.textContent)
+$("vocab").appendChild(s);
+});
 
-   $("material").innerHTML=l.content;
-   $("material").style.display="block";
+if(l.content){
 
-  }else{
+$("material").innerHTML=l.content;
+$("material").style.display="block";
 
-   $("material").style.display="none";
-  }
+}else{
 
- }catch(e){
-
-  set("lt","Lesson unavailable");
-  set(
-   "ldesc",
-   "Today's lesson is not available yet."
-  );
- }
+$("material").style.display="none";
 }
 
+}catch(e){
+
+set("lt","Lesson unavailable");
+
+set(
+"ldesc",
+"Today's lesson is not available yet."
+);
+
+$("questions").textContent=
+"Today's questions are not available yet.";
+
+$("submit").disabled=true;
+}
+}
 
 /* QUESTIONS */
 
 async function loadQuestions(){
 
- $("questions").textContent=
-  "Loading questions...";
+$("questions").textContent=
+"Loading questions...";
 
- $("submit").disabled=true;
+$("submit").disabled=true;
 
- try{
+try{
 
-  const r=await fetch(
-   `${API}/api/lesson-questions?day=${currentDay}`
-  );
+const r=await fetch(
+`${API}/api/lesson-questions?day=${currentDay}`
+);
 
-  const d=await r.json();
+const d=await r.json();
 
-  if(
-   !r.ok||
-   !d.success||
-   !Array.isArray(d.questions)||
-   d.questions.length<5
-  )throw Error();
+if(
+!r.ok||
+!d.success||
+!Array.isArray(d.questions)||
+d.questions.length<5
+)throw Error();
 
-  questions=d.questions.slice(0,5);
+questions=d.questions.slice(0,5);
 
-  $("questions").innerHTML=
-   questions.map((q,i)=>`
+$("questions").innerHTML=
+questions.map((q,i)=>`
 
-   <div class="question">
+<div class="question">
 
-   <div class="q">
-   ${i+1}. ${escapeHTML(q.question)}
-   </div>
+<div class="q">
+${i+1}. ${escapeHTML(q.question)}
+</div>
 
-   ${["A","B","C","D"].map(
-    (x,j)=>`
+${["A","B","C","D"].map(
+(x,j)=>`
 
-    <label class="option">
-    <input
-     type="radio"
-     name="q${q.id}"
-     value="${x}">
-    ${x}. ${escapeHTML(
-     q[
-      ["option_a",
-       "option_b",
-       "option_c",
-       "option_d"][j]
-     ]
-    )}
-    </label>
+<label class="option">
+<input
+type="radio"
+name="q${q.id}"
+value="${x}">
+${x}. ${escapeHTML(
+q[
+["option_a",
+"option_b",
+"option_c",
+"option_d"][j]
+]
+)}
+</label>
 
-   `
-   ).join("")}
+`
+).join("")}
 
-   </div>
+</div>
 
-  `).join("");
+`).join("");
 
-  $("submit").disabled=false;
+$("submit").disabled=false;
 
- }catch(e){
+}catch(e){
 
-  $("questions").textContent=
-   "Today's questions are not available yet.";
- }
+$("questions").textContent=
+"Today's questions are not available yet.";
 }
-
+}
 
 /* SUBMIT */
 
 async function submitQuiz(){
 
- let score=0;
- let answered=0;
+if(locked)return;
 
- questions.forEach(q=>{
+let score=0;
+let answered=0;
 
-  const a=document.querySelector(
-   `input[name="q${q.id}"]:checked`
-  );
+questions.forEach(q=>{
 
-  if(a){
+const a=document.querySelector(
+`input[name="q${q.id}"]:checked`
+);
 
-   answered++;
+if(a){
 
-   if(
-    a.value.toUpperCase()===
-    String(q.correct_answer).toUpperCase()
-   ){
-    score++;
-   }
-  }
- });
+answered++;
 
- if(answered<5){
+if(
+a.value.toUpperCase()===
+String(q.correct_answer).toUpperCase()
+)score++;
+}
+});
 
-  show("Please answer all 5 questions.");
-  return;
- }
+if(answered<5){
 
- $("result").style.display="block";
-
- if(score<4){
-
-  $("result").style.background="#fef2f2";
-  $("result").style.color="#991b1b";
-
-  $("result").textContent=
-   `❌ ${score}/5. You need 4/5 to pass.`;
-
-  return;
- }
-
- $("submit").disabled=true;
- $("submit").textContent="Saving...";
-
- try{
-
-  const r=await fetch(
-   `${API}/api/complete-lesson`,
-   {
-    method:"POST",
-    headers:{
-     "Content-Type":"application/json"
-    },
-    body:JSON.stringify({
-     student_id:ID(),
-     lesson_day:currentDay,
-     score:score
-    })
-   }
-  );
-
-  const d=await r.json();
-
-  if(!r.ok||!d.success)
-   throw Error(
-    d.message||"Unable to save progress."
-   );
-
-  $("result").style.background="#f0fdf4";
-  $("result").style.color="#166534";
-
-  $("result").textContent=
-   `🎉 ${score}/5. Day ${currentDay} completed!`;
-
-  /*
-   Do NOT reload immediately.
-   Update to the next lesson directly.
-  */
-
-  completedDays=currentDay;
-  currentDay=Math.min(
-   365,
-   completedDays+1
-  );
-
-  set("done",completedDays);
-  set("pd",completedDays);
-  set("day",currentDay);
-  set("ld",currentDay);
-
-  const pct=Math.round(
-   completedDays/365*100
-  );
-
-  set("hp",pct+"%");
-  set("pct",pct+"%");
-  $("hb").style.width=pct+"%";
-  $("bar").style.width=pct+"%";
-
-  $("questions").innerHTML=
-   "Loading next day's questions...";
-
-  $("submit").textContent=
-   "✅ Submit Answers";
-
-  $("result").style.display="none";
-
-  await loadLesson();
-  await loadQuestions();
-
- }catch(e){
-
-  $("submit").disabled=false;
-  $("submit").textContent=
-   "✅ Submit Answers";
-
-  show(
-   e.message||
-   "Unable to save progress."
-  );
- }
+show("Please answer all 5 questions.");
+return;
 }
 
+$("result").style.display="block";
+
+if(score<4){
+
+$("result").style.background="#fef2f2";
+$("result").style.color="#991b1b";
+
+$("result").textContent=
+`❌ ${score}/5. You need 4/5 to pass.`;
+
+return;
+}
+
+$("submit").disabled=true;
+$("submit").textContent="Saving...";
+
+try{
+
+const r=await fetch(
+`${API}/api/complete-lesson`,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+student_id:ID(),
+lesson_day:currentDay,
+score:score
+})
+}
+);
+
+const d=await r.json();
+
+if(!r.ok||!d.success)
+throw Error(
+d.message||"Unable to save progress."
+);
+
+/*
+ IMPORTANT:
+ Do NOT immediately move
+ to Day 2.
+
+The student has completed
+today's lesson and must wait
+until midnight.
+*/
+
+completedDays=currentDay;
+
+$("result").style.background="#f0fdf4";
+$("result").style.color="#166534";
+
+$("result").textContent=
+`🎉 ${score}/5. Day ${currentDay} completed!`;
+
+$("done").textContent=completedDays;
+$("pd").textContent=completedDays;
+
+const pct=Math.round(
+completedDays/365*100
+);
+
+$("hp").textContent=pct+"%";
+$("pct").textContent=pct+"%";
+$("hb").style.width=pct+"%";
+$("bar").style.width=pct+"%";
+
+locked=true;
+
+setTimeout(
+showCompletedUntilMidnight,
+800
+);
+
+}catch(e){
+
+$("submit").disabled=false;
+$("submit").textContent=
+"✅ Submit Answers";
+
+show(
+e.message||
+"Unable to save progress."
+);
+}
+}
 
 /* PAYHERE */
 
 async function checkout(){
 
- const id=ID();
+if(!ID()){
 
- if(!id){
-  show("Please login again.");
-  return;
- }
-
- try{
-
-  const r=await fetch(
-   `${PAY}/api/checkout`,
-   {
-    method:"POST",
-    headers:{
-     "Content-Type":"application/json"
-    },
-    body:JSON.stringify({
-     student_id:id
-    })
-   }
-  );
-
-  const raw=await r.text();
-
-  if(!r.ok)
-   throw Error("Payment checkout failed.");
-
-  /*
-   Directly submit PayHere form.
-   No "Opening PayHere" page.
-  */
-
-  if(raw.toLowerCase().includes("<form")){
-
-   document.open();
-   document.write(raw);
-   document.close();
-   return;
-  }
-
-  let d;
-
-  try{
-   d=JSON.parse(raw);
-  }catch(e){
-   throw Error("Invalid PayHere response.");
-  }
-
-  if(d.url||d.checkout_url){
-
-   location.href=
-    d.url||d.checkout_url;
-
-   return;
-  }
-
-  throw Error(
-   d.message||"Payment checkout failed."
-  );
-
- }catch(e){
-
-  show(e.message);
-
- }
+show("Please login again.");
+return;
 }
 
+try{
+
+const r=await fetch(
+`${PAY}/api/checkout`,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+student_id:ID()
+})
+}
+);
+
+const raw=await r.text();
+
+if(!r.ok)
+throw Error("Payment checkout failed.");
+
+if(raw.toLowerCase().includes("<form")){
+
+document.open();
+document.write(raw);
+document.close();
+
+return;
+}
+
+const d=JSON.parse(raw);
+
+if(d.url||d.checkout_url){
+
+location.href=
+d.url||d.checkout_url;
+
+return;
+}
+
+throw Error(
+d.message||"Payment checkout failed."
+);
+
+}catch(e){
+
+show(e.message);
+}
+}
 
 /* REFERRALS */
 
-async function earnings(){
+async function earn(){
 
- try{
+try{
 
-  const d=await fetch(
-   `${REF}/api/earnings?student_id=${ID()}`
-  ).then(r=>r.json());
+const d=await fetch(
+`${REF}/api/earnings?student_id=${ID()}`
+).then(r=>r.json());
 
-  if(!d.success)return;
+if(!d.success)return;
 
-  set("refs",d.referrals||0);
+set("refs",d.referrals||0);
 
-  set(
-   "pending",
-   `LKR ${Number(
-    d.pending||0
-   ).toLocaleString()}`
-  );
+set(
+"pending",
+`LKR ${Number(
+d.pending||0
+).toLocaleString()}`
+);
 
-  set(
-   "paid",
-   `LKR ${Number(
-    d.paid||0
-   ).toLocaleString()}`
-  );
+set(
+"paid",
+`LKR ${Number(
+d.paid||0
+).toLocaleString()}`
+);
 
- }catch(e){}
+}catch(e){}
 }
-
 
 /* COPY */
 
 async function copyRef(){
 
- try{
+try{
 
-  await navigator.clipboard.writeText(
-   $("ref").value
-  );
+await navigator.clipboard.writeText(
+$("ref").value
+);
 
-  show("Referral link copied!");
+show("Referral link copied!");
 
- }catch(e){
+}catch(e){
 
-  $("ref").select();
-  document.execCommand("copy");
-  show("Referral link copied!");
- }
+$("ref").select();
+document.execCommand("copy");
+
+show("Referral link copied!");
 }
-
+}
 
 /* WHATSAPP */
 
 function shareRef(){
 
- const text=
-  "Join CreateLK Academy and start your 365-day English learning journey! "+
-  $("ref").value;
+const text=
+"Join CreateLK Academy and start your 365-day English learning journey! "+
+$("ref").value;
 
- location.href=
-  `https://wa.me/?text=${encodeURIComponent(text)}`;
+location.href=
+`https://wa.me/?text=${encodeURIComponent(text)}`;
 }
-
 
 /* MESSAGE */
 
 function show(text){
 
- $("msg").textContent=text;
- $("msg").style.display="block";
+$("msg").textContent=text;
+$("msg").style.display="block";
 
- setTimeout(
-  ()=>$("msg").style.display="none",
-  2500
- );
+setTimeout(
+()=>$("msg").style.display="none",
+2500
+);
 }
-
 
 /* LOGOUT */
 
 function logout(){
 
- localStorage.removeItem(
-  "createlk_student"
- );
+localStorage.removeItem(
+"createlk_student"
+);
 
- localStorage.removeItem(
-  "createlk_user"
- );
+localStorage.removeItem(
+"createlk_user"
+);
 
- location.href="login.html";
+location.href="login.html";
 }
 
 start();
