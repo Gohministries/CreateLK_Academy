@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#2563eb">
+<title>Daily Lesson | CreateLK Academy</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--b:#2563eb;--p:#7c3aed;--g:#10b981;--d:#0f172a;--m:#64748b;--l:#e2e8f0}
+body{font-family:system-ui,sans-serif;background:#f6f8fc;color:var(--d)}
+header{background:#fff;border-bottom:1px solid var(--l);position:sticky;top:0;z-index:5}
+.nav,main{max-width:720px;margin:auto}
+.nav{padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+.logo{color:var(--b);font-weight:800;text-decoration:none}
+.logo span{color:var(--p)}
+.logout{padding:7px 11px;border:1px solid var(--l);border-radius:8px;background:#fff;font-weight:700}
+main{padding:10px}
+.card{background:#fff;border:1px solid var(--l);border-radius:13px;padding:14px;margin-bottom:10px}
+.title{font-size:13px;font-weight:800;margin-bottom:6px}
+.muted{font-size:10px;color:var(--m)}
+.lesson{background:linear-gradient(135deg,#fff,#faf7ff);border-color:#ddd6fe}
+.badge{display:inline-block;background:#eff6ff;color:var(--b);padding:3px 7px;border-radius:5px;font-size:8px;font-weight:800}
+.lesson h1{font-size:20px;margin:7px 0 3px}
+.vocab{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.vocab span{padding:4px 7px;border:1px solid var(--l);border-radius:6px;background:#fff;font-size:8px}
+.content{margin-top:9px;padding:10px;background:#f8fafc;border:1px solid var(--l);border-radius:8px;font-size:10px;line-height:1.7}
+.question{border:1px solid var(--l);border-radius:9px;padding:9px;margin-top:7px}
+.q{font-size:11px;font-weight:800;margin-bottom:6px}
+.option{display:block;background:#f8fafc;border:1px solid var(--l);padding:7px;border-radius:7px;margin:4px 0;font-size:10px}
+.btn{display:block;width:100%;height:42px;border:0;border-radius:9px;margin-top:10px;font-size:11px;font-weight:800;text-align:center;text-decoration:none;padding:13px;cursor:pointer}
+.btn:disabled{opacity:.55}
+.dark{background:var(--d);color:#fff}
+.wait,.success{margin-top:9px;padding:10px;border-radius:8px;text-align:center;font-size:10px;font-weight:700}
+.wait{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.success{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.countdown{display:block;font-size:17px;margin-top:3px}
+.msg{display:none;position:fixed;bottom:15px;left:50%;transform:translateX(-50%);background:var(--d);color:#fff;padding:9px 13px;border-radius:8px;font-size:10px;z-index:50}
+footer{text-align:center;color:var(--m);font-size:8px;padding:3px 0 15px}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="nav">
+<a class="logo" href="dashboard.html">📚 CreateLK <span>Academy</span></a>
+<button class="logout" onclick="logout()">Logout</button>
+</div>
+</header>
+
+<main>
+
+<section class="card lesson">
+
+<div class="title">📖 Today's Lesson</div>
+
+<div class="badge">
+DAY <span id="day">1</span>
+</div>
+
+<h1 id="title">Loading...</h1>
+<p class="muted" id="desc">Loading today's lesson...</p>
+
+<div class="vocab" id="vocab"></div>
+<div class="content" id="content" style="display:none"></div>
+
+<div id="lessonStatus"></div>
+
+</section>
+
+<section class="card">
+
+<div class="title">📝 Daily 5 Questions</div>
+
+<p class="muted">
+Get at least 4/5 to complete today's lesson.
+</p>
+
+<div id="questions">
+Loading questions...
+</div>
+
+<button
+ class="btn dark"
+ id="submit"
+ onclick="submitQuiz()"
+ disabled>
+✅ Submit Answers
+</button>
+
+</section>
+
+<a class="btn dark" href="dashboard.html">
+← Back to Dashboard
+</a>
+
+<footer>© 2026 CreateLK Academy</footer>
+
+</main>
+
+<div class="msg" id="msg"></div>
+
+<script>
+const COURSE="https://createlk-course-lessons.createlk.workers.dev";
+
+let student={};
+let questions=[];
+let completed=0;
+let todayCompleted=false;
+
+try{
+ student=JSON.parse(
+  localStorage.getItem("createlk_student")||"{}"
+ );
+}catch{}
+
+function id(){
+ return Number(
+  student.id||
+  student.database_id||
+  student.student_id_number||
+  0
+ );
+}
+
+function text(x,v){
+ document.getElementById(x).textContent=v;
+}
+
+function show(v){
+ const m=document.getElementById("msg");
+ m.textContent=v;
+ m.style.display="block";
+ setTimeout(()=>m.style.display="none",2500);
+}
+
+function sriDate(){
+ return new Intl.DateTimeFormat(
+  "en-CA",
+  {timeZone:"Asia/Colombo"}
+ ).format(new Date());
+}
+
+function savedToday(){
+ return localStorage.getItem("createlk_completed_date")
+   ===sriDate();
+}
+
+function saveToday(day){
+ localStorage.setItem(
+  "createlk_completed_day",
+  String(day)
+ );
+
+ localStorage.setItem(
+  "createlk_completed_date",
+  sriDate()
+ );
+}
+
+function nextMidnight(){
+ const now=new Date();
+
+ const p=new Intl.DateTimeFormat("en-US",{
+  timeZone:"Asia/Colombo",
+  year:"numeric",
+  month:"numeric",
+  day:"numeric"
+ }).formatToParts(now);
+
+ const get=x=>Number(
+  p.find(a=>a.type===x)?.value||0
+ );
+
+ return new Date(
+  Date.UTC(
+   get("year"),
+   get("month")-1,
+   get("day")+1
+  )-19800000
+ );
+}
+
+function countdown(){
+ const box=document.getElementById("countdown");
+
+ function run(){
+  let x=Math.max(
+   0,
+   nextMidnight()-Date.now()
+  );
+
+  if(x<=0){
+   location.reload();
+   return;
+  }
+
+  x=Math.floor(x/1000);
+
+  const h=Math.floor(x/3600);
+  const m=Math.floor(x%3600/60);
+  const s=x%60;
+
+  box.textContent=
+   String(h).padStart(2,"0")+":"+
+   String(m).padStart(2,"0")+":"+
+   String(s).padStart(2,"0");
+ }
+
+ run();
+ setInterval(run,1000);
+}
+
+async function getProgress(){
+ try{
+  const r=await fetch(
+   `${COURSE}/api/progress?student_id=${id()}`
+  );
+
+  const d=await r.json();
+
+  if(r.ok&&d.success){
+   completed=Math.min(
+    365,
+    Number(d.completed_lessons||0)
+   );
+
+   student.completed_lessons=completed;
+
+   localStorage.setItem(
+    "createlk_student",
+    JSON.stringify(student)
+   );
+
+   return;
+  }
+ }catch(e){}
+
+ completed=Math.min(
+  365,
+  Number(
+   student.completed_lessons||
+   student.completedLessons||
+   0
+  )
+ );
+}
+
+async function loadLesson(day){
+ try{
+  const r=await fetch(
+   `${COURSE}/api/lesson?day=${day}`
+  );
+
+  const d=await r.json();
+
+  if(!r.ok||!d.success||!d.lesson)
+   throw Error();
+
+  const l=d.lesson;
+
+  text("title",l.title||"Today's Lesson");
+  text("desc",l.description||"");
+
+  const v=document.getElementById("vocab");
+  v.innerHTML="";
+
+  (l.vocabulary||[]).slice(0,10).forEach(x=>{
+   const s=document.createElement("span");
+
+   s.textContent=
+    typeof x==="object"
+     ?x.word||""
+     :x;
+
+   if(s.textContent)
+    v.appendChild(s);
+  });
+
+  if(l.content){
+   document.getElementById("content").innerHTML=l.content;
+   document.getElementById("content").style.display="block";
+  }
+
+ }catch(e){
+  text("title","Lesson unavailable");
+  text("desc","Please try again later.");
+ }
+}
+
+async function loadQuestions(day){
+ try{
+  const r=await fetch(
+   `${COURSE}/api/lesson-questions?day=${day}`
+  );
+
+  const d=await r.json();
+
+  if(
+   !r.ok||
+   !d.success||
+   !Array.isArray(d.questions)||
+   d.questions.length<5
+  )throw Error();
+
+  questions=d.questions.slice(0,5);
+
+  document.getElementById("questions").innerHTML=
+   questions.map((q,i)=>`
+    <div class="question">
+     <div class="q">
+      ${i+1}. ${escapeHtml(q.question)}
+     </div>
+
+     ${[
+      ["A","option_a"],
+      ["B","option_b"],
+      ["C","option_c"],
+      ["D","option_d"]
+     ].map(o=>`
+      <label class="option">
+       <input
+        type="radio"
+        name="q${q.id}"
+        value="${o[0]}">
+       ${o[0]}. ${escapeHtml(q[o[1]])}
+      </label>
+     `).join("")}
+    </div>
+   `).join("");
+
+  document.getElementById("submit").disabled=false;
+
+ }catch(e){
+
+  document.getElementById("questions").innerHTML=
+   `<div class="wait">
+    ⏰ Today's questions are not available yet.
+   </div>`;
+
+  document.getElementById("submit").style.display="none";
+ }
+}
+
+function escapeHtml(x){
+ return String(x||"").replace(
+  /[&<>"']/g,
+  c=>({
+   "&":"&amp;",
+   "<":"&lt;",
+   ">":"&gt;",
+   '"':"&quot;",
+   "'":"&#039;"
+  }[c])
+ );
+}
+
+function completedState(day){
+ text("day",day);
+ text("title",`Day ${day} Completed`);
+ text("desc","You completed today's lesson and questions.");
+
+ document.getElementById("vocab").innerHTML="";
+ document.getElementById("content").style.display="none";
+
+ document.getElementById("lessonStatus").innerHTML=`
+  <div class="success">
+   ✅ Today's lesson is completed.
+   <span style="display:block">
+    Next lesson opens at 12:00 AM.
+   </span>
+   <span class="countdown" id="countdown">
+    00:00:00
+   </span>
+  </div>
+ `;
+
+ document.getElementById("questions").innerHTML=
+  `<div class="success">
+   ✓ Today's 5 questions are completed.
+  </div>`;
+
+ document.getElementById("submit").style.display="none";
+
+ countdown();
+}
+
+async function submitQuiz(){
+
+ if(questions.length!==5)
+  return show("Questions are not available.");
+
+ let score=0;
+ let answered=0;
+
+ questions.forEach(q=>{
+  const a=document.querySelector(
+   `input[name="q${q.id}"]:checked`
+  );
+
+  if(a){
+   answered++;
+
+   if(
+    a.value.toUpperCase()===
+    String(q.correct_answer).toUpperCase()
+   )score++;
+  }
+ });
+
+ if(answered<5)
+  return show("Please answer all 5 questions.");
+
+ if(score<4){
+  show(`❌ ${score}/5. You need 4/5 to pass.`);
+  return;
+ }
+
+ const day=completed+1;
+ const btn=document.getElementById("submit");
+
+ btn.disabled=true;
+ btn.textContent="Saving...";
+
+ try{
+
+  const r=await fetch(
+   `${COURSE}/api/complete-lesson`,
+   {
+    method:"POST",
+    headers:{
+     "Content-Type":"application/json"
+    },
+    body:JSON.stringify({
+     student_id:id(),
+     lesson_day:day,
+     score:score
+    })
+   }
+  );
+
+  const d=await r.json();
+
+  if(!r.ok||!d.success)
+   throw Error(
+    d.message||"Unable to save progress."
+   );
+
+  completed=Number(
+   d.completed_lessons||day
+  );
+
+  student.completed_lessons=completed;
+
+  localStorage.setItem(
+   "createlk_student",
+   JSON.stringify(student)
+  );
+
+  saveToday(day);
+
+  completedState(day);
+
+  show(`🎉 ${score}/5. Day ${day} completed!`);
+
+ }catch(e){
+
+  btn.disabled=false;
+  btn.textContent="✅ Submit Answers";
+
+  show(
+   e.message||
+   "Unable to save progress."
+  );
+ }
+}
+
+function logout(){
+ localStorage.removeItem("createlk_student");
+ localStorage.removeItem("createlk_user");
+ location.href="login.html";
+}
+
+async function start(){
+
+ if(!id()){
+  location.href="login.html";
+  return;
+ }
+
+ await getProgress();
+
+ if(completed>=365){
+  text("day",365);
+  text("title","🎉 Course Completed");
+  text("desc","You completed all 365 days.");
+  document.getElementById("questions").innerHTML=
+   `<div class="success">
+    Congratulations! You completed the course.
+   </div>`;
+  return;
+ }
+
+ const day=completed+1;
+
+ /*
+  Day 2 completed today:
+  show Day 2 completed.
+  
+  Tomorrow:
+  completed still 2 → load Day 3.
+ */
+ if(savedToday()){
+  const finishedDay=
+   Number(
+    localStorage.getItem(
+     "createlk_completed_day"
+    )||completed
+   );
+
+  completedState(finishedDay);
+  return;
+ }
+
+ text("day",day);
+
+ await loadLesson(day);
+ await loadQuestions(day);
+}
+
+start();
+</script>
+
+</body>
+</html>
