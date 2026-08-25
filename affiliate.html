@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#10b981">
+<title>Affiliate - CreateLK Academy</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--b:#2563eb;--p:#7c3aed;--g:#10b981;--d:#0f172a;--m:#64748b;--l:#e2e8f0}
+body{font-family:system-ui,sans-serif;background:#f6f8fc;color:var(--d)}
+header{background:#fff;border-bottom:1px solid var(--l);position:sticky;top:0}
+.nav,main{max-width:620px;margin:auto}.nav{padding:11px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:800;color:var(--b);text-decoration:none}.logo span{color:var(--p)}
+.back{border:1px solid var(--l);background:#fff;padding:7px 10px;border-radius:8px;font-weight:700}
+main{padding:12px}.card{background:#fff;border:1px solid var(--l);border-radius:14px;padding:15px;margin-bottom:10px}
+.hero{background:linear-gradient(135deg,var(--g),var(--b));color:#fff;border:0}
+.hero h1{font-size:20px}.hero p{font-size:10px;margin-top:3px}
+.title{font-size:13px;font-weight:800;margin-bottom:7px}.muted{font-size:10px;color:var(--m)}
+.ref{display:flex;gap:5px;margin-top:8px}
+.ref input{flex:1;min-width:0;border:1px solid var(--l);border-radius:8px;padding:9px;font-size:9px}
+.copy{border:0;background:#f59e0b;color:#fff;border-radius:8px;padding:0 11px;font-weight:800}
+.share{width:100%;height:42px;border:0;border-radius:9px;background:#10b981;color:#fff;font-weight:800;margin-top:9px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.stat{border:1px solid var(--l);border-radius:9px;padding:11px;text-align:center}
+.stat small{display:block;color:var(--m);font-size:7px;font-weight:800}
+.stat b{font-size:11px}
+.note{background:#f8fafc;border:1px solid var(--l);border-radius:9px;padding:10px;font-size:10px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<header>
+<div class="nav">
+<a class="logo" href="dashboard.html">📚 CreateLK <span>Academy</span></a>
+<button class="back" onclick="location.href='dashboard.html'">← Dashboard</button>
+</div>
+</header>
+
+<main>
+
+<section class="card hero">
+<h1>💰 Affiliate Program</h1>
+<p>Earn 20% commission from verified Premium payments.</p>
+</section>
+
+<section class="card">
+<div class="title">🔗 Your Referral Link</div>
+
+<div class="ref">
+<input id="ref" readonly>
+<button class="copy" onclick="copyRef()">Copy</button>
+</div>
+
+<button class="share" onclick="shareRef()">
+📤 Share via WhatsApp
+</button>
+</section>
+
+<div class="stats">
+<div class="stat">
+<small>REFERRALS</small>
+<b id="refs">0</b>
+</div>
+<div class="stat">
+<small>PENDING</small>
+<b id="pending">LKR 0</b>
+</div>
+<div class="stat">
+<small>PAID</small>
+<b id="paid">LKR 0</b>
+</div>
+</div>
+
+<section class="card">
+<div class="title">ℹ️ How it works</div>
+<div class="note">
+Share your referral link.<br>
+When someone purchases Premium through your link,
+you receive <b>20% commission</b> after the payment is verified.
+</div>
+</section>
+
+</main>
+
+<script>
+const REF=
+"https://createlk-referrals.createlk.workers.dev";
+
+let student={};
+try{
+ student=JSON.parse(localStorage.getItem("createlk_student")||"{}");
+}catch{}
+
+function id(){
+ return Number(student.id||student.database_id||student.student_id_number||0);
+}
+
+function start(){
+
+ if(!id()){
+  location.href="login.html";
+  return;
+ }
+
+ document.getElementById("ref").value=
+ `${location.origin}/register.html?ref=${encodeURIComponent(id())}`;
+
+ earnings();
+}
+
+async function earnings(){
+
+ try{
+  const r=await fetch(`${REF}/api/earnings?student_id=${id()}`);
+  const d=await r.json();
+
+  if(d.success){
+   document.getElementById("refs").textContent=d.referrals||0;
+   document.getElementById("pending").textContent=
+    "LKR "+Number(d.pending||0).toLocaleString();
+   document.getElementById("paid").textContent=
+    "LKR "+Number(d.paid||0).toLocaleString();
+  }
+ }catch{}
+}
+
+async function copyRef(){
+
+ const x=document.getElementById("ref");
+
+ try{
+  await navigator.clipboard.writeText(x.value);
+ }catch{
+  x.select();
+  document.execCommand("copy");
+ }
+
+ alert("Referral link copied!");
+}
+
+function shareRef(){
+
+ const link=document.getElementById("ref").value;
+
+ window.open(
+  "https://wa.me/?text="+encodeURIComponent(
+   "Join CreateLK Academy!\n"+link
+  ),
+  "_blank"
+ );
+}
+
+start();
+</script>
+</body>
+</html>
