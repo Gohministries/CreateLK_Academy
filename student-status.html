@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#2563eb">
+<title>Student Status - CreateLK Academy</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--b:#2563eb;--p:#7c3aed;--g:#10b981;--d:#0f172a;--m:#64748b;--l:#e2e8f0}
+body{font-family:system-ui,sans-serif;background:#f6f8fc;color:var(--d)}
+header{background:#fff;border-bottom:1px solid var(--l);position:sticky;top:0}
+.nav,main{max-width:620px;margin:auto}.nav{padding:11px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:800;color:var(--b);text-decoration:none}.logo span{color:var(--p)}
+.back{border:1px solid var(--l);background:#fff;padding:7px 10px;border-radius:8px;font-weight:700}
+main{padding:12px}.card{background:#fff;border:1px solid var(--l);border-radius:14px;padding:15px;margin-bottom:10px}
+.hero{background:linear-gradient(135deg,var(--b),var(--p));color:#fff;border:0}
+.hero h1{font-size:20px}.hero p{font-size:10px;margin-top:3px}
+.title{font-size:13px;font-weight:800;margin-bottom:9px}
+.top{display:flex;justify-content:space-between;font-size:10px}
+.track{height:8px;background:#eaf0f7;border-radius:20px;margin-top:6px;overflow:hidden}
+.track div{height:100%;background:linear-gradient(90deg,var(--b),var(--p));width:0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.stat{border:1px solid var(--l);border-radius:9px;padding:10px;text-align:center}
+.stat small{display:block;color:var(--m);font-size:7px;font-weight:800}
+.stat b{font-size:12px}
+.account{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.item{background:#f8fafc;border:1px solid var(--l);padding:8px;border-radius:8px}
+.item small{display:block;color:var(--m);font-size:7px;font-weight:800}
+.item b{font-size:9px;overflow-wrap:anywhere}
+.premium{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:9px;padding:11px;text-align:center;font-size:10px;font-weight:700}
+</style>
+</head>
+<body>
+
+<header>
+<div class="nav">
+<a class="logo" href="dashboard.html">📚 CreateLK <span>Academy</span></a>
+<button class="back" onclick="location.href='dashboard.html'">← Dashboard</button>
+</div>
+</header>
+
+<main>
+
+<section class="card hero">
+<h1>🎓 Student Status</h1>
+<p id="welcome">Loading...</p>
+</section>
+
+<section class="card">
+<div class="title">Learning Progress</div>
+<div class="top">
+<span>Day <b id="day">0</b> / 365</span>
+<span id="pct">0%</span>
+</div>
+<div class="track"><div id="bar"></div></div>
+</section>
+
+<div class="stats">
+<div class="stat"><small>STUDENT ID</small><b id="sid">-</b></div>
+<div class="stat"><small>LESSONS</small><b id="lessons">0</b></div>
+<div class="stat"><small>MEMBERSHIP</small><b id="member">Free</b></div>
+</div>
+
+<section class="card">
+<div class="title">👤 Account</div>
+<div class="account">
+<div class="item"><small>NAME</small><b id="name">-</b></div>
+<div class="item"><small>EMAIL</small><b id="email">-</b></div>
+<div class="item"><small>PHONE</small><b id="phone">-</b></div>
+<div class="item"><small>PREMIUM EXPIRY</small><b id="expiry">Not active</b></div>
+</div>
+</section>
+
+<div id="premium"></div>
+
+</main>
+
+<script>
+const COURSE="https://createlk-course-lessons.createlk.workers.dev";
+
+let student={};
+try{
+ student=JSON.parse(localStorage.getItem("createlk_student")||"{}");
+}catch{}
+
+function id(){
+ return Number(student.id||student.database_id||student.student_id_number||0);
+}
+
+function premium(){
+ return String(
+  student.membership_status||
+  student.membershipStatus||
+  "FREE"
+ ).toUpperCase()==="PREMIUM";
+}
+
+async function start(){
+
+ if(!id()){
+  location.href="login.html";
+  return;
+ }
+
+ const full=(`${student.first_name||""} ${student.last_name||""}`).trim()
+ ||student.name||"Student";
+
+ document.getElementById("welcome").textContent=
+  `Welcome, ${full}`;
+
+ document.getElementById("sid").textContent=
+  student.student_id||student.studentId||id();
+
+ document.getElementById("name").textContent=full;
+ document.getElementById("email").textContent=student.email||"-";
+ document.getElementById("phone").textContent=student.phone||"-";
+ document.getElementById("member").textContent=
+  premium()?"Premium":"Free";
+
+ document.getElementById("expiry").textContent=
+  student.membership_expiry||
+  student.membershipExpiry||
+  "Not active";
+
+ try{
+  const r=await fetch(`${COURSE}/api/progress?student_id=${id()}`);
+  const d=await r.json();
+
+  if(r.ok&&d.success){
+   const completed=Math.min(365,Number(d.completed_lessons||0));
+   const pct=Math.round(completed/365*100);
+
+   document.getElementById("day").textContent=completed;
+   document.getElementById("lessons").textContent=completed;
+   document.getElementById("pct").textContent=pct+"%";
+   document.getElementById("bar").style.width=pct+"%";
+  }
+ }catch{}
+
+ if(premium()){
+  document.getElementById("premium").innerHTML=
+   `<div class="premium">✅ Premium membership is active.</div>`;
+ }else{
+  document.getElementById("premium").innerHTML=
+   `<div class="card">
+    <div class="title">⭐ Premium Membership</div>
+    <p style="font-size:10px;color:#64748b">
+    Get complete access to the 365-day English curriculum.
+    </p>
+    <button onclick="checkout()" style="
+    width:100%;height:42px;margin-top:9px;border:0;border-radius:9px;
+    background:linear-gradient(135deg,#2563eb,#7c3aed);
+    color:#fff;font-weight:800">
+    💳 Pay LKR 1,500
+    </button>
+   </div>`;
+ }
+}
+
+async function checkout(){
+
+ try{
+  const r=await fetch(
+   "https://createlk-premium-payments.createlk.workers.dev/api/checkout",
+   {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({student_id:id()})
+   }
+  );
+
+  const raw=await r.text();
+
+  if(!r.ok)throw Error("Unable to open PayHere.");
+
+  if(raw.includes("<form")){
+   document.open();
+   document.write(raw);
+   document.close();
+   return;
+  }
+
+  const d=JSON.parse(raw);
+
+  if(d.url||d.checkout_url){
+   location.href=d.url||d.checkout_url;
+   return;
+  }
+
+  throw Error("Invalid payment response.");
+
+ }catch(e){
+  alert(e.message);
+ }
+}
+
+start();
+</script>
+</body>
+</html>
