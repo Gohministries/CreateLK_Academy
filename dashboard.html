@@ -34,12 +34,12 @@ z-index:10
 }
 
 .nav,main{
-max-width:900px;
+max-width:760px;
 margin:auto
 }
 
 .nav{
-padding:10px 14px;
+padding:10px 12px;
 display:flex;
 justify-content:space-between;
 align-items:center
@@ -52,7 +52,9 @@ text-decoration:none;
 font-size:15px
 }
 
-.logo span{color:var(--p)}
+.logo span{
+color:var(--p)
+}
 
 .logout{
 border:1px solid var(--l);
@@ -64,7 +66,7 @@ cursor:pointer
 }
 
 main{
-padding:12px
+padding:10px
 }
 
 .card{
@@ -156,7 +158,6 @@ font-size:11px
 /* PREMIUM COUNTDOWN */
 
 .countdownCard{
-display:none;
 border-left:4px solid var(--g)
 }
 
@@ -371,7 +372,9 @@ Logout
 
 <section class="card hero">
 
-<small>365-DAY ENGLISH JOURNEY</small>
+<small>
+365-DAY ENGLISH JOURNEY
+</small>
 
 <h1 id="welcome">
 Welcome 👋
@@ -383,7 +386,9 @@ Learn English one day at a time.
 
 <div class="progressTop">
 
-<span>Course Progress</span>
+<span>
+Course Progress
+</span>
 
 <span id="heroPct">
 0%
@@ -406,7 +411,9 @@ Learn English one day at a time.
 
 <div class="stat">
 
-<small>NEXT DAY</small>
+<small>
+NEXT DAY
+</small>
 
 <b id="nextDay">
 1
@@ -417,7 +424,9 @@ Learn English one day at a time.
 
 <div class="stat">
 
-<small>STUDENT ID</small>
+<small>
+STUDENT ID
+</small>
 
 <b id="sid">
 -
@@ -428,7 +437,9 @@ Learn English one day at a time.
 
 <div class="stat">
 
-<small>MEMBERSHIP</small>
+<small>
+MEMBERSHIP
+</small>
 
 <b id="member">
 Checking...
@@ -444,6 +455,7 @@ Checking...
 <section
 class="card countdownCard"
 id="countdownCard"
+style="display:none"
 >
 
 <div class="title">
@@ -458,7 +470,9 @@ id="countdownCard"
 0
 </b>
 
-<span>DAYS</span>
+<span>
+DAYS
+</span>
 
 </div>
 
@@ -466,10 +480,12 @@ id="countdownCard"
 <div class="timeBox">
 
 <b id="hours">
-00
+0
 </b>
 
-<span>HOURS</span>
+<span>
+HOURS
+</span>
 
 </div>
 
@@ -477,10 +493,12 @@ id="countdownCard"
 <div class="timeBox">
 
 <b id="minutes">
-00
+0
 </b>
 
-<span>MINUTES</span>
+<span>
+MINUTES
+</span>
 
 </div>
 
@@ -488,10 +506,12 @@ id="countdownCard"
 <div class="timeBox">
 
 <b id="seconds">
-00
+0
 </b>
 
-<span>SECONDS</span>
+<span>
+SECONDS
+</span>
 
 </div>
 
@@ -499,16 +519,15 @@ id="countdownCard"
 
 <div
 class="countdownText"
-id="countdownText">
-
+id="countdownText"
+>
 Premium membership remaining
-
 </div>
 
 </section>
 
 
-<!-- LEARNING PROGRESS -->
+<!-- PROGRESS -->
 
 <section class="card">
 
@@ -536,10 +555,9 @@ Day <b id="completed">0</b> / 365
 
 <p
 class="muted"
-style="margin-top:6px">
-
+style="margin-top:6px"
+>
 Complete one lesson and 5 questions each day.
-
 </p>
 
 </section>
@@ -552,7 +570,8 @@ Complete one lesson and 5 questions each day.
 
 <a
 class="menuCard lessonCard"
-href="daily-lesson.html">
+href="daily-lesson.html"
+>
 
 <div class="icon">
 📖
@@ -579,7 +598,8 @@ Learn today's lesson and complete 5 questions.
 
 <a
 class="menuCard statusCard"
-href="student-status.html">
+href="student-status.html"
+>
 
 <div class="icon">
 👤
@@ -616,7 +636,8 @@ View progress, membership and certificate status.
 
 <div
 class="msg"
-id="msg">
+id="msg"
+>
 </div>
 
 
@@ -631,26 +652,71 @@ const ACCOUNT_API =
 const TOTAL_DAYS = 365;
 
 let student = {};
+
 let completed = 0;
+
 let countdownTimer = null;
 
 
 /* =========================
-LOAD LOCAL STUDENT
+LOAD CURRENT LOGIN
 ========================= */
+
+function loadLogin(){
 
 try{
 
-student =
-JSON.parse(
+const raw =
 localStorage.getItem(
 "createlk_student"
-) || "{}"
 );
 
-}catch(e){
+if(!raw){
 
-student = {};
+return false;
+
+}
+
+const saved =
+JSON.parse(raw);
+
+if(!saved || typeof saved !== "object"){
+
+return false;
+
+}
+
+
+/*
+Only use the ID from the
+current login record.
+
+Do NOT use old membership
+or expiry data.
+*/
+
+student = {
+
+id:
+saved.id ||
+saved.database_id ||
+saved.student_id_number ||
+0
+
+};
+
+return Number(student.id) > 0;
+
+}catch(error){
+
+console.error(
+"Login data error:",
+error
+);
+
+return false;
+
+}
 
 }
 
@@ -662,24 +728,26 @@ STUDENT ID
 function studentId(){
 
 return Number(
-student.id ||
-student.database_id ||
-student.student_id_number ||
-0
+student.id || 0
 );
 
 }
 
 
 /* =========================
-REFRESH STUDENT FROM CLOUD
+GET FRESH STUDENT
 ========================= */
 
 async function refreshStudent(){
 
-const id = studentId();
+const id =
+studentId();
 
-if(!id) return;
+if(!id){
+
+return false;
+
+}
 
 try{
 
@@ -687,20 +755,26 @@ const response =
 await fetch(
 ACCOUNT_API +
 "/api/student?id=" +
-encodeURIComponent(id),
+encodeURIComponent(id) +
+"&t=" +
+Date.now(),
 {
-cache:"no-store"
+method:"GET",
+cache:"no-store",
+headers:{
+"Cache-Control":"no-cache"
+}
 }
 );
 
 if(!response.ok){
 
-console.warn(
-"Student refresh failed:",
+console.error(
+"Student API error:",
 response.status
 );
 
-return;
+return false;
 
 }
 
@@ -708,39 +782,55 @@ const data =
 await response.json();
 
 console.log(
-"Latest student:",
+"Fresh Cloudflare student:",
 data
 );
 
 if(
-data.success &&
-data.student
+!data.success ||
+!data.student
 ){
 
+return false;
+
+}
+
+
 /*
-Keep your existing account data
-and update it with the latest
-Cloudflare student data.
+IMPORTANT:
+
+Replace the entire student
+object.
+
+Never merge old local
+membership information.
 */
 
 student = {
-...student,
 ...data.student
 };
+
+
+/*
+Save ONLY the fresh Cloudflare
+student record.
+*/
 
 localStorage.setItem(
 "createlk_student",
 JSON.stringify(student)
 );
 
-}
+return true;
 
 }catch(error){
 
 console.error(
-"Student refresh error:",
+"Refresh student error:",
 error
 );
+
+return false;
 
 }
 
@@ -748,14 +838,19 @@ error
 
 
 /* =========================
-PROGRESS
+GET COURSE PROGRESS
 ========================= */
 
 async function getProgress(){
 
-const id = studentId();
+const id =
+studentId();
 
-if(!id) return 0;
+if(!id){
+
+return 0;
+
+}
 
 try{
 
@@ -763,17 +858,31 @@ const response =
 await fetch(
 COURSE_API +
 "/api/progress?student_id=" +
-encodeURIComponent(id),
+encodeURIComponent(id) +
+"&t=" +
+Date.now(),
 {
 cache:"no-store"
 }
 );
 
+if(!response.ok){
+
+return Number(
+student.completed_lessons || 0
+);
+
+}
+
 const data =
 await response.json();
 
+console.log(
+"Course progress:",
+data
+);
+
 if(
-response.ok &&
 data.success
 ){
 
@@ -783,14 +892,6 @@ TOTAL_DAYS,
 Number(
 data.completed_lessons || 0
 )
-);
-
-student.completed_lessons =
-completed;
-
-localStorage.setItem(
-"createlk_student",
-JSON.stringify(student)
 );
 
 return completed;
@@ -806,32 +907,46 @@ error
 
 }
 
-return Number(
+return Math.min(
+TOTAL_DAYS,
+Number(
 student.completed_lessons || 0
+)
 );
 
 }
 
 
 /* =========================
-GET PREMIUM EXPIRY
+GET MEMBERSHIP STATUS
 ========================= */
 
-function getExpiry(){
+function membershipStatus(){
 
-return (
-student.membership_expiry ||
-student.membershipExpiry ||
-student.premium_expiry ||
-student.premiumExpiry ||
-""
-);
+return String(
+student.membership_status || ""
+)
+.trim()
+.toUpperCase();
 
 }
 
 
 /* =========================
-PREMIUM COUNTDOWN
+GET EXPIRY
+========================= */
+
+function membershipExpiry(){
+
+return String(
+student.membership_expiry || ""
+).trim();
+
+}
+
+
+/* =========================
+COUNTDOWN
 ========================= */
 
 function startCountdown(){
@@ -852,20 +967,18 @@ document.getElementById(
 );
 
 const status =
-String(
-student.membership_status ||
-student.membershipStatus ||
-"FREE"
-).toUpperCase();
+membershipStatus();
 
 const expiryValue =
-getExpiry();
+membershipExpiry();
 
 
 /*
-Only show countdown when the
-CURRENT student's account is Premium
-and has an expiry date.
+Never use localStorage
+fallbacks here.
+
+Only current Cloudflare
+student data is accepted.
 */
 
 if(
@@ -881,23 +994,55 @@ return;
 }
 
 
+/*
+Cloudflare returns:
+
+2026-09-24 12:27:06
+
+Convert safely to local
+Sri Lanka time.
+*/
+
+let normalized =
+expiryValue.replace(
+" ",
+"T"
+);
+
+
+/*
+If no timezone exists,
+Cloudflare D1 value is treated
+as Asia/Colombo by adding offset.
+*/
+
+if(
+!/[zZ]|[+-]\d\d:\d\d$/.test(
+normalized
+)
+){
+
+normalized +=
+"+05:30";
+
+}
+
 const expiry =
 new Date(
-expiryValue
+normalized
 ).getTime();
-
 
 if(
 Number.isNaN(expiry)
 ){
 
-card.style.display =
-"none";
-
-console.warn(
-"Invalid Premium expiry:",
+console.error(
+"Invalid expiry:",
 expiryValue
 );
+
+card.style.display =
+"none";
 
 return;
 
@@ -908,7 +1053,7 @@ card.style.display =
 "block";
 
 
-function updateCountdown(){
+function update(){
 
 const remaining =
 expiry - Date.now();
@@ -957,20 +1102,24 @@ Math.floor(
 remaining / 1000
 );
 
+
 const days =
 Math.floor(
 totalSeconds / 86400
 );
+
 
 const hours =
 Math.floor(
 (totalSeconds % 86400) / 3600
 );
 
+
 const minutes =
 Math.floor(
 (totalSeconds % 3600) / 60
 );
+
 
 const seconds =
 totalSeconds % 60;
@@ -984,26 +1133,20 @@ days;
 document.getElementById(
 "hours"
 ).textContent =
-String(hours).padStart(
-2,
-"0"
-);
+String(hours)
+.padStart(2,"0");
 
 document.getElementById(
 "minutes"
 ).textContent =
-String(minutes).padStart(
-2,
-"0"
-);
+String(minutes)
+.padStart(2,"0");
 
 document.getElementById(
 "seconds"
 ).textContent =
-String(seconds).padStart(
-2,
-"0"
-);
+String(seconds)
+.padStart(2,"0");
 
 document.getElementById(
 "countdownText"
@@ -1013,11 +1156,11 @@ document.getElementById(
 }
 
 
-updateCountdown();
+update();
 
 countdownTimer =
 setInterval(
-updateCountdown,
+update,
 1000
 );
 
@@ -1038,13 +1181,14 @@ student.last_name || "";
 
 const name =
 `${first} ${last}`.trim() ||
-student.name ||
 "Student";
 
 
 const percent =
 Math.round(
-completed / TOTAL_DAYS * 100
+completed /
+TOTAL_DAYS *
+100
 );
 
 
@@ -1066,25 +1210,39 @@ document.getElementById(
 ).textContent =
 student.student_id ||
 student.studentId ||
-studentId() ||
+student.id ||
 "-";
 
 
 const status =
-String(
-student.membership_status ||
-student.membershipStatus ||
-"FREE"
-).toUpperCase();
+membershipStatus();
 
+
+/*
+Show exactly what Cloudflare
+returned.
+*/
+
+if(
+status === "PREMIUM"
+){
 
 document.getElementById(
 "member"
 ).textContent =
-status === "PREMIUM"
-? "✓ Premium"
-: "Free";
+"✓ Premium";
 
+}else{
+
+document.getElementById(
+"member"
+).textContent =
+"Free";
+
+}
+
+
+/* PROGRESS */
 
 document.getElementById(
 "completed"
@@ -1122,10 +1280,7 @@ document.getElementById(
 percent + "%";
 
 
-/*
-Start countdown after membership
-status has been updated.
-*/
+/* COUNTDOWN */
 
 startCountdown();
 
@@ -1198,7 +1353,14 @@ START
 
 async function start(){
 
-if(!studentId()){
+/*
+First get ONLY the current
+student ID from login.
+*/
+
+if(
+!loadLogin()
+){
 
 show(
 "Please login again."
@@ -1206,7 +1368,8 @@ show(
 
 setTimeout(
 ()=>{
-location.href="login.html";
+location.href =
+"login.html";
 },
 1200
 );
@@ -1217,25 +1380,43 @@ return;
 
 
 /*
-1. Refresh latest student
-2. Load progress
-3. Update dashboard
-4. Start Premium countdown
+Then completely replace the
+account with fresh Cloudflare
+data.
 */
 
+const refreshed =
 await refreshStudent();
+
+
+if(!refreshed){
+
+show(
+"Unable to load your latest account."
+);
+
+return;
+
+}
+
+
+/*
+Now load this student's
+progress.
+*/
 
 completed =
 await getProgress();
+
+
+/*
+Finally display dashboard.
+*/
 
 updateDashboard();
 
 }
 
-
-/* =========================
-RUN
-========================= */
 
 start();
 
