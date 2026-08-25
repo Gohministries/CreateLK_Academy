@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#2563eb">
+<meta name="description" content="CreateLK Academy - 100-Day Spoken English Course">
 <title>CreateLK Academy</title>
 
 <style>
@@ -20,7 +21,7 @@
 }
 
 body{
-font-family:system-ui,sans-serif;
+font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 background:var(--bg);
 color:var(--d)
 }
@@ -59,6 +60,7 @@ border:1px solid var(--l);
 background:#fff;
 border-radius:8px;
 padding:7px 11px;
+font-size:11px;
 font-weight:700;
 cursor:pointer
 }
@@ -89,7 +91,9 @@ font-size:20px;
 margin:4px 0
 }
 
-.hero p{font-size:11px}
+.hero p{
+font-size:11px
+}
 
 .progressTop,
 .progressTop2{
@@ -110,7 +114,9 @@ border-radius:20px;
 overflow:hidden
 }
 
-.track{background:#ffffff35}
+.track{
+background:#ffffff35
+}
 
 .track div{
 height:100%;
@@ -208,7 +214,8 @@ background:#eaf0f7
 .progress div{
 height:100%;
 background:linear-gradient(90deg,var(--b),var(--p));
-width:0
+width:0;
+transition:.4s
 }
 
 .muted{
@@ -216,7 +223,9 @@ font-size:10px;
 color:var(--m)
 }
 
-.menu{margin-top:4px}
+.menu{
+margin-top:4px
+}
 
 .menuCard{
 display:flex;
@@ -241,7 +250,9 @@ font-size:21px;
 flex-shrink:0
 }
 
-.menuText{flex:1}
+.menuText{
+flex:1
+}
 
 .menuText b{
 display:block;
@@ -307,9 +318,13 @@ padding:5px 0 15px
 
 @media(max-width:400px){
 
-.hero h1{font-size:18px}
+.hero h1{
+font-size:18px
+}
 
-.menuCard{padding:12px}
+.menuCard{
+padding:12px
+}
 
 .icon{
 width:40px;
@@ -342,7 +357,9 @@ font-size:16px
 📚 CreateLK <span>Academy</span>
 </a>
 
-<button class="logout" onclick="logout()">
+<button
+class="logout"
+onclick="logout()">
 Logout
 </button>
 
@@ -430,8 +447,7 @@ Checking...
 <section
 class="card countdownCard"
 id="countdownCard"
-style="display:none"
->
+style="display:none">
 
 <div class="title">
 ⏳ Premium Membership
@@ -441,9 +457,7 @@ style="display:none"
 
 <div class="timeBox">
 
-<b id="days">
-0
-</b>
+<b id="days">0</b>
 
 <span>DAYS</span>
 
@@ -452,9 +466,7 @@ style="display:none"
 
 <div class="timeBox">
 
-<b id="hours">
-0
-</b>
+<b id="hours">0</b>
 
 <span>HOURS</span>
 
@@ -463,9 +475,7 @@ style="display:none"
 
 <div class="timeBox">
 
-<b id="minutes">
-0
-</b>
+<b id="minutes">0</b>
 
 <span>MINUTES</span>
 
@@ -474,9 +484,7 @@ style="display:none"
 
 <div class="timeBox">
 
-<b id="seconds">
-0
-</b>
+<b id="seconds">0</b>
 
 <span>SECONDS</span>
 
@@ -488,7 +496,7 @@ style="display:none"
 class="countdownText"
 id="countdownText">
 
-Premium membership remaining
+Premium access remaining
 
 </div>
 
@@ -535,7 +543,6 @@ Complete 10 Tamil → English spoken conversations each day.
 <!-- MENU -->
 
 <section class="menu">
-
 
 <a
 class="menuCard lessonCard"
@@ -590,7 +597,6 @@ View progress, membership and certificate status.
 
 </a>
 
-
 </section>
 
 
@@ -618,14 +624,12 @@ const ACCOUNT_API =
 const TOTAL_DAYS = 100;
 
 let student = {};
-
 let completed = 0;
-
 let countdownTimer = null;
 
 
 /* =========================
-LOAD LOCAL STUDENT
+LOAD STUDENT
 ========================= */
 
 try{
@@ -661,7 +665,7 @@ student.student_id_number ||
 
 
 /* =========================
-REFRESH STUDENT
+REFRESH STUDENT FROM CLOUD
 ========================= */
 
 async function refreshStudent(){
@@ -676,9 +680,16 @@ const response =
 await fetch(
 ACCOUNT_API +
 "/api/student?id=" +
-encodeURIComponent(id),
+encodeURIComponent(id) +
+"&t=" +
+Date.now(),
 {
-cache:"no-store"
+method:"GET",
+cache:"no-store",
+headers:{
+"Accept":"application/json",
+"Cache-Control":"no-cache"
+}
 }
 );
 
@@ -731,7 +742,7 @@ error
 
 
 /* =========================
-GET COURSE PROGRESS
+COURSE PROGRESS
 ========================= */
 
 async function getProgress(){
@@ -746,18 +757,20 @@ const response =
 await fetch(
 COURSE_API +
 "/api/progress?student_id=" +
-encodeURIComponent(id),
+encodeURIComponent(id) +
+"&t=" +
+Date.now(),
 {
-cache:"no-store"
+method:"GET",
+cache:"no-store",
+headers:{
+"Accept":"application/json",
+"Cache-Control":"no-cache"
+}
 }
 );
 
 if(!response.ok){
-
-console.warn(
-"Progress API:",
-response.status
-);
 
 return Number(
 student.completed_lessons || 0
@@ -815,27 +828,92 @@ student.completed_lessons || 0
 
 
 /* =========================
-PREMIUM COUNTDOWN
+GET MEMBERSHIP EXPIRY
 ========================= */
 
 function getExpiry(){
 
-return (
+return String(
 student.membership_expiry ||
 student.membershipExpiry ||
 student.premium_expiry ||
 student.premiumExpiry ||
 ""
+).trim();
+
+}
+
+
+/* =========================
+PARSE SRI LANKA EXPIRY
+========================= */
+
+function parseExpiry(value){
+
+if(!value) return NaN;
+
+/*
+If the Worker returns:
+
+2026-09-24 23:59:59
+
+treat it as Sri Lanka time.
+*/
+
+const match =
+value.match(
+/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/
+);
+
+if(match){
+
+const y = Number(match[1]);
+const mo = Number(match[2]);
+const d = Number(match[3]);
+const h = Number(match[4]);
+const mi = Number(match[5]);
+const s = Number(match[6] || 0);
+
+/*
+Sri Lanka is UTC+05:30.
+Convert local Colombo time to UTC.
+*/
+
+return Date.UTC(
+y,
+mo - 1,
+d,
+h - 5,
+mi - 30,
+s
 );
 
 }
 
+/*
+For ISO values such as:
+
+2026-09-24T23:59:59+05:30
+
+let the browser parse them.
+*/
+
+return new Date(value).getTime();
+
+}
+
+
+/* =========================
+PREMIUM COUNTDOWN
+========================= */
 
 function startCountdown(){
 
 if(countdownTimer){
 
-clearInterval(countdownTimer);
+clearInterval(
+countdownTimer
+);
 
 countdownTimer = null;
 
@@ -854,15 +932,13 @@ student.membershipStatus ||
 "FREE"
 ).toUpperCase();
 
-
 const expiryValue =
 getExpiry();
 
 
 /*
-Only show countdown for
-Premium members with an
-expiry date.
+Only Premium users with
+a valid expiry see countdown.
 */
 
 if(
@@ -879,7 +955,7 @@ return;
 
 
 const expiry =
-new Date(expiryValue).getTime();
+parseExpiry(expiryValue);
 
 
 if(
@@ -917,15 +993,15 @@ document.getElementById(
 
 document.getElementById(
 "hours"
-).textContent = "0";
+).textContent = "00";
 
 document.getElementById(
 "minutes"
-).textContent = "0";
+).textContent = "00";
 
 document.getElementById(
 "seconds"
-).textContent = "0";
+).textContent = "00";
 
 document.getElementById(
 "countdownText"
@@ -974,24 +1050,20 @@ document.getElementById(
 ).textContent =
 days;
 
-
 document.getElementById(
 "hours"
 ).textContent =
 String(hours).padStart(2,"0");
-
 
 document.getElementById(
 "minutes"
 ).textContent =
 String(minutes).padStart(2,"0");
 
-
 document.getElementById(
 "seconds"
 ).textContent =
 String(seconds).padStart(2,"0");
-
 
 document.getElementById(
 "countdownText"
@@ -1058,10 +1130,6 @@ studentId() ||
 "-";
 
 
-/* =========================
-MEMBERSHIP
-========================= */
-
 const status =
 String(
 student.membership_status ||
@@ -1077,10 +1145,6 @@ status === "PREMIUM"
 ? "✓ Premium"
 : "Free";
 
-
-/* =========================
-PROGRESS
-========================= */
 
 document.getElementById(
 "completed"
@@ -1118,10 +1182,6 @@ document.getElementById(
 percent + "%";
 
 
-/* =========================
-COUNTDOWN
-========================= */
-
 startCountdown();
 
 }
@@ -1132,6 +1192,14 @@ LOGOUT
 ========================= */
 
 function logout(){
+
+if(countdownTimer){
+
+clearInterval(
+countdownTimer
+);
+
+}
 
 localStorage.removeItem(
 "createlk_student"
@@ -1204,14 +1272,14 @@ return;
 
 
 /*
-Refresh latest account data.
+Get latest account information.
 */
 
 await refreshStudent();
 
 
 /*
-Load latest course progress.
+Get latest course progress.
 */
 
 completed =
@@ -1219,12 +1287,17 @@ await getProgress();
 
 
 /*
-Update dashboard.
+Display everything.
 */
 
 updateDashboard();
 
 }
+
+
+/* =========================
+RUN
+========================= */
 
 start();
 
