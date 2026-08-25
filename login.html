@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#2563eb">
+
 <title>Login | CreateLK Academy</title>
 
 <style>
@@ -404,14 +404,38 @@ aria-label="WhatsApp">
 
 <script>
 
+/* ==============================
+   EXISTING AUTHENTICATION API
+   DO NOT CHANGE
+============================== */
+
 const ACCOUNT_API =
 "https://createlk-auth.createlk.workers.dev";
+
+
+/* ==============================
+   EXISTING COURSE API
+   DO NOT CHANGE
+============================== */
+
+const COURSE_API =
+"https://createlk-course-lessons.createlk.workers.dev";
+
+
+/* ==============================
+   EXISTING STORAGE
+============================== */
 
 const STUDENT_KEY =
 "createlk_student";
 
 const LOGIN_KEY =
 "createlk_logged_in";
+
+
+/* ==============================
+   ELEMENTS
+============================== */
 
 const form =
 document.getElementById("loginForm");
@@ -422,6 +446,10 @@ document.getElementById("message");
 const button =
 document.getElementById("loginButton");
 
+
+/* ==============================
+   MESSAGE
+============================== */
 
 function showMessage(text,type){
 
@@ -436,6 +464,10 @@ message.style.display =
 
 }
 
+
+/* ==============================
+   LOGIN
+============================== */
 
 form.addEventListener(
 "submit",
@@ -464,9 +496,9 @@ return;
 
 }
 
-button.disabled=true;
+button.disabled = true;
 
-button.textContent=
+button.textContent =
 "⏳ Logging in...";
 
 showMessage(
@@ -476,22 +508,27 @@ showMessage(
 
 try{
 
+/* ==============================
+   EXISTING LOGIN REQUEST
+============================== */
+
 const response =
 await fetch(
 ACCOUNT_API + "/api/login",
 {
 method:"POST",
+
 headers:{
 "Content-Type":"application/json",
-"Accept":"application/json",
-"Cache-Control":"no-cache"
+"Accept":"application/json"
 },
+
 body:JSON.stringify({
 email:email,
 password:password
 })
-}
-);
+
+});
 
 const raw =
 await response.text();
@@ -508,7 +545,7 @@ try{
 data =
 JSON.parse(raw);
 
-}catch(e){
+}catch{
 
 throw new Error(
 "Server returned an invalid response."
@@ -529,130 +566,77 @@ data.message ||
 }
 
 
-/* =================================
-GET THE COMPLETE STUDENT RECORD
-================================= */
+/* ==============================
+   EXISTING STUDENT DATA
+============================== */
 
-const apiStudent =
+const s =
 data.student || {};
 
-const id =
-Number(
-apiStudent.id ||
+const studentId =
 data.student_id ||
 data.studentId ||
-0
-);
+s.id;
 
-if(!id){
+if(!studentId){
 
 throw new Error(
-"Login succeeded, but student ID was not returned."
+"Login succeeded, but student ID was not returned by the server."
 );
 
 }
 
-
-/* =================================
-IMPORTANT
-
-Keep the COMPLETE API student object.
-
-Do NOT replace membership_status
-with NONE.
-
-Do NOT replace membership_expiry
-with null.
-
-Cloudflare D1 is the source of truth.
-================================= */
-
 const student = {
-...apiStudent,
 
-id:id,
+id:Number(studentId),
 
-student_id:
-Number(
-apiStudent.student_id ||
-data.student_id ||
-data.studentId ||
-id
-),
+student_id:Number(studentId),
 
 first_name:
-apiStudent.first_name ||
 data.first_name ||
+s.first_name ||
 "",
 
 last_name:
-apiStudent.last_name ||
 data.last_name ||
+s.last_name ||
 "",
 
 name:
-apiStudent.name ||
 data.name ||
+s.name ||
 (
-(
-apiStudent.first_name ||
-data.first_name ||
-""
-) +
+(data.first_name || s.first_name || "") +
 " " +
-(
-apiStudent.last_name ||
-data.last_name ||
-""
-)
+(data.last_name || s.last_name || "")
 ).trim(),
 
 email:
-apiStudent.email ||
 data.email ||
+s.email ||
 email,
 
 phone:
-apiStudent.phone ||
 data.phone ||
+s.phone ||
 "",
 
 membership_status:
-apiStudent.membership_status ||
 data.membership_status ||
+s.membership_status ||
 "NONE",
 
 membership_expiry:
-apiStudent.membership_expiry ||
 data.membership_expiry ||
+s.membership_expiry ||
 null
+
 };
 
 
-/* =================================
-CLEAR OLD ACCOUNT DATA FIRST
-================================= */
-
-localStorage.removeItem(
-STUDENT_KEY
-);
-
-sessionStorage.removeItem(
-STUDENT_KEY
-);
-
-sessionStorage.removeItem(
-"createlk_student_id"
-);
-
-sessionStorage.removeItem(
-"createlk_student_email"
-);
-
-
-/* =================================
-SAVE CURRENT ACCOUNT ONLY
-================================= */
+/* ==============================
+   EXISTING LOGIN STORAGE
+============================== */
 
 const saved =
 JSON.stringify(student);
@@ -679,7 +663,7 @@ LOGIN_KEY,
 
 sessionStorage.setItem(
 "createlk_student_id",
-String(id)
+String(student.id)
 );
 
 sessionStorage.setItem(
@@ -688,34 +672,9 @@ student.email
 );
 
 
-/* =================================
-DEBUG
-================================= */
-
-console.log(
-"CURRENT LOGIN STUDENT:",
-student
-);
-
-console.log(
-"CURRENT STUDENT ID:",
-id
-);
-
-console.log(
-"MEMBERSHIP:",
-student.membership_status
-);
-
-console.log(
-"EXPIRY:",
-student.membership_expiry
-);
-
-
-/* =================================
-SUCCESS
-================================= */
+/* ==============================
+   SUCCESS
+============================== */
 
 showMessage(
 "✅ Login successful! Opening your dashboard...",
@@ -726,16 +685,17 @@ button.textContent =
 "✓ Login Successful";
 
 
-setTimeout(
-function(){
+/* ==============================
+   ONLY CHANGE:
+   GO TO DASHBOARD AFTER LOGIN
+============================== */
 
-window.location.replace(
-"dashboard.html"
-);
+setTimeout(function(){
 
-},
-700
-);
+window.location.href =
+"dashboard.html";
+
+},800);
 
 
 }catch(error){
@@ -751,7 +711,8 @@ error.message ||
 "error"
 );
 
-button.disabled=false;
+button.disabled =
+false;
 
 button.textContent =
 "🔐 Login";
