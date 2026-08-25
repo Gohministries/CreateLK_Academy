@@ -12,18 +12,25 @@ body{font-family:system-ui,sans-serif;background:#f6f8fc;color:var(--d)}
 header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--l)}
 .nav,main{max-width:720px;margin:auto}
 .nav{padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
-.logo{color:var(--b);font-weight:800;text-decoration:none}.logo span{color:var(--p)}
+.logo{color:var(--b);font-weight:800;text-decoration:none}
+.logo span{color:var(--p)}
 .logout{padding:7px 11px;border:1px solid var(--l);border-radius:8px;background:#fff;font-weight:700}
 main{padding:10px}
 .card{background:#fff;border:1px solid var(--l);border-radius:13px;padding:14px;margin-bottom:10px}
 .hero{background:linear-gradient(135deg,var(--b),var(--p));color:#fff;border:0}
-.hero small{font-size:8px;font-weight:800}.hero h1{font-size:20px;margin:3px 0}.hero p{font-size:11px}
-.row{display:flex;align-items:end;gap:12px;margin-top:14px}.grow{flex:1}
+.hero small{font-size:8px;font-weight:800}
+.hero h1{font-size:20px;margin:3px 0}
+.hero p{font-size:11px}
+.row{display:flex;align-items:end;gap:12px;margin-top:14px}
+.grow{flex:1}
 .top{display:flex;justify-content:space-between;font-size:9px;margin-bottom:5px}
 .track,.progress{height:7px;border-radius:20px;overflow:hidden;background:#eaf0f7}
-.track{background:#ffffff35}.track div{height:100%;background:#fff;width:0}
+.track{background:#ffffff35}
+.track div{height:100%;background:#fff;width:0}
 .progress div{height:100%;background:linear-gradient(90deg,var(--b),var(--p));width:0}
-.daynum{text-align:right}.daynum b{display:block;font-size:20px}.daynum small{font-size:7px}
+.daynum{text-align:right}
+.daynum b{display:block;font-size:20px}
+.daynum small{font-size:7px}
 .stats,.earnings{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
 .stat,.earn{background:#fff;border:1px solid var(--l);border-radius:9px;padding:8px;text-align:center}
 .stat small,.earn small,.account small{display:block;color:var(--m);font-size:7px;font-weight:800}
@@ -140,7 +147,8 @@ Complete one lesson and 5 questions each day.
 
 <div id="active" class="success" style="display:none">
 ✅ Premium membership is active.
-<span class="countdown" id="premiumCountdown"></span>
+<br>
+<span id="activeExpiry"></span>
 </div>
 </section>
 
@@ -166,6 +174,7 @@ Complete one lesson and 5 questions each day.
 
 <section class="card">
 <div class="title">👤 Account</div>
+
 <div class="account">
 <div><small>NAME</small><b id="name">-</b></div>
 <div><small>EMAIL</small><b id="email">-</b></div>
@@ -175,65 +184,64 @@ Complete one lesson and 5 questions each day.
 </section>
 
 <footer>© 2026 CreateLK Academy</footer>
-
 </main>
 
 <div class="msg" id="msg"></div>
 
 <script>
-const COURSE="https://createlk-course-lessons.createlk.workers.dev",
-PAY="https://createlk-premium-payments.createlk.workers.dev",
-REF="https://createlk-referrals.createlk.workers.dev";
+const COURSE="https://createlk-course-lessons.createlk.workers.dev";
+const PAY="https://createlk-premium-payments.createlk.workers.dev";
+const REF="https://createlk-referrals.createlk.workers.dev";
 
-let student={},questions=[],completed=0;
+let student={};
+let questions=[];
+let completed=0;
+let todayDone=false;
 
 try{
  student=JSON.parse(localStorage.getItem("createlk_student")||"{}");
 }catch{}
 
-const studentId=()=>Number(
- student.id||student.database_id||student.student_id_number||0
-);
+const $=id=>document.getElementById(id);
 
-const localCompleted=()=>Math.max(
- 0,
- Number(student.completed_lessons||student.completedLessons||0)
-);
-
-const premium=()=>String(
- student.membership_status||
- student.membershipStatus||
- "FREE"
-).toUpperCase()==="PREMIUM";
-
-const text=(id,v)=>{
- document.getElementById(id).textContent=v;
-};
-
-function show(v){
- const m=document.getElementById("msg");
- m.textContent=v;
- m.style.display="block";
- clearTimeout(window.tm);
- window.tm=setTimeout(()=>m.style.display="none",2500);
+function id(){
+ return Number(
+  student.id||
+  student.database_id||
+  student.student_id_number||
+  student.student_id||
+  0
+ );
 }
 
-function sriDate(){
+function premium(){
+ return String(
+  student.membership_status||
+  student.membershipStatus||
+  "FREE"
+ ).toUpperCase()==="PREMIUM";
+}
+
+function text(x,v){
+ if($(x))$(x).textContent=v;
+}
+
+function show(v){
+ const m=$("msg");
+ m.textContent=v;
+ m.style.display="block";
+ clearTimeout(window.msgTimer);
+ window.msgTimer=setTimeout(()=>m.style.display="none",2500);
+}
+
+/* Colombo calendar date */
+function colomboDate(){
  return new Intl.DateTimeFormat("en-CA",{
   timeZone:"Asia/Colombo"
  }).format(new Date());
 }
 
-function savedToday(day){
- return localStorage.getItem("goh_completed_day")===String(day)&&
- localStorage.getItem("goh_completed_date")===sriDate();
-}
-
-function saveToday(day){
- localStorage.setItem("goh_completed_day",String(day));
- localStorage.setItem("goh_completed_date",sriDate());
-}
-
+/* Colombo midnight */
 function nextMidnight(){
  const p=new Intl.DateTimeFormat("en-US",{
   timeZone:"Asia/Colombo",
@@ -242,8 +250,8 @@ function nextMidnight(){
   day:"numeric"
  }).formatToParts(new Date());
 
- const g=x=>Number(
-  p.find(a=>a.type===x)?.value||0
+ const g=t=>Number(
+  p.find(x=>x.type===t)?.value||0
  );
 
  return new Date(
@@ -255,148 +263,127 @@ function nextMidnight(){
  );
 }
 
-function countdown(){
- const box=document.getElementById("countdown");
+function startTimer(){
+ const box=$("countdown");
  if(!box)return;
 
- function run(){
-  let x=Math.max(
+ function tick(){
+  let n=Math.max(
    0,
    nextMidnight()-Date.now()
   );
 
-  if(x<=0){
+  if(!n){
    location.reload();
    return;
   }
 
-  x=Math.floor(x/1000);
+  n=Math.floor(n/1000);
 
   box.textContent=
-   String(Math.floor(x/3600)).padStart(2,"0")+":"+
-   String(Math.floor(x%3600/60)).padStart(2,"0")+":"+
-   String(x%60).padStart(2,"0");
+   String(Math.floor(n/3600)).padStart(2,"0")+":"+
+   String(Math.floor(n%3600/60)).padStart(2,"0")+":"+
+   String(n%60).padStart(2,"0");
  }
 
- run();
- setInterval(run,1000);
+ tick();
+ clearInterval(window.timer);
+ window.timer=setInterval(tick,1000);
 }
 
-function premiumCountdown(){
- const box=document.getElementById("premiumCountdown");
- if(!box||!premium())return;
-
- const expiry=
-  student.membership_expiry||
-  student.membershipExpiry;
-
- if(!expiry){
-  box.textContent="";
-  return;
- }
-
- function run(){
-  const end=new Date(expiry).getTime();
-  let x=end-Date.now();
-
-  if(x<=0){
-   box.textContent="Premium membership expired";
-   return;
-  }
-
-  x=Math.floor(x/1000);
-
-  const d=Math.floor(x/86400);
-  const h=Math.floor(x%86400/3600);
-  const m=Math.floor(x%3600/60);
-
-  box.textContent=
-   `${d}d ${String(h).padStart(2,"0")}h ${String(m).padStart(2,"0")}m remaining`;
- }
-
- run();
- setInterval(run,60000);
-}
-
+/* REAL progress from Worker */
 async function getProgress(){
- const id=studentId();
 
- if(!id)return localCompleted();
+ if(!id())return 0;
 
  try{
   const r=await fetch(
-   `${COURSE}/api/progress?student_id=${id}`
+   `${COURSE}/api/progress?student_id=${id()}&_=${Date.now()}`,
+   {cache:"no-store"}
   );
 
   const d=await r.json();
 
   if(r.ok&&d.success){
-   completed=Math.min(
+   return Math.min(
     365,
     Number(d.completed_lessons||0)
    );
-
-   student.completed_lessons=completed;
-
-   localStorage.setItem(
-    "createlk_student",
-    JSON.stringify(student)
-   );
-
-   return completed;
   }
- }catch{}
+ }catch(e){
+  console.log(e);
+ }
 
- return completed=localCompleted();
+ return 0;
 }
 
 function dashboard(){
- const full=(
+
+ const name=(
   `${student.first_name||""} ${student.last_name||""}`
  ).trim()||student.name||"Student";
 
- const day=Math.min(365,completed+1);
- const pct=Math.round(completed/365*100);
+ const day=Math.min(
+  365,
+  completed+1
+ );
 
- text("welcome",`Welcome, ${full} 👋`);
- text("sid",student.student_id||student.studentId||studentId()||"-");
+ const pct=Math.round(
+  completed/365*100
+ );
+
+ text("welcome",`Welcome, ${name} 👋`);
+ text("sid",id()||"-");
  text("done",completed);
  text("member",premium()?"Premium":"Free");
+
  text("progressDay",completed);
  text("lessonDay",day);
  text("currentDay",day);
+
  text("pct",pct+"%");
  text("heroPct",pct+"%");
 
- document.getElementById("bar").style.width=pct+"%";
- document.getElementById("heroBar").style.width=pct+"%";
+ $("bar").style.width=pct+"%";
+ $("heroBar").style.width=pct+"%";
 
- text("name",full);
+ text("name",name);
  text("email",student.email||"-");
  text("phone",student.phone||"-");
- text(
-  "expiry",
+
+ const expiry=
   student.membership_expiry||
   student.membershipExpiry||
-  "Not active"
- );
+  "Not active";
 
- document.getElementById("pay").style.display=
+ text("expiry",expiry);
+
+ $("pay").style.display=
   premium()?"none":"block";
 
- document.getElementById("active").style.display=
+ $("active").style.display=
   premium()?"block":"none";
 
- document.getElementById("ref").value=
-  `${location.origin}/register.html?ref=${encodeURIComponent(studentId())}`;
+ if(premium())
+  text("activeExpiry","Premium until "+expiry);
 
- premiumCountdown();
+ $("ref").value=
+  `${location.origin}/register.html?ref=${id()}`;
 }
 
+/* Lesson */
 async function loadLesson(day){
+
+ $("lessonTitle").textContent="Loading...";
+ $("lessonDesc").textContent="Loading today's lesson...";
+ $("content").style.display="none";
+ $("vocab").innerHTML="";
+ $("wait").innerHTML="";
+
  try{
   const r=await fetch(
-   `${COURSE}/api/lesson?day=${day}`
+   `${COURSE}/api/lesson?day=${day}&_=${Date.now()}`,
+   {cache:"no-store"}
   );
 
   const d=await r.json();
@@ -406,49 +393,49 @@ async function loadLesson(day){
 
   const l=d.lesson;
 
-  text(
-   "lessonTitle",
-   l.title||"Today's Lesson"
-  );
+  text("lessonTitle",l.title||"Today's Lesson");
+  text("lessonDesc",l.description||"");
 
-  text(
-   "lessonDesc",
-   l.description||""
-  );
+  let words=l.vocabulary||[];
 
-  const v=document.getElementById("vocab");
-  v.innerHTML="";
+  if(typeof words==="string"){
+   try{words=JSON.parse(words)}
+   catch{words=words.split(",")}
+  }
 
-  (l.vocabulary||[]).slice(0,10).forEach(x=>{
+  words.slice(0,10).forEach(x=>{
    const s=document.createElement("span");
-
    s.textContent=
-    typeof x==="object"?x.word||"":x;
+    typeof x==="object"?
+    x.word||"":
+    String(x).trim();
 
    if(s.textContent)
-    v.appendChild(s);
+    $("vocab").appendChild(s);
   });
 
   if(l.content){
-   const c=document.getElementById("content");
-   c.innerHTML=l.content;
-   c.style.display="block";
+   $("content").innerHTML=l.content;
+   $("content").style.display="block";
   }
 
- }catch{
-  text("lessonTitle","Next Lesson");
-  text(
-   "lessonDesc",
-   "The next lesson will open at 12:00 AM."
-  );
-  waitState();
+ }catch(e){
+  text("lessonTitle","Lesson unavailable");
+  text("lessonDesc","Today's lesson is not available yet.");
  }
 }
 
+/* Questions */
 async function loadQuestions(day){
+
+ $("questions").textContent="Loading questions...";
+ $("submit").disabled=true;
+ $("submit").style.display="block";
+
  try{
   const r=await fetch(
-   `${COURSE}/api/lesson-questions?day=${day}`
+   `${COURSE}/api/lesson-questions?day=${day}&_=${Date.now()}`,
+   {cache:"no-store"}
   );
 
   const d=await r.json();
@@ -462,11 +449,11 @@ async function loadQuestions(day){
 
   questions=d.questions.slice(0,5);
 
-  document.getElementById("questions").innerHTML=
+  $("questions").innerHTML=
    questions.map((q,i)=>`
     <div class="question">
      <div class="q">
-      ${i+1}. ${escapeHtml(q.question)}
+      ${i+1}. ${esc(q.question)}
      </div>
 
      ${[
@@ -481,26 +468,28 @@ async function loadQuestions(day){
         name="q${q.id}"
         value="${o[0]}"
        >
-       ${o[0]}. ${escapeHtml(q[o[1]])}
+       ${o[0]}. ${esc(q[o[1]])}
       </label>
      `).join("")}
-
     </div>
    `).join("");
 
-  document.getElementById("submit").disabled=false;
+  $("submit").disabled=false;
 
- }catch{
-  document.getElementById("questions").innerHTML=
+ }catch(e){
+
+  questions=[];
+
+  $("questions").innerHTML=
    `<div class="wait">
-    ⏰ Today's questions are not available yet.
+    Today's questions are not available.
    </div>`;
 
-  document.getElementById("submit").style.display="none";
+  $("submit").style.display="none";
  }
 }
 
-function escapeHtml(x){
+function esc(x){
  return String(x||"").replace(
   /[&<>"']/g,
   c=>({
@@ -513,33 +502,50 @@ function escapeHtml(x){
  );
 }
 
-function waitState(){
- document.getElementById("wait").innerHTML=`
-  <div class="wait">
-   ⏰ Today's lesson is completed.
+/* Lock after today's completion */
+function lockToday(){
+
+ todayDone=true;
+
+ $("lessonTitle").textContent=
+  "Today's Lesson Completed";
+
+ $("lessonDesc").textContent=
+  "You completed today's lesson and 5 questions.";
+
+ $("vocab").innerHTML="";
+ $("content").style.display="none";
+
+ $("wait").innerHTML=`
+  <div class="success">
+   ✓ Today's lesson is completed.
    <span style="display:block">
     Next lesson opens at 12:00 AM.
    </span>
    <span class="countdown" id="countdown">
     00:00:00
    </span>
-  </div>`;
+  </div>
+ `;
 
- document.getElementById("questions").innerHTML=
+ $("questions").innerHTML=
   `<div class="success">
    ✓ Today's 5 questions are completed.
   </div>`;
 
- document.getElementById("submit").style.display="none";
+ $("submit").style.display="none";
 
- countdown();
+ startTimer();
 }
 
+/* Submit */
 async function submitQuiz(){
- if(questions.length!==5)
-  return show("Questions are not available.");
 
- let score=0,answered=0;
+ if(todayDone||questions.length!==5)
+  return;
+
+ let score=0;
+ let answered=0;
 
  questions.forEach(q=>{
   const a=document.querySelector(
@@ -565,12 +571,12 @@ async function submitQuiz(){
   );
 
  const day=completed+1;
- const btn=document.getElementById("submit");
 
- btn.disabled=true;
- btn.textContent="Saving...";
+ $("submit").disabled=true;
+ $("submit").textContent="Saving...";
 
  try{
+
   const r=await fetch(
    `${COURSE}/api/complete-lesson`,
    {
@@ -579,7 +585,7 @@ async function submitQuiz(){
      "Content-Type":"application/json"
     },
     body:JSON.stringify({
-     student_id:studentId(),
+     student_id:id(),
      lesson_day:day,
      score
     })
@@ -593,42 +599,24 @@ async function submitQuiz(){
     d.message||"Unable to save progress."
    );
 
-  completed=Number(
-   d.completed_lessons||day
+  completed=Math.min(
+   365,
+   Number(d.completed_lessons||day)
   );
 
-  student.completed_lessons=completed;
-
-  localStorage.setItem(
-   "createlk_student",
-   JSON.stringify(student)
-  );
-
-  saveToday(day);
   dashboard();
-
-  text(
-   "lessonTitle",
-   "Today's Lesson Completed"
-  );
-
-  text(
-   "lessonDesc",
-   "You completed today's lesson and 5 questions."
-  );
-
-  document.getElementById("vocab").innerHTML="";
-  document.getElementById("content").style.display="none";
-
-  waitState();
+  lockToday();
 
   show(
    `🎉 ${score}/5. Day ${day} completed!`
   );
 
  }catch(e){
-  btn.disabled=false;
-  btn.textContent="✅ Submit Answers";
+
+  $("submit").disabled=false;
+  $("submit").textContent=
+   "✅ Submit Answers";
+
   show(
    e.message||
    "Unable to save progress."
@@ -636,29 +624,28 @@ async function submitQuiz(){
  }
 }
 
+/* PayHere */
 async function checkout(){
- const id=studentId();
 
- if(!id)
+ if(!id())
   return show("Please login again.");
 
- const btn=document.getElementById("pay");
+ const btn=$("pay");
 
  btn.disabled=true;
- btn.textContent=
-  "💳 Pay LKR 1,500 with PayHere";
+ btn.textContent="Opening PayHere...";
 
  try{
+
   const r=await fetch(
    `${PAY}/api/checkout`,
    {
     method:"POST",
     headers:{
-     "Content-Type":
-      "application/json"
+     "Content-Type":"application/json"
     },
     body:JSON.stringify({
-     student_id:id
+     student_id:id()
     })
    }
   );
@@ -666,9 +653,7 @@ async function checkout(){
   const raw=await r.text();
 
   if(!r.ok)
-   throw Error(
-    "Unable to open PayHere."
-   );
+   throw Error("Unable to open PayHere.");
 
   if(raw.includes("<form")){
    document.open();
@@ -691,21 +676,35 @@ async function checkout(){
   );
 
  }catch(e){
+
   show(e.message);
+
   btn.disabled=false;
+  btn.textContent=
+   "💳 Pay LKR 1,500 with PayHere";
  }
 }
 
+/* Referrals */
 async function earnings(){
+
+ if(!id())return;
+
  try{
+
   const r=await fetch(
-   `${REF}/api/earnings?student_id=${studentId()}`
+   `${REF}/api/earnings?student_id=${id()}&_=${Date.now()}`,
+   {cache:"no-store"}
   );
 
   const d=await r.json();
 
   if(d.success){
-   text("refs",d.referrals||0);
+
+   text(
+    "refs",
+    Number(d.referrals||0)
+   );
 
    text(
     "pending",
@@ -719,11 +718,13 @@ async function earnings(){
     Number(d.paid||0).toLocaleString()
    );
   }
- }catch{}
+
+ }catch(e){}
 }
 
 async function copyRef(){
- const x=document.getElementById("ref");
+
+ const x=$("ref");
 
  try{
   await navigator.clipboard.writeText(x.value);
@@ -736,40 +737,97 @@ async function copyRef(){
 }
 
 function shareRef(){
- const link=document.getElementById("ref").value;
 
  window.open(
   "https://wa.me/?text="+
   encodeURIComponent(
-   "Join CreateLK Academy!\n"+link
+   "Join CreateLK Academy!\n"+
+   $("ref").value
   ),
   "_blank"
  );
 }
 
 function logout(){
- localStorage.removeItem("createlk_student");
- localStorage.removeItem("createlk_user");
+
+ localStorage.removeItem(
+  "createlk_student"
+ );
+
+ localStorage.removeItem(
+  "createlk_user"
+ );
+
  location.href="login.html";
 }
 
+/* START */
 async function start(){
- if(!studentId())
-  return show("Please login again.");
 
+ if(!id()){
+  show("Please login again.");
+  return;
+ }
+
+ /*
+  IMPORTANT:
+  completed_lessons comes ONLY from Cloudflare.
+  Browser localStorage is not used to decide
+  whether today's lesson is completed.
+ */
  completed=await getProgress();
 
  dashboard();
 
- if(savedToday(completed)){
-  text("lessonDay",completed);
-  waitState();
- }else{
-  const day=Math.min(365,completed+1);
-  await loadLesson(day);
-  await loadQuestions(day);
+ /*
+  completed = number of lessons already completed.
+  Therefore the next lesson is completed + 1.
+ */
+ if(completed>=365){
+  text("lessonDay",365);
+  text("currentDay",365);
+  text("lessonTitle","🎓 Course Completed");
+  text("lessonDesc","Congratulations! You completed all 365 lessons.");
+  $("questions").innerHTML=
+   `<div class="success">🎉 365-day English journey completed.</div>`;
+  $("submit").style.display="none";
+  return;
  }
 
+ const day=completed+1;
+
+ /*
+  IMPORTANT:
+  The Worker should return the real completion state.
+  If the current lesson was already completed today,
+  /progress should expose that state.
+ */
+ try{
+
+  const r=await fetch(
+   `${COURSE}/api/progress?student_id=${id()}&detail=1&_=${Date.now()}`,
+   {cache:"no-store"}
+  );
+
+  const p=await r.json();
+
+  if(
+   r.ok&&
+   p.success&&
+   (
+    p.today_completed===true||
+    p.completed_today===true||
+    Number(p.last_completed_day||0)>=day
+   )
+  ){
+   lockToday();
+   return;
+  }
+
+ }catch(e){}
+
+ await loadLesson(day);
+ await loadQuestions(day);
  earnings();
 }
 
