@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#2563eb">
+<title>Daily Lesson - CreateLK Academy</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--b:#2563eb;--p:#7c3aed;--g:#10b981;--d:#0f172a;--m:#64748b;--l:#e2e8f0}
+body{font-family:system-ui,sans-serif;background:#f6f8fc;color:var(--d)}
+header{background:#fff;border-bottom:1px solid var(--l);position:sticky;top:0;z-index:5}
+.nav,main{max-width:720px;margin:auto}.nav{padding:11px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:800;color:var(--b);text-decoration:none}.logo span{color:var(--p)}
+.back{border:1px solid var(--l);background:#fff;padding:7px 10px;border-radius:8px;font-weight:700}
+main{padding:12px}.card{background:#fff;border:1px solid var(--l);border-radius:14px;padding:14px;margin-bottom:10px}
+.hero{background:linear-gradient(135deg,var(--b),var(--p));color:#fff;border:0}
+.hero small{font-size:9px;font-weight:800}.hero h1{font-size:20px;margin:4px 0}
+.title{font-size:13px;font-weight:800;margin-bottom:7px}
+.badge{display:inline-block;background:#eff6ff;color:var(--b);padding:4px 8px;border-radius:6px;font-size:8px;font-weight:800}
+.lesson h2{font-size:19px;margin:7px 0 3px}.muted{font-size:10px;color:var(--m)}
+.vocab{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.vocab span{background:#fff;border:1px solid var(--l);border-radius:6px;padding:5px 8px;font-size:9px}
+.content{margin-top:10px;padding:10px;background:#f8fafc;border:1px solid var(--l);border-radius:9px;font-size:10px;line-height:1.7}
+.question{border:1px solid var(--l);border-radius:9px;padding:10px;margin-top:8px}
+.q{font-size:11px;font-weight:800;margin-bottom:7px}
+.option{display:block;background:#f8fafc;border:1px solid var(--l);padding:8px;border-radius:7px;margin:4px 0;font-size:10px}
+.btn{width:100%;height:43px;border:0;border-radius:9px;margin-top:10px;font-weight:800;background:var(--d);color:#fff}
+.wait,.success{padding:11px;border-radius:9px;text-align:center;font-size:10px;font-weight:700;margin-top:8px}
+.wait{background:#eff6ff;color:#1e40af}.success{background:#f0fdf4;color:#166534}
+.countdown{display:block;font-size:18px;margin-top:4px}
+.msg{display:none;position:fixed;bottom:15px;left:50%;transform:translateX(-50%);background:var(--d);color:#fff;padding:9px 13px;border-radius:8px;font-size:10px}
+</style>
+</head>
+<body>
+
+<header>
+<div class="nav">
+<a class="logo" href="dashboard.html">📚 CreateLK <span>Academy</span></a>
+<button class="back" onclick="location.href='dashboard.html'">← Dashboard</button>
+</div>
+</header>
+
+<main>
+
+<section class="card hero">
+<small>DAILY ENGLISH LESSON</small>
+<h1 id="day">DAY —</h1>
+</section>
+
+<section class="card lesson">
+<div class="title">📖 Today's Lesson</div>
+<div class="badge">DAY <span id="lessonDay">—</span></div>
+<h2 id="title">Loading...</h2>
+<p class="muted" id="desc">Loading today's lesson...</p>
+<div class="vocab" id="vocab"></div>
+<div class="content" id="content" style="display:none"></div>
+<div id="wait"></div>
+</section>
+
+<section class="card">
+<div class="title">📝 Daily 5 Questions</div>
+<p class="muted">Get at least 4/5 to complete today's lesson.</p>
+<div id="questions">Loading...</div>
+<button class="btn" id="submit" onclick="submitQuiz()" disabled>
+✅ Submit Answers
+</button>
+</section>
+
+</main>
+
+<div class="msg" id="msg"></div>
+
+<script>
+const COURSE="https://createlk-course-lessons.createlk.workers.dev";
+
+let student={},questions=[],completed=0;
+
+try{
+ student=JSON.parse(localStorage.getItem("createlk_student")||"{}");
+}catch{}
+
+function id(){
+ return Number(student.id||student.database_id||student.student_id_number||0);
+}
+
+function show(x){
+ const m=document.getElementById("msg");
+ m.textContent=x;m.style.display="block";
+ clearTimeout(window.t);
+ window.t=setTimeout(()=>m.style.display="none",2500);
+}
+
+function sriDate(){
+ return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Colombo"}).format(new Date());
+}
+
+function todayDone(day){
+ return localStorage.getItem("createlk_completed_day")===String(day)&&
+ localStorage.getItem("createlk_completed_date")===sriDate();
+}
+
+function saveDone(day){
+ localStorage.setItem("createlk_completed_day",day);
+ localStorage.setItem("createlk_completed_date",sriDate());
+}
+
+function nextMidnight(){
+ const p=new Intl.DateTimeFormat("en-US",{
+  timeZone:"Asia/Colombo",
+  year:"numeric",month:"numeric",day:"numeric"
+ }).formatToParts(new Date());
+
+ const g=x=>Number(p.find(a=>a.type===x)?.value||0);
+
+ return new Date(Date.UTC(
+  g("year"),g("month")-1,g("day")+1
+ )-19800000);
+}
+
+function waitState(){
+ document.getElementById("wait").innerHTML=`
+ <div class="wait">
+  ✅ Today's lesson is completed.
+  <span>Next lesson opens at 12:00 AM.</span>
+  <span class="countdown" id="countdown">00:00:00</span>
+ </div>`;
+
+ document.getElementById("questions").innerHTML=
+ `<div class="success">✓ Today's 5 questions are completed.</div>`;
+
+ document.getElementById("submit").style.display="none";
+
+ const run=()=>{
+  let x=Math.max(0,nextMidnight()-Date.now());
+  if(x<=0){location.reload();return}
+  x=Math.floor(x/1000);
+  const h=Math.floor(x/3600);
+  const m=Math.floor(x%3600/60);
+  const s=x%60;
+  document.getElementById("countdown").textContent=
+   `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+ };
+ run();
+ setInterval(run,1000);
+}
+
+function esc(x){
+ return String(x||"").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",
+ '"':"&quot;","'":"&#039;"
+ }[c]));
+}
+
+async function progress(){
+ try{
+  const r=await fetch(`${COURSE}/api/progress?student_id=${id()}`);
+  const d=await r.json();
+
+  if(r.ok&&d.success)
+   completed=Math.min(365,Number(d.completed_lessons||0));
+ }catch{
+  completed=Number(student.completed_lessons||0);
+ }
+}
+
+async function lesson(day){
+ try{
+  const r=await fetch(`${COURSE}/api/lesson?day=${day}`);
+  const d=await r.json();
+
+  if(!r.ok||!d.success||!d.lesson)throw Error();
+
+  const l=d.lesson;
+
+  document.getElementById("title").textContent=l.title||"Today's Lesson";
+  document.getElementById("desc").textContent=l.description||"";
+  document.getElementById("lessonDay").textContent=day;
+  document.getElementById("day").textContent="DAY "+day;
+
+  const v=document.getElementById("vocab");
+  v.innerHTML="";
+
+  (l.vocabulary||[]).slice(0,10).forEach(x=>{
+   const s=document.createElement("span");
+   s.textContent=typeof x==="object"?x.word||"":x;
+   if(s.textContent)v.appendChild(s);
+  });
+
+  if(l.content){
+   document.getElementById("content").innerHTML=l.content;
+   document.getElementById("content").style.display="block";
+  }
+ }catch{
+  document.getElementById("title").textContent="Lesson unavailable";
+  document.getElementById("desc").textContent="Please try again later.";
+ }
+}
+
+async function loadQuestions(day){
+ try{
+  const r=await fetch(`${COURSE}/api/lesson-questions?day=${day}`);
+  const d=await r.json();
+
+  if(!r.ok||!d.success||!Array.isArray(d.questions)||d.questions.length<5)
+   throw Error();
+
+  questions=d.questions.slice(0,5);
+
+  document.getElementById("questions").innerHTML=
+   questions.map((q,i)=>`
+   <div class="question">
+    <div class="q">${i+1}. ${esc(q.question)}</div>
+    ${[
+     ["A","option_a"],["B","option_b"],
+     ["C","option_c"],["D","option_d"]
+    ].map(o=>`
+     <label class="option">
+      <input type="radio" name="q${q.id}" value="${o[0]}">
+      ${o[0]}. ${esc(q[o[1]])}
+     </label>`).join("")}
+   </div>`).join("");
+
+  document.getElementById("submit").disabled=false;
+
+ }catch{
+  document.getElementById("questions").innerHTML=
+   `<div class="wait">Questions are not available yet.</div>`;
+  document.getElementById("submit").style.display="none";
+ }
+}
+
+async function submitQuiz(){
+ if(questions.length!==5)return;
+
+ let score=0,answered=0;
+
+ questions.forEach(q=>{
+  const a=document.querySelector(`input[name="q${q.id}"]:checked`);
+  if(a){
+   answered++;
+   if(a.value.toUpperCase()===String(q.correct_answer).toUpperCase())
+    score++;
+  }
+ });
+
+ if(answered<5)return show("Please answer all 5 questions.");
+ if(score<4)return show(`❌ ${score}/5. You need 4/5 to pass.`);
+
+ const day=completed+1;
+ const btn=document.getElementById("submit");
+ btn.disabled=true;
+ btn.textContent="Saving...";
+
+ try{
+  const r=await fetch(`${COURSE}/api/complete-lesson`,{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    student_id:id(),
+    lesson_day:day,
+    score
+   })
+  });
+
+  const d=await r.json();
+
+  if(!r.ok||!d.success)
+   throw Error(d.message||"Unable to save progress.");
+
+  completed=Number(d.completed_lessons||day);
+
+  student.completed_lessons=completed;
+  localStorage.setItem("createlk_student",JSON.stringify(student));
+  saveDone(day);
+
+  document.getElementById("title").textContent="Today's Lesson Completed";
+  document.getElementById("desc").textContent=
+   `Excellent! You scored ${score}/5.`;
+  document.getElementById("vocab").innerHTML="";
+  document.getElementById("content").style.display="none";
+
+  waitState();
+
+  show(`🎉 Day ${day} completed!`);
+
+ }catch(e){
+  btn.disabled=false;
+  btn.textContent="✅ Submit Answers";
+  show(e.message||"Unable to save progress.");
+ }
+}
+
+async function start(){
+ if(!id()){
+  location.href="login.html";
+  return;
+ }
+
+ await progress();
+
+ const day=Math.min(365,completed+1);
+
+ if(todayDone(completed)){
+  document.getElementById("lessonDay").textContent=completed;
+  document.getElementById("day").textContent="DAY "+completed;
+  waitState();
+  return;
+ }
+
+ await lesson(day);
+ await loadQuestions(day);
+}
+
+start();
+</script>
+</body>
+</html>
