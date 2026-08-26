@@ -111,7 +111,9 @@ padding:7px
 }
 
 
-/* BUTTON */
+/* =========================
+BUTTON
+========================= */
 
 .btn{
 border:0;
@@ -128,7 +130,6 @@ font-family:inherit;
 font-size:14px;
 font-weight:800;
 text-align:center;
-
 -webkit-tap-highlight-color:transparent;
 touch-action:manipulation
 }
@@ -180,9 +181,6 @@ font-size:12px;
 font-weight:800
 }
 
-
-/* HERO IMAGE */
-
 .hero-image{
 width:100%;
 max-width:760px;
@@ -197,7 +195,6 @@ max-height:330px;
 object-fit:cover;
 border-radius:20px
 }
-
 
 .hero h1{
 max-width:760px;
@@ -543,65 +540,16 @@ position:fixed;
 right:16px;
 bottom:16px;
 z-index:999;
-
 width:54px;
 height:54px;
-
 display:flex;
 align-items:center;
 justify-content:center;
-
 border-radius:50%;
-
 background:#25d366;
 color:#fff;
-
-font-size:27px
-}
-
-
-/* =========================
-INSTALL HELP
-========================= */
-
-.install-help{
-display:none;
-
-position:fixed;
-left:14px;
-right:14px;
-bottom:82px;
-
-z-index:2000;
-
-background:#fff;
-border:1px solid var(--line);
-border-radius:15px;
-
-padding:18px;
-
-box-shadow:0 10px 35px rgba(0,0,0,.18)
-}
-
-.install-help h3{
-font-size:16px;
-margin-bottom:7px
-}
-
-.install-help p{
-font-size:13px;
-color:var(--muted)
-}
-
-.install-help button{
-margin-top:12px;
-border:0;
-background:var(--blue);
-color:#fff;
-padding:9px 16px;
-border-radius:8px;
-font-weight:800;
-cursor:pointer
+font-size:27px;
+box-shadow:0 5px 18px rgba(0,0,0,.18)
 }
 
 
@@ -1631,7 +1579,7 @@ aria-label="Contact CreateLK Academy on WhatsApp">
 
 
 <!-- =========================
-INSTALL SCRIPT
+PWA INSTALL SCRIPT
 ========================= -->
 
 <script>
@@ -1642,7 +1590,9 @@ const installBtn =
 document.getElementById("installBtn");
 
 
-/* CHECK STANDALONE */
+/* =========================
+CHECK STANDALONE
+========================= */
 
 function isStandalone(){
 
@@ -1661,32 +1611,22 @@ window.navigator.standalone === true
 }
 
 
-/* BEFORE INSTALL PROMPT */
+/* =========================
+HIDE INSTALL BUTTON
+========================= */
 
-window.addEventListener(
-"beforeinstallprompt",
-function(event){
+function hideInstallButton(){
 
-console.log(
-"CreateLK Academy: PWA install available"
-);
+installBtn.hidden = true;
 
-
-/*
-IMPORTANT:
-Keep the browser event.
-*/
-
-event.preventDefault();
-
-deferredPrompt = event;
+}
 
 
-/*
-Only show the button when
-Chrome confirms installation
-is available.
-*/
+/* =========================
+SHOW INSTALL BUTTON
+========================= */
+
+function showInstallButton(){
 
 if(!isStandalone()){
 
@@ -1695,23 +1635,50 @@ installBtn.hidden = false;
 }
 
 }
-);
 
 
-/* INSTALL */
+/* =========================
+PWA INSTALL PROMPT
+========================= */
 
-installBtn.addEventListener(
-"click",
-async function(event){
+window.addEventListener(
+"beforeinstallprompt",
+function(event){
+
+/*
+Prevent automatic browser prompt.
+Store it for our Install button.
+*/
 
 event.preventDefault();
 
-event.stopPropagation();
+deferredPrompt = event;
 
+console.log(
+"CreateLK Academy: PWA install prompt ready"
+);
+
+showInstallButton();
+
+}
+);
+
+
+/* =========================
+INSTALL BUTTON
+========================= */
+
+installBtn.addEventListener(
+"click",
+async function(){
+
+/*
+Already installed
+*/
 
 if(isStandalone()){
 
-installBtn.hidden = true;
+hideInstallButton();
 
 return;
 
@@ -1726,28 +1693,24 @@ if(deferredPrompt){
 
 try{
 
-deferredPrompt.prompt();
-
+await deferredPrompt.prompt();
 
 const result =
 await deferredPrompt.userChoice;
 
-
 console.log(
-"Install result:",
+"CreateLK Academy install result:",
 result.outcome
 );
 
-
 deferredPrompt = null;
 
-installBtn.hidden = true;
-
+hideInstallButton();
 
 }catch(error){
 
 console.error(
-"Install error:",
+"CreateLK Academy install error:",
 error
 );
 
@@ -1759,26 +1722,29 @@ return;
 
 
 /*
+IMPORTANT:
+Do not show the old misleading
+"Installation is not available yet"
+popup.
+
 If Chrome has not supplied the
-native prompt, do not pretend
-installation is available.
+beforeinstallprompt event, simply
+leave the button hidden.
 */
 
 console.log(
-"Native install prompt is not available yet."
+"Native PWA install prompt is not currently available."
 );
 
-alert(
-"Installation is not available yet. " +
-"Please open this website in Chrome and use " +
-"Chrome menu → Install app or Add to Home screen."
-);
+hideInstallButton();
 
 }
 );
 
 
-/* APP INSTALLED */
+/* =========================
+APP INSTALLED
+========================= */
 
 window.addEventListener(
 "appinstalled",
@@ -1790,26 +1756,28 @@ console.log(
 
 deferredPrompt = null;
 
-installBtn.hidden = true;
+hideInstallButton();
 
 }
 );
 
 
-/* HIDE WHEN ALREADY INSTALLED */
+/* =========================
+INITIAL CHECK
+========================= */
 
 if(isStandalone()){
 
-installBtn.hidden = true;
+hideInstallButton();
 
 }
 
 
-/* SERVICE WORKER */
+/* =========================
+SERVICE WORKER
+========================= */
 
-if(
-"serviceWorker" in navigator
-){
+if("serviceWorker" in navigator){
 
 window.addEventListener(
 "load",
@@ -1838,7 +1806,7 @@ registration.scope
 function(error){
 
 console.error(
-"Service Worker registration failed:",
+"CreateLK Academy Service Worker registration failed:",
 error
 );
 
