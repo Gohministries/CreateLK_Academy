@@ -1,150 +1,147 @@
-const CACHE_NAME = "createlk-academy-v4";
+const CACHE_NAME = "createlk-academy-v1";
 
-const CORE_FILES = [
+const APP_SHELL = [
   "/",
   "/index.html",
   "/manifest.json"
 ];
 
 
-self.addEventListener(
-  "install",
-  event => {
+/* =========================
+INSTALL
+========================= */
 
-    event.waitUntil(
+self.addEventListener("install", event => {
 
-      caches
-        .open(CACHE_NAME)
-        .then(cache => {
+  event.waitUntil(
 
-          return cache.addAll(
-            CORE_FILES
-          );
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
 
-        })
+  );
 
-    );
+});
 
-    self.skipWaiting();
 
+/* =========================
+ACTIVATE
+========================= */
+
+self.addEventListener("activate", event => {
+
+  event.waitUntil(
+
+    caches.keys()
+      .then(keys => {
+
+        return Promise.all(
+
+          keys
+            .filter(key => key !== CACHE_NAME)
+            .map(key => caches.delete(key))
+
+        );
+
+      })
+      .then(() => self.clients.claim())
+
+  );
+
+});
+
+
+/* =========================
+FETCH
+========================= */
+
+self.addEventListener("fetch", event => {
+
+  /*
+   * Only handle GET requests.
+   */
+  if(event.request.method !== "GET"){
+    return;
   }
-);
 
+  /*
+   * Don't interfere with API,
+   * login, payment or external requests.
+   */
+  const url = new URL(event.request.url);
 
-self.addEventListener(
-  "activate",
-  event => {
-
-    event.waitUntil(
-
-      caches
-        .keys()
-        .then(keys => {
-
-          return Promise.all(
-
-            keys
-              .filter(
-                key =>
-                  key !== CACHE_NAME
-              )
-              .map(
-                key =>
-                  caches.delete(key)
-              )
-
-          );
-
-        })
-
-    );
-
-    self.clients.claim();
-
+  if(url.origin !== self.location.origin){
+    return;
   }
-);
 
-
-self.addEventListener(
-  "fetch",
-  event => {
-
-    if(
-      event.request.method !== "GET"
-    ){
-
-      return;
-
-    }
-
+  /*
+   * Navigation requests:
+   * Network first, then cached page.
+   */
+  if(event.request.mode === "navigate"){
 
     event.respondWith(
 
-      caches
-        .match(event.request)
-        .then(cachedResponse => {
+      fetch(event.request)
+        .then(response => {
 
-          if(cachedResponse){
+          const copy = response.clone();
 
-            return cachedResponse;
+          caches.open(CACHE_NAME)
+            .then(cache => cache.put(event.request, copy));
 
-          }
+          return response;
 
+        })
+        .catch(() => {
 
-          return fetch(
-            event.request
-          )
-
-          .then(response => {
-
-            if(!response){
-
-              return response;
-
-            }
-
-
-            if(
-              response.status !== 200 &&
-              response.type !== "opaque"
-            ){
-
-              return response;
-
-            }
-
-
-            const responseClone =
-              response.clone();
-
-
-            caches
-              .open(CACHE_NAME)
-              .then(cache => {
-
-                cache.put(
-                  event.request,
-                  responseClone
-                );
-
-              });
-
-
-            return response;
-
-          })
-
-          .catch(() => {
-
-            return caches.match(
-              "/index.html"
-            );
-
-          });
+          return caches.match("/index.html");
 
         })
 
     );
 
+    return;
   }
-);
+
+
+  /*
+   * Other local files:
+   * Cache first, then network.
+   */
+  event.respondWith(
+
+    caches.match(event.request)
+      .then(cached => {
+
+        if(cached){
+          return cached;
+        }
+
+        return fetch(event.request)
+          .then(response => {
+
+            if(
+              response &&
+              response.status === 200 &&
+              response.type === "basic"
+            ){
+
+              const copy = response.clone();
+
+              caches.open(CACHE_NAME)
+                .then(cache =>
+                  cache.put(event.request, copy)
+                );
+
+            }
+
+            return response;
+
+          });
+
+      })
+
+  );
+
+});
