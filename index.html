@@ -50,6 +50,10 @@ text-decoration:none;
 color:inherit
 }
 
+button{
+font-family:inherit
+}
+
 .container{
 width:100%;
 max-width:1050px;
@@ -113,7 +117,9 @@ color:#fff;
 font-family:inherit;
 font-size:14px;
 font-weight:800;
-text-align:center
+text-align:center;
+-webkit-tap-highlight-color:transparent;
+touch-action:manipulation
 }
 
 .btn.secondary{
@@ -125,7 +131,12 @@ border:1px solid #dbe7ff
 .install{
 background:#fff;
 color:var(--blue);
-border:1px solid #cbdafc
+border:1px solid #cbdafc;
+cursor:pointer
+}
+
+.install:active{
+transform:scale(.97)
 }
 
 .navlinks .btn{
@@ -138,7 +149,7 @@ min-width:100px
 .hero{
 background:#fff;
 border-bottom:1px solid var(--line);
-padding:68px 18px 52px;
+padding:55px 18px 52px;
 text-align:center
 }
 
@@ -152,6 +163,24 @@ color:var(--blue);
 border:1px solid #dbe7ff;
 font-size:12px;
 font-weight:800
+}
+
+
+/* HERO IMAGE */
+
+.hero-image{
+width:100%;
+max-width:760px;
+margin:0 auto 25px
+}
+
+.hero-image img{
+display:block;
+width:100%;
+height:auto;
+max-height:320px;
+object-fit:cover;
+border-radius:20px
 }
 
 .hero h1{
@@ -496,8 +525,47 @@ color:#fff;
 font-size:27px
 }
 
-.whatsapp-label{
-display:none
+
+/* INSTALL HELP */
+
+.install-help{
+display:none;
+
+position:fixed;
+left:14px;
+right:14px;
+bottom:82px;
+
+z-index:1000;
+
+background:#fff;
+border:1px solid var(--line);
+border-radius:15px;
+
+padding:18px;
+
+box-shadow:0 10px 35px rgba(0,0,0,.18)
+}
+
+.install-help h3{
+font-size:16px;
+margin-bottom:7px
+}
+
+.install-help p{
+font-size:13px;
+color:var(--muted)
+}
+
+.install-help button{
+margin-top:12px;
+border:0;
+background:var(--blue);
+color:#fff;
+padding:9px 16px;
+border-radius:8px;
+font-weight:800;
+cursor:pointer
 }
 
 
@@ -535,7 +603,16 @@ border-radius:9px
 }
 
 .hero{
-padding:50px 14px 42px
+padding:45px 14px 42px
+}
+
+.hero-image{
+margin-bottom:20px
+}
+
+.hero-image img{
+border-radius:15px;
+max-height:220px
 }
 
 .hero h1{
@@ -656,7 +733,7 @@ font-size:11px
 }
 
 .hero{
-padding-top:44px
+padding-top:40px
 }
 
 .hero h1{
@@ -665,6 +742,10 @@ font-size:31px
 
 .hero p{
 font-size:13px
+}
+
+.hero-image img{
+max-height:190px
 }
 
 .quick strong{
@@ -719,8 +800,8 @@ FAQ
 <button
 id="installBtn"
 class="btn install"
-hidden
-type="button">
+type="button"
+hidden>
 
 📲 Install
 
@@ -748,6 +829,19 @@ Login
 <div class="badge">
 🗣️ 100-Day Spoken English Course
 </div>
+
+
+<!-- PWA / HERO IMAGE -->
+
+<div class="hero-image">
+
+<img
+src="hero.png"
+alt="CreateLK Academy - 100-Day Spoken English"
+loading="eager">
+
+</div>
+
 
 <h1>
 Speak <span>English</span> with Confidence
@@ -1394,84 +1488,53 @@ aria-label="Contact CreateLK Academy on WhatsApp">
 </a>
 
 
+<!-- INSTALL HELP -->
+
+<div
+id="installHelp"
+class="install-help">
+
+<h3>
+📲 Install CreateLK Academy
+</h3>
+
+<p id="installHelpText">
+To install the app, use Chrome's menu and choose
+<strong>Add to Home screen</strong> or
+<strong>Install app</strong>.
+</p>
+
+<button
+id="closeInstallHelp"
+type="button">
+
+Close
+
+</button>
+
+</div>
+
+
 <script>
 
-let deferredPrompt=null;
+let deferredPrompt = null;
 
-const installBtn=
+const installBtn =
 document.getElementById("installBtn");
 
+const installHelp =
+document.getElementById("installHelp");
 
-/* INSTALL PROMPT */
+const installHelpText =
+document.getElementById("installHelpText");
 
-window.addEventListener(
-"beforeinstallprompt",
-function(event){
-
-event.preventDefault();
-
-deferredPrompt=event;
-
-installBtn.hidden=false;
-
-}
-);
+const closeInstallHelp =
+document.getElementById("closeInstallHelp");
 
 
-/* INSTALL */
-
-installBtn.addEventListener(
-"click",
-async function(){
-
-if(!deferredPrompt){
-return;
-}
-
-try{
-
-deferredPrompt.prompt();
-
-const result=
-await deferredPrompt.userChoice;
-
-console.log(
-"Install result:",
-result.outcome
-);
-
-deferredPrompt=null;
-
-installBtn.hidden=true;
-
-}catch(error){
-
-console.log(
-"Install error:",
-error
-);
-
-}
-
-}
-);
-
-
-/* INSTALLED */
-
-window.addEventListener(
-"appinstalled",
-function(){
-
-deferredPrompt=null;
-
-installBtn.hidden=true;
-
-}
-);
-
-
-/* STANDALONE */
+/* --------------------------------
+   STANDALONE CHECK
+-------------------------------- */
 
 function isStandalone(){
 
@@ -1480,19 +1543,167 @@ window.matchMedia(
 "(display-mode: standalone)"
 ).matches
 ||
-window.navigator.standalone===true
+window.navigator.standalone === true
+||
+document.referrer.indexOf(
+"android-app://"
+) === 0
 );
 
 }
 
+
+/* --------------------------------
+   BEFORE INSTALL PROMPT
+-------------------------------- */
+
+window.addEventListener(
+"beforeinstallprompt",
+function(event){
+
+console.log(
+"CreateLK Academy: install available"
+);
+
+event.preventDefault();
+
+deferredPrompt = event;
+
+if(!isStandalone()){
+
+installBtn.hidden = false;
+
+}
+
+}
+);
+
+
+/* --------------------------------
+   INSTALL BUTTON
+-------------------------------- */
+
+installBtn.addEventListener(
+"click",
+async function(event){
+
+event.preventDefault();
+event.stopPropagation();
+
+
 if(isStandalone()){
 
-installBtn.hidden=true;
+installBtn.hidden = true;
+
+return;
 
 }
 
 
-/* SERVICE WORKER */
+/* Native Chrome prompt */
+
+if(deferredPrompt){
+
+try{
+
+deferredPrompt.prompt();
+
+const result =
+await deferredPrompt.userChoice;
+
+console.log(
+"Install result:",
+result.outcome
+);
+
+deferredPrompt = null;
+
+installBtn.hidden = true;
+
+}catch(error){
+
+console.error(
+"Install error:",
+error
+);
+
+}
+
+return;
+
+}
+
+
+/* --------------------------------
+   FALLBACK
+-------------------------------- */
+
+installHelpText.innerHTML =
+"Chrome has not provided the automatic install prompt yet. " +
+"Tap Chrome menu <strong>⋮</strong> and choose " +
+"<strong>Add to Home screen</strong> or " +
+"<strong>Install app</strong>.";
+
+installHelp.style.display = "block";
+
+}
+);
+
+
+/* --------------------------------
+   CLOSE HELP
+-------------------------------- */
+
+closeInstallHelp.addEventListener(
+"click",
+function(){
+
+installHelp.style.display = "none";
+
+}
+);
+
+
+/* --------------------------------
+   APP INSTALLED
+-------------------------------- */
+
+window.addEventListener(
+"appinstalled",
+function(){
+
+console.log(
+"CreateLK Academy installed"
+);
+
+deferredPrompt = null;
+
+installBtn.hidden = true;
+
+installHelp.style.display = "none";
+
+}
+);
+
+
+/* --------------------------------
+   INITIAL STATE
+-------------------------------- */
+
+if(isStandalone()){
+
+installBtn.hidden = true;
+
+}else{
+
+installBtn.hidden = true;
+
+}
+
+
+/* --------------------------------
+   SERVICE WORKER
+-------------------------------- */
 
 if("serviceWorker" in navigator){
 
@@ -1506,7 +1717,7 @@ navigator.serviceWorker
 function(registration){
 
 console.log(
-"CreateLK Academy PWA ready:",
+"PWA ready:",
 registration.scope
 );
 
@@ -1515,7 +1726,7 @@ registration.scope
 .catch(
 function(error){
 
-console.log(
+console.error(
 "Service Worker error:",
 error
 );
