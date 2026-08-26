@@ -50,10 +50,6 @@ text-decoration:none;
 color:inherit
 }
 
-button{
-font-family:inherit
-}
-
 .container{
 width:100%;
 max-width:1050px;
@@ -117,9 +113,7 @@ color:#fff;
 font-family:inherit;
 font-size:14px;
 font-weight:800;
-text-align:center;
--webkit-tap-highlight-color:transparent;
-touch-action:manipulation
+text-align:center
 }
 
 .btn.secondary{
@@ -131,12 +125,7 @@ border:1px solid #dbe7ff
 .install{
 background:#fff;
 color:var(--blue);
-border:1px solid #cbdafc;
-cursor:pointer
-}
-
-.install:active{
-transform:scale(.97)
+border:1px solid #cbdafc
 }
 
 .navlinks .btn{
@@ -507,47 +496,8 @@ color:#fff;
 font-size:27px
 }
 
-
-/* INSTALL HELP */
-
-.installHelp{
-display:none;
-position:fixed;
-left:14px;
-right:14px;
-bottom:82px;
-z-index:998;
-
-background:#fff;
-border:1px solid var(--line);
-border-radius:14px;
-
-padding:16px;
-
-box-shadow:0 8px 30px rgba(0,0,0,.15)
-}
-
-.installHelp strong{
-display:block;
-font-size:15px;
-margin-bottom:5px
-}
-
-.installHelp p{
-font-size:12px;
-color:var(--muted);
-line-height:1.5
-}
-
-.installHelp button{
-margin-top:10px;
-border:0;
-background:var(--blue);
-color:#fff;
-padding:8px 13px;
-border-radius:8px;
-font-weight:700;
-cursor:pointer
+.whatsapp-label{
+display:none
 }
 
 
@@ -769,8 +719,8 @@ FAQ
 <button
 id="installBtn"
 class="btn install"
-type="button"
-hidden>
+hidden
+type="button">
 
 📲 Install
 
@@ -1444,246 +1394,105 @@ aria-label="Contact CreateLK Academy on WhatsApp">
 </a>
 
 
-<!-- INSTALL HELP -->
-
-<div
-id="installHelp"
-class="installHelp">
-
-<strong>
-📲 Install CreateLK Academy
-</strong>
-
-<p id="installHelpText">
-To install the app, use your browser's menu and choose
-<strong>Add to Home screen</strong> or
-<strong>Install app</strong>.
-</p>
-
-<button
-id="closeInstallHelp"
-type="button">
-
-Close
-
-</button>
-
-</div>
-
-
 <script>
 
-/* =====================================================
-   CREATE LK ACADEMY PWA INSTALL
-   ===================================================== */
+let deferredPrompt=null;
 
-(function(){
-
-"use strict";
-
-let deferredPrompt = null;
-
-const installBtn =
+const installBtn=
 document.getElementById("installBtn");
 
-const installHelp =
-document.getElementById("installHelp");
 
-const installHelpText =
-document.getElementById("installHelpText");
-
-const closeInstallHelp =
-document.getElementById("closeInstallHelp");
-
-
-/* -----------------------------------------------
-   CHECK STANDALONE
------------------------------------------------- */
-
-function isStandalone(){
-
-return (
-window.matchMedia("(display-mode: standalone)").matches ||
-window.navigator.standalone === true ||
-document.referrer.indexOf("android-app://") === 0
-);
-
-}
-
-
-/* -----------------------------------------------
-   BEFORE INSTALL PROMPT
-
-   Chrome fires this when the PWA is installable.
------------------------------------------------- */
+/* INSTALL PROMPT */
 
 window.addEventListener(
 "beforeinstallprompt",
 function(event){
 
-console.log(
-"CreateLK Academy: install prompt available"
-);
-
 event.preventDefault();
 
-deferredPrompt = event;
+deferredPrompt=event;
 
-/* Show button */
-
-if(!isStandalone()){
-
-installBtn.hidden = false;
-
-}
+installBtn.hidden=false;
 
 }
 );
 
 
-/* -----------------------------------------------
-   INSTALL BUTTON
-
-   IMPORTANT:
-   Do not make the button an <a>.
-   Keep it as a real button.
------------------------------------------------- */
+/* INSTALL */
 
 installBtn.addEventListener(
 "click",
-async function(event){
+async function(){
 
-event.preventDefault();
-
-event.stopPropagation();
-
-console.log(
-"CreateLK Academy: Install clicked"
-);
-
-
-/* Already installed */
-
-if(isStandalone()){
-
-installBtn.hidden = true;
-
+if(!deferredPrompt){
 return;
-
 }
-
-
-/* Native prompt available */
-
-if(deferredPrompt){
 
 try{
 
-await deferredPrompt.prompt();
+deferredPrompt.prompt();
 
-const result =
+const result=
 await deferredPrompt.userChoice;
 
 console.log(
-"CreateLK Academy:",
+"Install result:",
 result.outcome
 );
 
-deferredPrompt = null;
+deferredPrompt=null;
 
-installBtn.hidden = true;
+installBtn.hidden=true;
 
 }catch(error){
 
-console.error(
-"Install prompt error:",
+console.log(
+"Install error:",
 error
 );
 
 }
 
-return;
-
-}
-
-
-/* -----------------------------------------------
-   FALLBACK
-
-   Browser has not provided native prompt.
------------------------------------------------- */
-
-installHelpText.innerHTML =
-"Chrome has not provided the automatic install prompt yet. " +
-"Open the browser menu <strong>⋮</strong> and choose " +
-"<strong>Add to Home screen</strong> or " +
-"<strong>Install app</strong>.";
-
-installHelp.style.display = "block";
-
 }
 );
 
 
-/* -----------------------------------------------
-   CLOSE INSTALL HELP
------------------------------------------------- */
-
-closeInstallHelp.addEventListener(
-"click",
-function(){
-
-installHelp.style.display = "none";
-
-}
-);
-
-
-/* -----------------------------------------------
-   APP INSTALLED
------------------------------------------------- */
+/* INSTALLED */
 
 window.addEventListener(
 "appinstalled",
 function(){
 
-console.log(
-"CreateLK Academy installed successfully"
-);
+deferredPrompt=null;
 
-deferredPrompt = null;
-
-installBtn.hidden = true;
-
-installHelp.style.display = "none";
+installBtn.hidden=true;
 
 }
 );
 
 
-/* -----------------------------------------------
-   INITIAL STATE
------------------------------------------------- */
+/* STANDALONE */
+
+function isStandalone(){
+
+return(
+window.matchMedia(
+"(display-mode: standalone)"
+).matches
+||
+window.navigator.standalone===true
+);
+
+}
 
 if(isStandalone()){
 
-installBtn.hidden = true;
-
-}else{
-
-/*
-   Keep hidden until Chrome provides
-   beforeinstallprompt.
-*/
-
-installBtn.hidden = true;
+installBtn.hidden=true;
 
 }
 
 
-/* -----------------------------------------------
-   SERVICE WORKER
------------------------------------------------- */
+/* SERVICE WORKER */
 
 if("serviceWorker" in navigator){
 
@@ -1706,8 +1515,8 @@ registration.scope
 .catch(
 function(error){
 
-console.error(
-"CreateLK Academy Service Worker error:",
+console.log(
+"Service Worker error:",
 error
 );
 
@@ -1717,8 +1526,6 @@ error
 });
 
 }
-
-})();
 
 </script>
 
