@@ -1,69 +1,106 @@
-const CACHE_NAME = "createlk-academy-v1";
+const CACHE_NAME = "createlk-academy-v2";
 
-const APP_SHELL = [
-  "/",
-  "/index.html",
-  "/manifest.json"
+const APP_FILES = [
+  "./",
+  "./index.html",
+  "./manifest.json",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./hero.png"
 ];
 
+
 self.addEventListener("install", event => {
+
   event.waitUntil(
+
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
+      .then(cache => cache.addAll(APP_FILES))
+
   );
+
+  self.skipWaiting();
+
 });
 
+
 self.addEventListener("activate", event => {
+
   event.waitUntil(
-    caches.keys()
-      .then(keys =>
-        Promise.all(
-          keys
-            .filter(key => key !== CACHE_NAME)
-            .map(key => caches.delete(key))
-        )
-      )
-      .then(() => self.clients.claim())
+
+    caches.keys().then(keys => {
+
+      return Promise.all(
+
+        keys
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+
+      );
+
+    })
+
   );
+
+  self.clients.claim();
+
 });
+
 
 self.addEventListener("fetch", event => {
 
-  if (event.request.method !== "GET") return;
-
-  const requestURL = new URL(event.request.url);
-
-  if (requestURL.origin !== self.location.origin) {
+  if(event.request.method !== "GET"){
     return;
   }
 
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
 
-        if (response && response.status === 200) {
-          const copy = response.clone();
+    caches.match(event.request)
+      .then(cached => {
 
-          caches.open(CACHE_NAME)
-            .then(cache => cache.put(event.request, copy));
+        if(cached){
+          return cached;
         }
 
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request)
-          .then(cached => {
+        return fetch(event.request)
+          .then(response => {
 
-            if (cached) {
-              return cached;
+            if(
+              !response ||
+              response.status !== 200 ||
+              response.type === "opaque"
+            ){
+
+              return response;
+
             }
 
-            if (event.request.mode === "navigate") {
-              return caches.match("/index.html");
-            }
+            const copy =
+            response.clone();
+
+            caches.open(CACHE_NAME)
+              .then(cache => {
+
+                cache.put(
+                  event.request,
+                  copy
+                );
+
+              });
+
+            return response;
+
+          })
+          .catch(() => {
+
+            return caches.match(
+              "./index.html"
+            );
 
           });
+
       })
+
   );
+
 });
