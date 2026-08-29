@@ -150,11 +150,8 @@ margin-bottom:10px
 border:1px solid var(--l);
 border-radius:12px;
 padding:13px;
-margin-bottom:9px;
-background:#fff
+margin-bottom:9px
 }
-
-.dialogue:last-child{margin-bottom:0}
 
 .dialogueNo{
 font-size:9px;
@@ -336,23 +333,21 @@ const STUDENT_KEY =
 const FREE_DIALOGUES = 3;
 const TOTAL_DIALOGUES = 10;
 
-let student={};
-let lesson=null;
-let premium=false;
-let completed=false;
+let student = {};
+let premium = false;
 
 
-/* LOAD LOGIN DATA */
+/* LOAD STUDENT */
 
 try{
 
-student=JSON.parse(
-localStorage.getItem(STUDENT_KEY)||"{}"
+student = JSON.parse(
+localStorage.getItem(STUDENT_KEY) || "{}"
 );
 
 }catch(e){
 
-student={};
+student = {};
 
 }
 
@@ -372,15 +367,17 @@ student.student_id_number ||
 }
 
 
-/* DATE */
+/* TODAY */
 
 function today(){
 
-const d=new Date();
+const d = new Date();
 
-return String(d.getMonth()+1).padStart(2,"0")+
-"-"+
-String(d.getDate()).padStart(2,"0");
+return (
+String(d.getMonth()+1).padStart(2,"0") +
+"-" +
+String(d.getDate()).padStart(2,"0")
+);
 
 }
 
@@ -389,7 +386,7 @@ String(d.getDate()).padStart(2,"0");
 
 function dateText(){
 
-const d=new Date();
+const d = new Date();
 
 return d.toLocaleDateString(
 "en-US",
@@ -400,19 +397,22 @@ year:"numeric"
 }
 );
 
+}
+
 
 /* DAY OF YEAR */
 
 function dayOfYear(){
 
-const d=new Date();
+const d = new Date();
 
-const start=new Date(d.getFullYear(),0,0);
+const start =
+new Date(d.getFullYear(),0,0);
 
-const diff=d-start;
+const diff = d - start;
 
 return Math.floor(
-diff/(1000*60*60*24)
+diff / 86400000
 );
 
 }
@@ -422,15 +422,17 @@ diff/(1000*60*60*24)
 
 async function refreshStudent(){
 
-const id=studentId();
+const id = studentId();
 
-if(!id)return;
+if(!id){
+return false;
+}
 
 try{
 
-const r=await fetch(
-ACCOUNT_API+
-"/api/student?id="+
+const r = await fetch(
+ACCOUNT_API +
+"/api/student?id=" +
 encodeURIComponent(id),
 {
 cache:"no-store",
@@ -440,16 +442,32 @@ headers:{
 }
 );
 
-if(!r.ok)return;
+if(!r.ok){
 
-const d=await r.json();
+console.log(
+"Account HTTP:",
+r.status
+);
+
+return false;
+
+}
+
+const d = await r.json();
+
+console.log(
+"Account response:",
+d
+);
 
 if(d.success && d.student){
 
-student={
+student = {
 ...student,
 ...d.student,
-id:Number(d.student.id)
+id:Number(
+d.student.id || id
+)
 };
 
 localStorage.setItem(
@@ -457,16 +475,20 @@ STUDENT_KEY,
 JSON.stringify(student)
 );
 
+return true;
+
 }
 
 }catch(e){
 
 console.log(
-"Account refresh failed",
+"Account refresh error:",
 e
 );
 
 }
+
+return false;
 
 }
 
@@ -475,48 +497,72 @@ e
 
 function checkPremium(){
 
-const status=String(
-student.membership_status||
-student.membershipStatus||
-student.membership||
+const status = String(
+
+student.membership_status ||
+student.membershipStatus ||
+student.membership ||
+student.plan ||
 "FREE"
-).toUpperCase();
 
-premium=status==="PREMIUM";
+).trim().toUpperCase();
 
-const badge=
+premium =
+status === "PREMIUM" ||
+status === "ACTIVE_PREMIUM";
+
+const badge =
 document.getElementById("badge");
 
 if(premium){
 
-badge.textContent="✓ Premium";
-badge.className="badge premium";
+badge.textContent =
+"✓ Premium";
+
+badge.className =
+"badge premium";
 
 }else{
 
-badge.textContent="Free";
-badge.className="badge free";
+badge.textContent =
+"Free";
+
+badge.className =
+"badge free";
 
 }
 
 }
 
 
-/* LOAD TODAY'S LESSON */
+/* LESSON */
 
 async function loadLesson(){
 
-const lessonBox=
+const box =
 document.getElementById("lesson");
 
-const md=today();
+const md = today();
+
+console.log(
+"Loading lesson:",
+md
+);
 
 try{
 
-const r=await fetch(
-COURSE_API+
-"?date="+
-encodeURIComponent(md),
+/*
+IMPORTANT:
+The Worker receives today's date.
+*/
+
+const url =
+COURSE_API +
+"?date=" +
+encodeURIComponent(md);
+
+const r = await fetch(
+url,
 {
 cache:"no-store",
 headers:{
@@ -525,35 +571,63 @@ headers:{
 }
 );
 
-if(!r.ok)
-throw Error(
-"Lesson server error: "+r.status
+console.log(
+"Lesson HTTP:",
+r.status
 );
 
-const d=await r.json();
+if(!r.ok){
 
-if(!d.success)
-throw Error(
-d.error||"No lesson data."
+throw new Error(
+"HTTP "+r.status
 );
 
-lesson=
-d.lesson||
-d.devotional||
-d.data;
+}
 
-if(!lesson)
-throw Error("No lesson data.");
+const d =
+await r.json();
 
-renderLesson();
+console.log(
+"Lesson response:",
+d
+);
+
+if(!d.success){
+
+throw new Error(
+d.error ||
+"No lesson data"
+);
+
+}
+
+const data =
+d.lesson ||
+d.devotional ||
+d.data ||
+d;
+
+if(!data){
+
+throw new Error(
+"No lesson data"
+);
+
+}
+
+renderLesson(data);
 
 }catch(e){
 
-console.log(e);
+console.log(
+"Lesson error:",
+e
+);
 
-lessonBox.className="status error";
+box.className =
+"status error";
 
-lessonBox.textContent=
+box.textContent =
 "⚠️ No lesson data.";
 
 }
@@ -561,32 +635,72 @@ lessonBox.textContent=
 }
 
 
-/* FIND DIALOGUES */
+/* GET DIALOGUES */
 
-function getDialogues(){
+function getDialogues(data){
 
-return lesson.dialogues ||
-lesson.conversations ||
-lesson.lessons ||
+let list =
+data.dialogues ||
+data.conversations ||
+data.items ||
+data.lessons ||
 [];
 
+if(Array.isArray(list)){
+return list;
+}
+
+
+/*
+If Worker returns dialogue_1_ta,
+dialogue_1_en style fields.
+*/
+
+const result=[];
+
+for(let i=1;i<=TOTAL_DIALOGUES;i++){
+
+const ta =
+data["dialogue_"+i+"_ta"] ||
+data["tamil_"+i] ||
+data["tamil"+i] ||
+"";
+
+const en =
+data["dialogue_"+i+"_en"] ||
+data["english_"+i] ||
+data["english"+i] ||
+"";
+
+if(ta || en){
+
+result.push({
+tamil:ta,
+english:en
+});
+
+}
+
+}
+
+return result;
 
 }
 
 
-/* TEXT */
+/* GET TEXT */
 
-function getText(item,names){
+function getText(item,keys){
 
-for(const n of names){
+for(const key of keys){
 
 if(
-item[n]!==undefined &&
-item[n]!==null &&
-String(item[n]).trim()
+item[key] !== undefined &&
+item[key] !== null &&
+String(item[key]).trim()
 ){
 
-return String(item[n]);
+return String(item[key]);
 
 }
 
@@ -597,38 +711,58 @@ return "";
 }
 
 
+/* ESCAPE */
+
+function escapeHTML(value){
+
+return String(value || "")
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
+
+}
+
+
 /* RENDER */
 
-function renderLesson(){
+function renderLesson(data){
 
-const box=
+const box =
 document.getElementById("lesson");
 
-let dialogues=getDialogues();
-
-if(!Array.isArray(dialogues))
-dialogues=[];
+let dialogues =
+getDialogues(data);
 
 
-/* FALLBACK FOR OBJECT */
+/*
+Single dialogue fallback.
+*/
 
-if(!dialogues.length && lesson){
+if(!dialogues.length){
 
-const tamil=
-lesson.tamil ||
-lesson.tamil_text ||
-lesson.question_ta;
+const ta =
+getText(data,[
+"tamil",
+"ta",
+"tamil_text",
+"question_ta"
+]);
 
-const english=
-lesson.english ||
-lesson.english_text ||
-lesson.answer_en;
+const en =
+getText(data,[
+"english",
+"en",
+"english_text",
+"answer_en"
+]);
 
-if(tamil || english){
+if(ta || en){
 
 dialogues=[{
-tamil:tamil,
-english:english
+tamil:ta,
+english:en
 }];
 
 }
@@ -636,29 +770,38 @@ english:english
 }
 
 
-/* LIMIT */
+/*
+Free = 3
+Premium = 10
+*/
 
-const visible=
+const limit =
 premium
 ?TOTAL_DIALOGUES
 :FREE_DIALOGUES;
 
-dialogues=
-dialogues.slice(0,visible);
+dialogues =
+dialogues.slice(0,limit);
 
 if(!dialogues.length){
 
-box.className="status error";
-box.textContent="⚠️ No lesson data.";
+box.className =
+"status error";
+
+box.textContent =
+"⚠️ No lesson data.";
+
 return;
 
 }
 
-let html="";
+let html = "";
 
-dialogues.forEach((x,i)=>{
+dialogues.forEach(
+(item,index)=>{
 
-const ta=getText(x,[
+const tamil =
+getText(item,[
 "tamil",
 "ta",
 "tamil_text",
@@ -666,7 +809,8 @@ const ta=getText(x,[
 "sentence_ta"
 ]);
 
-const en=getText(x,[
+const english =
+getText(item,[
 "english",
 "en",
 "english_text",
@@ -674,25 +818,25 @@ const en=getText(x,[
 "sentence_en"
 ]);
 
-html+=`
+html += `
 
 <div class="dialogue">
 
 <div class="dialogueNo">
-DIALOGUE ${i+1} / ${premium?TOTAL_DIALOGUES:FREE_DIALOGUES}
+DIALOGUE ${index+1} / ${TOTAL_DIALOGUES}
 </div>
 
 <div class="tamil">
-🇱🇰 ${escapeHTML(ta)}
+🇱🇰 ${escapeHTML(tamil)}
 </div>
 
 <div class="english">
-🇬🇧 ${escapeHTML(en)}
+🇬🇧 ${escapeHTML(english)}
 </div>
 
 <button
 class="listen"
-onclick='speak(${JSON.stringify(en)})'>
+onclick='speak(${JSON.stringify(english)})'>
 🔊 Listen
 </button>
 
@@ -703,61 +847,54 @@ onclick='speak(${JSON.stringify(en)})'>
 });
 
 
-if(!premium && dialogues.length<10){
+if(!premium){
 
-html+=`
+html += `
 
 <div class="notice">
-⭐ Premium unlocks all 10 dialogues.
+⭐ 3 dialogues are free.
+Premium unlocks all 10 dialogues.
 </div>
 
 `;
 
 }
 
-box.className="";
-box.innerHTML=html;
+box.className = "";
+box.innerHTML = html;
 
 document.getElementById(
 "completeBox"
-).style.display="block";
+).style.display =
+"block";
 
 }
 
 
-/* ESCAPE */
-
-function escapeHTML(x){
-
-return String(x||"")
-.replace(/&/g,"&amp;")
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;")
-.replace(/"/g,"&quot;")
-.replace(/'/g,"&#039;");
-
-}
-
-
-/* VOICE */
+/* SPEAK */
 
 function speak(text){
 
-if(!text)return;
+if(
+!text ||
+!("speechSynthesis" in window)
+){
 
-if("speechSynthesis" in window){
+return;
+
+}
 
 speechSynthesis.cancel();
 
-const u=
+const speech =
 new SpeechSynthesisUtterance(text);
 
-u.lang="en-US";
-u.rate=.9;
+speech.lang = "en-US";
+speech.rate = .9;
 
-speechSynthesis.speak(u);
-
-}
+speechSynthesis.speak(
+speech
+);
 
 }
 
@@ -766,34 +903,45 @@ speechSynthesis.speak(u);
 
 async function completeLesson(){
 
-const id=studentId();
+const id =
+studentId();
 
 if(!id){
 
-alert("Please login again.");
+alert(
+"Please login again."
+);
+
 return;
 
 }
 
-const btn=
-document.getElementById("completeBtn");
+const btn =
+document.getElementById(
+"completeBtn"
+);
 
-const status=
-document.getElementById("completeStatus");
+const status =
+document.getElementById(
+"completeStatus"
+);
 
-btn.disabled=true;
-btn.textContent="Saving...";
+btn.disabled = true;
+
+btn.textContent =
+"Saving...";
 
 try{
 
-const r=await fetch(
-COURSE_API+
-"/api/progress",
+const r = await fetch(
+COURSE_API + "/api/progress",
 {
 method:"POST",
 headers:{
-"Content-Type":"application/json",
-"Accept":"application/json"
+"Content-Type":
+"application/json",
+"Accept":
+"application/json"
 },
 body:JSON.stringify({
 
@@ -807,31 +955,34 @@ date:today()
 }
 );
 
-const d=await r.json();
+const d =
+await r.json();
 
 if(!r.ok || !d.success){
 
-throw Error(
-d.error||"Could not save progress."
+throw new Error(
+d.error ||
+"Could not save progress."
 );
 
 }
 
-completed=true;
+btn.textContent =
+"✓ Lesson Completed";
 
-btn.textContent="✓ Lesson Completed";
-
-status.textContent=
-"Today's lesson has been completed.";
+status.textContent =
+"Today's lesson completed.";
 
 }catch(e){
 
 console.log(e);
 
-btn.disabled=false;
-btn.textContent="✅ Complete Lesson";
+btn.disabled = false;
 
-status.textContent=
+btn.textContent =
+"✅ Complete Lesson";
+
+status.textContent =
 "⚠️ "+e.message;
 
 }
@@ -843,50 +994,69 @@ status.textContent=
 
 async function start(){
 
-if(!studentId()){
+const id =
+studentId();
 
-location.replace("login.html");
+if(!id){
+
+location.replace(
+"login.html"
+);
+
 return;
 
 }
 
+
+/*
+Show basic information immediately.
+*/
+
 document.getElementById(
 "dayNumber"
-).textContent=
+).textContent =
 "DAY "+dayOfYear();
 
 document.getElementById(
 "date"
-).textContent=
+).textContent =
 dateText();
 
-const first=
-student.first_name||"";
-
-const last=
-student.last_name||"";
-
-const name=
-(`${first} ${last}`).trim()||
-student.name||
+const name =
+(
+(student.first_name || "")+
+" "+
+(student.last_name || "")
+).trim() ||
+student.name ||
 "Student";
 
 document.getElementById(
 "welcome"
-).textContent=
+).textContent =
 "Welcome, "+name+" 👋";
 
+
+/*
+Refresh account first.
+This is what updates Premium status.
+*/
 
 await refreshStudent();
 
 checkPremium();
+
+
+/*
+Now load today's lesson.
+*/
 
 await loadLesson();
 
 }
 
 
-/* START */
+/* RUN */
 
 start();
 
