@@ -103,35 +103,38 @@ font-size:10px;
 opacity:.95
 }
 
-.dayBox{
+.dateBox{
 display:flex;
 align-items:center;
 justify-content:space-between;
 gap:10px
 }
 
-.dayNumber{
-font-size:26px;
-font-weight:900;
-color:var(--b)
+.dateIcon{
+width:44px;
+height:44px;
+border-radius:12px;
+background:#eff6ff;
+display:grid;
+place-items:center;
+font-size:22px;
+flex-shrink:0
 }
 
-.dayLabel{
+.dateTitle{
 font-size:9px;
 font-weight:800;
 color:var(--m)
 }
 
 .date{
-font-size:11px;
-font-weight:800;
-text-align:right
+font-size:13px;
+font-weight:900;
+margin-top:2px
 }
 
-.date small{
-display:block;
+.dateSmall{
 font-size:8px;
-font-weight:600;
 color:var(--m);
 margin-top:2px
 }
@@ -308,6 +311,10 @@ font-weight:900;
 cursor:pointer
 }
 
+.upgradeButton:active{
+transform:scale(.99)
+}
+
 .complete{
 width:100%;
 margin-top:14px;
@@ -363,21 +370,21 @@ font-size:12px
 ← Dashboard
 </a><a class="logo" href="index.html">
 📚 CreateLK <span>Academy</span>
-</a></div></header><main><section class="card hero"><small>DAILY SPOKEN ENGLISH</small>
+</a></div></header><main><!-- HERO --><section class="card hero"><small>DAILY SPOKEN ENGLISH</small>
 
 <h1 id="welcome">
 Welcome 👋
 </h1><p>
 Daily spoken English conversations.
-</p></section><section class="card"><div class="dayBox"><div><div class="dayLabel">
-DAY
-</div><div class="dayNumber" id="day">
+</p></section><!-- DATE --><section class="card"><div class="dateBox"><div class="dateIcon">
+📅
+</div><div style="flex:1"><div class="dateTitle">
+TODAY'S LESSON
+</div><div class="date" id="date">
 Loading...
-</div></div><div class="date"><span id="date">
-Loading...
-</span><small>
-Daily Spoken English Lesson
-</small></div></div></section><section class="card"><div class="membership"><div class="memberLeft"><div class="memberIcon">
+</div><div class="dateSmall">
+A new lesson is available every day.
+</div></div></div></section><!-- MEMBERSHIP --><section class="card"><div class="membership"><div class="memberLeft"><div class="memberIcon">
 ⭐
 </div><div><div class="memberTitle">
 Premium Membership
@@ -385,7 +392,7 @@ Premium Membership
 Checking membership...
 </div></div></div><div id="memberBadge" class="badge free">
 Checking
-</div></div></section><section class="card"><div class="sectionTitle">
+</div></div></section><!-- LESSON --><section class="card"><div class="sectionTitle">
 📖 TODAY'S LESSON
 </div><div class="sectionText" id="lessonDescription">
 Loading today's lesson...
@@ -453,7 +460,7 @@ student.student_id ||
 
 /* =========================================================
    PREMIUM
-   SAME LOGIC AS STUDENT STATUS PAGE
+   SAME LOGIC AS WORKING STUDENT STATUS PAGE
 ========================================================= */
 
 function isPremium(){
@@ -470,18 +477,23 @@ student.membershipStatus ||
 
 
 /* =========================================================
-   TODAY
+   GET CURRENT MONTH-DAY
 ========================================================= */
 
 function getToday(){
 
-const now=new Date();
+const now =
+new Date();
 
-const month=
-String(now.getMonth()+1).padStart(2,"0");
+const month =
+String(
+now.getMonth()+1
+).padStart(2,"0");
 
-const day=
-String(now.getDate()).padStart(2,"0");
+const day =
+String(
+now.getDate()
+).padStart(2,"0");
 
 return month+"-"+day;
 
@@ -489,29 +501,7 @@ return month+"-"+day;
 
 
 /* =========================================================
-   DAY OF YEAR
-========================================================= */
-
-function getDayOfYear(){
-
-const now=new Date();
-
-const start=
-new Date(now.getFullYear(),0,0);
-
-const diff=
-now-start;
-
-const oneDay=
-1000*60*60*24;
-
-return Math.floor(diff/oneDay);
-
-}
-
-
-/* =========================================================
-   DATE
+   FORMAT TODAY'S DATE
 ========================================================= */
 
 function formatDate(){
@@ -529,12 +519,80 @@ day:"numeric"
 
 
 /* =========================================================
+   LEAP YEAR
+========================================================= */
+
+function isLeapYear(year){
+
+return (
+year % 4 === 0 &&
+(
+year % 100 !== 0 ||
+year % 400 === 0
+)
+);
+
+}
+
+
+/* =========================================================
+   TOTAL DAYS IN CURRENT YEAR
+========================================================= */
+
+function getTotalDays(){
+
+return isLeapYear(
+new Date().getFullYear()
+)
+?
+366
+:
+365;
+
+}
+
+
+/* =========================================================
+   CURRENT DAY OF YEAR
+   USED ONLY INTERNALLY IF NEEDED
+========================================================= */
+
+function getDayOfYear(){
+
+const now =
+new Date();
+
+const start =
+new Date(
+now.getFullYear(),
+0,
+1
+);
+
+const current =
+new Date(
+now.getFullYear(),
+now.getMonth(),
+now.getDate()
+);
+
+const diff =
+current-start;
+
+return Math.floor(
+diff/(1000*60*60*24)
+)+1;
+
+}
+
+
+/* =========================================================
    REFRESH STUDENT
 ========================================================= */
 
 async function refreshStudent(){
 
-const studentId=
+const studentId =
 getStudentId();
 
 if(!studentId){
@@ -543,7 +601,7 @@ return;
 
 try{
 
-const r=
+const r =
 await fetch(
 
 AUTH_API+
@@ -563,15 +621,20 @@ if(!r.ok){
 return;
 }
 
-const d=
+const d =
 await r.json();
 
-if(d.success && d.student){
+if(
+d.success &&
+d.student
+){
 
 student={
 ...student,
 ...d.student,
-id:Number(d.student.id)
+id:Number(
+d.student.id
+)
 };
 
 localStorage.setItem(
@@ -594,12 +657,12 @@ e
 
 
 /* =========================================================
-   UPDATE MEMBERSHIP
+   UPDATE MEMBERSHIP UI
 ========================================================= */
 
 function updateStudentUI(){
 
-const fullName=
+const fullName =
 
 (
 (student.first_name||"")+
@@ -615,16 +678,16 @@ student.name
 
 document.getElementById(
 "welcome"
-).textContent=
+).textContent =
 "Welcome, "+fullName+" 👋";
 
 
-const badge=
+const badge =
 document.getElementById(
 "memberBadge"
 );
 
-const text=
+const text =
 document.getElementById(
 "memberText"
 );
@@ -632,24 +695,24 @@ document.getElementById(
 
 if(isPremium()){
 
-badge.textContent=
+badge.textContent =
 "✓ Premium";
 
-badge.className=
+badge.className =
 "badge premium";
 
-text.textContent=
+text.textContent =
 "Premium access is active. All 10 dialogues are available.";
 
 }else{
 
-badge.textContent=
+badge.textContent =
 "Free";
 
-badge.className=
+badge.className =
 "badge free";
 
-text.textContent=
+text.textContent =
 "Free access includes the first 3 dialogues. Upgrade for all 10.";
 
 }
@@ -658,32 +721,34 @@ text.textContent=
 
 
 /* =========================================================
-   FETCH LESSON
+   FETCH TODAY'S LESSON
 ========================================================= */
 
 async function fetchLesson(){
 
-const monthDay=
+const monthDay =
 getToday();
 
-const area=
+const area =
 document.getElementById(
 "lessonArea"
 );
 
-const description=
+const description =
 document.getElementById(
 "lessonDescription"
 );
 
 
-area.innerHTML=
+area.innerHTML =
 '<div class="loading">Loading today\'s conversations...</div>';
 
 
 try{
 
-let response=
+/* PRIMARY */
+
+let response =
 await fetch(
 
 LESSON_API+
@@ -701,7 +766,7 @@ cache:"no-store"
 
 if(!response.ok){
 
-response=
+response =
 await fetch(
 
 LESSON_API+
@@ -720,13 +785,14 @@ cache:"no-store"
 if(!response.ok){
 
 throw new Error(
-"HTTP "+response.status
+"Lesson API returned HTTP "+
+response.status
 );
 
 }
 
 
-const data=
+const data =
 await response.json();
 
 console.log(
@@ -735,16 +801,21 @@ data
 );
 
 
-let lesson=null;
+let lesson = null;
 
 
 /* data.lesson */
 
-if(data && data.lesson){
+if(
+data &&
+data.lesson
+){
 
-lesson=data.lesson;
+lesson =
+data.lesson;
 
 }
+
 
 /* data.data */
 
@@ -754,9 +825,11 @@ data.data &&
 !Array.isArray(data.data)
 ){
 
-lesson=data.data;
+lesson =
+data.data;
 
 }
+
 
 /* data.result */
 
@@ -765,20 +838,24 @@ data &&
 data.result
 ){
 
-lesson=data.result;
+lesson =
+data.result;
 
 }
 
-/* direct */
+
+/* direct lesson */
 
 else if(
 data &&
 data.dialogues
 ){
 
-lesson=data;
+lesson =
+data;
 
 }
+
 
 /* array */
 
@@ -787,51 +864,51 @@ Array.isArray(data) &&
 data.length
 ){
 
-lesson=data[0];
+lesson =
+data[0];
 
 }
 
 
+/* NO LESSON */
+
 if(!lesson){
 
-description.textContent=
+description.textContent =
 "Today's lesson is not available.";
 
-area.innerHTML=
-'<div class="error">⚠️ No lesson data for today.</div>';
+area.innerHTML =
+'<div class="error">'+
+'⚠️ No lesson data for today.'+
+'</div>';
 
 return;
 
 }
 
 
-/* DAY */
-
-document.getElementById(
-"day"
-).textContent=
-lesson.day ||
-getDayOfYear();
-
-
 /* DESCRIPTION */
 
-description.textContent=
+description.textContent =
 lesson.description ||
 "Practice useful daily spoken English conversations.";
 
 
 /* DIALOGUES */
 
-let dialogues=
+let dialogues =
 lesson.dialogues;
 
 
-if(typeof dialogues==="string"){
+/* JSON STRING */
+
+if(
+typeof dialogues === "string"
+){
 
 try{
 
-dialogues=
+dialogues =
 JSON.parse(dialogues);
 
 }catch(e){
@@ -848,19 +925,23 @@ dialogues=[];
 }
 
 
+/* dialogue_data FALLBACK */
+
 if(
-(!Array.isArray(dialogues) ||
-!dialogues.length) &&
+(
+!Array.isArray(dialogues) ||
+!dialogues.length
+) &&
 lesson.dialogue_data
 ){
 
 if(
-typeof lesson.dialogue_data==="string"
+typeof lesson.dialogue_data === "string"
 ){
 
 try{
 
-dialogues=
+dialogues =
 JSON.parse(
 lesson.dialogue_data
 );
@@ -873,7 +954,7 @@ dialogues=[];
 
 }else{
 
-dialogues=
+dialogues =
 lesson.dialogue_data;
 
 }
@@ -881,20 +962,40 @@ lesson.dialogue_data;
 }
 
 
+/* EMPTY */
+
 if(
 !Array.isArray(dialogues) ||
 dialogues.length===0
 ){
 
-area.innerHTML=
-'<div class="error">⚠️ Lesson found, but no dialogues are available.</div>';
+area.innerHTML =
+'<div class="error">'+
+'⚠️ Lesson found, but no dialogues are available.'+
+'</div>';
 
 return;
 
 }
 
 
-renderDialogues(dialogues);
+/* DISPLAY */
+
+renderDialogues(
+dialogues
+);
+
+
+/* CACHE */
+
+try{
+
+sessionStorage.setItem(
+"createlk_today_lesson",
+JSON.stringify(lesson)
+);
+
+}catch(e){}
 
 
 }catch(error){
@@ -904,7 +1005,7 @@ console.error(
 error
 );
 
-area.innerHTML=
+area.innerHTML =
 '<div class="error">'+
 '⚠️ Unable to load today\'s lesson.<br><br>'+
 'Please refresh the page.'+
@@ -921,7 +1022,7 @@ area.innerHTML=
 
 function renderDialogues(dialogues){
 
-const area=
+const area =
 document.getElementById(
 "lessonArea"
 );
@@ -930,20 +1031,22 @@ area.innerHTML="";
 
 
 /*
-   PREMIUM:
-   SHOW ALL
-
-   FREE:
-   SHOW FIRST 3
+   PREMIUM = ALL
+   FREE = FIRST 3
 */
 
-const limit=
+const limit =
 isPremium()
 ?
 dialogues.length
 :
-Math.min(3,dialogues.length);
+Math.min(
+3,
+dialogues.length
+);
 
+
+/* DISPLAY AVAILABLE */
 
 for(
 let i=0;
@@ -951,27 +1054,29 @@ i<limit;
 i++
 ){
 
-const item=
-dialogues[i]||{};
+const item =
+dialogues[i] || {};
 
-const tamil=
-item.tamil||"";
+const tamil =
+item.tamil || "";
 
-const sinhala=
-item.sinhala||"";
+const sinhala =
+item.sinhala || "";
 
-const english=
-item.english||"";
+const english =
+item.english || "";
 
 
-const box=
-document.createElement("div");
+const box =
+document.createElement(
+"div"
+);
 
-box.className=
+box.className =
 "dialogue";
 
 
-box.innerHTML=`
+box.innerHTML = `
 
 <div class="dialogueNumber">
 DIALOGUE ${i+1} / ${dialogues.length}
@@ -1002,8 +1107,8 @@ ${escapeHTML(english)}
 </div>
 
 <button
-class="listen"
 type="button"
+class="listen"
 onclick="speakEnglish(this)"
 data-text="${escapeAttribute(english)}">
 
@@ -1013,13 +1118,16 @@ data-text="${escapeAttribute(english)}">
 
 `;
 
-area.appendChild(box);
+
+area.appendChild(
+box
+);
 
 }
 
 
 /* =========================================================
-   FREE USER LOCK
+   LOCK DIALOGUES 4+
 ========================================================= */
 
 if(
@@ -1027,14 +1135,16 @@ if(
 dialogues.length>3
 ){
 
-const upgrade=
-document.createElement("div");
+const upgrade =
+document.createElement(
+"div"
+);
 
-upgrade.className=
+upgrade.className =
 "upgradeBox";
 
 
-upgrade.innerHTML=`
+upgrade.innerHTML = `
 
 <div class="upgradeTitle">
 🔒 Premium Dialogues Locked
@@ -1057,7 +1167,9 @@ onclick="checkout()">
 `;
 
 
-area.appendChild(upgrade);
+area.appendChild(
+upgrade
+);
 
 }
 
@@ -1066,28 +1178,32 @@ area.appendChild(upgrade);
    COMPLETE BUTTON
 ========================================================= */
 
-const complete=
-document.createElement("button");
+const complete =
+document.createElement(
+"button"
+);
 
-complete.className=
+complete.className =
 "complete";
 
-complete.type=
+complete.type =
 "button";
 
-complete.textContent=
+complete.textContent =
 "✓ Complete Today's Lesson";
 
-complete.onclick=
+complete.onclick =
 completeLesson;
 
-area.appendChild(complete);
+area.appendChild(
+complete
+);
 
 }
 
 
 /* =========================================================
-   ESCAPE HTML
+   HTML ESCAPE
 ========================================================= */
 
 function escapeHTML(value){
@@ -1102,6 +1218,10 @@ return String(value)
 }
 
 
+/* =========================================================
+   ATTRIBUTE ESCAPE
+========================================================= */
+
 function escapeAttribute(value){
 
 return String(value)
@@ -1114,13 +1234,15 @@ return String(value)
 
 
 /* =========================================================
-   SPEAK ENGLISH
+   ENGLISH SPEECH
 ========================================================= */
 
 function speakEnglish(button){
 
-const text=
-button.getAttribute("data-text");
+const text =
+button.getAttribute(
+"data-text"
+);
 
 if(
 !text ||
@@ -1133,13 +1255,15 @@ return;
 
 window.speechSynthesis.cancel();
 
-const speech=
-new SpeechSynthesisUtterance(text);
+const speech =
+new SpeechSynthesisUtterance(
+text
+);
 
-speech.lang=
+speech.lang =
 "en-US";
 
-speech.rate=
+speech.rate =
 .9;
 
 window.speechSynthesis.speak(
@@ -1151,12 +1275,12 @@ speech
 
 /* =========================================================
    PAYHERE CHECKOUT
-   SAME LOGIC AS STUDENT STATUS PAGE
+   SAME AS STUDENT STATUS PAGE
 ========================================================= */
 
 async function checkout(){
 
-const studentId=
+const studentId =
 getStudentId();
 
 if(!studentId){
@@ -1165,7 +1289,7 @@ alert(
 "Please login again."
 );
 
-location.href=
+location.href =
 "login.html";
 
 return;
@@ -1175,7 +1299,7 @@ return;
 
 try{
 
-const r=
+const r =
 await fetch(
 
 PAYMENT+
@@ -1202,7 +1326,7 @@ studentId
 );
 
 
-const raw=
+const raw =
 await r.text();
 
 
@@ -1223,7 +1347,9 @@ raw.includes("<form")
 
 document.open();
 
-document.write(raw);
+document.write(
+raw
+);
 
 document.close();
 
@@ -1234,8 +1360,10 @@ return;
 
 /* JSON RESPONSE */
 
-const d=
-JSON.parse(raw);
+const d =
+JSON.parse(
+raw
+);
 
 
 if(
@@ -1243,7 +1371,7 @@ d.url ||
 d.checkout_url
 ){
 
-location.href=
+location.href =
 d.url ||
 d.checkout_url;
 
@@ -1279,7 +1407,7 @@ e.message
 
 async function completeLesson(){
 
-const studentId=
+const studentId =
 getStudentId();
 
 if(!studentId){
@@ -1288,7 +1416,7 @@ alert(
 "Please login again."
 );
 
-location.href=
+location.href =
 "login.html";
 
 return;
@@ -1296,16 +1424,17 @@ return;
 }
 
 
-const button=
+const button =
 document.querySelector(
 ".complete"
 );
 
 if(button){
 
-button.disabled=true;
+button.disabled =
+true;
 
-button.textContent=
+button.textContent =
 "Saving...";
 
 }
@@ -1319,7 +1448,7 @@ alert(
 
 if(button){
 
-button.textContent=
+button.textContent =
 "✓ Completed";
 
 }
@@ -1332,9 +1461,10 @@ error
 
 if(button){
 
-button.disabled=false;
+button.disabled =
+false;
 
-button.textContent=
+button.textContent =
 "✓ Complete Today's Lesson";
 
 }
@@ -1345,12 +1475,12 @@ button.textContent=
 
 
 /* =========================================================
-   START
+   INITIALIZE
 ========================================================= */
 
 async function start(){
 
-const studentId=
+const studentId =
 getStudentId();
 
 if(!studentId){
@@ -1368,33 +1498,25 @@ return;
 
 document.getElementById(
 "date"
-).textContent=
+).textContent =
 formatDate();
 
 
-/* DAY */
-
-document.getElementById(
-"day"
-).textContent=
-getDayOfYear();
-
-
 /*
-   IMPORTANT:
-   Refresh from the same Auth Worker
-   used by Student Status.
+   Refresh account first.
+   This ensures Premium status
+   comes from the same Auth API.
 */
 
 await refreshStudent();
 
 
-/* UPDATE PREMIUM */
+/* UPDATE MEMBERSHIP */
 
 updateStudentUI();
 
 
-/* LOAD LESSON */
+/* LOAD TODAY'S LESSON */
 
 await fetchLesson();
 
