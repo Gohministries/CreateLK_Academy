@@ -3,7 +3,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#2563eb">
-<title>CreateLK Academy | Daily Spoken English</title><style>
+<title>CreateLK Academy | Spoken English</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
 
 :root{
@@ -28,24 +28,36 @@ min-height:100vh;
 .header{
 background:linear-gradient(135deg,var(--blue),var(--blue2));
 color:#fff;
-padding:13px 15px;
+padding:12px 14px;
 }
 
 .header-inner{
 max-width:680px;
 margin:auto;
 display:flex;
-justify-content:space-between;
 align-items:center;
+justify-content:space-between;
+gap:10px;
+}
+
+.dashboard-btn{
+display:inline-flex;
+align-items:center;
+gap:5px;
+background:rgba(255,255,255,.14);
+border:1px solid rgba(255,255,255,.3);
+color:#fff;
+text-decoration:none;
+border-radius:9px;
+padding:8px 11px;
+font-size:12px;
+font-weight:800;
 }
 
 .logo{
-font-size:17px;
+font-size:15px;
 font-weight:900;
-}
-
-.menu{
-font-size:23px;
+white-space:nowrap;
 }
 
 .container{
@@ -303,7 +315,24 @@ font-size:11px;
 padding:18px;
 }
 
-@media(max-width:380px){
+@media(max-width:400px){
+
+.header{
+padding:10px;
+}
+
+.header-inner{
+gap:6px;
+}
+
+.dashboard-btn{
+font-size:11px;
+padding:7px 9px;
+}
+
+.logo{
+font-size:13px;
+}
 
 .container{
 padding-left:7px;
@@ -326,25 +355,44 @@ font-size:14px;
 font-size:12px;
 }
 
+.sinhala{
+font-size:12px;
 }
-</style></head><body><header class="header">
-<div class="header-inner">
-<div class="logo">📚 CreateLK Academy</div>
-<div class="menu">☰</div>
-</div>
-</header><main class="container"><section class="hero"><div class="brand">
+
+}
+</style></head><body><header class="header"><div class="header-inner"><a
+href="dashboard.html"
+class="dashboard-btn"
+
+«»
+
+← Dashboard
+</a>
+
+<div class="logo">
+📚 CreateLK Academy
+</div></div></header><main class="container"><section class="hero"><div class="brand">
 CREATELK ACADEMY
 </div><h1>
-🗣️ Daily Spoken English
+🗣️ Spoken English
 </h1><p class="subtitle">
 Learn Tamil → English conversations every day.
-</p><div id="lessonDate" class="date">
+</p><div
+id="lessonDate"
+class="date"
+>
 Loading...
 </div></section><section class="membership"><div class="membership-top"><div class="membership-title">
 ⭐ Premium Membership
-</div><div id="membershipStatus" class="status">
+</div><div
+id="membershipStatus"
+class="status"
+>
 Checking...
-</div></div><div id="membershipText" class="membership-text">
+</div></div><div
+id="membershipText"
+class="membership-text"
+>
 Checking membership...
 </div><a
 id="upgradeButton"
@@ -358,11 +406,20 @@ class="upgrade hidden"
 
 </section><h2 class="section-title">
 📖 TODAY'S LESSON
-</h2><div id="limitNote" class="note">
+</h2><div
+id="limitNote"
+class="note"
+>
 Loading today's lesson...
-</div><div id="loading" class="loading">
+</div><div
+id="loading"
+class="loading"
+>
 Loading today's lesson...
-</div><div id="error" class="error hidden"></div><section
+</div><div
+id="error"
+class="error hidden"
+></div><section
 id="lessonGrid"
 class="lesson-grid hidden"
 ></section><button
@@ -394,8 +451,8 @@ let firstDialogue = null;
 BASIC
 ========================= */
 
-const $ = id =>
-document.getElementById(id);
+const $ =
+id => document.getElementById(id);
 
 
 function escapeHTML(text){
@@ -414,8 +471,15 @@ function field(item,...keys){
 
 for(const key of keys){
 
-if(item?.[key]){
+if(
+item &&
+item[key] !== undefined &&
+item[key] !== null &&
+String(item[key]).trim() !== ""
+){
+
 return item[key];
+
 }
 
 }
@@ -425,7 +489,8 @@ return "";
 }
 
 
-const tamil = x =>
+const tamil =
+x =>
 field(
 x,
 "tamil",
@@ -436,7 +501,8 @@ x,
 );
 
 
-const sinhala = x =>
+const sinhala =
+x =>
 field(
 x,
 "sinhala",
@@ -447,7 +513,8 @@ x,
 );
 
 
-const english = x =>
+const english =
+x =>
 field(
 x,
 "english",
@@ -464,7 +531,9 @@ STUDENT
 
 function getStudent(){
 
-for(const key of STUDENT_KEYS){
+for(
+const key of STUDENT_KEYS
+){
 
 try{
 
@@ -495,6 +564,7 @@ function isPremium(){
 const student =
 getStudent();
 
+
 const status =
 String(
 student.membership_status ||
@@ -504,25 +574,102 @@ student.membershipStatus ||
 .trim()
 .toUpperCase();
 
+
 const expiry =
 student.membership_expiry ||
 student.membershipExpiry ||
 "";
 
+
 if(
 status !== "PREMIUM" ||
 !expiry
 ){
+
 return false;
+
 }
 
-const date =
-new Date(expiry);
+
+const expiryDate =
+parseExpiry(expiry);
+
 
 return (
-!isNaN(date.getTime()) &&
-date.getTime() > Date.now()
+Number.isFinite(expiryDate) &&
+expiryDate > Date.now()
 );
+
+}
+
+
+/* =========================
+EXPIRY PARSER
+========================= */
+
+function parseExpiry(value){
+
+const str =
+String(value || "").trim();
+
+
+if(!str){
+return NaN;
+}
+
+
+/*
+Cloudflare/D1 commonly returns:
+
+YYYY-MM-DD HH:mm:ss
+
+Treat this as Sri Lanka time.
+*/
+
+const match =
+str.match(
+/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/
+);
+
+
+if(match){
+
+const y =
+Number(match[1]);
+
+const m =
+Number(match[2]);
+
+const d =
+Number(match[3]);
+
+const h =
+Number(match[4]);
+
+const min =
+Number(match[5]);
+
+const s =
+Number(match[6]);
+
+
+return Date.UTC(
+y,
+m-1,
+d,
+h-5,
+min-30,
+s
+);
+
+}
+
+
+const date =
+new Date(str);
+
+
+return date.getTime();
 
 }
 
@@ -537,19 +684,22 @@ const premium =
 isPremium();
 
 
-$("membershipStatus").textContent =
+$("membershipStatus")
+.textContent =
 premium
 ? "✓ Premium"
 : "Free";
 
 
-$("membershipText").textContent =
+$("membershipText")
+.textContent =
 premium
 ? "Premium is active. All 10 daily dialogues are unlocked."
 : "3 dialogues are free. Premium unlocks all 10.";
 
 
-$("limitNote").innerHTML =
+$("limitNote")
+.innerHTML =
 premium
 ? "<strong>⭐ Premium:</strong> All 10 daily dialogues are available."
 : "<strong>Free:</strong> Dialogues 1–3 are free. Upgrade for all 10.";
@@ -578,7 +728,8 @@ const now =
 new Date();
 
 
-$("lessonDate").textContent =
+$("lessonDate")
+.textContent =
 now.toLocaleDateString(
 "en-US",
 {
@@ -609,13 +760,16 @@ alert(
 );
 
 return;
+
 }
+
 
 speechSynthesis.cancel();
 
 
 const voice =
 new SpeechSynthesisUtterance(text);
+
 
 voice.lang =
 "en-US";
@@ -635,18 +789,23 @@ voice
 LESSON CARD
 ========================= */
 
-function createCard(item,index){
+function createCard(
+item,
+index
+){
 
-const premium =
+const isPremiumDialogue =
 index >= 3;
+
 
 const card =
 document.createElement("article");
 
+
 card.className =
 "card " +
 (
-premium
+isPremiumDialogue
 ? "premium"
 : "free"
 );
@@ -665,7 +824,7 @@ english(item);
 card.innerHTML = `
 
 <div class="number">
-DIALOGUE ${index+1}
+DIALOGUE ${index + 1}
 </div>
 
 <div class="tamil">
@@ -704,12 +863,12 @@ class="listen"
 }
 
 <span class="badge ${
-premium
+isPremiumDialogue
 ? "premium-badge"
 : "free-badge"
 }">
 ${
-premium
+isPremiumDialogue
 ? "⭐ PREMIUM"
 : "✓ FREE"
 }
@@ -744,6 +903,7 @@ function createUpgradeCard(){
 const box =
 document.createElement("div");
 
+
 box.className =
 "premium-box";
 
@@ -777,7 +937,7 @@ return box;
 
 
 /* =========================
-API DATA
+NORMALIZE API
 ========================= */
 
 function normalizeLesson(json){
@@ -795,7 +955,9 @@ data?.items ||
 data?.lessons;
 
 
-if(!Array.isArray(dialogues)){
+if(
+!Array.isArray(dialogues)
+){
 
 throw new Error(
 "No dialogues were returned by Cloudflare."
@@ -810,13 +972,14 @@ return dialogues;
 
 
 /* =========================
-LOAD LESSON
+LOAD TODAY'S LESSON
 ========================= */
 
 async function loadLesson(){
 
 const now =
 getToday();
+
 
 const premium =
 updateMembership();
@@ -845,9 +1008,10 @@ LESSON_API +
 encodeURIComponent(monthDay),
 
 {
+method:"GET",
 cache:"no-store",
 headers:{
-Accept:"application/json"
+"Accept":"application/json"
 }
 }
 
@@ -865,10 +1029,12 @@ response.status +
 }
 
 
+const json =
+await response.json();
+
+
 const dialogues =
-normalizeLesson(
-await response.json()
-);
+normalizeLesson(json);
 
 
 if(
@@ -884,6 +1050,7 @@ throw new Error(
 
 const grid =
 $("lessonGrid");
+
 
 grid.innerHTML =
 "";
@@ -948,7 +1115,9 @@ $("shareButton")
 
 }catch(error){
 
-console.error(error);
+console.error(
+error
+);
 
 
 $("loading")
@@ -973,7 +1142,7 @@ $("error")
 /* =========================
 SHARE IMAGE
 1080 × 1350
-BALANCED 4:5
+BALANCED
 ========================= */
 
 async function shareFirstDialogue(){
@@ -1005,6 +1174,7 @@ $("lessonDate").textContent;
 const canvas =
 document.createElement("canvas");
 
+
 canvas.width =
 1080;
 
@@ -1028,6 +1198,7 @@ ctx.createLinearGradient(
 1350
 );
 
+
 gradient.addColorStop(
 0,
 "#1d4ed8"
@@ -1046,6 +1217,7 @@ gradient.addColorStop(
 
 ctx.fillStyle =
 gradient;
+
 
 ctx.fillRect(
 0,
@@ -1070,7 +1242,7 @@ ctx.arc(
 120,
 210,
 0,
-Math.PI*2
+Math.PI * 2
 );
 
 ctx.fill();
@@ -1083,7 +1255,7 @@ ctx.arc(
 1250,
 170,
 0,
-Math.PI*2
+Math.PI * 2
 );
 
 ctx.fill();
@@ -1114,7 +1286,7 @@ ctx.font =
 "bold 38px Arial";
 
 ctx.fillText(
-"Daily Spoken English",
+"Spoken English",
 540,
 160
 );
@@ -1126,11 +1298,13 @@ ctx.font =
 ctx.globalAlpha =
 .9;
 
+
 ctx.fillText(
 date,
 540,
 207
 );
+
 
 ctx.globalAlpha =
 1;
@@ -1151,9 +1325,6 @@ const cardW =
 
 const cardH =
 790;
-
-const cardR =
-38;
 
 
 ctx.shadowColor =
@@ -1176,8 +1347,9 @@ cardX,
 cardY,
 cardW,
 cardH,
-cardR
+38
 );
+
 
 ctx.fill();
 
@@ -1193,7 +1365,7 @@ ctx.shadowOffsetY =
 
 
 /* =========================
-CARD HEADER
+CARD TITLE
 ========================= */
 
 ctx.fillStyle =
@@ -1201,6 +1373,7 @@ ctx.fillStyle =
 
 ctx.font =
 "bold 22px Arial";
+
 
 ctx.fillText(
 "DAILY CONVERSATION",
@@ -1232,11 +1405,12 @@ ctx.stroke();
 
 
 /* =========================
-CALCULATE TEXT FIRST
+WRAP TEXT
 ========================= */
 
 const maxWidth =
 800;
+
 
 const tamilLines =
 getWrappedLines(
@@ -1245,6 +1419,7 @@ taText,
 maxWidth,
 "bold 34px Arial"
 );
+
 
 const sinhalaLines =
 siText
@@ -1258,6 +1433,7 @@ maxWidth,
 :
 [];
 
+
 const englishLines =
 getWrappedLines(
 ctx,
@@ -1267,69 +1443,46 @@ maxWidth,
 );
 
 
-/* =========================
-VERTICAL SIZING
-========================= */
-
-const taLineHeight =
+const taHeight =
+tamilLines.length *
 48;
 
-const siLineHeight =
+
+const siHeight =
+sinhalaLines.length *
 42;
 
-const enLineHeight =
+
+const enHeight =
+englishLines.length *
 48;
 
 
-let totalHeight = 0;
+let totalHeight =
+taHeight;
 
-
-/* Tamil */
-
-totalHeight +=
-tamilLines.length *
-taLineHeight;
-
-
-/* gap */
 
 if(sinhalaLines.length){
-totalHeight += 28;
+totalHeight += 28 + siHeight;
 }
 
 
-/* Sinhala */
-
 totalHeight +=
-sinhalaLines.length *
-siLineHeight;
+38 + enHeight;
 
 
-/* gap */
-
-totalHeight +=
-38;
-
-
-/* English */
-
-totalHeight +=
-englishLines.length *
-enLineHeight;
-
-
-/*
-Center the whole text block
-inside the white card.
-*/
+/* =========================
+CENTER CONTENT
+========================= */
 
 const contentTop =
-390;
+385;
 
 const contentBottom =
-990;
+950;
 
-const availableHeight =
+
+const available =
 contentBottom -
 contentTop;
 
@@ -1337,27 +1490,20 @@ contentTop;
 let startY =
 contentTop +
 (
-availableHeight -
+available -
 totalHeight
 ) / 2;
 
 
-/*
-Safety limits.
-*/
-
 startY =
 Math.max(
 385,
-Math.min(
-startY,
-900
-)
+startY
 );
 
 
 /* =========================
-DRAW TAMIL
+TAMIL
 ========================= */
 
 startY =
@@ -1366,17 +1512,19 @@ ctx,
 tamilLines,
 540,
 startY,
-taLineHeight,
+48,
 "bold 34px Arial",
 "#172033"
 );
 
 
 /* =========================
-DRAW SINHALA
+SINHALA
 ========================= */
 
-if(sinhalaLines.length){
+if(
+sinhalaLines.length
+){
 
 startY +=
 28;
@@ -1388,7 +1536,7 @@ ctx,
 sinhalaLines,
 540,
 startY,
-siLineHeight,
+42,
 "26px Arial",
 "#64748b"
 );
@@ -1397,7 +1545,7 @@ siLineHeight,
 
 
 /* =========================
-DRAW ENGLISH
+ENGLISH
 ========================= */
 
 startY +=
@@ -1409,14 +1557,14 @@ ctx,
 englishLines,
 540,
 startY,
-enLineHeight,
+48,
 "bold 32px Arial",
 "#1e293b"
 );
 
 
 /* =========================
-BLUE LINE
+BOTTOM LINE
 ========================= */
 
 ctx.fillStyle =
@@ -1432,6 +1580,7 @@ ctx,
 4
 );
 
+
 ctx.fill();
 
 
@@ -1442,8 +1591,10 @@ FOOTER
 ctx.fillStyle =
 "#fff";
 
+
 ctx.font =
 "bold 30px Arial";
+
 
 ctx.fillText(
 "creatlk.com",
@@ -1455,8 +1606,10 @@ ctx.fillText(
 ctx.font =
 "22px Arial";
 
+
 ctx.globalAlpha =
 .9;
+
 
 ctx.fillText(
 "Learn English Every Day",
@@ -1464,12 +1617,13 @@ ctx.fillText(
 1220
 );
 
+
 ctx.globalAlpha =
 1;
 
 
 /* =========================
-SHARE
+SHARE FILE
 ========================= */
 
 canvas.toBlob(
@@ -1489,7 +1643,7 @@ return;
 const file =
 new File(
 [blob],
-"createlk-daily-english.png",
+"createlk-spoken-english.png",
 {
 type:"image/png"
 }
@@ -1511,13 +1665,14 @@ title:
 "CreateLK Academy",
 
 text:
-"Daily Spoken English",
+"Spoken English",
 
 files:[
 file
 ]
 
 });
+
 
 return;
 
@@ -1537,14 +1692,16 @@ return;
 }
 
 
-/* DOWNLOAD FALLBACK */
+/* =========================
+FALLBACK
+========================= */
 
 const link =
 document.createElement("a");
 
 
 link.download =
-"createlk-daily-english.png";
+"createlk-spoken-english.png";
 
 
 link.href =
@@ -1570,11 +1727,9 @@ link.href
 "image/png"
 );
 
-}
-
 
 /* =========================
-GET WRAPPED LINES
+TEXT WRAPPING
 ========================= */
 
 function getWrappedLines(
@@ -1588,10 +1743,18 @@ ctx.font =
 font;
 
 
-const words =
+const clean =
 String(text || "")
-.trim()
-.split(/\s+/);
+.trim();
+
+
+if(!clean){
+return [];
+}
+
+
+const words =
+clean.split(/\s+/);
 
 
 const lines =
@@ -1651,7 +1814,7 @@ return lines;
 
 
 /* =========================
-DRAW CENTERED LINES
+DRAW LINES
 ========================= */
 
 function drawLines(
