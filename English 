@@ -44,8 +44,11 @@ font-size:17px;
 font-weight:900;
 }
 
-.menu{
-font-size:23px;
+.back{
+color:#fff;
+text-decoration:none;
+font-size:12px;
+font-weight:800;
 }
 
 .container{
@@ -123,19 +126,6 @@ color:#78350f;
 font-size:12px;
 line-height:1.45;
 margin-top:6px;
-}
-
-.upgrade{
-display:block;
-background:var(--gold);
-color:#fff;
-text-decoration:none;
-text-align:center;
-border-radius:9px;
-padding:10px;
-margin-top:9px;
-font-size:12px;
-font-weight:900;
 }
 
 .hidden{
@@ -260,16 +250,23 @@ font-size:12px;
 line-height:1.5;
 }
 
-.premium-button{
+.payButton{
 display:block;
-background:var(--gold);
+width:100%;
+height:46px;
+margin-top:11px;
+border:0;
+border-radius:10px;
+background:linear-gradient(135deg,#2563eb,#7c3aed);
 color:#fff;
-text-decoration:none;
-border-radius:9px;
-padding:10px;
-margin-top:10px;
 font-size:12px;
 font-weight:900;
+cursor:pointer;
+box-shadow:0 4px 12px rgba(37,99,235,.16);
+}
+
+.payButton:active{
+transform:scale(.99);
 }
 
 .share-btn{
@@ -311,12 +308,27 @@ color:var(--muted);
 font-size:11px;
 padding:18px;
 }
+
+@media(max-width:600px){
+.container{
+padding:12px 10px 30px;
+}
+
+h1{
+font-size:21px;
+}
+}
 </style></head><body><header class="header">
-<div class="header-inner">
-<div class="logo">📚 CreateLK Academy</div>
-<div class="menu">☰</div>
-</div>
-</header><main class="container"><section class="hero"><div class="brand">CREATELK ACADEMY</div><h1>🗣️ Daily Spoken English</h1><p class="subtitle">
+<div class="header-inner"><div class="logo">
+📚 CreateLK Academy
+</div><a href="dashboard.html" class="back">
+← Dashboard
+</a></div>
+</header><main class="container"><section class="hero"><div class="brand">
+CREATELK ACADEMY
+</div><h1>
+🗣️ Daily Spoken English
+</h1><p class="subtitle">
 Learn Tamil → English conversations every day.
 </p><div id="lessonDate" class="date">
 Loading...
@@ -326,42 +338,107 @@ Loading...
 Checking...
 </div></div><div id="membershipText" class="membership-text">
 Checking membership...
-</div><a
-id="upgradeButton"
-href="premium.html"
-class="upgrade hidden">
-⭐ Upgrade to Premium
-</a>
-
-</section><h2 class="section-title">
+</div></section><h2 class="section-title">
 📖 TODAY'S LESSON
 </h2><div id="limitNote" class="note">
 Loading today's lesson...
 </div><div id="loading" class="loading">
 Loading today's lesson...
-</div><div id="error" class="error hidden"></div><section id="lessonGrid" class="lesson-grid hidden"></section><button
+</div><div id="error" class="error hidden"></div><section
+id="lessonGrid"
+class="lesson-grid hidden">
+</section><button
 id="shareButton"
 class="share-btn hidden"
 type="button">
-📤 Share Dialogue 1
+📤 Share Daily Lesson
 </button>
 
 </main><footer class="footer">
 © 2026 CreateLK Academy
 </footer><script>
 
-const LESSON_API=
+/* =========================
+   API
+========================= */
+
+const LESSON_API =
 "https://spokenlessons.createlk.workers.dev";
 
+const PAYMENT =
+"https://createlk-premium-payments.createlk.workers.dev";
+
+const STUDENT_KEY =
+"createlk_student";
+
+let student={};
+
+let currentLesson=null;
+
+
 /* =========================
-DATE
+   LOAD STUDENT
+========================= */
+
+try{
+
+student=
+JSON.parse(
+localStorage.getItem(STUDENT_KEY)||"{}"
+);
+
+}catch(e){
+
+student={};
+
+}
+
+
+/* =========================
+   STUDENT ID
+========================= */
+
+function getStudentId(){
+
+return Number(
+student.id ||
+student.database_id ||
+student.student_id_number ||
+student.student_id ||
+0
+);
+
+}
+
+
+/* =========================
+   PREMIUM
+========================= */
+
+function isPremium(){
+
+return String(
+student.membership_status ||
+student.membershipStatus ||
+"FREE"
+)
+.trim()
+.toUpperCase()==="PREMIUM";
+
+}
+
+
+/* =========================
+   DATE
 ========================= */
 
 function setupDate(){
 
 const now=new Date();
 
-document.getElementById("lessonDate").textContent=
+document.getElementById(
+"lessonDate"
+).textContent=
 now.toLocaleDateString(
 "en-US",
 {
@@ -372,78 +449,17 @@ year:"numeric"
 );
 
 return now;
+
 }
+
 
 /* =========================
-PREMIUM LOGIC
-========================= */
-
-function isPremium(){
-
-const keys=[
-"createlk_student",
-"student"
-];
-
-for(const key of keys){
-
-const raw=
-localStorage.getItem(key);
-
-if(!raw)continue;
-
-try{
-
-const data=
-JSON.parse(raw);
-
-if(!data)continue;
-
-const status=
-String(
-data.membership_status||
-data.membershipStatus||
-""
-)
-.trim()
-.toUpperCase();
-
-const expiry=
-data.membership_expiry||
-data.membershipExpiry||
-"";
-
-if(status!=="PREMIUM")continue;
-
-if(!expiry)return false;
-
-const expiryDate=
-new Date(expiry);
-
-if(
-!isNaN(expiryDate.getTime())&&
-expiryDate.getTime()>Date.now()
-){
-
-return true;
-
-}
-
-}catch(e){}
-
-}
-
-return false;
-}
-
-/* =========================
-MEMBERSHIP UI
+   MEMBERSHIP UI
 ========================= */
 
 function updateMembership(){
 
-const premium=
-isPremium();
+const premium=isPremium();
 
 const status=
 document.getElementById(
@@ -460,11 +476,6 @@ document.getElementById(
 "limitNote"
 );
 
-const upgrade=
-document.getElementById(
-"upgradeButton"
-);
-
 if(premium){
 
 status.textContent=
@@ -474,9 +485,7 @@ text.textContent=
 "Premium is active. All 10 daily dialogues are unlocked.";
 
 note.innerHTML=
-"<strong>⭐ Premium:</strong> All 10 daily dialogues are available.";
-
-upgrade.classList.add("hidden");
+"<strong>⭐ Premium:</strong> All available daily dialogues are unlocked.";
 
 }else{
 
@@ -487,17 +496,17 @@ text.textContent=
 "3 dialogues are free. Premium unlocks all 10.";
 
 note.innerHTML=
-"<strong>Free:</strong> Dialogues 1–3 are free. Upgrade for all 10.";
-
-upgrade.classList.remove("hidden");
+"<strong>Free:</strong> Dialogues 1–3 are available. Upgrade to unlock all 10.";
 
 }
 
 return premium;
+
 }
 
+
 /* =========================
-FIELDS
+   FIELDS
 ========================= */
 
 function getTamil(item){
@@ -511,6 +520,7 @@ item.text_tamil||
 
 }
 
+
 function getSinhala(item){
 
 return item.sinhala||
@@ -521,6 +531,7 @@ item.text_sinhala||
 "";
 
 }
+
 
 function getEnglish(item){
 
@@ -533,8 +544,9 @@ item.text_english||
 
 }
 
+
 /* =========================
-ESCAPE
+   ESCAPE
 ========================= */
 
 function escapeHTML(text){
@@ -548,19 +560,21 @@ return String(text)
 
 }
 
+
 /* =========================
-LISTEN
+   LISTEN
 ========================= */
 
 function listenEnglish(text){
 
-if(!("speechSynthesis"in window)){
+if(!("speechSynthesis" in window)){
 
 alert(
 "Voice playback is not supported."
 );
 
 return;
+
 }
 
 speechSynthesis.cancel();
@@ -572,10 +586,12 @@ speech.lang="en-US";
 speech.rate=.9;
 
 speechSynthesis.speak(speech);
+
 }
 
+
 /* =========================
-LESSON CARD
+   LESSON CARD
 ========================= */
 
 function createCard(item,index){
@@ -588,7 +604,9 @@ card.className=
 (index<3?"free":"premium");
 
 const ta=getTamil(item);
+
 const si=getSinhala(item);
+
 const en=getEnglish(item);
 
 card.innerHTML=`
@@ -604,9 +622,11 @@ ${escapeHTML(ta)}
 ${
 si
 ?
-`<div class="sinhala">
+`
+<div class="sinhala">
 ${escapeHTML(si)}
-</div>`
+</div>
+`
 :""
 }
 
@@ -617,11 +637,13 @@ ${escapeHTML(en)}
 ${
 en
 ?
-`<button
+`
+<button
 type="button"
 class="listen">
 🔊 Listen
-</button>`
+</button>
+`
 :""
 }
 
@@ -632,6 +654,7 @@ index<3
 }">
 ${index<3?"✓ FREE":"⭐ PREMIUM"}
 </span>
+
 `;
 
 const listen=
@@ -645,13 +668,16 @@ listen.onclick=
 }
 
 return card;
+
 }
 
+
 /* =========================
-UPGRADE CARD
+   PREMIUM CHECKOUT CARD
+   ONE BUTTON ONLY
 ========================= */
 
-function createUpgradeCard(){
+function createCheckoutCard(){
 
 const box=
 document.createElement("div");
@@ -662,41 +688,53 @@ box.className=
 box.innerHTML=`
 
 <div class="premium-box-title">
-⭐ Continue Learning
+⭐ Unlock the Full Daily Lesson
 </div>
 
 <div class="premium-box-text">
-Today's 3 free dialogues are available above.
+
+Today's first 3 conversations are free.
+
 <br><br>
-Upgrade to Premium to unlock
-<strong>all 10 daily spoken English dialogues</strong>.
+
+Upgrade to Premium for the
+<strong>complete daily lesson with all 10 conversations.</strong>
+
 </div>
 
-<a
-href="premium.html"
-class="premium-button">
-⭐ Unlock All 10 Daily Dialogues
-</a>
+<button
+type="button"
+class="payButton"
+onclick="checkout()">
+
+💳 Unlock Full Lesson — LKR 1,500
+
+</button>
+
 `;
 
 return box;
+
 }
 
+
 /* =========================
-NORMALIZE CLOUDFLARE
+   NORMALIZE CLOUDFLARE
 ========================= */
 
 function normalizeLesson(json){
 
 let data=json;
 
-if(json&&json.lesson){
+if(json && json.lesson){
+
 data=json.lesson;
+
 }
 
 if(
-json&&
-json.data&&
+json &&
+json.data &&
 !Array.isArray(json.data)
 ){
 
@@ -724,20 +762,19 @@ dialogues:dialogues
 
 }
 
+
 /* =========================
-LOAD TODAY
+   LOAD TODAY'S LESSON
 ========================= */
 
 async function loadLesson(){
 
-setupDate();
+const now=setupDate();
 
 const premium=
 updateMembership();
 
 try{
-
-const now=new Date();
 
 const monthDay=
 String(
@@ -749,10 +786,12 @@ String(
 now.getDate()
 ).padStart(2,"0");
 
+
 const url=
 LESSON_API+
 "/api/today?month_day="+
 encodeURIComponent(monthDay);
+
 
 const response=
 await fetch(
@@ -766,6 +805,7 @@ headers:{
 }
 );
 
+
 if(!response.ok){
 
 throw new Error(
@@ -775,11 +815,14 @@ response.status+"."
 
 }
 
+
 const json=
 await response.json();
 
+
 const lesson=
 normalizeLesson(json);
+
 
 if(
 lesson.dialogues.length<3
@@ -791,6 +834,11 @@ throw new Error(
 
 }
 
+
+currentLesson=
+lesson.dialogues;
+
+
 const grid=
 document.getElementById(
 "lessonGrid"
@@ -798,16 +846,22 @@ document.getElementById(
 
 grid.innerHTML="";
 
-/* FREE */
+
+/* =========================
+   FREE
+========================= */
 
 if(!premium){
 
-for(
-let i=0;
-i<Math.min(
+const freeCount=
+Math.min(
 3,
 lesson.dialogues.length
 );
+
+for(
+let i=0;
+i<freeCount;
 i++
 ){
 
@@ -820,13 +874,19 @@ i
 
 }
 
+
+/* ONE CHECKOUT BUTTON */
+
 grid.appendChild(
-createUpgradeCard()
+createCheckoutCard()
 );
 
 }
 
-/* PREMIUM */
+
+/* =========================
+   PREMIUM
+========================= */
 
 else{
 
@@ -853,26 +913,30 @@ i
 
 }
 
-window.currentFirstDialogue=
-lesson.dialogues[0];
 
-document.getElementById("loading")
-.classList.add("hidden");
+/* SHOW */
 
-document.getElementById("error")
-.classList.add("hidden");
+document.getElementById(
+"loading"
+).classList.add("hidden");
+
+document.getElementById(
+"error"
+).classList.add("hidden");
 
 grid.classList.remove("hidden");
 
-document.getElementById("shareButton")
-.classList.remove("hidden");
+document.getElementById(
+"shareButton"
+).classList.remove("hidden");
 
 }catch(error){
 
 console.error(error);
 
-document.getElementById("loading")
-.classList.add("hidden");
+document.getElementById(
+"loading"
+).classList.add("hidden");
 
 const errorBox=
 document.getElementById("error");
@@ -886,43 +950,173 @@ errorBox.classList.remove("hidden");
 
 }
 
+
 /* =========================
-SHARE IMAGE
-1080 × 1350
-PROFESSIONAL 4:5
+   PAYHERE CHECKOUT
+   SAME WORKING LOGIC
+   AS STUDENT STATUS PAGE
 ========================= */
 
-async function shareFirstDialogue(){
+async function checkout(){
 
-const item=
-window.currentFirstDialogue;
+try{
 
-if(!item){
+const studentId=
+getStudentId();
+
+if(!studentId){
+
+location.href="login.html";
+
+return;
+
+}
+
+
+const r=
+await fetch(
+PAYMENT+
+"/api/checkout",
+{
+
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json"
+},
+
+body:JSON.stringify({
+
+student_id:
+studentId
+
+})
+
+}
+);
+
+
+const raw=
+await r.text();
+
+
+if(!r.ok){
+
+throw new Error(
+"Unable to open PayHere."
+);
+
+}
+
+
+/* HTML PAYMENT FORM */
+
+if(
+raw.includes("<form")
+){
+
+document.open();
+
+document.write(raw);
+
+document.close();
+
+return;
+
+}
+
+
+/* JSON RESPONSE */
+
+const d=
+JSON.parse(raw);
+
+
+if(
+d.url ||
+d.checkout_url
+){
+
+location.href=
+d.url ||
+d.checkout_url;
+
+return;
+
+}
+
+
+throw new Error(
+"Invalid payment response."
+);
+
+
+}catch(e){
+
+console.error(e);
+
+alert(
+e.message
+);
+
+}
+
+}
+
+
+/* =========================
+   SHARE DAILY LESSON
+========================= */
+
+async function shareDailyLesson(){
+
+if(
+!currentLesson ||
+!currentLesson.length
+){
 
 alert(
 "Today's lesson is not loaded yet."
 );
 
 return;
+
 }
 
-const ta=getTamil(item);
-const si=getSinhala(item);
-const en=getEnglish(item);
+
+/* SHARE FIRST DIALOGUE */
+
+const item=
+currentLesson[0];
+
+const ta=
+getTamil(item);
+
+const si=
+getSinhala(item);
+
+const en=
+getEnglish(item);
 
 const date=
 document.getElementById(
 "lessonDate"
 ).textContent;
 
+
+/* CANVAS */
+
 const canvas=
 document.createElement("canvas");
 
 canvas.width=1080;
+
 canvas.height=1350;
 
 const ctx=
 canvas.getContext("2d");
+
 
 /* BACKGROUND */
 
@@ -949,7 +1143,8 @@ gradient.addColorStop(
 "#7c3aed"
 );
 
-ctx.fillStyle=gradient;
+ctx.fillStyle=
+gradient;
 
 ctx.fillRect(
 0,
@@ -958,7 +1153,8 @@ ctx.fillRect(
 1350
 );
 
-/* DECORATIVE CIRCLES */
+
+/* DECORATION */
 
 ctx.fillStyle=
 "rgba(255,255,255,.08)";
@@ -987,9 +1183,11 @@ Math.PI*2
 
 ctx.fill();
 
-/* BRAND */
+
+/* HEADER */
 
 ctx.fillStyle="#fff";
+
 ctx.textAlign="center";
 
 ctx.font=
@@ -1005,7 +1203,7 @@ ctx.font=
 "bold 38px Arial";
 
 ctx.fillText(
-"Daily Spoken English",
+"Daily Lesson",
 540,
 160
 );
@@ -1023,7 +1221,8 @@ date,
 
 ctx.globalAlpha=1;
 
-/* CARD SHADOW */
+
+/* WHITE BOARD */
 
 ctx.shadowColor=
 "rgba(0,0,0,.18)";
@@ -1046,10 +1245,13 @@ ctx,
 ctx.fill();
 
 ctx.shadowColor="transparent";
+
 ctx.shadowBlur=0;
+
 ctx.shadowOffsetY=0;
 
-/* CARD TOP LABEL */
+
+/* CONTENT AREA */
 
 ctx.fillStyle=
 "#2563eb";
@@ -1060,80 +1262,134 @@ ctx.font=
 ctx.fillText(
 "DAILY CONVERSATION",
 540,
-330
+345
 );
 
-/* DIVIDER */
-
 ctx.strokeStyle="#e2e8f0";
+
 ctx.lineWidth=2;
 
 ctx.beginPath();
 
 ctx.moveTo(
 170,
-355
+375
 );
 
 ctx.lineTo(
 910,
-355
+375
 );
 
 ctx.stroke();
 
-/* TEXT */
 
-let y=425;
+/* BALANCED CONTENT */
 
-y=
-drawWrapped(
+const content=[];
+
+if(ta)content.push({
+text:ta,
+font:"bold 34px Arial",
+color:"#172033",
+lineHeight:48,
+gap:24
+});
+
+if(si)content.push({
+text:si,
+font:"26px Arial",
+color:"#64748b",
+lineHeight:42,
+gap:24
+});
+
+if(en)content.push({
+text:en,
+font:"bold 32px Arial",
+color:"#1e293b",
+lineHeight:48,
+gap:0
+});
+
+
+/* CALCULATE TOTAL HEIGHT */
+
+let totalHeight=0;
+
+const measured=[];
+
+for(const item of content){
+
+ctx.font=item.font;
+
+const lines=
+getWrappedLines(
 ctx,
-ta,
-540,
-y,
-800,
-48,
-"bold 34px Arial",
-"#172033"
+item.text,
+800
 );
 
-if(si){
+const height=
+lines.length*
+item.lineHeight;
 
-y+=30;
+measured.push({
+...item,
+lines:lines,
+height:height
+});
 
-y=
-drawWrapped(
-ctx,
-si,
-540,
-y,
-800,
-42,
-"26px Arial",
-"#64748b"
-);
+totalHeight+=height+
+item.gap;
 
 }
 
-y+=38;
+if(totalHeight>0){
 
-y=
-drawWrapped(
-ctx,
-en,
+totalHeight-=content.length?
+content[content.length-1].gap:0;
+
+}
+
+
+/* CENTER VERTICALLY */
+
+let y=
+720-
+(totalHeight/2);
+
+
+/* DRAW */
+
+for(const item of measured){
+
+ctx.font=item.font;
+
+ctx.fillStyle=item.color;
+
+ctx.textAlign="center";
+
+for(const line of item.lines){
+
+ctx.fillText(
+line,
 540,
-y,
-800,
-48,
-"bold 32px Arial",
-"#1e293b"
+y
 );
 
-/* SMALL BLUE LINE */
+y+=item.lineHeight;
 
-ctx.fillStyle=
-"#2563eb";
+}
+
+y+=item.gap;
+
+}
+
+
+/* BOTTOM LINE */
+
+ctx.fillStyle="#2563eb";
 
 roundRect(
 ctx,
@@ -1145,6 +1401,7 @@ ctx,
 );
 
 ctx.fill();
+
 
 /* FOOTER */
 
@@ -1172,7 +1429,8 @@ ctx.fillText(
 
 ctx.globalAlpha=1;
 
-/* SHARE */
+
+/* CREATE IMAGE */
 
 canvas.toBlob(
 async(blob)=>{
@@ -1184,20 +1442,25 @@ alert(
 );
 
 return;
+
 }
+
 
 const file=
 new File(
 [blob],
-"createlk-daily-english.png",
+"createlk-daily-lesson.png",
 {
 type:"image/png"
 }
 );
 
+
+/* NATIVE SHARE */
+
 if(
-navigator.share&&
-navigator.canShare&&
+navigator.share &&
+navigator.canShare &&
 navigator.canShare({
 files:[file]
 })
@@ -1208,10 +1471,10 @@ try{
 await navigator.share({
 
 title:
-"CreateLK Academy",
+"Daily Lesson",
 
 text:
-"Daily Spoken English",
+"For the full lesson: creatlk.com",
 
 files:[file]
 
@@ -1233,13 +1496,14 @@ return;
 
 }
 
-/* FALLBACK */
+
+/* FALLBACK DOWNLOAD */
 
 const link=
 document.createElement("a");
 
 link.download=
-"createlk-daily-english.png";
+"createlk-daily-lesson.png";
 
 link.href=
 URL.createObjectURL(blob);
@@ -1248,7 +1512,9 @@ link.click();
 
 setTimeout(
 ()=>{
-URL.revokeObjectURL(link.href);
+URL.revokeObjectURL(
+link.href
+);
 },
 1000
 );
@@ -1259,8 +1525,66 @@ URL.revokeObjectURL(link.href);
 
 }
 
+
 /* =========================
-ROUND RECT
+   WRAPPED TEXT
+========================= */
+
+function getWrappedLines(
+ctx,
+text,
+maxWidth
+){
+
+const words=
+String(text).split(/\s+/);
+
+const lines=[];
+
+let line="";
+
+for(
+const word of words
+){
+
+const test=
+line
+?
+line+" "+word
+:
+word;
+
+if(
+ctx.measureText(test).width>
+maxWidth &&
+line
+){
+
+lines.push(line);
+
+line=word;
+
+}else{
+
+line=test;
+
+}
+
+}
+
+if(line){
+
+lines.push(line);
+
+}
+
+return lines;
+
+}
+
+
+/* =========================
+   ROUNDED RECT
 ========================= */
 
 function roundRect(
@@ -1331,95 +1655,39 @@ ctx.closePath();
 
 }
 
-/* =========================
-WRAPPED TEXT
-========================= */
-
-function drawWrapped(
-ctx,
-text,
-x,
-y,
-maxWidth,
-lineHeight,
-font,
-color
-){
-
-ctx.font=font;
-ctx.fillStyle=color;
-ctx.textAlign="center";
-
-const words=
-String(text).split(/\s+/);
-
-let line="";
-const lines=[];
-
-for(
-const word of words
-){
-
-const test=
-line
-?
-line+" "+word
-:
-word;
-
-if(
-ctx.measureText(test).width>
-maxWidth&&
-line
-){
-
-lines.push(line);
-
-line=word;
-
-}else{
-
-line=test;
-
-}
-
-}
-
-if(line){
-lines.push(line);
-}
-
-for(
-const value of lines
-){
-
-ctx.fillText(
-value,
-x,
-y
-);
-
-y+=lineHeight;
-
-}
-
-return y;
-}
 
 /* =========================
-SHARE BUTTON
+   SHARE BUTTON
 ========================= */
 
 document.getElementById(
 "shareButton"
 ).addEventListener(
 "click",
-shareFirstDialogue
+shareDailyLesson
 );
 
-/* START */
 
-loadLesson();
+/* =========================
+   START
+========================= */
+
+async function start(){
+
+if(!getStudentId()){
+
+location.href="login.html";
+
+return;
+
+}
+
+await loadLesson();
+
+}
+
+
+start();
 
 </script></body>
 </html>
