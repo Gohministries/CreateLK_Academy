@@ -261,7 +261,6 @@ input[readonly]{
   background:#f8fafc
 }
 
-/* FILE UPLOAD */
 .file-box{
   width:100%;
   max-width:100%;
@@ -421,12 +420,12 @@ input[readonly]{
   }
 
   .file-box{
-    padding:8px;
+    padding:8px
   }
 
   .file-box input[type="file"]{
     font-size:11px;
-    max-width:100%;
+    max-width:100%
   }
 
   .file-box input[type="file"]::file-selector-button{
@@ -454,7 +453,6 @@ input[readonly]{
   </div>
 </header>
 
-
 <main class="container">
 
   <section class="card hero">
@@ -468,7 +466,6 @@ input[readonly]{
     </p>
 
   </section>
-
 
   <section class="card premium">
 
@@ -485,7 +482,6 @@ input[readonly]{
     </div>
 
   </section>
-
 
   <section class="card">
 
@@ -518,7 +514,6 @@ input[readonly]{
 
       </div>
 
-
       <div class="account-row">
 
         <div class="label">
@@ -542,7 +537,6 @@ input[readonly]{
 
       </div>
 
-
       <div class="account-row">
 
         <div class="label">
@@ -565,7 +559,6 @@ input[readonly]{
         </div>
 
       </div>
-
 
       <div class="account-row">
 
@@ -594,7 +587,6 @@ input[readonly]{
 
   </section>
 
-
   <section class="card">
 
     <div class="instructions">
@@ -617,7 +609,6 @@ input[readonly]{
 
   </section>
 
-
   <section class="card">
 
     <h2 class="form-title">
@@ -635,11 +626,9 @@ input[readonly]{
         <input
           id="studentName"
           type="text"
-          value="Thinarathnam Saththiyanadan"
           required>
 
       </div>
-
 
       <div class="field">
 
@@ -650,11 +639,9 @@ input[readonly]{
         <input
           id="phone"
           type="tel"
-          value="+94778520395"
           required>
 
       </div>
-
 
       <div class="field">
 
@@ -669,7 +656,6 @@ input[readonly]{
           readonly>
 
       </div>
-
 
       <div class="field">
 
@@ -686,13 +672,12 @@ input[readonly]{
             required>
 
           <div class="file-help">
-            JPG, PNG or PDF · Please upload a clear payment slip.
+            JPG, PNG or PDF · Maximum 10 MB
           </div>
 
         </div>
 
       </div>
-
 
       <button
         id="submitButton"
@@ -705,20 +690,17 @@ input[readonly]{
 
     </form>
 
-
     <div
       id="status"
       class="status">
 
       ⏳ Payment Status: Your payment will remain
       <b>Pending</b> until it is checked and approved
-      by the administrator. Do not make another payment
-      unless instructed.
+      by the administrator.
 
     </div>
 
   </section>
-
 
   <a
     class="whatsapp"
@@ -731,7 +713,6 @@ input[readonly]{
   </a>
 
 </main>
-
 
 <footer class="footer">
 
@@ -748,8 +729,11 @@ input[readonly]{
 
 </footer>
 
-
 <script>
+
+/* =========================
+   API
+========================= */
 
 const API =
 "https://createlk-bank-payments.createlk.workers.dev";
@@ -757,58 +741,166 @@ const API =
 const STUDENT_KEY =
 "createlk_student";
 
+const LOGIN_KEY =
+"createlk_logged_in";
+
 
 /* =========================
-   GET LOGGED-IN STUDENT
-   SESSION FIRST, LOCAL FALLBACK
+   AUTHENTICATION
+   SESSION FIRST
 ========================= */
 
-let student = {};
+function getLoggedStudent(){
 
-try{
+  let loggedIn =
+    sessionStorage.getItem(LOGIN_KEY);
 
-  const sessionStudent =
-    sessionStorage.getItem(
-      STUDENT_KEY
+  let saved =
+    sessionStorage.getItem(STUDENT_KEY);
+
+
+  /* Fallback to localStorage */
+
+  if(
+    loggedIn !== "true" ||
+    !saved
+  ){
+
+    loggedIn =
+      localStorage.getItem(LOGIN_KEY);
+
+    saved =
+      localStorage.getItem(STUDENT_KEY);
+
+  }
+
+
+  /* No login */
+
+  if(
+    loggedIn !== "true" ||
+    !saved
+  ){
+
+    window.location.replace(
+      "/login.html"
     );
 
-  const localStudent =
-    localStorage.getItem(
-      STUDENT_KEY
+    return null;
+
+  }
+
+
+  try{
+
+    const student =
+      JSON.parse(saved);
+
+    const studentId =
+      Number(
+        student.id ||
+        student.student_id ||
+        student.student_id_number ||
+        student.database_id ||
+        0
+      );
+
+
+    /* Login data exists but ID is invalid */
+
+    if(!studentId){
+
+      sessionStorage.removeItem(
+        STUDENT_KEY
+      );
+
+      sessionStorage.removeItem(
+        LOGIN_KEY
+      );
+
+      localStorage.removeItem(
+        STUDENT_KEY
+      );
+
+      localStorage.removeItem(
+        LOGIN_KEY
+      );
+
+      window.location.replace(
+        "/login.html"
+      );
+
+      return null;
+
+    }
+
+
+    return {
+      ...student,
+      id:studentId
+    };
+
+  }catch(error){
+
+    console.error(
+      "Invalid student login data:",
+      error
     );
 
-  student =
-    JSON.parse(
-      sessionStudent ||
-      localStudent ||
-      "{}"
+    window.location.replace(
+      "/login.html"
     );
 
-}catch(e){
+    return null;
 
-  console.error(
-    "Unable to read logged-in student:",
-    e
-  );
-
-  student = {};
+  }
 
 }
 
 
+const student =
+getLoggedStudent();
+
+
 /* =========================
-   GET STUDENT ID
+   FILL LOGGED STUDENT DATA
 ========================= */
 
-function getStudentId(){
+if(student){
 
-  return Number(
-    student.id ||
-    student.student_id ||
-    student.student_id_number ||
-    student.database_id ||
-    0
-  );
+  const name =
+    student.name ||
+    (
+      (student.first_name || "") +
+      " " +
+      (student.last_name || "")
+    ).trim();
+
+  const nameInput =
+    document.getElementById(
+      "studentName"
+    );
+
+  const phoneInput =
+    document.getElementById(
+      "phone"
+    );
+
+
+  if(name){
+
+    nameInput.value =
+      name;
+
+  }
+
+
+  if(student.phone){
+
+    phoneInput.value =
+      student.phone;
+
+  }
 
 }
 
@@ -904,20 +996,28 @@ function fallbackCopy(text,button){
 ========================= */
 
 const form =
-  document.getElementById("paymentForm");
+  document.getElementById(
+    "paymentForm"
+  );
 
 const fileInput =
-  document.getElementById("slip");
+  document.getElementById(
+    "slip"
+  );
 
 const submitButton =
-  document.getElementById("submitButton");
+  document.getElementById(
+    "submitButton"
+  );
 
 const statusBox =
-  document.getElementById("status");
+  document.getElementById(
+    "status"
+  );
 
 
 /* =========================
-   FILE UPLOAD
+   FILE
 ========================= */
 
 fileInput.addEventListener(
@@ -929,7 +1029,10 @@ fileInput.addEventListener(
       const file =
         this.files[0];
 
-      if(file.size > 10 * 1024 * 1024){
+      if(
+        file.size >
+        10 * 1024 * 1024
+      ){
 
         this.value = "";
 
@@ -958,7 +1061,7 @@ fileInput.addEventListener(
 
 
 /* =========================
-   ESCAPE HTML
+   ESCAPE
 ========================= */
 
 function escapeHtml(value){
@@ -984,28 +1087,30 @@ form.addEventListener(
     e.preventDefault();
 
 
+    /* Re-check login */
+
+    const currentStudent =
+      getLoggedStudent();
+
+
+    if(!currentStudent){
+
+      return;
+
+    }
+
+
     const studentId =
-      getStudentId();
-
-
-    console.log(
-      "Logged-in student:",
-      student
-    );
-
-    console.log(
-      "Student ID being sent:",
-      studentId
-    );
+      Number(
+        currentStudent.id
+      );
 
 
     if(!studentId){
 
-      statusBox.className =
-        "status error";
-
-      statusBox.textContent =
-        "⚠️ Student ID is missing. Please log in again.";
+      window.location.replace(
+        "/login.html"
+      );
 
       return;
 
@@ -1029,7 +1134,10 @@ form.addEventListener(
     }
 
 
-    if(file.size > 10 * 1024 * 1024){
+    if(
+      file.size >
+      10 * 1024 * 1024
+    ){
 
       statusBox.className =
         "status error";
@@ -1098,7 +1206,8 @@ form.addEventListener(
 
       const response =
         await fetch(
-          API + "/api/bank-payment",
+          API +
+          "/api/bank-payment",
           {
             method:"POST",
             body:formData
@@ -1127,8 +1236,8 @@ form.addEventListener(
       if(!response.ok){
 
         throw new Error(
-          data.message ||
           data.error ||
+          data.message ||
           "Unable to submit payment."
         );
 
@@ -1152,12 +1261,16 @@ form.addEventListener(
 
       document.getElementById(
         "amount"
-      ).value = "999";
+      ).value =
+        "999";
 
 
     }catch(error){
 
-      console.error(error);
+      console.error(
+        "PAYMENT ERROR:",
+        error
+      );
 
       statusBox.className =
         "status error";
