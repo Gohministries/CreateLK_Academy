@@ -50,7 +50,9 @@ color:var(--b);
 text-decoration:none
 }
 
-.logo span{color:var(--p)}
+.logo span{
+color:var(--p)
+}
 
 .back{
 border:1px solid var(--l);
@@ -227,17 +229,6 @@ margin-top:5px;
 line-height:1.5
 }
 
-.loginInfo{
-background:#eff6ff;
-border:1px solid #bfdbfe;
-color:#1d4ed8;
-border-radius:10px;
-padding:10px;
-font-size:9px;
-line-height:1.5;
-margin-bottom:13px
-}
-
 .message{
 display:none;
 padding:11px;
@@ -285,6 +276,23 @@ box-shadow:0 4px 12px rgba(37,99,235,.16)
 .submit:disabled{
 opacity:.6;
 cursor:not-allowed
+}
+
+.policy{
+text-align:center;
+font-size:10px;
+padding:10px;
+line-height:1.8
+}
+
+.policy a{
+color:var(--b);
+text-decoration:none;
+font-weight:700
+}
+
+.policy a:hover{
+text-decoration:underline
 }
 
 .whatsapp{
@@ -388,6 +396,7 @@ onclick="copyText('292200280023178')">
 
 </div>
 
+
 <div class="item">
 
 <small>BANK</small>
@@ -403,6 +412,7 @@ onclick="copyText(&quot;People's Bank&quot;)">
 
 </div>
 
+
 <div class="item">
 
 <small>BRANCH</small>
@@ -417,6 +427,7 @@ onclick="copyText('Udapussellawa')">
 </button>
 
 </div>
+
 
 <div class="item">
 
@@ -479,12 +490,8 @@ After approval, Premium will be activated for 30 days.
 
 <div id="message" class="message"></div>
 
-<div class="loginInfo">
-🔐 Your account information is taken automatically from your login.
-</div>
-
-
 <form id="paymentForm">
+
 
 <div class="group">
 
@@ -564,6 +571,15 @@ type="submit">
 </section>
 
 
+<div class="policy">
+
+<a href="refund.html">Refund Policy</a> ·
+<a href="terms.html">Terms &amp; Conditions</a> ·
+<a href="privacy.html">Privacy Policy</a>
+
+</div>
+
+
 <footer>
 © 2026 CreateLK Academy · creatlk.com
 </footer>
@@ -591,10 +607,10 @@ const PAYMENT_API =
 "https://createlk-premium-payments.createlk.workers.dev";
 
 /*
-  Visible price:
+  Displayed to student:
   LKR 999
 
-  Amount sent to Worker:
+  Amount sent to Cloudflare Worker:
   1500
 */
 
@@ -603,9 +619,6 @@ const WORKER_AMOUNT = "1500";
 
 const STUDENT_KEY =
 "createlk_student";
-
-const LOGIN_KEY =
-"createlk_logged_in";
 
 
 const form =
@@ -644,6 +657,9 @@ function getStudent(){
 
 let student = null;
 
+
+/* LOCAL STORAGE */
+
 try{
 
 const raw =
@@ -652,8 +668,10 @@ STUDENT_KEY
 );
 
 if(raw){
+
 student =
 JSON.parse(raw);
+
 }
 
 }catch(e){
@@ -666,6 +684,8 @@ e
 }
 
 
+/* SESSION STORAGE FALLBACK */
+
 if(!student){
 
 try{
@@ -676,8 +696,10 @@ STUDENT_KEY
 );
 
 if(raw){
+
 student =
 JSON.parse(raw);
+
 }
 
 }catch(e){
@@ -704,9 +726,7 @@ return null;
 }
 
 
-/* =========================
-   STUDENT ID
-========================= */
+/* STUDENT ID */
 
 const id =
 Number(
@@ -717,9 +737,7 @@ student.studentId ||
 );
 
 
-/* =========================
-   EMAIL
-========================= */
+/* EMAIL */
 
 const email =
 String(
@@ -730,9 +748,7 @@ student.email ||
 .toLowerCase();
 
 
-/* =========================
-   NAME
-========================= */
+/* NAME */
 
 const first =
 student.first_name ||
@@ -752,9 +768,7 @@ student.name
 "";
 
 
-/* =========================
-   PHONE
-========================= */
+/* PHONE */
 
 const phone =
 String(
@@ -847,8 +861,10 @@ async function(e){
 
 e.preventDefault();
 
+
 const currentStudent =
 getStudent();
+
 
 if(!currentStudent){
 
@@ -871,6 +887,10 @@ return;
 
 }
 
+
+/* =========================
+   FILE
+========================= */
 
 const file =
 document.getElementById(
@@ -901,6 +921,8 @@ return;
 
 }
 
+
+/* MAXIMUM 10 MB */
 
 if(
 file.size >
@@ -998,6 +1020,7 @@ formData.append(
 currentStudent.name
 );
 
+
 formData.append(
 "phone",
 currentStudent.phone
@@ -1005,11 +1028,13 @@ currentStudent.phone
 
 
 /*
-  IMPORTANT:
+  IMPORTANT
 
-  Student sees LKR 999.
+  Student sees:
+  LKR 999
 
-  Worker receives 1500.
+  Cloudflare Worker receives:
+  1500
 */
 
 formData.append(
@@ -1025,7 +1050,7 @@ file
 
 
 /* =========================
-   SUBMIT BUTTON
+   BUTTON
 ========================= */
 
 button.disabled =
@@ -1085,12 +1110,11 @@ throw new Error(
 }
 
 
-if(!response.ok){
+/* =========================
+   SERVER ERROR
+========================= */
 
-/*
-  Hide confusing Worker
-  amount messages from user.
-*/
+if(!response.ok){
 
 const serverError =
 String(
@@ -1101,7 +1125,9 @@ data.message ||
 
 
 if(
-serverError.toLowerCase().includes(
+serverError
+.toLowerCase()
+.includes(
 "payment amount"
 )
 ){
@@ -1121,6 +1147,10 @@ serverError ||
 }
 
 
+/* =========================
+   SUCCESS
+========================= */
+
 if(data.success){
 
 showMessage(
@@ -1131,6 +1161,7 @@ showMessage(
 button.textContent =
 "✓ Submitted Successfully";
 
+
 form.reset();
 
 
@@ -1139,15 +1170,18 @@ document.getElementById(
 ).value =
 currentStudent.name;
 
+
 document.getElementById(
 "phone"
 ).value =
 currentStudent.phone;
 
+
 document.getElementById(
 "amount"
 ).value =
 "LKR " + DISPLAY_PRICE;
+
 
 return;
 
@@ -1190,4 +1224,3 @@ button.textContent =
 
 </body>
 </html>
-
