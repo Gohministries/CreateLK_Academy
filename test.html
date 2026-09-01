@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CreateLK Payment Route Test</title>
+<title>CreateLK PayHere Test</title>
 
 <style>
 *{box-sizing:border-box}
@@ -18,16 +18,14 @@ body{
 
 .card{
   max-width:600px;
-  margin:20px auto;
+  margin:30px auto;
   background:#fff;
   border:1px solid #e2e8f0;
   border-radius:16px;
   padding:20px
 }
 
-h2{
-  margin:0 0 8px
-}
+h2{margin:0 0 8px}
 
 p{
   color:#64748b;
@@ -43,12 +41,10 @@ button{
   background:#2563eb;
   color:#fff;
   font-weight:800;
-  margin-top:10px
+  margin-top:12px
 }
 
-button:disabled{
-  opacity:.6
-}
+button:disabled{opacity:.6}
 
 pre{
   margin-top:15px;
@@ -66,7 +62,7 @@ pre{
   font-weight:800
 }
 
-.bad{
+.err{
   color:#dc2626;
   font-weight:800
 }
@@ -77,19 +73,19 @@ pre{
 
 <div class="card">
 
-<h2>💳 CreateLK Payment Route Test</h2>
+<h2>💳 CreateLK PayHere Test</h2>
 
 <p>
-Testing the currently deployed payment Worker without changing it.
+Testing the existing Premium Notify Worker directly.
 </p>
 
 <p>
 Student ID:
-<strong id="studentId">Loading...</strong>
+<strong>30</strong>
 </p>
 
-<button id="test" onclick="testRoutes()">
-🔍 Test Payment Routes
+<button id="payButton" onclick="testPayment()">
+💳 Test PayHere
 </button>
 
 <div id="status"></div>
@@ -100,202 +96,256 @@ Student ID:
 
 <script>
 
-const PAYMENT =
-"https://createlk-premium-payments.createlk.workers.dev";
+const NOTIFY =
+"https://createlk-premium-notify.createlk.workers.dev";
 
-const STUDENT_KEY =
-"createlk_student";
+const STUDENT_ID = 30;
 
-let student={};
 
-try{
+async function testPayment(){
 
-student=JSON.parse(
-localStorage.getItem(STUDENT_KEY)||"{}"
-);
+  const button =
+    document.getElementById("payButton");
 
-}catch(e){
+  const status =
+    document.getElementById("status");
 
-student={};
+  const output =
+    document.getElementById("output");
 
-}
 
-function id(){
+  button.disabled = true;
 
-return Number(
-student.id ||
-student.database_id ||
-student.student_id_number ||
-student.student_id ||
-0
-);
+  button.textContent =
+    "⏳ Connecting...";
 
-}
+  status.innerHTML =
+    "<p>Sending request...</p>";
 
-const studentId=id();
+  output.textContent =
+    "Waiting for response...";
 
-document.getElementById("studentId").textContent =
-studentId || "NOT FOUND";
 
+  try{
 
-async function testRoute(path){
+    const r =
+      await fetch(
+        NOTIFY,
+        {
+          method:"POST",
 
-const result={
-route:path
-};
+          headers:{
+            "Content-Type":"application/json",
+            "Accept":"application/json"
+          },
 
-try{
+          body:JSON.stringify({
+            student_id:STUDENT_ID
+          })
+        }
+      );
 
-const response=
-await fetch(
-PAYMENT+path,
-{
-method:"POST",
-headers:{
-"Content-Type":"application/json",
-"Accept":"application/json"
-},
-body:JSON.stringify({
-student_id:studentId
-})
-}
-);
 
-result.status=response.status;
-result.statusText=response.statusText;
+    const raw =
+      await r.text();
 
-result.body=await response.text();
 
-}catch(e){
+    console.log(
+      "HTTP:",
+      r.status
+    );
 
-result.error=e.message;
+    console.log(
+      "Response:",
+      raw
+    );
 
-}
 
-return result;
+    output.textContent =
+      "HTTP STATUS: "+
+      r.status+
+      "\n\n"+
+      "RESPONSE:\n"+
+      raw;
 
-}
 
+    if(!r.ok){
 
-async function testRoutes(){
+      status.innerHTML =
+        '<p class="err">❌ HTTP '+
+        r.status+
+        '</p>';
 
-const button=
-document.getElementById("test");
+      return;
+    }
 
-const status=
-document.getElementById("status");
 
-const output=
-document.getElementById("output");
+    /*
+      If Worker returns a PayHere HTML form
+    */
 
+    if(
+      raw.toLowerCase().includes("<form")
+    ){
 
-if(!studentId){
+      status.innerHTML =
+        '<p class="ok">✅ PayHere form received. Opening...</p>';
 
-status.innerHTML=
-'<p class="bad">❌ Student ID not found.</p>';
 
-return;
+      const wrapper =
+        document.createElement("div");
 
-}
+      wrapper.innerHTML = raw;
 
 
-button.disabled=true;
+      const form =
+        wrapper.querySelector("form");
 
-button.textContent=
-"⏳ Testing...";
 
-status.innerHTML=
-"<p>Testing payment routes...</p>";
+      if(!form){
 
-output.textContent="";
+        throw new Error(
+          "HTML returned but no form found."
+        );
+      }
 
 
-const routes=[
+      document.body.innerHTML = "";
 
-"/api/checkout",
+      document.body.appendChild(form);
 
-"/checkout",
+      form.submit();
 
-"/api/pay",
+      return;
+    }
 
-"/pay",
 
-"/api/payment",
+    /*
+      JSON response
+    */
 
-"/payment",
+    let data;
 
-"/api/create-checkout",
+    try{
 
-"/create-checkout"
+      data = JSON.parse(raw);
 
-];
+    }catch(e){
 
+      throw new Error(
+        "Worker returned non-JSON data."
+      );
 
-const results=[];
+    }
 
 
-for(const route of routes){
+    console.log(
+      "JSON:",
+      data
+    );
 
-const result=
-await testRoute(route);
 
-results.push(result);
+    /*
+      Direct PayHere URL
+    */
 
+    if(data.url){
 
-output.textContent +=
-"\n================================\n"+
-"ROUTE: "+result.route+
-"\nSTATUS: "+(result.status || "ERROR")+
-"\n\n"+
-(result.body || result.error || "")+
-"\n";
+      status.innerHTML =
+        '<p class="ok">✅ PayHere URL received.</p>';
 
+      window.location.href =
+        data.url;
 
-/*
-Stop if a real checkout response
-is found.
-*/
+      return;
+    }
 
-if(
-result.status &&
-result.status>=200 &&
-result.status<300
-){
 
-status.innerHTML=
-'<p class="ok">✅ Possible active checkout route found: '+
-escapeHtml(route)+
-'</p>';
+    if(data.checkout_url){
 
-break;
+      status.innerHTML =
+        '<p class="ok">✅ PayHere checkout URL received.</p>';
 
-}
+      window.location.href =
+        data.checkout_url;
 
-}
+      return;
+    }
 
 
-console.log(
-"Payment route test results:",
-results
-);
+    /*
+      PayHere form data
+    */
 
+    if(
+      data.action &&
+      data.fields
+    ){
 
-button.disabled=false;
+      const form =
+        document.createElement("form");
 
-button.textContent=
-"🔍 Test Payment Routes";
+      form.method = "POST";
 
-}
+      form.action = data.action;
 
+      form.style.display = "none";
 
-function escapeHtml(text){
 
-return String(text)
-.replace(/&/g,"&amp;")
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;")
-.replace(/"/g,"&quot;")
-.replace(/'/g,"&#039;");
+      Object.entries(data.fields)
+      .forEach(
+        ([name,value])=>{
+
+          const input =
+            document.createElement("input");
+
+          input.type = "hidden";
+
+          input.name = name;
+
+          input.value = value;
+
+          form.appendChild(input);
+
+        }
+      );
+
+
+      document.body.appendChild(form);
+
+      status.innerHTML =
+        '<p class="ok">✅ PayHere form data received. Opening...</p>';
+
+      form.submit();
+
+      return;
+    }
+
+
+    status.innerHTML =
+      '<p class="err">⚠️ Worker responded, but no PayHere checkout was returned.</p>';
+
+  }catch(e){
+
+    console.error(e);
+
+    status.innerHTML =
+      '<p class="err">❌ '+
+      e.message+
+      '</p>';
+
+    output.textContent +=
+      "\n\nERROR:\n"+
+      (e.stack || e.message);
+
+  }finally{
+
+    button.disabled = false;
+
+    button.textContent =
+      "💳 Test PayHere";
+
+  }
 
 }
 
