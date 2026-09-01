@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CreateLK Payment Test</title>
+<title>CreateLK Payment Route Test</title>
+
 <style>
 *{box-sizing:border-box}
+
 body{
   margin:0;
   padding:20px;
@@ -13,16 +15,26 @@ body{
   background:#f3f6fb;
   color:#0f172a
 }
+
 .card{
-  max-width:500px;
-  margin:30px auto;
+  max-width:600px;
+  margin:20px auto;
   background:#fff;
-  padding:22px;
+  border:1px solid #e2e8f0;
   border-radius:16px;
-  border:1px solid #e2e8f0
+  padding:20px
 }
-h2{margin:0 0 8px}
-p{font-size:14px;color:#64748b;line-height:1.5}
+
+h2{
+  margin:0 0 8px
+}
+
+p{
+  color:#64748b;
+  font-size:14px;
+  line-height:1.5
+}
+
 button{
   width:100%;
   height:48px;
@@ -31,22 +43,33 @@ button{
   background:#2563eb;
   color:#fff;
   font-weight:800;
-  cursor:pointer;
-  margin-top:12px
+  margin-top:10px
 }
-button:disabled{opacity:.6}
+
+button:disabled{
+  opacity:.6
+}
+
 pre{
-  white-space:pre-wrap;
-  word-break:break-word;
-  background:#0f172a;
-  color:#fff;
+  margin-top:15px;
   padding:12px;
   border-radius:10px;
-  font-size:12px;
-  margin-top:15px
+  background:#0f172a;
+  color:#fff;
+  white-space:pre-wrap;
+  word-break:break-word;
+  font-size:12px
 }
-.ok{color:#047857;font-weight:800}
-.err{color:#dc2626;font-weight:800}
+
+.ok{
+  color:#047857;
+  font-weight:800
+}
+
+.bad{
+  color:#dc2626;
+  font-weight:800
+}
 </style>
 </head>
 
@@ -54,11 +77,10 @@ pre{
 
 <div class="card">
 
-<h2>💳 CreateLK Payment Test</h2>
+<h2>💳 CreateLK Payment Route Test</h2>
 
 <p>
-This page tests only the existing
-<code>/api/checkout</code> endpoint.
+Testing the currently deployed payment Worker without changing it.
 </p>
 
 <p>
@@ -66,13 +88,13 @@ Student ID:
 <strong id="studentId">Loading...</strong>
 </p>
 
-<button id="payButton" onclick="checkout()">
-💳 Test PayHere Checkout
+<button id="test" onclick="testRoutes()">
+🔍 Test Payment Routes
 </button>
 
 <div id="status"></div>
 
-<pre id="response">Waiting...</pre>
+<pre id="output">Waiting...</pre>
 
 </div>
 
@@ -88,31 +110,27 @@ let student={};
 
 try{
 
-  student=JSON.parse(
-    localStorage.getItem(STUDENT_KEY)||"{}"
-  );
+student=JSON.parse(
+localStorage.getItem(STUDENT_KEY)||"{}"
+);
 
 }catch(e){
 
-  student={};
+student={};
 
 }
-
-
-/* GET STUDENT ID */
 
 function id(){
 
-  return Number(
-    student.id ||
-    student.database_id ||
-    student.student_id_number ||
-    student.student_id ||
-    0
-  );
+return Number(
+student.id ||
+student.database_id ||
+student.student_id_number ||
+student.student_id ||
+0
+);
 
 }
-
 
 const studentId=id();
 
@@ -120,311 +138,164 @@ document.getElementById("studentId").textContent =
 studentId || "NOT FOUND";
 
 
-/* CHECKOUT TEST */
+async function testRoute(path){
 
-async function checkout(){
+const result={
+route:path
+};
 
-  const button=
-    document.getElementById("payButton");
+try{
 
-  const status=
-    document.getElementById("status");
+const response=
+await fetch(
+PAYMENT+path,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json",
+"Accept":"application/json"
+},
+body:JSON.stringify({
+student_id:studentId
+})
+}
+);
 
-  const responseBox=
-    document.getElementById("response");
+result.status=response.status;
+result.statusText=response.statusText;
 
+result.body=await response.text();
 
-  if(!studentId){
+}catch(e){
 
-    status.innerHTML=
-      '<p class="err">Student session not found.</p>';
+result.error=e.message;
 
-    responseBox.textContent=
-      "Please login again.";
+}
 
-    return;
-  }
-
-
-  button.disabled=true;
-
-  button.textContent=
-    "⏳ Connecting to payment service...";
-
-
-  status.innerHTML=
-    "<p>Sending checkout request...</p>";
-
-  responseBox.textContent=
-    "Waiting for server response...";
-
-
-  try{
-
-    const r=
-      await fetch(
-        PAYMENT+"/api/checkout",
-        {
-          method:"POST",
-
-          headers:{
-            "Content-Type":"application/json",
-            "Accept":"application/json"
-          },
-
-          body:JSON.stringify({
-            student_id:studentId
-          })
-        }
-      );
-
-
-    const raw=
-      await r.text();
-
-
-    console.log(
-      "Checkout HTTP status:",
-      r.status
-    );
-
-    console.log(
-      "Checkout raw response:",
-      raw
-    );
-
-
-    responseBox.textContent=
-      "HTTP STATUS: "+r.status+
-      "\n\n"+
-      "RAW RESPONSE:\n"+
-      raw;
-
-
-    /* SERVER ERROR */
-
-    if(!r.ok){
-
-      let message=
-        "Payment service returned HTTP "+
-        r.status;
-
-      try{
-
-        const errorData=
-          JSON.parse(raw);
-
-        message=
-          errorData.error ||
-          errorData.message ||
-          errorData.details ||
-          message;
-
-      }catch(e){}
-
-
-      status.innerHTML=
-        '<p class="err">❌ '+escapeHtml(message)+'</p>';
-
-      button.disabled=false;
-
-      button.textContent=
-        "💳 Test PayHere Checkout";
-
-      return;
-    }
-
-
-    /* DIRECT HTML PAYHERE FORM */
-
-    if(
-      raw.toLowerCase().includes("<form")
-    ){
-
-      status.innerHTML=
-        '<p class="ok">✅ PayHere form received.</p>';
-
-      const wrapper=
-        document.createElement("div");
-
-      wrapper.innerHTML=raw;
-
-      const form=
-        wrapper.querySelector("form");
-
-
-      if(!form){
-
-        throw new Error(
-          "Server returned HTML but no payment form was found."
-        );
-      }
-
-
-      document.body.innerHTML="";
-
-      document.body.appendChild(form);
-
-      form.submit();
-
-      return;
-    }
-
-
-    /* JSON RESPONSE */
-
-    let data;
-
-    try{
-
-      data=JSON.parse(raw);
-
-    }catch(e){
-
-      throw new Error(
-        "Server returned an invalid payment response."
-      );
-
-    }
-
-
-    console.log(
-      "Checkout JSON:",
-      data
-    );
-
-
-    /* CHECKOUT URL */
-
-    if(data.url){
-
-      status.innerHTML=
-        '<p class="ok">✅ Checkout URL received. Opening PayHere...</p>';
-
-      setTimeout(
-        ()=>{
-          window.location.href=data.url;
-        },
-        300
-      );
-
-      return;
-    }
-
-
-    if(data.checkout_url){
-
-      status.innerHTML=
-        '<p class="ok">✅ Checkout URL received. Opening PayHere...</p>';
-
-      setTimeout(
-        ()=>{
-          window.location.href=data.checkout_url;
-        },
-        300
-      );
-
-      return;
-    }
-
-
-    /* PAYHERE FORM DATA */
-
-    if(
-      data.action &&
-      data.fields
-    ){
-
-      const form=
-        document.createElement("form");
-
-      form.method="POST";
-
-      form.action=data.action;
-
-      form.style.display="none";
-
-
-      Object.entries(data.fields)
-        .forEach(
-          ([name,value])=>{
-
-            const input=
-              document.createElement("input");
-
-            input.type="hidden";
-
-            input.name=name;
-
-            input.value=value;
-
-            form.appendChild(input);
-
-          }
-        );
-
-
-      document.body.appendChild(form);
-
-
-      status.innerHTML=
-        '<p class="ok">✅ PayHere form data received. Opening checkout...</p>';
-
-
-      form.submit();
-
-      return;
-    }
-
-
-    throw new Error(
-      data.message ||
-      data.error ||
-      "PayHere checkout information was not returned."
-    );
-
-
-  }catch(e){
-
-    console.error(
-      "Checkout error:",
-      e
-    );
-
-
-    status.innerHTML=
-      '<p class="err">❌ '+escapeHtml(
-        e.message ||
-        "Checkout request failed."
-      )+'</p>';
-
-
-    responseBox.textContent=
-      responseBox.textContent+
-      "\n\nJAVASCRIPT ERROR:\n"+
-      (e.stack || e.message);
-
-
-    button.disabled=false;
-
-    button.textContent=
-      "💳 Test PayHere Checkout";
-
-  }
+return result;
 
 }
 
 
-/* SAFE TEXT */
+async function testRoutes(){
+
+const button=
+document.getElementById("test");
+
+const status=
+document.getElementById("status");
+
+const output=
+document.getElementById("output");
+
+
+if(!studentId){
+
+status.innerHTML=
+'<p class="bad">❌ Student ID not found.</p>';
+
+return;
+
+}
+
+
+button.disabled=true;
+
+button.textContent=
+"⏳ Testing...";
+
+status.innerHTML=
+"<p>Testing payment routes...</p>";
+
+output.textContent="";
+
+
+const routes=[
+
+"/api/checkout",
+
+"/checkout",
+
+"/api/pay",
+
+"/pay",
+
+"/api/payment",
+
+"/payment",
+
+"/api/create-checkout",
+
+"/create-checkout"
+
+];
+
+
+const results=[];
+
+
+for(const route of routes){
+
+const result=
+await testRoute(route);
+
+results.push(result);
+
+
+output.textContent +=
+"\n================================\n"+
+"ROUTE: "+result.route+
+"\nSTATUS: "+(result.status || "ERROR")+
+"\n\n"+
+(result.body || result.error || "")+
+"\n";
+
+
+/*
+Stop if a real checkout response
+is found.
+*/
+
+if(
+result.status &&
+result.status>=200 &&
+result.status<300
+){
+
+status.innerHTML=
+'<p class="ok">✅ Possible active checkout route found: '+
+escapeHtml(route)+
+'</p>';
+
+break;
+
+}
+
+}
+
+
+console.log(
+"Payment route test results:",
+results
+);
+
+
+button.disabled=false;
+
+button.textContent=
+"🔍 Test Payment Routes";
+
+}
+
 
 function escapeHtml(text){
 
-  return String(text)
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
+return String(text)
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
 
 }
 
