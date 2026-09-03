@@ -256,22 +256,6 @@ font-weight:800;
 margin-top:6px
 }
 
-.listen{
-margin-top:9px;
-border:0;
-background:var(--soft);
-color:var(--b);
-padding:7px 10px;
-border-radius:7px;
-font-size:11px;
-font-weight:800;
-cursor:pointer
-}
-
-.listen:hover{
-background:#e1ebff
-}
-
 .loading,
 .error{
 max-width:700px;
@@ -461,7 +445,7 @@ font-size:11px;
 color:#d0d5dd
 }
 
-/* WHATSAPP */
+/* WHATSAPP ONLY */
 
 .whatsapp{
 position:fixed;
@@ -626,7 +610,7 @@ Visit CreateLK Shop →
 </section>
 
 
-<!-- DAILY FREE LESSONS -->
+<!-- DAILY LESSONS -->
 
 <section class="daily">
 
@@ -660,7 +644,7 @@ Please try again later.
 </section>
 
 
-<!-- LEARNING BENEFITS -->
+<!-- FEATURES -->
 
 <section class="features">
 
@@ -671,7 +655,7 @@ Please try again later.
 <h2>Learn English Through Daily Practice</h2>
 
 <p>
-Simple practice to help you understand, listen and speak.
+Simple practice to help you understand and speak.
 </p>
 
 </div>
@@ -693,12 +677,12 @@ Learn practical English with Tamil and Sinhala support.
 
 <div class="feature">
 
-<div class="feature-icon">🎧</div>
+<div class="feature-icon">📖</div>
 
-<h3>Listen</h3>
+<h3>Practice</h3>
 
 <p>
-Listen to English pronunciation and become familiar with natural speech.
+Study useful sentences and real-life conversations every day.
 </p>
 
 </div>
@@ -763,7 +747,6 @@ More daily English practice for learners who want to keep improving.
 <div>✓ <strong>10 lessons every day</strong></div>
 <div>✓ Tamil + Sinhala support</div>
 <div>✓ Real-life English conversations</div>
-<div>✓ English pronunciation practice</div>
 <div>✓ Daily spoken English practice</div>
 
 </div>
@@ -783,7 +766,7 @@ Login to continue to Premium.
 </section>
 
 
-<!-- STUDENTS / SCHOOLS -->
+<!-- STUDENTS -->
 
 <section class="school">
 
@@ -857,55 +840,38 @@ aria-label="WhatsApp">
 
 <script>
 
-const API=
+const API =
 "https://spokenlessons.createlk.workers.dev";
 
-const $=
-id=>document.getElementById(id);
+const $ =
+id => document.getElementById(id);
 
-const esc=
-s=>String(s||"")
+const esc =
+s => String(s || "")
 .replace(/&/g,"&amp;")
 .replace(/</g,"&lt;")
 .replace(/>/g,"&gt;")
 .replace(/"/g,"&quot;")
 .replace(/'/g,"&#039;");
 
-const field=
-(x,a,b,c)=>
-x?.[a]||x?.[b]||x?.[c]||"";
+const field =
+(x,a,b,c) =>
+x?.[a] || x?.[b] || x?.[c] || "";
 
 
-function speak(text){
-
-if(!("speechSynthesis" in window))
-return;
-
-speechSynthesis.cancel();
-
-const v=
-new SpeechSynthesisUtterance(text);
-
-v.lang="en-US";
-v.rate=.9;
-
-speechSynthesis.speak(v);
-
-}
-
-
-async function load(){
+async function loadLessons(){
 
 try{
 
-const d=new Date();
+const d = new Date();
 
-const md=
-String(d.getMonth()+1).padStart(2,"0")+"-"+
+const monthDay =
+String(d.getMonth()+1).padStart(2,"0") +
+"-" +
 String(d.getDate()).padStart(2,"0");
 
 
-$("date").textContent=
+$("date").textContent =
 d.toLocaleDateString(
 "en-US",
 {
@@ -916,61 +882,66 @@ year:"numeric"
 );
 
 
-const r=
+const response =
 await fetch(
-API+"/api/today?month_day="+md,
+API +
+"/api/today?month_day=" +
+monthDay,
 {
 cache:"no-store"
 }
 );
 
 
-if(!r.ok)
+if(!response.ok){
 throw new Error("API error");
+}
 
 
-const j=
-await r.json();
-
-const data=
-j.lesson||
-j.data||
-j;
+const json =
+await response.json();
 
 
-const items=
-data.dialogues||
-data.conversations||
-data.items||
+const data =
+json.lesson ||
+json.data ||
+json;
+
+
+const items =
+data.dialogues ||
+data.conversations ||
+data.items ||
 [];
 
 
-if(items.length<3)
+if(items.length < 3){
 throw new Error("Not enough lessons");
+}
 
 
-$("lessons").innerHTML=
-items.slice(0,3).map((x,i)=>{
+$("lessons").innerHTML =
+items.slice(0,3).map((item,index)=>{
 
-const t=
+const tamil =
 field(
-x,
+item,
 "tamil",
 "ta",
 "tamil_text"
 );
 
-const s=
+const sinhala =
 field(
-x,
+item,
 "sinhala",
 "si",
 "sinhala_text"
 );
 
-const e=
+const english =
 field(
-x,
+item,
 "english",
 "en",
 "english_text"
@@ -982,33 +953,29 @@ return `
 <article class="card">
 
 <div class="number">
-FREE LESSON ${i+1}
+FREE LESSON ${index + 1}
 </div>
 
-${t?`
-<div class="tamil">
-${esc(t)}
-</div>
-`:""}
+${
+tamil
+?
+`<div class="tamil">${esc(tamil)}</div>`
+:""
+}
 
-${s?`
-<div class="sinhala">
-${esc(s)}
-</div>
-`:""}
+${
+sinhala
+?
+`<div class="sinhala">${esc(sinhala)}</div>`
+:""
+}
 
-${e?`
-<div class="english">
-${esc(e)}
-</div>
-
-<button
-class="listen"
-type="button"
-onclick="speak(${JSON.stringify(e)})">
-🔊 Listen
-</button>
-`:""}
+${
+english
+?
+`<div class="english">${esc(english)}</div>`
+:""
+}
 
 </article>
 
@@ -1017,18 +984,18 @@ onclick="speak(${JSON.stringify(e)})">
 }).join("");
 
 
-$("loading").style.display=
+$("loading").style.display =
 "none";
 
 
-}catch(e){
+}catch(error){
 
-console.error(e);
+console.error(error);
 
-$("loading").style.display=
+$("loading").style.display =
 "none";
 
-$("error").style.display=
+$("error").style.display =
 "block";
 
 }
@@ -1036,7 +1003,7 @@ $("error").style.display=
 }
 
 
-load();
+loadLessons();
 
 </script>
 
