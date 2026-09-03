@@ -313,6 +313,11 @@ color:#fff;
 border:0
 }
 
+.premium-button:disabled{
+opacity:.7;
+cursor:not-allowed
+}
+
 .manual-button{
 background:#fff;
 color:#92400e;
@@ -357,7 +362,8 @@ border:1px solid #fecaca;
 color:#991b1b;
 border-radius:12px;
 padding:13px;
-font-size:13px
+font-size:13px;
+line-height:1.5
 }
 
 .footer{
@@ -394,7 +400,9 @@ h1{font-size:21px}
 <section class="hero">
 <div class="brand">CREATELK ACADEMY</div>
 <h1>🗣️ Daily Spoken English</h1>
-<p class="subtitle">Learn Tamil → English conversations every day.</p>
+<p class="subtitle">
+Learn Tamil → English conversations every day.
+</p>
 <div id="lessonDate" class="date">Loading...</div>
 </section>
 
@@ -403,18 +411,16 @@ h1{font-size:21px}
 <div class="membership-title">⭐ Premium Membership</div>
 <div id="membershipStatus" class="status">Checking...</div>
 </div>
+
 <div id="membershipText" class="membership-text">
 Checking membership...
 </div>
 </section>
 
 <section class="progress-card">
-
 <div class="progress-head">
 <span>🎓 Certificate Progress</span>
-<span id="progressCount" class="progress-count">
-0 / 365
-</span>
+<span id="progressCount" class="progress-count">0 / 365</span>
 </div>
 
 <div class="progress-bar">
@@ -425,7 +431,6 @@ Checking membership...
 <span id="progressPercent">0%</span>
 <span id="progressRemaining">365 remaining</span>
 </div>
-
 </section>
 
 <h2 class="section-title">📖 TODAY'S LESSON</h2>
@@ -458,12 +463,12 @@ onclick="completeLesson()">
 
 <div class="premium-box-text">
 Today's 3 dialogues are free.<br><br>
-Unlock all
-<strong>10 daily spoken English dialogues</strong>
+Unlock all <strong>10 daily spoken English dialogues</strong>
 with Premium.
 </div>
 
 <button
+id="payhereButton"
 class="premium-button"
 type="button"
 onclick="checkout()">
@@ -472,8 +477,10 @@ onclick="checkout()">
 
 <a
 class="manual-button"
-href="/bank.html">
-🏦 Manual Bank Payment
+href="https://creatlk-premium-payments.createlk.workers.dev/"
+target="_blank"
+rel="noopener">
+🏦 Bank Deposit Payment
 </a>
 
 </section>
@@ -482,10 +489,7 @@ href="/bank.html">
 
 <footer class="footer">
 © 2026 CreateLK Academy ·
-<a
-href="https://creatlk.com"
-target="_blank"
-rel="noopener">
+<a href="https://creatlk.com" target="_blank" rel="noopener">
 creatlk.com
 </a>
 </footer>
@@ -502,14 +506,10 @@ const ACCOUNT_API=
 "https://creatlk-auth.createlk.workers.dev";
 
 const PROGRESS_API=
-"https://createlk-365-progress.createlk.workers.dev";
+"https://creatlk-365-progress.createlk.workers.dev";
 
-const STUDENT_KEY=
-"createlk_student";
-
-const LOCAL_KEY=
-"createlk_spoken_completed";
-
+const STUDENT_KEY="createlk_student";
+const LOCAL_KEY="createlk_spoken_completed";
 const TOTAL=365;
 
 let student={};
@@ -519,21 +519,14 @@ let completedToday=false;
 const $=id=>document.getElementById(id);
 
 try{
-student=
-JSON.parse(
+student=JSON.parse(
 localStorage.getItem(STUDENT_KEY)||"{}"
 );
 }catch(e){
 student={};
 }
 
-
-/* =========================
-   STUDENT
-========================= */
-
 function studentId(){
-
 return Number(
 student.id||
 student.database_id||
@@ -541,9 +534,7 @@ student.student_id_number||
 student.student_id||
 0
 );
-
 }
-
 
 async function refreshStudent(){
 
@@ -553,8 +544,7 @@ if(!id)return;
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 ACCOUNT_API+
 "/api/student?id="+
 encodeURIComponent(id),
@@ -568,50 +558,32 @@ Accept:"application/json"
 
 if(!response.ok)return;
 
-const data=
-await response.json();
+const data=await response.json();
 
 if(data.success&&data.student){
 
 student={
 ...student,
-
 id:Number(data.student.id),
-
-student_id:
-Number(data.student.id),
-
-first_name:
-data.student.first_name||"",
-
-last_name:
-data.student.last_name||"",
-
+student_id:Number(data.student.id),
+first_name:data.student.first_name||"",
+last_name:data.student.last_name||"",
 name:
 (data.student.first_name||"")+
 " "+
 (data.student.last_name||""),
-
-email:
-data.student.email||"",
-
-phone:
-data.student.phone||"",
-
+email:data.student.email||"",
+phone:data.student.phone||"",
 membership_status:
-data.student.membership_status||
-"FREE",
-
+data.student.membership_status||"FREE",
 membership_expiry:
-data.student.membership_expiry||
-null
+data.student.membership_expiry||null
 };
 
 localStorage.setItem(
 STUDENT_KEY,
 JSON.stringify(student)
 );
-
 }
 
 }catch(error){
@@ -622,23 +594,15 @@ error
 );
 
 }
-
 }
-
-
-/* =========================
-   MEMBERSHIP
-========================= */
 
 function getExpiry(){
 
-const value=
-student.membership_expiry;
+const value=student.membership_expiry;
 
 if(!value)return NaN;
 
-const text=
-String(value).trim();
+const text=String(value).trim();
 
 if(
 /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
@@ -653,14 +617,11 @@ text.replace(" ","T")+
 }
 
 return new Date(text).getTime();
-
 }
-
 
 function isPremium(){
 
-const status=
-String(
+const status=String(
 student.membership_status||
 student.membershipStatus||
 "FREE"
@@ -670,19 +631,16 @@ student.membershipStatus||
 
 const expiry=getExpiry();
 
-return(
+return (
 status==="PREMIUM"&&
 Number.isFinite(expiry)&&
 expiry>Date.now()
 );
-
 }
-
 
 function updateMembership(){
 
-const premium=
-isPremium();
+const premium=isPremium();
 
 $("membershipStatus").textContent=
 premium?"✓ Premium":"Free";
@@ -701,18 +659,13 @@ premium
 :
 "<strong>Free:</strong> Dialogues 1–3 are free. Upgrade for all 10.";
 
-$("premiumBox")
-.classList
-.toggle("hidden",premium);
+$("premiumBox").classList.toggle(
+"hidden",
+premium
+);
 
 return premium;
-
 }
-
-
-/* =========================
-   DATE / LESSON DAY
-========================= */
 
 function setupDate(){
 
@@ -728,13 +681,10 @@ year:"numeric"
 
 }
 
-
 function getLessonDay(){
 
 const now=new Date();
-
-const start=
-new Date(
+const start=new Date(
 now.getFullYear(),
 0,
 1
@@ -744,13 +694,6 @@ let day=
 Math.floor(
 (now-start)/86400000
 )+1;
-
-/*
-Remove February 29
-from leap years so the
-course remains exactly
-365 days.
-*/
 
 if(
 new Date(
@@ -767,13 +710,7 @@ return Math.min(
 365,
 Math.max(1,day)
 );
-
 }
-
-
-/* =========================
-   DIALOGUE HELPERS
-========================= */
 
 const ta=x=>
 x.tamil||
@@ -799,7 +736,6 @@ x.answer_english||
 x.text_english||
 "";
 
-
 function esc(x){
 
 return String(x??"")
@@ -810,11 +746,6 @@ return String(x??"")
 .replace(/'/g,"&#039;");
 
 }
-
-
-/* =========================
-   VOICE
-========================= */
 
 function listenEnglish(text){
 
@@ -836,13 +767,7 @@ voice.lang="en-US";
 voice.rate=.9;
 
 speechSynthesis.speak(voice);
-
 }
-
-
-/* =========================
-   CARD
-========================= */
 
 function createCard(item,index){
 
@@ -867,55 +792,48 @@ DIALOGUE ${index+1}
 ${esc(tamil)}
 </div>
 
-${sinhala?
-`<div class="sinhala">
-${esc(sinhala)}
-</div>`
-:""}
+${
+sinhala
+?
+`<div class="sinhala">${esc(sinhala)}</div>`
+:
+""
+}
 
 <div class="english">
 ${esc(english)}
 </div>
 
-${english?
-`<button
-type="button"
-class="listen">
+${
+english
+?
+`<button type="button" class="listen">
 🔊 Listen
 </button>`
-:""}
+:
+""
+}
 
 <span class="badge ${
-index<3?
-"free-badge":
-"premium-badge"
+index<3
+?"free-badge"
+:"premium-badge"
 }">
-${
-index<3?
-"✓ FREE":
-"⭐ PREMIUM"
-}
+${index<3?"✓ FREE":"⭐ PREMIUM"}
 </span>
+
 `;
 
 const button=
 card.querySelector(".listen");
 
 if(button){
-
-button.onclick=()=>
-listenEnglish(english);
-
+button.onclick=
+()=>listenEnglish(english);
 }
 
 return card;
-
 }
-
-
-/* =========================
-   NORMALIZE API RESPONSE
-========================= */
 
 function normalize(json){
 
@@ -939,11 +857,8 @@ return json.lessons;
 if(
 json.lesson&&
 typeof json.lesson==="object"
-){
-
+)
 return normalize(json.lesson);
-
-}
 
 if(json.data){
 
@@ -980,11 +895,8 @@ json.tamil||
 json.english||
 json.ta||
 json.en
-){
-
+)
 return [json];
-
-}
 
 if(json.success===false){
 
@@ -1001,13 +913,7 @@ json.error||
 throw new Error(
 "No dialogues were returned by Cloudflare."
 );
-
 }
-
-
-/* =========================
-   LOCAL COMPLETION
-========================= */
 
 function localCompleted(){
 
@@ -1021,19 +927,15 @@ LOCAL_KEY
 );
 
 return Array.isArray(list)
-?
-list.map(Number)
-:
-[];
+?list.map(Number)
+:[];
 
 }catch(e){
 
 return[];
 
 }
-
 }
-
 
 function saveLocal(day){
 
@@ -1053,18 +955,11 @@ JSON.stringify(
 );
 
 }
-
 }
-
-
-/* =========================
-   PROGRESS DISPLAY
-========================= */
 
 function showProgress(number){
 
-number=
-Math.min(
+number=Math.min(
 TOTAL,
 Math.max(
 0,
@@ -1092,13 +987,7 @@ number>=TOTAL
 "🎓 Certificate ready"
 :
 `${TOTAL-number} remaining`;
-
 }
-
-
-/* =========================
-   MARK COMPLETE
-========================= */
 
 function markComplete(){
 
@@ -1109,20 +998,12 @@ $("completeButton").disabled=true;
 $("completeButton").textContent=
 "✓ Today's Lesson Completed";
 
-$("completeButton")
-.classList
-.add("done");
+$("completeButton").classList.add("done");
 
-$("completeButton")
-.classList
-.remove("hidden");
-
+$("completeButton").classList.remove(
+"hidden"
+);
 }
-
-
-/* =========================
-   LOAD PROGRESS
-========================= */
 
 async function loadProgress(){
 
@@ -1135,13 +1016,11 @@ localCompleted().length
 );
 
 return;
-
 }
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 PROGRESS_API+
 "/api/progress?student_id="+
 encodeURIComponent(id),
@@ -1153,23 +1032,28 @@ Accept:"application/json"
 }
 );
 
-if(!response.ok)
+if(!response.ok){
+
 throw new Error(
 "Progress HTTP "+
 response.status
 );
 
+}
+
 const data=
 await response.json();
 
-if(!data.success)
+if(!data.success){
+
 throw new Error(
 data.error||
 "Progress request failed"
 );
 
-const completed=
-Number(
+}
+
+const completed=Number(
 data.completed_lessons||
 data.completed||
 data.lessons_completed||
@@ -1186,28 +1070,24 @@ data.days_completed||
 
 if(
 Array.isArray(days)&&
-days.map(Number)
-.includes(currentLessonDay)
+days.map(Number).includes(
+currentLessonDay
+)
 ){
-
 markComplete();
-
 }
 
 if(
 data.completed_today===true||
 data.today_completed===true
 ){
-
 markComplete();
-
 }
 
 if(completed>=TOTAL){
 
 location.href=
 "certificate.html";
-
 }
 
 }catch(error){
@@ -1220,41 +1100,31 @@ error
 const local=
 localCompleted();
 
-showProgress(
-local.length
-);
+showProgress(local.length);
 
 if(
-local.includes(currentLessonDay)
+local.includes(
+currentLessonDay
+)
 ){
-
 markComplete();
-
 }
 
 }
-
 }
-
-
-/* =========================
-   SAVE COMPLETE
-   API FORMAT UNCHANGED
-========================= */
 
 async function completeLesson(){
 
-if(completedToday)
-return;
+if(completedToday)return;
 
 const id=studentId();
 
 if(!id){
 
-location.href="login.html";
+location.href=
+"login.html";
 
 return;
-
 }
 
 const button=
@@ -1267,8 +1137,7 @@ button.textContent=
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 PROGRESS_API+"/api/complete",
 {
 method:"POST",
@@ -1286,12 +1155,6 @@ Number(currentLessonDay)
 }
 );
 
-/*
-Read response as text first.
-This gives a useful error if the
-Worker returns non-JSON.
-*/
-
 const raw=
 await response.text();
 
@@ -1300,8 +1163,10 @@ let data={};
 try{
 
 data=
-raw?
-JSON.parse(raw):
+raw
+?
+JSON.parse(raw)
+:
 {};
 
 }catch(e){
@@ -1333,10 +1198,6 @@ data.message||
 
 }
 
-/*
-Successful save
-*/
-
 saveLocal(
 currentLessonDay
 );
@@ -1357,7 +1218,9 @@ button.disabled=false;
 button.textContent=
 "✅ Complete Today's Lesson";
 
-button.classList.remove("done");
+button.classList.remove(
+"done"
+);
 
 if(error instanceof TypeError){
 
@@ -1376,40 +1239,32 @@ error.message||
 }
 
 }
-
 }
 
-
-/* =========================
-   LOAD TODAY'S LESSON
-========================= */
-
 async function loadLesson(){
-
-setupDate();
 
 currentLessonDay=
 getLessonDay();
 
-const premium=
+setupDate();
+
 updateMembership();
 
-try{
-
-const now=
-new Date();
+const now=new Date();
 
 const monthDay=
 String(
 now.getMonth()+1
-).padStart(2,"0")+
+).padStart(2,"0")
++
 "-"+
 String(
 now.getDate()
 ).padStart(2,"0");
 
-const response=
-await fetch(
+try{
+
+const response=await fetch(
 LESSON_API+
 "/api/today?month_day="+
 encodeURIComponent(monthDay),
@@ -1424,8 +1279,8 @@ Accept:"application/json"
 if(!response.ok){
 
 throw new Error(
-"Lesson service returned HTTP "+
-response.status+"."
+"Lesson HTTP "+
+response.status
 );
 
 }
@@ -1444,47 +1299,40 @@ throw new Error(
 
 }
 
-const grid=
-$("lessonGrid");
+const premium=
+updateMembership();
 
-grid.innerHTML="";
-
-const maximum=
-premium
-?
-Math.min(10,dialogues.length)
-:
-3;
-
-for(
-let i=0;
-i<maximum;
-i++
-){
-
-grid.appendChild(
-createCard(
-dialogues[i],
-i
-)
+const visible=
+dialogues.slice(
+0,
+premium?10:3
 );
 
+$("lessonGrid").innerHTML="";
+
+visible.forEach(
+(item,index)=>{
+$("lessonGrid").appendChild(
+createCard(item,index)
+);
 }
+);
 
-$("loading")
-.classList
-.add("hidden");
+$("loading").classList.add(
+"hidden"
+);
 
-$("error")
-.classList
-.add("hidden");
+$("error").classList.add(
+"hidden"
+);
 
-grid.classList
-.remove("hidden");
+$("lessonGrid").classList.remove(
+"hidden"
+);
 
-$("completeButton")
-.classList
-.remove("hidden");
+$("completeButton").classList.remove(
+"hidden"
+);
 
 await loadProgress();
 
@@ -1495,25 +1343,23 @@ console.error(
 error
 );
 
-$("loading")
-.classList
-.add("hidden");
+$("loading").classList.add(
+"hidden"
+);
 
 $("error").textContent=
-"⚠️ "+error.message;
+error.message||
+"Unable to load today's lesson.";
 
-$("error")
-.classList
-.remove("hidden");
+$("error").classList.remove(
+"hidden"
+);
 
 }
-
 }
 
 
-/* =========================
-   PAYMENT
-========================= */
+/* PAYHERE CHECKOUT WITH ERROR HANDLING */
 
 async function checkout(){
 
@@ -1521,25 +1367,48 @@ const id=studentId();
 
 if(!id){
 
-location.href="login.html";
+alert(
+"Please log in before making a payment."
+);
+
+location.href=
+"login.html";
 
 return;
+}
 
+const button=
+$("payhereButton");
+
+const originalText=
+button
+?
+button.textContent
+:
+"💳 Online Payment — LKR 999/-";
+
+if(button){
+
+button.disabled=true;
+
+button.textContent=
+"⏳ Connecting to payment...";
 }
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 PAYMENT+"/api/checkout",
 {
 method:"POST",
 headers:{
 "Content-Type":
+"application/json",
+"Accept":
 "application/json"
 },
 body:JSON.stringify({
-student_id:id
+student_id:Number(id)
 })
 }
 );
@@ -1547,13 +1416,55 @@ student_id:id
 const raw=
 await response.text();
 
-if(!response.ok){
-
-throw new Error(
-"Unable to open PayHere."
+console.log(
+"PayHere HTTP Status:",
+response.status
 );
 
+console.log(
+"PayHere Response:",
+raw
+);
+
+if(!response.ok){
+
+let message=
+"Payment server error.";
+
+try{
+
+const errorData=
+raw
+?
+JSON.parse(raw)
+:
+{};
+
+message=
+errorData.error||
+errorData.message||
+message;
+
+}catch(e){}
+
+throw new Error(
+message+
+" (HTTP "+
+response.status+
+")"
+);
 }
+
+if(!raw){
+
+throw new Error(
+"Payment server returned an empty response."
+);
+}
+
+/*
+PayHere HTML form response
+*/
 
 if(raw.includes("<form")){
 
@@ -1564,7 +1475,6 @@ document.write(raw);
 document.close();
 
 return;
-
 }
 
 let data;
@@ -1576,43 +1486,85 @@ JSON.parse(raw);
 
 }catch(e){
 
-throw new Error(
-"Invalid payment response."
+console.error(
+"Invalid PayHere response:",
+raw
 );
 
+throw new Error(
+"Payment server returned an invalid response."
+);
 }
 
-if(
-data.url||
-data.checkout_url
-){
+if(data.success===false){
 
-location.href=
+throw new Error(
+data.error||
+data.message||
+"Payment request was rejected."
+);
+}
+
+const url=
 data.url||
 data.checkout_url;
 
-return;
+if(!url){
 
-}
+console.error(
+"Missing payment URL:",
+data
+);
 
 throw new Error(
-"Invalid payment response."
+data.error||
+"Payment URL was not returned by the server."
 );
+}
+
+console.log(
+"Redirecting to PayHere:",
+url
+);
+
+location.href=url;
 
 }catch(error){
 
-console.error(error);
+console.error(
+"PayHere Checkout Error:",
+error
+);
 
-alert(error.message);
+let message;
+
+if(error instanceof TypeError){
+
+message=
+"Unable to connect to the PayHere payment server.\n\n"+
+"Please check your internet connection and try again.";
+}else{
+
+message=
+error.message||
+"Unable to start payment.";
+}
+
+alert(message);
+
+}finally{
+
+if(button){
+
+button.disabled=false;
+
+button.textContent=
+originalText;
 
 }
 
 }
-
-
-/* =========================
-   START
-========================= */
+}
 
 async function start(){
 
