@@ -4,30 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CreateLK Digital Learning Shop</title>
-
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial;background:#f5f7fb;color:#222}
-header{background:#111827;color:white;padding:15px}
-nav{max-width:900px;margin:auto;display:flex;gap:18px;align-items:center;justify-content:space-between}
-nav button{background:none;border:0;color:white;cursor:pointer}
+header{background:#111827;color:#fff;padding:15px}
+nav{max-width:900px;margin:auto;display:flex;justify-content:space-between;align-items:center}
+nav button{background:none;color:#fff;border:0;cursor:pointer;margin-left:10px}
 main{max-width:900px;margin:auto;padding:25px 15px}
-h1{text-align:center}
-.box{background:white;padding:20px;border-radius:12px;margin:15px 0;box-shadow:0 2px 8px #ddd}
+.box,.card{background:#fff;padding:20px;border-radius:12px;margin:15px 0;box-shadow:0 2px 8px #ddd}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}
 input,select{width:100%;padding:11px;margin:6px 0 12px;border:1px solid #ccc;border-radius:7px}
 button{padding:10px 15px;border:0;border-radius:7px;cursor:pointer}
-.primary{background:#2563eb;color:white}
-.danger{background:#dc2626;color:white}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}
-.card{background:white;padding:18px;border-radius:10px;box-shadow:0 2px 8px #ddd}
-.price{font-size:20px;font-weight:bold;margin:12px 0}
-.msg{padding:10px;border-radius:7px;margin:10px 0}
-.error{background:#fee2e2;color:#991b1b}
-.success{background:#dcfce7;color:#166534}
+.primary{background:#2563eb;color:#fff}
 .hidden{display:none!important}
-.status{font-size:12px;font-weight:bold}
-.lesson{line-height:1.7}
-footer{text-align:center;background:#111827;color:white;padding:20px;margin-top:30px}
+.msg{padding:10px;margin:10px 0;border-radius:7px;background:#dcfce7}
+.error{background:#fee2e2;color:#991b1b}
+.price{font-size:20px;font-weight:bold;margin:12px 0}
+footer{text-align:center;background:#111827;color:#fff;padding:20px;margin-top:30px}
 </style>
 </head>
 
@@ -37,9 +30,9 @@ footer{text-align:center;background:#111827;color:white;padding:20px;margin-top:
 <nav>
 <b>CreateLK</b>
 <div>
-<button onclick="shop()">Shop</button>
+<button onclick="show('shop')">Shop</button>
 <button onclick="account()">Account</button>
-<button id="loginBtn" onclick="loginBox()">Login</button>
+<button id="loginBtn" onclick="show('login')">Login</button>
 <button id="logoutBtn" class="hidden" onclick="logout()">Logout</button>
 </div>
 </nav>
@@ -48,21 +41,18 @@ footer{text-align:center;background:#111827;color:white;padding:20px;margin-top:
 <main>
 
 <h1>Digital Learning Shop</h1>
-<p style="text-align:center">
-Quality resources for learning, practice and exam preparation.
-</p>
+<p style="text-align:center">Quality resources for learning, practice and exam preparation.</p>
 
 <div id="msg"></div>
 
 <!-- LOGIN -->
-<div id="login" class="box hidden">
-
+<section id="login" class="box hidden">
 <h2>Login</h2>
 
 <input id="le" type="email" placeholder="Email">
 <input id="lp" type="password" placeholder="Password">
 
-<button class="primary" onclick="doLogin()">Login</button>
+<button class="primary" onclick="login()">Login</button>
 
 <hr>
 
@@ -75,46 +65,41 @@ Quality resources for learning, practice and exam preparation.
 <input id="rp" type="password" placeholder="Password">
 
 <button class="primary" onclick="register()">Create Account</button>
-
-</div>
+</section>
 
 <!-- SHOP -->
-<div id="shop">
+<section id="shop">
 
 <div class="box">
 <input id="search" placeholder="Search learning resources..." oninput="render()">
+
 <select id="subject" onchange="render()">
 <option value="">All Subjects</option>
 </select>
 </div>
 
 <div id="count"></div>
-<br>
 <div id="products" class="grid">Loading...</div>
 
-</div>
+</section>
 
 <!-- ACCOUNT -->
-<div id="account" class="box hidden">
+<section id="account" class="box hidden">
 
 <h2>My Account</h2>
-
 <div id="userInfo"></div>
 
 <h2>My Learning Resources</h2>
-
 <div id="purchases">Loading...</div>
 
-</div>
+</section>
 
 <!-- LESSON -->
-<div id="lesson" class="box hidden"></div>
+<section id="lesson" class="box hidden"></section>
 
 </main>
 
-<footer>
-CreateLK Digital Learning Shop
-</footer>
+<footer>CreateLK Digital Learning Shop</footer>
 
 <script>
 
@@ -126,66 +111,32 @@ let customer=null;
 
 const $=id=>document.getElementById(id);
 
-function msg(text,error=false){
-  $("msg").innerHTML=
-    `<div class="msg ${error?"error":"success"}">${text}</div>`;
-}
-
 function token(){
   return localStorage.getItem("createlk_token");
 }
 
 function esc(x){
   return String(x??"")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;");
+  .replace(/&/g,"&amp;")
+  .replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;");
+}
+
+function message(text,error=false){
+  $("msg").innerHTML=
+    `<div class="msg ${error?"error":""}">${esc(text)}</div>`;
+}
+
+function show(id){
+  ["login","shop","account","lesson"].forEach(x=>
+    $(x).classList.add("hidden")
+  );
+  $(id).classList.remove("hidden");
 }
 
 
-/* NAVIGATION */
-
-function hideAll(){
-  $("login").classList.add("hidden");
-  $("shop").classList.add("hidden");
-  $("account").classList.add("hidden");
-  $("lesson").classList.add("hidden");
-}
-
-function shop(){
-  hideAll();
-  $("shop").classList.remove("hidden");
-}
-
-function loginBox(){
-  hideAll();
-  $("login").classList.remove("hidden");
-}
-
-async function account(){
-  hideAll();
-  $("account").classList.remove("hidden");
-
-  if(!await auth()){
-    $("userInfo").innerHTML=
-      `Please login.<br><br>
-       <button class="primary" onclick="loginBox()">Login</button>`;
-    $("purchases").innerHTML="";
-    return;
-  }
-
-  $("userInfo").innerHTML=`
-    <p><b>Name:</b> ${esc(customer.first_name)} ${esc(customer.last_name)}</p>
-    <p><b>Email:</b> ${esc(customer.email)}</p>
-    <p><b>Phone:</b> ${esc(customer.phone||"-")}</p>
-  `;
-
-  loadPurchases();
-}
-
-
-/* AUTH */
+/* AUTH CHECK */
 
 async function auth(){
 
@@ -193,7 +144,7 @@ async function auth(){
 
   if(!t){
     customer=null;
-    updateNav();
+    nav();
     return false;
   }
 
@@ -209,22 +160,20 @@ async function auth(){
     if(!r.ok||!d.success){
       localStorage.removeItem("createlk_token");
       customer=null;
-      updateNav();
+      nav();
       return false;
     }
 
     customer=d.customer;
-    updateNav();
+    nav();
     return true;
 
-  }catch{
-    customer=null;
-    updateNav();
+  }catch(e){
     return false;
   }
 }
 
-function updateNav(){
+function nav(){
   $("loginBtn").classList.toggle("hidden",!!customer);
   $("logoutBtn").classList.toggle("hidden",!customer);
 }
@@ -232,15 +181,15 @@ function updateNav(){
 function logout(){
   localStorage.removeItem("createlk_token");
   customer=null;
-  updateNav();
-  msg("Logged out.");
-  shop();
+  nav();
+  message("Logged out.");
+  show("shop");
 }
 
 
 /* LOGIN */
 
-async function doLogin(){
+async function login(){
 
   try{
 
@@ -261,13 +210,13 @@ async function doLogin(){
     localStorage.setItem("createlk_token",d.token);
 
     customer=d.customer;
-    updateNav();
+    nav();
 
-    msg("Login successful.");
-    account();
+    message("Login successful.");
+    show("shop");
 
   }catch(e){
-    msg(e.message,true);
+    message(e.message,true);
   }
 }
 
@@ -298,13 +247,13 @@ async function register(){
     localStorage.setItem("createlk_token",d.token);
 
     customer=d.customer;
-    updateNav();
+    nav();
 
-    msg("Account created.");
-    account();
+    message("Account created.");
+    show("shop");
 
   }catch(e){
-    msg(e.message,true);
+    message(e.message,true);
   }
 }
 
@@ -315,67 +264,54 @@ async function loadProducts(){
 
   try{
 
-    const r=await fetch(API+"/products",{
-      cache:"no-store"
-    });
-
+    const r=await fetch(API+"/products",{cache:"no-store"});
     const d=await r.json();
 
-    if(!d.success)
-      throw Error(d.error);
+    if(!d.success) throw Error(d.error);
 
     products=d.products||[];
 
     const subjects=[
-      ...new Set(
-        products
-        .map(x=>x.subject)
-        .filter(Boolean)
-      )
+      ...new Set(products.map(p=>p.subject).filter(Boolean))
     ];
 
-    subjects.forEach(x=>{
+    subjects.forEach(s=>{
       $("subject").innerHTML+=
-        `<option value="${esc(x)}">${esc(x)}</option>`;
+        `<option value="${esc(s)}">${esc(s)}</option>`;
     });
 
     render();
 
   }catch(e){
 
-    $("products").innerHTML=
-      `<p>Unable to load resources.</p>`;
+    $("products").innerHTML="Unable to load resources.";
   }
 }
 
-
 function render(){
 
-  const q=$("search").value.toLowerCase();
+  const q=$("search").value.trim().toLowerCase();
   const s=$("subject").value.toLowerCase();
 
   const list=products.filter(p=>
-    (!q||
-      String(p.title).toLowerCase().includes(q)||
+    (!q ||
+      String(p.title).toLowerCase().includes(q) ||
       String(p.description||"").toLowerCase().includes(q)
-    )&&
-    (!s||
+    ) &&
+    (!s ||
       String(p.subject||"").toLowerCase()===s
     )
   );
 
   $("count").textContent=
-    list.length+
-    (list.length===1?" resource":" resources");
+    `${list.length} resource${list.length===1?"":"s"}`;
 
   $("products").innerHTML=list.length
     ?list.map(p=>`
 
       <div class="card">
 
-        <small>
-          CreateLK • ${esc(p.subject||"Learning")}
-        </small>
+        <small>CreateLK • ${esc(p.subject||"Learning")}</small>
 
         <h3>${esc(p.title)}</h3>
 
@@ -396,7 +332,7 @@ function render(){
       </div>
 
     `).join("")
-    :"<p>No resources found.</p>";
+    :"No resources found.";
 }
 
 
@@ -404,15 +340,11 @@ function render(){
 
 async function buy(id,button){
 
-  if(!await auth()){
+  const t=token();
 
-    loginBox();
-
-    msg(
-      "Please login or create an account before purchasing.",
-      true
-    );
-
+  if(!t){
+    show("login");
+    message("Please login first.",true);
     return;
   }
 
@@ -423,12 +355,10 @@ async function buy(id,button){
 
     const r=await fetch(PAY+"/checkout",{
       method:"POST",
-
       headers:{
         "Content-Type":"application/json",
-        Authorization:"Bearer "+token()
+        "Authorization":"Bearer "+t
       },
-
       body:JSON.stringify({
         product_id:Number(id)
       })
@@ -437,9 +367,7 @@ async function buy(id,button){
     const d=await r.json();
 
     if(!r.ok||!d.success)
-      throw Error(
-        d.error||"Unable to start payment."
-      );
+      throw Error(d.error||"Unable to start payment.");
 
     const form=document.createElement("form");
 
@@ -447,15 +375,11 @@ async function buy(id,button){
     form.action="https://www.payhere.lk/pay/checkout";
 
     Object.entries(d.checkout).forEach(([k,v])=>{
-
-      const i=document.createElement("input");
-
-      i.type="hidden";
-      i.name=k;
-      i.value=v??"";
-
-      form.appendChild(i);
-
+      const input=document.createElement("input");
+      input.type="hidden";
+      input.name=k;
+      input.value=v??"";
+      form.appendChild(input);
     });
 
     document.body.appendChild(form);
@@ -465,9 +389,39 @@ async function buy(id,button){
 
     button.disabled=false;
     button.textContent="Buy Now";
-
-    msg(e.message,true);
+    message(e.message,true);
   }
+}
+
+
+/* ACCOUNT */
+
+async function account(){
+
+  show("account");
+
+  if(!await auth()){
+
+    $("userInfo").innerHTML=
+      `Please login.<br><br>
+       <button class="primary" onclick="show('login')">
+       Login
+       </button>`;
+
+    $("purchases").innerHTML="";
+    return;
+  }
+
+  $("userInfo").innerHTML=`
+    <p><b>Name:</b>
+    ${esc(customer.first_name)} ${esc(customer.last_name)}</p>
+
+    <p><b>Email:</b> ${esc(customer.email)}</p>
+
+    <p><b>Phone:</b> ${esc(customer.phone||"-")}</p>
+  `;
+
+  loadPurchases();
 }
 
 
@@ -478,51 +432,33 @@ async function loadPurchases(){
   try{
 
     const r=await fetch(API+"/my-purchases",{
-      headers:{
-        Authorization:"Bearer "+token()
-      },
+      headers:{Authorization:"Bearer "+token()},
       cache:"no-store"
     });
 
     const d=await r.json();
 
-    if(!d.success)
-      throw Error(d.error);
+    if(!d.success) throw Error(d.error);
 
     const list=d.purchases||[];
 
-    if(!list.length){
-      $("purchases").innerHTML=
-        "<p>No purchases yet.</p>";
-      return;
-    }
-
-    $("purchases").innerHTML=list.map(p=>{
-
-      const status=
-        String(p.status||"").toUpperCase();
-
-      return `
+    $("purchases").innerHTML=list.length
+      ?list.map(p=>`
 
         <div class="box">
 
           <b>${esc(p.title)}</b>
 
-          <p>
-            LKR ${Number(p.amount||0).toFixed(2)}
-          </p>
+          <p>LKR ${Number(p.amount||0).toFixed(2)}</p>
 
-          <p class="status">
-            Status: ${esc(status)}
-          </p>
+          <p>Status: ${esc(p.status)}</p>
 
           ${
-            status==="PAID"
+            p.status==="PAID"
             ?`
               <button
                 class="primary"
-                onclick="lesson(${Number(p.product_id)})"
-              >
+                onclick="lesson(${Number(p.product_id)})">
                 Open Lesson
               </button>
             `
@@ -531,14 +467,12 @@ async function loadPurchases(){
 
         </div>
 
-      `;
-
-    }).join("");
+      `).join("")
+      :"No purchases yet.";
 
   }catch(e){
 
-    $("purchases").innerHTML=
-      "<p>Unable to load purchases.</p>";
+    $("purchases").innerHTML="Unable to load purchases.";
   }
 }
 
@@ -548,35 +482,24 @@ async function loadPurchases(){
 async function lesson(id){
 
   if(!await auth()){
-    loginBox();
+    show("login");
     return;
   }
 
-  hideAll();
-
-  $("lesson").classList.remove("hidden");
-
-  $("lesson").innerHTML=
-    "Loading lesson...";
+  show("lesson");
+  $("lesson").innerHTML="Loading lesson...";
 
   try{
 
-    const r=await fetch(
-      API+"/content/"+Number(id),
-      {
-        headers:{
-          Authorization:"Bearer "+token()
-        },
-        cache:"no-store"
-      }
-    );
+    const r=await fetch(API+"/content/"+Number(id),{
+      headers:{Authorization:"Bearer "+token()},
+      cache:"no-store"
+    });
 
     const d=await r.json();
 
     if(!r.ok||!d.success)
-      throw Error(
-        d.error||"Unable to open lesson."
-      );
+      throw Error(d.error||"Unable to open lesson.");
 
     const p=d.product;
 
@@ -584,26 +507,24 @@ async function lesson(id){
 
       <h2>${esc(p.title)}</h2>
 
-      <small>${esc(p.subject||"")}</small>
+      <p><b>${esc(p.subject||"")}</b></p>
 
-      <div style="margin-top:20px">
-        ${p.content||
-          "<p>Lesson content is not available.</p>"}
+      <div class="lesson">
+        ${p.content||"Lesson content unavailable."}
       </div>
 
       <br>
 
-      <button onclick="account()">
-        Back to Account
-      </button>
+      <button onclick="account()">Back to Account</button>
 
     `;
 
   }catch(e){
 
-    $("lesson").innerHTML=
-      `<p>${esc(e.message)}</p>
-       <button onclick="account()">Back</button>`;
+    $("lesson").innerHTML=`
+      <p>${esc(e.message)}</p>
+      <button onclick="account()">Back</button>
+    `;
   }
 }
 
@@ -611,11 +532,9 @@ async function lesson(id){
 /* START */
 
 (async()=>{
-
   await auth();
   await loadProducts();
-  shop();
-
+  show("shop");
 })();
 
 </script>
