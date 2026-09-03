@@ -1,462 +1,1156 @@
+const PAYHERE_MERCHANT_ID = "257692";
+
+const RETURN_URL =
+  "https://createlk.com/shop.html?payment=success";
+
+const CANCEL_URL =
+  "https://createlk.com/shop.html?payment=cancelled";
+
+const NOTIFY_URL =
+  "https://createlk-payhere.createlk.workers.dev/notify";
+
+
 const CORS = {
   "Access-Control-Allow-Origin": "https://createlk.com",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization"
 };
 
-const RETURN_URL = "https://createlk.com/shop.html?payment=success";
-const CANCEL_URL = "https://createlk.com/shop.html?payment=cancelled";
-const NOTIFY_URL = "https://createlk-payhere.createlk.workers.dev/notify";
 
-const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" }
-  });
-
-const error = (message, status = 400) =>
-  json({ success: false, error: message }, status);
-
-
-/* =========================
-   MD5
-========================= */
-
-function md5(input) {
-  const K = [
-    0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,
-    0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
-    0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,
-    0x6b901122,0xfd987193,0xa679438e,0x49b40821,
-    0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,
-    0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
-    0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,
-    0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
-    0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,
-    0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
-    0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,
-    0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
-    0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,
-    0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
-    0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,
-    0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
-  ];
-
-  const S = [
-    7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
-    5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
-    4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
-    6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21
-  ];
-
-  const bytes = Array.from(
-    unescape(encodeURIComponent(input)),
-    c => c.charCodeAt(0)
-  );
-
-  const len = bytes.length * 8;
-
-  bytes.push(128);
-  while (bytes.length % 64 !== 56) bytes.push(0);
-
-  for (let i = 0; i < 8; i++)
-    bytes.push((len >>> (8 * i)) & 255);
-
-  let a = 0x67452301;
-  let b = 0xefcdab89;
-  let c = 0x98badcfe;
-  let d = 0x10325476;
-
-  const add = (x, y) => (x + y) | 0;
-  const rol = (x, n) => (x << n) | (x >>> (32 - n));
-
-  const cmn = (q, a, b, x, s, t) =>
-    add(rol(add(add(a, q), add(x, t)), s), b);
-
-  const F = (a,b,c,d,x,s,t) =>
-    cmn((b & c) | (~b & d), a,b,x,s,t);
-
-  const G = (a,b,c,d,x,s,t) =>
-    cmn((b & d) | (c & ~d), a,b,x,s,t);
-
-  const H = (a,b,c,d,x,s,t) =>
-    cmn(b ^ c ^ d, a,b,x,s,t);
-
-  const I = (a,b,c,d,x,s,t) =>
-    cmn(c ^ (b | ~d), a,b,x,s,t);
-
-  for (let offset = 0; offset < bytes.length; offset += 64) {
-    const M = new Array(16);
-
-    for (let i = 0; i < 16; i++) {
-      const p = offset + i * 4;
-      M[i] =
-        bytes[p] |
-        (bytes[p + 1] << 8) |
-        (bytes[p + 2] << 16) |
-        (bytes[p + 3] << 24);
-    }
-
-    let A = a, B = b, C = c, D = d;
-
-    for (let i = 0; i < 64; i++) {
-      let fn, g;
-
-      if (i < 16) {
-        fn = F;
-        g = i;
-      } else if (i < 32) {
-        fn = G;
-        g = (5 * i + 1) % 16;
-      } else if (i < 48) {
-        fn = H;
-        g = (3 * i + 5) % 16;
-      } else {
-        fn = I;
-        g = (7 * i) % 16;
+function response(data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        ...CORS,
+        "Content-Type": "application/json"
       }
-
-      const oldD = D;
-      D = C;
-      C = B;
-      B = fn(B, C, D, M[g], S[i], K[i]);
-      A = oldD;
     }
-
-    a = add(a, A);
-    b = add(b, B);
-    c = add(c, C);
-    d = add(d, D);
-  }
-
-  const hex = n =>
-    Array.from({ length: 4 }, (_, i) =>
-      ((n >>> (8 * i)) & 255)
-        .toString(16)
-        .padStart(2, "0")
-    ).join("");
-
-  return (hex(a) + hex(b) + hex(c) + hex(d)).toUpperCase();
+  );
 }
 
 
-/* =========================
-   SESSION
-========================= */
-
-function decodeBase64(text) {
-  text = text.replace(/-/g, "+").replace(/_/g, "/");
-  while (text.length % 4) text += "=";
-  return atob(text);
-}
-
-function base64url(text) {
-  return btoa(text)
+function base64urlEncode(input) {
+  return btoa(
+    String.fromCharCode(
+      ...new Uint8Array(input)
+    )
+  )
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
-    .replace(/=+$/, "");
+    .replace(/=+$/g, "");
 }
 
-async function hmac(text, secret) {
-  if (!secret) throw new Error("SESSION_SECRET is not configured.");
 
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+function base64urlDecode(input) {
+  input = input
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
 
-  const result = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(text)
-  );
+  while (input.length % 4) {
+    input += "=";
+  }
 
-  return base64url(
-    String.fromCharCode(...new Uint8Array(result))
-  );
+  const binary = atob(input);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
 }
 
-async function getCustomer(request, env) {
-  const auth = request.headers.get("Authorization") || "";
 
-  if (!auth.startsWith("Bearer ")) return null;
+async function verifyToken(token, secret) {
+  if (!token || !secret) {
+    return null;
+  }
 
   try {
-    const token = auth.slice(7).trim();
     const parts = token.split(".");
 
-    if (parts.length !== 2) return null;
-
-    const [payload, signature] = parts;
-
-    if (signature !== await hmac(payload, env.SESSION_SECRET))
+    if (parts.length !== 2) {
       return null;
+    }
 
-    const data = JSON.parse(decodeBase64(payload));
+    const encodedPayload = parts[0];
+    const signature = parts[1];
 
-    if (!data.id || !data.exp || Date.now() > Number(data.exp))
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      {
+        name: "HMAC",
+        hash: "SHA-256"
+      },
+      false,
+      ["sign"]
+    );
+
+    const expectedBuffer =
+      await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(encodedPayload)
+      );
+
+    const expectedSignature =
+      base64urlEncode(expectedBuffer);
+
+    if (signature !== expectedSignature) {
       return null;
+    }
 
-    return await env.DB.prepare(`
-      SELECT id, first_name, last_name, email, phone
-      FROM customers
-      WHERE id = ?
-      LIMIT 1
-    `).bind(data.id).first();
+    const payloadBytes =
+      base64urlDecode(encodedPayload);
 
-  } catch {
+    const payload =
+      JSON.parse(
+        new TextDecoder().decode(payloadBytes)
+      );
+
+    if (!payload.exp || Date.now() > payload.exp) {
+      return null;
+    }
+
+    return payload;
+
+  } catch (err) {
+    console.error("Token verification error:", err);
     return null;
   }
 }
 
 
-/* =========================
-   WORKER
-========================= */
+async function getCustomer(request, env) {
+  const auth =
+    request.headers.get("Authorization");
 
-export default {
-  async fetch(request, env) {
+  if (!auth) {
+    return null;
+  }
 
-    if (request.method === "OPTIONS")
-      return new Response(null, { status: 204, headers: CORS });
+  if (!auth.startsWith("Bearer ")) {
+    return null;
+  }
 
-    const path = new URL(request.url).pathname.replace(/\/$/, "");
+  const token =
+    auth.substring(7).trim();
 
-    try {
+  if (!token || !env.SESSION_SECRET) {
+    return null;
+  }
 
-      /* Health */
+  const payload =
+    await verifyToken(
+      token,
+      env.SESSION_SECRET
+    );
 
-      if (path === "") {
-        return json({
-          success: true,
-          service: "CreateLK PayHere",
-          mode: "LIVE",
-          status: "online"
-        });
+  if (!payload) {
+    return null;
+  }
+
+  const userId =
+    payload.user_id || payload.id;
+
+  if (!userId) {
+    return null;
+  }
+
+  try {
+    const customer =
+      await env.DB
+        .prepare(
+          `
+          SELECT
+            id,
+            name,
+            email
+          FROM customers
+          WHERE id = ?
+          LIMIT 1
+          `
+        )
+        .bind(userId)
+        .first();
+
+    return customer || null;
+
+  } catch (err) {
+    console.error(
+      "Customer lookup error:",
+      err
+    );
+
+    return null;
+  }
+}
+
+
+/*
+  MD5 implementation
+*/
+
+function md5(input) {
+
+  function rotateLeft(value, amount) {
+    return (
+      (value << amount) |
+      (value >>> (32 - amount))
+    );
+  }
+
+  function add32(a, b) {
+    return (a + b) | 0;
+  }
+
+  const S = [
+    7, 12, 17, 22,
+    7, 12, 17, 22,
+    7, 12, 17, 22,
+    7, 12, 17, 22,
+
+    5, 9, 14, 20,
+    5, 9, 14, 20,
+    5, 9, 14, 20,
+    5, 9, 14, 20,
+
+    4, 11, 16, 23,
+    4, 11, 16, 23,
+    4, 11, 16, 23,
+    4, 11, 16, 23,
+
+    6, 10, 15, 21,
+    6, 10, 15, 21,
+    6, 10, 15, 21,
+    6, 10, 15, 21
+  ];
+
+  const K = [
+    0xd76aa478, 0xe8c7b756,
+    0x242070db, 0xc1bdceee,
+    0xf57c0faf, 0x4787c62a,
+    0xa8304613, 0xfd469501,
+    0x698098d8, 0x8b44f7af,
+    0xffff5bb1, 0x895cd7be,
+    0x6b901122, 0xfd987193,
+    0xa679438e, 0x49b40821,
+
+    0xf61e2562, 0xc040b340,
+    0x265e5a51, 0xe9b6c7aa,
+    0xd62f105d, 0x02441453,
+    0xd8a1e681, 0xe7d3fbc8,
+    0x21e1cde6, 0xc33707d6,
+    0xf4d50d87, 0x455a14ed,
+    0xa9e3e905, 0xfcefa3f8,
+    0x676f02d9, 0x8d2a4c8a,
+
+    0xfffa3942, 0x8771f681,
+    0x6d9d6122, 0xfde5380c,
+    0xa4beea44, 0x4bdecfa9,
+    0xf6bb4b60, 0xbebfbc70,
+    0x289b7ec6, 0xeaa127fa,
+    0xd4ef3085, 0x04881d05,
+
+    0xd9d4d039, 0xe6db99e5,
+    0x1fa27cf8, 0xc4ac5665,
+    0xf4292244, 0x432aff97,
+    0xab9423a7, 0xfc93a039,
+    0x655b59c3, 0x8f0ccc92,
+
+    0xffeff47d, 0x85845dd1,
+    0x6fa87e4f, 0xfe2ce6e0,
+    0xa3014314, 0x4e0811a1,
+    0xf7537e82, 0xbd3af235,
+    0x2ad7d2bb, 0xeb86d391
+  ];
+
+  const data =
+    Array.from(
+      new TextEncoder().encode(input)
+    );
+
+  const originalLength =
+    data.length;
+
+  data.push(0x80);
+
+  while (data.length % 64 !== 56) {
+    data.push(0);
+  }
+
+  const bitLength =
+    originalLength * 8;
+
+  for (let i = 0; i < 8; i++) {
+    data.push(
+      Math.floor(
+        bitLength /
+        Math.pow(2, 8 * i)
+      ) & 0xff
+    );
+  }
+
+  let A = 0x67452301;
+  let B = 0xefcdab89;
+  let C = 0x98badcfe;
+  let D = 0x10325476;
+
+  for (
+    let offset = 0;
+    offset < data.length;
+    offset += 64
+  ) {
+
+    const M = [];
+
+    for (let i = 0; i < 16; i++) {
+
+      const index =
+        offset + i * 4;
+
+      M[i] =
+        (
+          data[index] |
+          (data[index + 1] << 8) |
+          (data[index + 2] << 16) |
+          (data[index + 3] << 24)
+        ) | 0;
+    }
+
+    let a = A;
+    let b = B;
+    let c = C;
+    let d = D;
+
+    for (let i = 0; i < 64; i++) {
+
+      let F;
+      let g;
+
+      if (i < 16) {
+
+        F =
+          (b & c) |
+          (~b & d);
+
+        g = i;
+
+      } else if (i < 32) {
+
+        F =
+          (d & b) |
+          (~d & c);
+
+        g =
+          (5 * i + 1) % 16;
+
+      } else if (i < 48) {
+
+        F =
+          b ^ c ^ d;
+
+        g =
+          (3 * i + 5) % 16;
+
+      } else {
+
+        F =
+          c ^ (b | ~d);
+
+        g =
+          (7 * i) % 16;
       }
 
+      const temp = d;
 
-      /* Checkout */
+      const sum =
+        add32(
+          add32(a, F),
+          add32(M[g], K[i])
+        );
 
-      if (path === "/checkout" && request.method === "POST") {
+      d = c;
+      c = b;
 
-        const customer = await getCustomer(request, env);
+      b =
+        add32(
+          b,
+          rotateLeft(
+            sum,
+            S[i]
+          )
+        );
 
-        if (!customer)
-          return error("Please login first.", 401);
+      a = temp;
+    }
 
-        let body;
+    A = add32(A, a);
+    B = add32(B, b);
+    C = add32(C, c);
+    D = add32(D, d);
+  }
 
-        try {
-          body = await request.json();
-        } catch {
-          return error("Invalid request.", 400);
+  function wordToHex(word) {
+
+    let output = "";
+
+    for (let i = 0; i < 4; i++) {
+
+      output +=
+        (
+          (word >> (i * 8)) &
+          0xff
+        )
+          .toString(16)
+          .padStart(2, "0");
+    }
+
+    return output;
+  }
+
+  return (
+    wordToHex(A) +
+    wordToHex(B) +
+    wordToHex(C) +
+    wordToHex(D)
+  ).toUpperCase();
+}
+
+
+/* =========================================================
+   WORKER
+   ========================================================= */
+
+export default {
+
+  async fetch(request, env) {
+
+    if (request.method === "OPTIONS") {
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: CORS
+        }
+      );
+    }
+
+    const url =
+      new URL(request.url);
+
+    const path =
+      url.pathname;
+
+
+    /*
+      Health check
+    */
+
+    if (path === "/" || path === "") {
+
+      return response({
+        success: true,
+        service:
+          "CreateLK PayHere Worker",
+        merchant_id:
+          PAYHERE_MERCHANT_ID
+      });
+    }
+
+
+    /*
+      Safe configuration check
+    */
+
+    if (path === "/debug-config") {
+
+      return response({
+
+        success: true,
+
+        merchant_id:
+          PAYHERE_MERCHANT_ID,
+
+        payhere_secret_configured:
+          !!env.PAYHERE_MERCHANT_SECRET,
+
+        session_secret_configured:
+          !!env.SESSION_SECRET,
+
+        database_configured:
+          !!env.DB
+      });
+    }
+
+
+    /*
+      CHECKOUT
+    */
+
+    if (
+      path === "/checkout" &&
+      request.method === "POST"
+    ) {
+
+      try {
+
+        const customer =
+          await getCustomer(
+            request,
+            env
+          );
+
+        if (!customer) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Please login first."
+            },
+            401
+          );
         }
 
-        const productId = Number(body.product_id);
+        if (
+          !env.PAYHERE_MERCHANT_SECRET
+        ) {
 
-        if (!Number.isInteger(productId) || productId <= 0)
-          return error("Product ID is required.", 400);
+          return response(
+            {
+              success: false,
+              error:
+                "PayHere Merchant Secret is not configured."
+            },
+            500
+          );
+        }
 
-        const product = await env.DB.prepare(`
-          SELECT id, title, price
-          FROM products
-          WHERE id = ?
-          AND published = 1
-          LIMIT 1
-        `).bind(productId).first();
+        const body =
+          await request.json();
 
-        if (!product)
-          return error("Product not found.", 404);
+        const productId =
+          body.product_id;
 
-        if (!Number.isFinite(Number(product.price)))
-          return error("Invalid product price.", 500);
+        if (!productId) {
 
-        const existing = await env.DB.prepare(`
-          SELECT id, order_id
-          FROM purchases
-          WHERE customer_id = ?
-          AND product_id = ?
-          AND status = 'PAID'
-          LIMIT 1
-        `).bind(customer.id, productId).first();
+          return response(
+            {
+              success: false,
+              error:
+                "Product ID is required."
+            },
+            400
+          );
+        }
+
+
+        /*
+          Get product
+        */
+
+        const product =
+          await env.DB
+            .prepare(
+              `
+              SELECT
+                id,
+                title,
+                price,
+                published
+              FROM products
+              WHERE id = ?
+              LIMIT 1
+              `
+            )
+            .bind(productId)
+            .first();
+
+        if (!product) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Product not found."
+            },
+            404
+          );
+        }
+
+        if (!product.published) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "This product is not available."
+            },
+            400
+          );
+        }
+
+
+        /*
+          Check existing purchase
+        */
+
+        const existing =
+          await env.DB
+            .prepare(
+              `
+              SELECT
+                id,
+                status
+              FROM purchases
+              WHERE customer_id = ?
+                AND product_id = ?
+                AND status = 'PAID'
+              LIMIT 1
+              `
+            )
+            .bind(
+              customer.id,
+              product.id
+            )
+            .first();
 
         if (existing) {
-          return json({
-            success: true,
-            already_purchased: true,
-            order_id: existing.order_id
-          });
+
+          return response(
+            {
+              success: false,
+              error:
+                "You already purchased this product."
+            },
+            400
+          );
         }
+
+
+        /*
+          Create unique order ID
+        */
 
         const orderId =
           "CLK-" +
           Date.now() +
           "-" +
-          crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
+          crypto.randomUUID()
+            .replace(/\-/g, "")
+            .substring(0, 8)
+            .toUpperCase();
 
-        const amount = Number(product.price).toFixed(2);
-        const merchantSecretHash = md5(env.PAYHERE_MERCHANT_SECRET);
 
-        const hash = md5(
-          env.PAYHERE_MERCHANT_ID +
-          orderId +
-          amount +
-          "LKR" +
-          merchantSecretHash
+        /*
+          Format amount
+        */
+
+        const amount =
+          Number(product.price)
+            .toFixed(2);
+
+
+        /*
+          Create pending purchase
+        */
+
+        await env.DB
+          .prepare(
+            `
+            INSERT INTO purchases
+            (
+              customer_id,
+              product_id,
+              order_id,
+              amount,
+              status
+            )
+            VALUES (?, ?, ?, ?, 'PENDING')
+            `
+          )
+          .bind(
+            customer.id,
+            product.id,
+            orderId,
+            amount
+          )
+          .run();
+
+
+        /*
+          PayHere checkout hash
+        */
+
+        const merchantSecretHash =
+          md5(
+            env.PAYHERE_MERCHANT_SECRET
+          );
+
+        const checkoutHash =
+          md5(
+            PAYHERE_MERCHANT_ID +
+            orderId +
+            amount +
+            "LKR" +
+            merchantSecretHash
+          );
+
+
+        /*
+          PayHere checkout information
+        */
+
+        const checkout = {
+
+          merchant_id:
+            PAYHERE_MERCHANT_ID,
+
+          return_url:
+            RETURN_URL,
+
+          cancel_url:
+            CANCEL_URL,
+
+          notify_url:
+            NOTIFY_URL,
+
+          order_id:
+            orderId,
+
+          items:
+            product.title,
+
+          amount:
+            amount,
+
+          currency:
+            "LKR",
+
+          hash:
+            checkoutHash,
+
+          first_name:
+            customer.name ||
+            "Customer",
+
+          last_name:
+            "",
+
+          email:
+            customer.email,
+
+          phone:
+            "",
+
+          address:
+            "",
+
+          city:
+            "Kandy",
+
+          country:
+            "Sri Lanka"
+        };
+
+
+        return response({
+          success: true,
+          checkout
+        });
+
+      } catch (err) {
+
+        console.error(
+          "Checkout error:",
+          err
         );
 
-        await env.DB.prepare(`
-          INSERT INTO purchases
-          (customer_id, product_id, order_id, amount, currency, status)
-          VALUES (?, ?, ?, ?, 'LKR', 'PENDING')
-        `).bind(
-          customer.id,
-          product.id,
-          orderId,
-          amount
-        ).run();
-
-        return json({
-          success: true,
-          action: "https://www.payhere.lk/pay/checkout",
-          fields: {
-            merchant_id: env.PAYHERE_MERCHANT_ID,
-            return_url: RETURN_URL,
-            cancel_url: CANCEL_URL,
-            notify_url: NOTIFY_URL,
-            first_name: customer.first_name,
-            last_name: customer.last_name || "",
-            email: customer.email,
-            phone: customer.phone || "0000000000",
-            address: "Sri Lanka",
-            city: "Sri Lanka",
-            country: "Sri Lanka",
-            order_id: orderId,
-            items: product.title,
-            currency: "LKR",
-            amount,
-            hash
-          }
-        });
+        return response(
+          {
+            success: false,
+            error:
+              "Checkout failed."
+          },
+          500
+        );
       }
+    }
 
 
-      /* PayHere Notification */
+    /*
+      PAYHERE NOTIFY
+    */
 
-      if (path === "/notify" && request.method === "POST") {
+    if (
+      path === "/notify" &&
+      request.method === "POST"
+    ) {
 
-        let form;
-
-        try {
-          form = await request.formData();
-        } catch {
-          return new Response("INVALID REQUEST", { status: 400 });
-        }
-
-        const merchantId = String(form.get("merchant_id") || "");
-        const orderId = String(form.get("order_id") || "");
-        const paymentId = String(form.get("payment_id") || "");
-        const amount = String(form.get("payhere_amount") || "");
-        const currency = String(form.get("payhere_currency") || "");
-        const statusCode = String(form.get("status_code") || "");
-        const received = String(form.get("md5sig") || "").toUpperCase();
+      try {
 
         if (
-          !merchantId ||
+          !env.PAYHERE_MERCHANT_SECRET
+        ) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Merchant Secret is not configured."
+            },
+            500
+          );
+        }
+
+
+        const form =
+          await request.formData();
+
+        const merchantId =
+          String(
+            form.get("merchant_id") || ""
+          );
+
+        const orderId =
+          String(
+            form.get("order_id") || ""
+          );
+
+        const amount =
+          String(
+            form.get("payhere_amount") ||
+            form.get("amount") ||
+            ""
+          );
+
+        const currency =
+          String(
+            form.get("payhere_currency") ||
+            form.get("currency") ||
+            ""
+          );
+
+        const statusCode =
+          String(
+            form.get("status_code") || ""
+          );
+
+        const receivedMd5sig =
+          String(
+            form.get("md5sig") || ""
+          );
+
+
+        /*
+          Validate merchant
+        */
+
+        if (
+          merchantId !==
+          PAYHERE_MERCHANT_ID
+        ) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Invalid merchant ID."
+            },
+            400
+          );
+        }
+
+
+        if (
           !orderId ||
           !amount ||
           !currency ||
           !statusCode ||
-          !received
-        )
-          return new Response("INVALID DATA", { status: 400 });
+          !receivedMd5sig
+        ) {
 
-        if (merchantId !== env.PAYHERE_MERCHANT_ID)
-          return new Response("INVALID MERCHANT", { status: 400 });
-
-        const secretHash = md5(env.PAYHERE_MERCHANT_SECRET);
-
-        const expected = md5(
-          merchantId +
-          orderId +
-          amount +
-          currency +
-          statusCode +
-          secretHash
-        );
-
-        if (received !== expected)
-          return new Response("INVALID SIGNATURE", { status: 400 });
-
-        const purchase = await env.DB.prepare(`
-          SELECT id, amount, currency
-          FROM purchases
-          WHERE order_id = ?
-          LIMIT 1
-        `).bind(orderId).first();
-
-        if (!purchase)
-          return new Response("ORDER NOT FOUND", { status: 404 });
-
-        if (
-          Number(purchase.amount).toFixed(2) !==
-          Number(amount).toFixed(2)
-        )
-          return new Response("AMOUNT MISMATCH", { status: 400 });
-
-        if (
-          String(purchase.currency).toUpperCase() !==
-          currency.toUpperCase()
-        )
-          return new Response("CURRENCY MISMATCH", { status: 400 });
-
-        const statuses = {
-          "2": "PAID",
-          "-1": "CANCELLED",
-          "-2": "FAILED",
-          "-3": "CHARGEDBACK",
-          "0": "PENDING"
-        };
-
-        const status = statuses[statusCode];
-
-        if (status) {
-          await env.DB.prepare(`
-            UPDATE purchases
-            SET payment_id = ?, status = ?,
-                purchased_at =
-                  CASE
-                    WHEN ? = 'PAID' THEN CURRENT_TIMESTAMP
-                    ELSE purchased_at
-                  END
-            WHERE id = ?
-          `).bind(
-            paymentId,
-            status,
-            status,
-            purchase.id
-          ).run();
+          return response(
+            {
+              success: false,
+              error:
+                "Invalid PayHere notification."
+            },
+            400
+          );
         }
 
-        return new Response("OK", {
-          status: 200,
-          headers: CORS
+
+        /*
+          PayHere notification hash
+        */
+
+        const merchantSecretHash =
+          md5(
+            env.PAYHERE_MERCHANT_SECRET
+          );
+
+        const localSignature =
+          md5(
+            merchantId +
+            orderId +
+            amount +
+            currency +
+            statusCode +
+            merchantSecretHash
+          );
+
+
+        /*
+          Verify signature
+        */
+
+        if (
+          localSignature.toUpperCase() !==
+          receivedMd5sig.toUpperCase()
+        ) {
+
+          console.error(
+            "Invalid PayHere signature"
+          );
+
+          return response(
+            {
+              success: false,
+              error:
+                "Invalid payment signature."
+            },
+            400
+          );
+        }
+
+
+        /*
+          Find purchase
+        */
+
+        const purchase =
+          await env.DB
+            .prepare(
+              `
+              SELECT
+                id,
+                customer_id,
+                product_id,
+                order_id,
+                amount,
+                status
+              FROM purchases
+              WHERE order_id = ?
+              LIMIT 1
+              `
+            )
+            .bind(orderId)
+            .first();
+
+        if (!purchase) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Purchase not found."
+            },
+            404
+          );
+        }
+
+
+        /*
+          Payment successful
+        */
+
+        if (statusCode === "2") {
+
+          await env.DB
+            .prepare(
+              `
+              UPDATE purchases
+              SET status = 'PAID'
+              WHERE order_id = ?
+              `
+            )
+            .bind(orderId)
+            .run();
+
+          return response({
+            success: true,
+            message:
+              "Payment confirmed."
+          });
+        }
+
+
+        /*
+          Payment failed
+        */
+
+        await env.DB
+          .prepare(
+            `
+            UPDATE purchases
+            SET status = 'FAILED'
+            WHERE order_id = ?
+            `
+          )
+          .bind(orderId)
+          .run();
+
+        return response({
+          success: true,
+          message:
+            "Payment status recorded."
         });
+
+      } catch (err) {
+
+        console.error(
+          "Notify error:",
+          err
+        );
+
+        return response(
+          {
+            success: false,
+            error:
+              "Notification processing failed."
+          },
+          500
+        );
       }
-
-      return error("Route not found.", 404);
-
-    } catch (err) {
-      console.error(err);
-
-      return error(
-        "Server error.",
-        500
-      );
     }
+
+
+    /*
+      PURCHASE STATUS
+    */
+
+    if (
+      path === "/purchase-status" &&
+      request.method === "GET"
+    ) {
+
+      try {
+
+        const customer =
+          await getCustomer(
+            request,
+            env
+          );
+
+        if (!customer) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Please login first."
+            },
+            401
+          );
+        }
+
+
+        const orderId =
+          url.searchParams.get(
+            "order_id"
+          );
+
+        if (!orderId) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Order ID is required."
+            },
+            400
+          );
+        }
+
+
+        const purchase =
+          await env.DB
+            .prepare(
+              `
+              SELECT
+                p.id,
+                p.order_id,
+                p.amount,
+                p.status,
+                p.product_id,
+                pr.title
+              FROM purchases p
+              LEFT JOIN products pr
+                ON pr.id = p.product_id
+              WHERE p.order_id = ?
+                AND p.customer_id = ?
+              LIMIT 1
+              `
+            )
+            .bind(
+              orderId,
+              customer.id
+            )
+            .first();
+
+        if (!purchase) {
+
+          return response(
+            {
+              success: false,
+              error:
+                "Purchase not found."
+            },
+            404
+          );
+        }
+
+
+        return response({
+          success: true,
+          purchase
+        });
+
+      } catch (err) {
+
+        console.error(
+          "Purchase status error:",
+          err
+        );
+
+        return response(
+          {
+            success: false,
+            error:
+              "Unable to check purchase status."
+          },
+          500
+        );
+      }
+    }
+
+
+    /*
+      Unknown route
+    */
+
+    return response(
+      {
+        success: false,
+        error:
+          "Route not found."
+      },
+      404
+    );
   }
 };
