@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK | Shop Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--n:#163a63;--b:#2563eb;--bg:#f7f9fc;--bd:#e2e8f0;--t:#172b3a;--m:#6b7785}
+body{font-family:Arial,sans-serif;background:var(--bg);color:var(--t)}
+header{height:62px;background:var(--n);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+header img{height:38px;background:#fff;border-radius:6px}
+header b{font-size:18px}
+main{max-width:1200px;margin:25px auto;padding:0 16px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:18px;margin-bottom:18px}
+.login{max-width:420px;margin:70px auto}
+h1{font-size:24px;margin-bottom:5px}
+h2{font-size:18px;margin-bottom:15px}
+p{color:var(--m);font-size:14px}
+input,select,textarea{width:100%;padding:11px;border:1px solid var(--bd);border-radius:8px;margin-top:6px;font:inherit}
+textarea{min-height:120px;resize:vertical}
+label{display:block;font-size:13px;font-weight:bold;margin-top:13px}
+button{border:0;border-radius:8px;padding:10px 15px;background:var(--b);color:#fff;font-weight:bold;cursor:pointer}
+button.gray{background:#64748b}
+button.red{background:#dc2626}
+button.green{background:#16a34a}
+button.small{padding:7px 9px;font-size:12px}
+.top{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{padding:15px;background:var(--bg);border-radius:10px}
+.stat strong{display:block;font-size:24px;margin-top:5px}
+.filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;align-items:end}
+table{width:100%;border-collapse:collapse;margin-top:12px}
+th,td{text-align:left;padding:12px 8px;border-bottom:1px solid var(--bd);font-size:13px}
+.actions{display:flex;gap:5px;flex-wrap:wrap}
+.badge{padding:4px 7px;border-radius:20px;font-size:11px;background:#e2e8f0}
+.badge.on{background:#dcfce7;color:#166534}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:15px}
+.modal.show{display:flex}
+.modalbox{background:#fff;width:100%;max-width:650px;max-height:92vh;overflow:auto;border-radius:12px;padding:20px}
+.modalhead{display:flex;justify-content:space-between;align-items:center}
+.close{background:#e2e8f0;color:#111;padding:6px 10px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.check{display:flex;gap:8px;align-items:center;margin:15px 0}
+.check input{width:auto;margin:0}
+.notice{margin-top:10px;font-size:13px}
+@media(max-width:700px){
+.stats{grid-template-columns:1fr 1fr}
+.filters{grid-template-columns:1fr}
+.row{grid-template-columns:1fr}
+table{display:block;overflow-x:auto;white-space:nowrap}
+header{padding:0 12px}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <img src="https://assets.createlk.com/file_000000003e448207b8c6a7ecc4a7e1d4.png">
+  <b>Shop Admin</b>
+</header>
+
+<div id="login" class="card login">
+  <h1>Admin Login</h1>
+  <p>Enter your admin key to manage resources.</p>
+  <label>Admin Key</label>
+  <input id="key" type="password" placeholder="Enter admin key">
+  <button style="margin-top:15px;width:100%" onclick="login()">Login</button>
+  <div id="loginMsg" class="notice"></div>
+</div>
+
+<main id="app" style="display:none">
+
+  <div class="top" style="margin-bottom:18px">
+    <div>
+      <h1>Digital Learning Shop</h1>
+      <p>Manage all educational resources.</p>
+    </div>
+    <button onclick="openForm()">+ Add Resource</button>
+  </div>
+
+  <div class="card stats">
+    <div class="stat">Resources<strong id="total">0</strong></div>
+    <div class="stat">Published<strong id="published">0</strong></div>
+    <div class="stat">Unpublished<strong id="unpublished">0</strong></div>
+    <div class="stat">Subjects<strong id="subjects">0</strong></div>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <div>
+        <label>Search</label>
+        <input id="search" placeholder="Search resources..." oninput="render()">
+      </div>
+      <div>
+        <label>Status</label>
+        <select id="status" onchange="render()">
+          <option value="">All</option>
+          <option value="published">Published</option>
+          <option value="unpublished">Unpublished</option>
+        </select>
+      </div>
+      <div>
+        <label>Subject</label>
+        <select id="subject" onchange="render()">
+          <option value="">All Subjects</option>
+        </select>
+      </div>
+      <button class="gray" onclick="load()">Refresh</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top">
+      <h2>Resources</h2>
+      <span id="msg"></span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Subject</th>
+          <th>Price</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<div id="modal" class="modal">
+  <div class="modalbox">
+    <div class="modalhead">
+      <h2 id="formTitle">Add Resource</h2>
+      <button class="close" onclick="closeForm()">×</button>
+    </div>
+
+    <input id="id" type="hidden">
+
+    <label>Resource Title</label>
+    <input id="title" placeholder="Example: English Grammar Practice">
+
+    <div class="row">
+      <div>
+        <label>Subject</label>
+        <select id="sub">
+          <option>English</option>
+          <option>Mathematics</option>
+          <option>Science</option>
+          <option>ICT</option>
+          <option>History</option>
+          <option>Geography</option>
+          <option>Tamil</option>
+          <option>Sinhala</option>
+          <option>Exam Preparation</option>
+          <option>Practice</option>
+          <option>Other</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Price (LKR)</label>
+        <input id="price" type="number" min="0" placeholder="499">
+      </div>
+    </div>
+
+    <label>Short Description</label>
+    <textarea id="desc" placeholder="Brief description of the resource"></textarea>
+
+    <label>Cover Image URL</label>
+    <input id="image" placeholder="https://...">
+
+    <label>Online Content</label>
+    <textarea id="content" placeholder="Content shown after successful purchase"></textarea>
+
+    <label class="check">
+      <input id="pub" type="checkbox">
+      Publish this resource
+    </label>
+
+    <div class="top">
+      <button class="gray" onclick="closeForm()">Cancel</button>
+      <button onclick="save()">Save Resource</button>
+    </div>
+
+    <div id="formMsg" class="notice"></div>
+  </div>
+</div>
+
+<script>
+const API="";
+const KEY=sessionStorage.getItem("createlk_admin_key");
+let products=[];
+
+if(KEY)start();
+
+function login(){
+  const k=document.getElementById("key").value.trim();
+  if(!k)return msg("loginMsg","Enter admin key.");
+  sessionStorage.setItem("createlk_admin_key",k);
+  location.reload();
+}
+
+function start(){
+  document.getElementById("login").style.display="none";
+  document.getElementById("app").style.display="block";
+  load();
+}
+
+async function request(url,options={}){
+  if(!API)throw Error("API not configured");
+  options.headers={
+    "Content-Type":"application/json",
+    "X-Admin-Key":sessionStorage.getItem("createlk_admin_key"),
+    ...(options.headers||{})
+  };
+  const r=await fetch(API+url,options);
+  if(!r.ok)throw Error(await r.text()||"Request failed");
+  return r.json();
+}
+
+async function load(){
+  try{
+    const data=await request("/admin/products");
+    products=data.products||data||[];
+    render();
+  }catch(e){
+    if(!API){
+      render();
+      msg("msg","API not connected");
+    }else msg("msg",e.message);
+  }
+}
+
+function render(){
+  const q=document.getElementById("search").value.toLowerCase();
+  const st=document.getElementById("status").value;
+  const su=document.getElementById("subject").value;
+
+  const subjects=[...new Set(products.map(x=>x.subject).filter(Boolean))];
+  const select=document.getElementById("subject");
+  const old=select.value;
+
+  select.innerHTML='<option value="">All Subjects</option>'+
+    subjects.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
+  select.value=subjects.includes(old)?old:"";
+
+  let rows=products.filter(x=>{
+    const text=(x.title+" "+x.subject+" "+(x.description||"")).toLowerCase();
+    const published=!!x.published;
+    return (!q||text.includes(q)) &&
+      (!st||(st==="published"&&published)||(st==="unpublished"&&!published)) &&
+      (!su||x.subject===su);
+  });
+
+  document.getElementById("total").textContent=products.length;
+  document.getElementById("published").textContent=products.filter(x=>x.published).length;
+  document.getElementById("unpublished").textContent=products.filter(x=>!x.published).length;
+  document.getElementById("subjects").textContent=subjects.length;
+
+  document.getElementById("list").innerHTML=rows.length?rows.map(x=>`
+    <tr>
+      <td><b>${esc(x.title)}</b></td>
+      <td>${esc(x.subject||"")}</td>
+      <td>LKR ${Number(x.price||0).toLocaleString()}</td>
+      <td><span class="badge ${x.published?"on":""}">
+        ${x.published?"Published":"Unpublished"}
+      </span></td>
+      <td>
+        <div class="actions">
+          <button class="small" onclick="edit('${x.id}')">Edit</button>
+          <button class="small ${x.published?"gray":"green"}"
+            onclick="toggle('${x.id}',${!x.published})">
+            ${x.published?"Unpublish":"Publish"}
+          </button>
+          <button class="small red" onclick="del('${x.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join(""):'<tr><td colspan="5">No resources found.</td></tr>';
+}
+
+function openForm(x){
+  document.getElementById("modal").classList.add("show");
+  document.getElementById("formTitle").textContent=x?"Edit Resource":"Add Resource";
+  document.getElementById("id").value=x?.id||"";
+  document.getElementById("title").value=x?.title||"";
+  document.getElementById("sub").value=x?.subject||"English";
+  document.getElementById("price").value=x?.price||"";
+  document.getElementById("desc").value=x?.description||"";
+  document.getElementById("image").value=x?.image||x?.cover_image||"";
+  document.getElementById("content").value=x?.content||"";
+  document.getElementById("pub").checked=!!x?.published;
+}
+
+function closeForm(){
+  document.getElementById("modal").classList.remove("show");
+}
+
+function edit(id){
+  const x=products.find(p=>String(p.id)===String(id));
+  if(x)openForm(x);
+}
+
+async function save(){
+  const id=document.getElementById("id").value;
+
+  const data={
+    title:document.getElementById("title").value.trim(),
+    subject:document.getElementById("sub").value,
+    price:Number(document.getElementById("price").value||0),
+    description:document.getElementById("desc").value.trim(),
+    image:document.getElementById("image").value.trim(),
+    content:document.getElementById("content").value,
+    published:document.getElementById("pub").checked
+  };
+
+  if(!data.title)return msg("formMsg","Enter a resource title.");
+
+  try{
+    await request(id?"/admin/products/"+id:"/admin/products",{
+      method:id?"PUT":"POST",
+      body:JSON.stringify(data)
+    });
+    closeForm();
+    load();
+  }catch(e){
+    if(!API){
+      if(id){
+        const i=products.findIndex(x=>String(x.id)===String(id));
+        products[i]={...products[i],...data};
+      }else{
+        products.push({id:Date.now(),...data});
+      }
+      closeForm();
+      render();
+      msg("msg","Saved locally. Connect API for permanent changes.");
+    }else msg("formMsg",e.message);
+  }
+}
+
+async function toggle(id,state){
+  try{
+    await request("/admin/products/"+id+"/publish",{
+      method:"PATCH",
+      body:JSON.stringify({published:state})
+    });
+    load();
+  }catch(e){
+    const x=products.find(p=>String(p.id)===String(id));
+    if(!API&&x){x.published=state;render()}
+    else msg("msg",e.message);
+  }
+}
+
+async function del(id){
+  if(!confirm("Delete this resource permanently?"))return;
+
+  try{
+    await request("/admin/products/"+id,{method:"DELETE"});
+    load();
+  }catch(e){
+    if(!API){
+      products=products.filter(x=>String(x.id)!==String(id));
+      render();
+    }else msg("msg",e.message);
+  }
+}
+
+function msg(id,text){
+  document.getElementById(id).textContent=text;
+}
+
+function esc(v){
+  return String(v??"").replace(/[&<>"']/g,m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[m]));
+}
+</script>
+
+</body>
+</html>
