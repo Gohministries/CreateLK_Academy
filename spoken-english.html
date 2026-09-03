@@ -418,10 +418,7 @@ Checking membership...
 
 <div class="progress-head">
 <span>🎓 Certificate Progress</span>
-
-<span id="progressCount" class="progress-count">
-0 / 365
-</span>
+<span id="progressCount" class="progress-count">0 / 365</span>
 </div>
 
 <div class="progress-bar">
@@ -500,24 +497,13 @@ creatlk.com
 
 <script>
 
-const LESSON_API=
-"https://spokenlessons.createlk.workers.dev";
+const LESSON_API="https://spokenlessons.createlk.workers.dev";
+const PAYMENT="https://creatlk-payhere-checkout.createlk.workers.dev";
+const ACCOUNT_API="https://creatlk-auth.createlk.workers.dev";
+const PROGRESS_API="https://creatlk-365-progress.createlk.workers.dev";
 
-const PAYMENT=
-"https://creatlk-payhere-checkout.createlk.workers.dev";
-
-const ACCOUNT_API=
-"https://creatlk-auth.createlk.workers.dev";
-
-const PROGRESS_API=
-"https://creatlk-365-progress.createlk.workers.dev";
-
-const STUDENT_KEY=
-"createlk_student";
-
-const LOCAL_KEY=
-"createlk_spoken_completed";
-
+const STUDENT_KEY="createlk_student";
+const LOCAL_KEY="createlk_spoken_completed";
 const TOTAL=365;
 
 let student={};
@@ -527,25 +513,15 @@ let completedToday=false;
 const $=id=>document.getElementById(id);
 
 try{
-
-student=
-JSON.parse(
-localStorage.getItem(STUDENT_KEY)||"{}"
-);
-
+student=JSON.parse(localStorage.getItem(STUDENT_KEY)||"{}");
 }catch(e){
-
 student={};
-
 }
 
 
-/* =========================
-   STUDENT
-========================= */
+/* STUDENT */
 
 function studentId(){
-
 return Number(
 student.id||
 student.database_id||
@@ -553,70 +529,40 @@ student.student_id_number||
 student.student_id||
 0
 );
-
 }
-
 
 async function refreshStudent(){
 
 const id=studentId();
-
 if(!id)return;
 
 try{
 
-const response=
-await fetch(
-ACCOUNT_API+
-"/api/student?id="+
-encodeURIComponent(id),
+const response=await fetch(
+ACCOUNT_API+"/api/student?id="+encodeURIComponent(id),
 {
 cache:"no-store",
-headers:{
-Accept:"application/json"
-}
+headers:{Accept:"application/json"}
 }
 );
 
 if(!response.ok)return;
 
-const data=
-await response.json();
+const data=await response.json();
 
 if(data.success&&data.student){
 
 student={
 ...student,
-
 id:Number(data.student.id),
-
-student_id:
-Number(data.student.id),
-
-first_name:
-data.student.first_name||"",
-
-last_name:
-data.student.last_name||"",
-
-name:
-(data.student.first_name||"")+
-" "+
-(data.student.last_name||""),
-
-email:
-data.student.email||"",
-
-phone:
-data.student.phone||"",
-
-membership_status:
-data.student.membership_status||
-"FREE",
-
-membership_expiry:
-data.student.membership_expiry||
-null
+student_id:Number(data.student.id),
+first_name:data.student.first_name||"",
+last_name:data.student.last_name||"",
+name:(data.student.first_name||"")+" "+(data.student.last_name||""),
+email:data.student.email||"",
+phone:data.student.phone||"",
+membership_status:data.student.membership_status||"FREE",
+membership_expiry:data.student.membership_expiry||null
 };
 
 localStorage.setItem(
@@ -627,107 +573,69 @@ JSON.stringify(student)
 }
 
 }catch(error){
-
-console.error(
-"Student refresh failed:",
-error
-);
-
+console.error("Student refresh failed:",error);
 }
 
 }
 
 
-/* =========================
-   MEMBERSHIP
-========================= */
+/* MEMBERSHIP */
 
 function getExpiry(){
 
-const value=
-student.membership_expiry;
-
+const value=student.membership_expiry;
 if(!value)return NaN;
 
-const text=
-String(value).trim();
+const text=String(value).trim();
 
-if(
-/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
-.test(text)
-){
-
+if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)){
 return new Date(
-text.replace(" ","T")+
-"+05:30"
+text.replace(" ","T")+"+05:30"
 ).getTime();
-
 }
 
 return new Date(text).getTime();
-
 }
-
 
 function isPremium(){
 
-const status=
-String(
+const status=String(
 student.membership_status||
 student.membershipStatus||
 "FREE"
-)
-.trim()
-.toUpperCase();
+).trim().toUpperCase();
 
-const expiry=
-getExpiry();
+const expiry=getExpiry();
 
-return(
-status==="PREMIUM"&&
+return status==="PREMIUM"&&
 Number.isFinite(expiry)&&
-expiry>Date.now()
-);
-
+expiry>Date.now();
 }
-
 
 function updateMembership(){
 
-const premium=
-isPremium();
+const premium=isPremium();
 
 $("membershipStatus").textContent=
-premium
-?"✓ Premium"
-:"Free";
+premium?"✓ Premium":"Free";
 
 $("membershipText").textContent=
 premium
-?
-"Premium is active. All 10 daily dialogues are unlocked."
-:
-"3 dialogues are free. Premium unlocks all 10.";
+?"Premium is active. All 10 daily dialogues are unlocked."
+:"3 dialogues are free. Premium unlocks all 10.";
 
 $("limitNote").innerHTML=
 premium
-?
-"<strong>⭐ Premium:</strong> All 10 daily dialogues are available."
-:
-"<strong>Free:</strong> Dialogues 1–3 are free. Upgrade for all 10.";
+?"<strong>⭐ Premium:</strong> All 10 daily dialogues are available."
+:"<strong>Free:</strong> Dialogues 1–3 are free. Upgrade for all 10.";
 
-$("premiumBox")
-.classList
-.toggle("hidden",premium);
+$("premiumBox").classList.toggle("hidden",premium);
 
 return premium;
-
 }
 
 
-/* =========================
-   DATE / LESSON DAY
-========================= */
+/* DATE */
 
 function setupDate(){
 
@@ -743,22 +651,18 @@ year:"numeric"
 
 }
 
-
 function getLessonDay(){
 
 const now=new Date();
 
-const start=
-new Date(
+const start=new Date(
 now.getFullYear(),
 0,
 1
 );
 
 let day=
-Math.floor(
-(now-start)/86400000
-)+1;
+Math.floor((now-start)/86400000)+1;
 
 if(
 new Date(
@@ -768,22 +672,17 @@ now.getFullYear(),
 ).getMonth()===1&&
 day>59
 ){
-
 day--;
-
 }
 
 return Math.min(
 365,
 Math.max(1,day)
 );
-
 }
 
 
-/* =========================
-   DIALOGUE HELPERS
-========================= */
+/* DIALOGUE */
 
 const ta=x=>
 x.tamil||
@@ -809,7 +708,6 @@ x.answer_english||
 x.text_english||
 "";
 
-
 function esc(x){
 
 return String(x??"")
@@ -822,54 +720,38 @@ return String(x??"")
 }
 
 
-/* =========================
-   VOICE
-========================= */
+/* VOICE */
 
 function listenEnglish(text){
 
 if(!("speechSynthesis"in window)){
-
-alert(
-"Voice playback is not supported."
-);
-
+alert("Voice playback is not supported.");
 return;
-
 }
 
 speechSynthesis.cancel();
 
-const voice=
-new SpeechSynthesisUtterance(text);
+const voice=new SpeechSynthesisUtterance(text);
 
 voice.lang="en-US";
-
 voice.rate=.9;
 
 speechSynthesis.speak(voice);
-
 }
 
 
-/* =========================
-   CARD
-========================= */
+/* CARD */
 
 function createCard(item,index){
 
-const card=
-document.createElement("article");
+const card=document.createElement("article");
 
 const tamil=ta(item);
-
 const sinhala=si(item);
-
 const english=en(item);
 
 card.className=
-"card "+
-(index<3?"free":"premium");
+"card "+(index<3?"free":"premium");
 
 card.innerHTML=`
 
@@ -884,8 +766,7 @@ ${esc(tamil)}
 ${sinhala?
 `<div class="sinhala">
 ${esc(sinhala)}
-</div>`
-:""}
+</div>`:""}
 
 <div class="english">
 ${esc(english)}
@@ -896,46 +777,31 @@ ${english?
 type="button"
 class="listen">
 🔊 Listen
-</button>`
-:""}
+</button>`:""}
 
 <span class="badge ${
-index<3?
-"free-badge":
-"premium-badge"
+index<3?"free-badge":"premium-badge"
 }">
-${
-index<3?
-"✓ FREE":
-"⭐ PREMIUM"
-}
+${index<3?"✓ FREE":"⭐ PREMIUM"}
 </span>
 
 `;
 
-const button=
-card.querySelector(".listen");
+const button=card.querySelector(".listen");
 
 if(button){
-
-button.onclick=()=>
-listenEnglish(english);
-
+button.onclick=()=>listenEnglish(english);
 }
 
 return card;
-
 }
 
 
-/* =========================
-   NORMALIZE API RESPONSE
-========================= */
+/* NORMALIZE */
 
 function normalize(json){
 
-if(Array.isArray(json))
-return json;
+if(Array.isArray(json))return json;
 
 if(json&&typeof json==="object"){
 
@@ -951,14 +817,8 @@ return json.items;
 if(Array.isArray(json.lessons))
 return json.lessons;
 
-if(
-json.lesson&&
-typeof json.lesson==="object"
-){
-
+if(json.lesson&&typeof json.lesson==="object")
 return normalize(json.lesson);
-
-}
 
 if(json.data){
 
@@ -967,7 +827,6 @@ return json.data;
 
 if(typeof json.data==="object")
 return normalize(json.data);
-
 }
 
 if(json.result){
@@ -977,7 +836,6 @@ return json.result;
 
 if(typeof json.result==="object")
 return normalize(json.result);
-
 }
 
 if(json.response){
@@ -987,28 +845,17 @@ return json.response;
 
 if(typeof json.response==="object")
 return normalize(json.response);
-
 }
 
-if(
-json.tamil||
-json.english||
-json.ta||
-json.en
-){
-
+if(json.tamil||json.english||json.ta||json.en)
 return[json];
 
-}
-
 if(json.success===false){
-
 throw new Error(
 json.message||
 json.error||
 "No lesson available today."
 );
-
 }
 
 }
@@ -1016,44 +863,31 @@ json.error||
 throw new Error(
 "No dialogues were returned by Cloudflare."
 );
-
 }
 
 
-/* =========================
-   LOCAL COMPLETION
-========================= */
+/* LOCAL COMPLETION */
 
 function localCompleted(){
 
 try{
 
-const list=
-JSON.parse(
-localStorage.getItem(
-LOCAL_KEY
-)||"[]"
+const list=JSON.parse(
+localStorage.getItem(LOCAL_KEY)||"[]"
 );
 
-return Array.isArray(list)
-?
-list.map(Number)
-:
-[];
+return Array.isArray(list)?
+list.map(Number):[];
 
 }catch(e){
-
 return[];
-
 }
 
 }
-
 
 function saveLocal(day){
 
-const days=
-localCompleted();
+const days=localCompleted();
 
 if(!days.includes(Number(day))){
 
@@ -1062,8 +896,7 @@ days.push(Number(day));
 localStorage.setItem(
 LOCAL_KEY,
 JSON.stringify(
-[...new Set(days)]
-.sort((a,b)=>a-b)
+[...new Set(days)].sort((a,b)=>a-b)
 )
 );
 
@@ -1072,23 +905,16 @@ JSON.stringify(
 }
 
 
-/* =========================
-   PROGRESS
-========================= */
+/* PROGRESS */
 
 function showProgress(number){
 
-number=
-Math.min(
+number=Math.min(
 TOTAL,
-Math.max(
-0,
-Number(number)||0
-)
+Math.max(0,Number(number)||0)
 );
 
-const percent=
-Math.round(
+const percent=Math.round(
 number/TOTAL*100
 );
 
@@ -1103,13 +929,9 @@ percent+"%";
 
 $("progressRemaining").textContent=
 number>=TOTAL
-?
-"🎓 Certificate ready"
-:
-`${TOTAL-number} remaining`;
-
+?"🎓 Certificate ready"
+:`${TOTAL-number} remaining`;
 }
-
 
 function markComplete(){
 
@@ -1120,20 +942,12 @@ $("completeButton").disabled=true;
 $("completeButton").textContent=
 "✓ Today's Lesson Completed";
 
-$("completeButton")
-.classList
-.add("done");
-
-$("completeButton")
-.classList
-.remove("hidden");
-
+$("completeButton").classList.add("done");
+$("completeButton").classList.remove("hidden");
 }
 
 
-/* =========================
-   LOAD PROGRESS
-========================= */
+/* LOAD PROGRESS */
 
 async function loadProgress(){
 
@@ -1141,37 +955,28 @@ const id=studentId();
 
 if(!id){
 
-showProgress(
-localCompleted().length
-);
-
+showProgress(localCompleted().length);
 return;
-
 }
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 PROGRESS_API+
 "/api/progress?student_id="+
 encodeURIComponent(id),
 {
 cache:"no-store",
-headers:{
-Accept:"application/json"
-}
+headers:{Accept:"application/json"}
 }
 );
 
 if(!response.ok)
 throw new Error(
-"Progress HTTP "+
-response.status
+"Progress HTTP "+response.status
 );
 
-const data=
-await response.json();
+const data=await response.json();
 
 if(!data.success)
 throw new Error(
@@ -1179,8 +984,7 @@ data.error||
 "Progress request failed"
 );
 
-const completed=
-Number(
+const completed=Number(
 data.completed_lessons||
 data.completed||
 data.lessons_completed||
@@ -1197,50 +1001,32 @@ data.days_completed||
 
 if(
 Array.isArray(days)&&
-days.map(Number)
-.includes(currentLessonDay)
+days.map(Number).includes(currentLessonDay)
 ){
-
 markComplete();
-
 }
 
 if(
 data.completed_today===true||
 data.today_completed===true
 ){
-
 markComplete();
-
 }
 
 if(completed>=TOTAL){
-
-location.href=
-"certificate.html";
-
+location.href="certificate.html";
 }
 
 }catch(error){
 
-console.error(
-"Progress:",
-error
-);
+console.error("Progress:",error);
 
-const local=
-localCompleted();
+const local=localCompleted();
 
-showProgress(
-local.length
-);
+showProgress(local.length);
 
-if(
-local.includes(currentLessonDay)
-){
-
+if(local.includes(currentLessonDay)){
 markComplete();
-
 }
 
 }
@@ -1248,110 +1034,78 @@ markComplete();
 }
 
 
-/* =========================
-   COMPLETE LESSON
-========================= */
+/* COMPLETE */
 
 async function completeLesson(){
 
-if(completedToday)
-return;
+if(completedToday)return;
 
 const id=studentId();
 
 if(!id){
-
 location.href="login.html";
-
 return;
-
 }
 
-const button=
-$("completeButton");
+const button=$("completeButton");
 
 button.disabled=true;
-
-button.textContent=
-"⏳ Saving...";
+button.textContent="⏳ Saving...";
 
 try{
 
-const response=
-await fetch(
-PROGRESS_API+
-"/api/complete",
+const response=await fetch(
+PROGRESS_API+"/api/complete",
 {
 method:"POST",
 headers:{
-"Content-Type":
-"application/json",
-"Accept":
-"application/json"
+"Content-Type":"application/json",
+"Accept":"application/json"
 },
 body:JSON.stringify({
 student_id:Number(id),
-lesson_day:
-Number(currentLessonDay)
+lesson_day:Number(currentLessonDay)
 })
 }
 );
 
-const raw=
-await response.text();
+const raw=await response.text();
 
 let data={};
 
 try{
-
-data=
-raw?
-JSON.parse(raw):
-{};
-
+data=raw?JSON.parse(raw):{};
 }catch(e){
-
 throw new Error(
 "Progress server returned an invalid response."
 );
-
 }
 
 if(!response.ok){
-
 throw new Error(
 data.error||
 data.message||
 "Save failed. Server HTTP "+
 response.status
 );
-
 }
 
 if(data.success!==true){
-
 throw new Error(
 data.error||
 data.message||
 "Could not save the lesson."
 );
-
 }
 
-saveLocal(
-currentLessonDay
-);
-
+saveLocal(currentLessonDay);
 markComplete();
 
 await loadProgress();
 
 }catch(error){
 
-console.error(
-"Complete:",
-error
-);
+console.error("Complete:",error);
 
 button.disabled=false;
 
@@ -1370,74 +1124,54 @@ error.message||
 }
 
 
-/* =========================
-   LOAD LESSON
-========================= */
+/* LOAD LESSON */
 
 async function loadLesson(){
 
-currentLessonDay=
-getLessonDay();
+currentLessonDay=getLessonDay();
 
 setupDate();
 
 updateMembership();
 
-const now=
-new Date();
+const now=new Date();
 
 const monthDay=
-String(
-now.getMonth()+1
-).padStart(2,"0")+
+String(now.getMonth()+1).padStart(2,"0")+
 "-"+
-String(
-now.getDate()
-).padStart(2,"0");
+String(now.getDate()).padStart(2,"0");
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 LESSON_API+
 "/api/today?month_day="+
 encodeURIComponent(monthDay),
 {
 cache:"no-store",
-headers:{
-Accept:"application/json"
-}
+headers:{Accept:"application/json"}
 }
 );
 
 if(!response.ok){
-
 throw new Error(
-"Lesson HTTP "+
-response.status
+"Lesson HTTP "+response.status
 );
-
 }
 
-const json=
-await response.json();
+const json=await response.json();
 
-const dialogues=
-normalize(json);
+const dialogues=normalize(json);
 
 if(dialogues.length<3){
-
 throw new Error(
 "Today's lesson has fewer than 3 dialogues."
 );
-
 }
 
-const premium=
-updateMembership();
+const premium=updateMembership();
 
-const visible=
-dialogues.slice(
+const visible=dialogues.slice(
 0,
 premium?10:3
 );
@@ -1446,57 +1180,36 @@ $("lessonGrid").innerHTML="";
 
 visible.forEach(
 (item,index)=>
-$("lessonGrid")
-.appendChild(
+$("lessonGrid").appendChild(
 createCard(item,index)
 )
 );
 
-$("loading")
-.classList
-.add("hidden");
-
-$("error")
-.classList
-.add("hidden");
-
-$("lessonGrid")
-.classList
-.remove("hidden");
-
-$("completeButton")
-.classList
-.remove("hidden");
+$("loading").classList.add("hidden");
+$("error").classList.add("hidden");
+$("lessonGrid").classList.remove("hidden");
+$("completeButton").classList.remove("hidden");
 
 await loadProgress();
 
 }catch(error){
 
-console.error(
-"Lesson:",
-error
-);
+console.error("Lesson:",error);
 
-$("loading")
-.classList
-.add("hidden");
+$("loading").classList.add("hidden");
 
 $("error").textContent=
 error.message||
 "Unable to load today's lesson.";
 
-$("error")
-.classList
-.remove("hidden");
+$("error").classList.remove("hidden");
 
 }
 
 }
 
 
-/* =========================
-   PAYHERE
-========================= */
+/* PAYHERE */
 
 async function checkout(){
 
@@ -1504,122 +1217,87 @@ const id=studentId();
 
 if(!id){
 
-alert(
-"Please log in before making a payment."
-);
+alert("Please log in before making a payment.");
 
 location.href="login.html";
 
 return;
-
 }
 
-const button=
-$("payhereButton");
+const button=$("payhereButton");
 
 button.disabled=true;
-
-button.textContent=
-"⏳ Connecting...";
+button.textContent="⏳ Connecting...";
 
 try{
 
-const response=
-await fetch(
+const response=await fetch(
 PAYMENT+"/api/checkout",
 {
 method:"POST",
 headers:{
-"Content-Type":
-"application/json"
+"Content-Type":"application/json",
+"Accept":"application/json"
 },
 body:JSON.stringify({
-student_id:id
+student_id:Number(id)
 })
 }
 );
 
-const raw=
-await response.text();
+const raw=await response.text();
 
 console.log(
-"PayHere HTTP:",
-response.status
-);
-
-console.log(
-"PayHere response:",
+"PayHere:",
+response.status,
 raw
 );
-
-if(raw.includes("<form")){
-
-document.open();
-
-document.write(raw);
-
-document.close();
-
-return;
-
-}
-
-let data={};
-
-try{
-
-data=
-raw?
-JSON.parse(raw):
-{};
-
-}catch(e){
-
-throw new Error(
-"PayHere Worker returned an invalid response."
-);
-
-}
 
 if(!response.ok){
 
 throw new Error(
-data.error||
-data.message||
-"PayHere payment request failed. HTTP "+
+"Payment server error: HTTP "+
 response.status
 );
 
 }
 
-const paymentUrl=
-data.url||
-data.checkout_url;
+if(raw.includes("<form")){
 
-if(!paymentUrl){
+document.open();
+document.write(raw);
+document.close();
+
+return;
+}
+
+const data=JSON.parse(raw);
+
+const url=
+data.url||
+data.checkout_url||
+data.payment_url||
+data.redirect_url;
+
+if(!url){
 
 throw new Error(
 data.error||
 data.message||
-"PayHere payment URL was not returned."
+"Payment URL not returned."
 );
 
 }
 
-location.href=
-paymentUrl;
+location.href=url;
 
 }catch(error){
 
-console.error(
-"PayHere Checkout Error:",
-error
-);
+console.error("PayHere:",error);
 
 alert(
-"PayHere payment could not start.\n\n"+
-(error.message||
-"Unknown error")
+"Online payment failed.\n\n"+
+(error.message||"Please try again.")
 );
 
 }finally{
@@ -1634,9 +1312,7 @@ button.textContent=
 }
 
 
-/* =========================
-   START
-========================= */
+/* START */
 
 (async function(){
 
