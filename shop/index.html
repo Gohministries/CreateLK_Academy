@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#2563eb">
+<title>CreateLK Shop</title>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f8fafc;color:#111827}
+header{background:#fff;border-bottom:1px solid #e5e7eb;position:sticky;top:0;z-index:10}
+.nav{max-width:1100px;margin:auto;height:62px;padding:0 16px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:21px;font-weight:800;color:#2563eb;text-decoration:none}
+.logo span{color:#111827}
+.cart{position:relative;border:0;background:#eff6ff;color:#2563eb;border-radius:50%;width:42px;height:42px;font-size:19px}
+.count{position:absolute;right:-3px;top:-3px;background:#dc2626;color:white;border-radius:50%;font-size:11px;min-width:18px;height:18px}
+
+.hero{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:white;text-align:center;padding:48px 16px}
+.hero h1{font-size:clamp(32px,7vw,52px);margin-bottom:10px}
+.hero p{color:#dbeafe;margin-bottom:22px}
+.hero a{background:white;color:#2563eb;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold}
+
+main{max-width:1100px;margin:auto;padding:30px 16px}
+.tools{display:flex;gap:10px;margin-bottom:25px}
+input,select{height:45px;border:1px solid #ddd;border-radius:8px;padding:0 12px;background:white}
+input{flex:1}
+
+.products{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.product{background:white;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}
+.pic{height:210px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:60px}
+.info{padding:15px}
+.category{font-size:11px;color:#2563eb;font-weight:bold;text-transform:uppercase}
+.name{font-size:17px;font-weight:bold;margin:5px 0}
+.desc{font-size:13px;color:#6b7280;height:38px}
+.bottom{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+.price{font-weight:bold}
+.add{border:0;background:#2563eb;color:white;padding:9px 12px;border-radius:7px;font-weight:bold}
+
+footer{margin-top:40px;background:#111827;color:#9ca3af;text-align:center;padding:28px 16px;font-size:13px}
+
+/* CART */
+.drawer{position:fixed;right:-400px;top:0;width:min(400px,100%);height:100%;background:white;z-index:30;transition:.25s;display:flex;flex-direction:column;box-shadow:-5px 0 20px #0002}
+.drawer.open{right:0}
+.carthead{padding:18px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between}
+.close{border:0;background:#eee;border-radius:50%;width:34px;height:34px;font-size:20px}
+.items{flex:1;overflow:auto;padding:16px}
+.item{display:flex;gap:10px;border-bottom:1px solid #eee;padding:12px 0}
+.item strong{display:block}
+.qty{display:flex;gap:8px;align-items:center;margin-top:7px}
+.qty button{width:26px;height:26px;border:1px solid #ddd;background:white;border-radius:5px}
+.remove{border:0;background:none;color:#dc2626;font-size:12px}
+.cartfoot{padding:16px;border-top:1px solid #ddd}
+.total{display:flex;justify-content:space-between;font-size:20px;font-weight:bold;margin-bottom:12px}
+.checkout{width:100%;border:0;background:#16a34a;color:white;padding:13px;border-radius:8px;font-weight:bold}
+
+.overlay{display:none;position:fixed;inset:0;background:#0007;z-index:20}
+.overlay.show{display:block}
+
+/* CHECKOUT */
+.modal{display:none;position:fixed;inset:0;background:#0007;z-index:40;align-items:center;justify-content:center;padding:15px}
+.modal.show{display:flex}
+.box{background:white;width:min(480px,100%);border-radius:12px;padding:20px}
+.box h2{margin-bottom:18px}
+.box input,.box textarea,.box select{width:100%;margin-bottom:12px}
+.box textarea{height:80px;padding:10px;border:1px solid #ddd;border-radius:8px}
+.place{width:100%;border:0;background:#2563eb;color:white;padding:13px;border-radius:8px;font-weight:bold}
+
+@media(max-width:850px){.products{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){
+ .products{grid-template-columns:repeat(2,1fr);gap:10px}
+ .pic{height:160px}
+ .info{padding:11px}
+ .name{font-size:15px}
+ .tools{flex-direction:column}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="nav">
+<a class="logo" href="#">Create<span>LK</span> Shop</a>
+<button class="cart" onclick="openCart()">🛒<b class="count" id="count">0</b></button>
+</div>
+</header>
+
+<section class="hero">
+<h1>CreateLK Shop</h1>
+<p>Discover products and services from CreateLK.</p>
+<a href="#products">Shop Now</a>
+</section>
+
+<main>
+<div class="tools">
+<input id="search" placeholder="Search products..." oninput="showProducts()">
+<select id="cat" onchange="showProducts()">
+<option value="">All Categories</option>
+<option>Digital</option>
+<option>Education</option>
+<option>Services</option>
+</select>
+</div>
+
+<div class="products" id="products"></div>
+</main>
+
+<footer>
+CreateLK Shop<br>
+© <span id="year"></span> CreateLK. All rights reserved.
+</footer>
+
+<div class="overlay" id="overlay" onclick="closeCart()"></div>
+
+<div class="drawer" id="drawer">
+<div class="carthead">
+<h2>Your Cart</h2>
+<button class="close" onclick="closeCart()">×</button>
+</div>
+
+<div class="items" id="items"></div>
+
+<div class="cartfoot">
+<div class="total">
+<span>Total</span>
+<span id="total">LKR 0</span>
+</div>
+<button class="checkout" onclick="checkout()">Checkout</button>
+</div>
+</div>
+
+<div class="modal" id="modal">
+<div class="box">
+<h2>Checkout</h2>
+
+<form onsubmit="order(event)">
+<input id="name" placeholder="Full name" required>
+<input id="phone" placeholder="Phone number" required>
+<input id="email" type="email" placeholder="Email">
+<textarea id="address" placeholder="Delivery address" required></textarea>
+
+<select id="payment">
+<option>Bank Transfer</option>
+<option>Cash on Delivery</option>
+</select>
+
+<p style="margin:5px 0 15px;font-weight:bold">
+Total: <span id="checkoutTotal">LKR 0</span>
+</p>
+
+<button class="place">Place Order</button>
+</form>
+</div>
+</div>
+
+<script>
+const products=[
+{id:1,name:"CreateLK Premium",cat:"Digital",price:499,icon:"⭐",desc:"CreateLK premium digital access."},
+{id:2,name:"Spoken English Premium",cat:"Education",price:499,icon:"📚",desc:"Daily English practice."},
+{id:3,name:"Digital Design",cat:"Services",price:1000,icon:"🎨",desc:"Professional design service."},
+{id:4,name:"Website Service",cat:"Services",price:5000,icon:"🌐",desc:"Modern website development."}
+];
+
+let cart=JSON.parse(localStorage.getItem("clkcart")||"[]");
+
+const money=n=>"LKR "+n.toLocaleString("en-LK");
+
+function showProducts(){
+let q=document.getElementById("search").value.toLowerCase();
+let c=document.getElementById("cat").value;
+
+let list=products.filter(p=>
+(!q||p.name.toLowerCase().includes(q))&&(!c||p.cat===c)
+);
+
+document.getElementById("products").innerHTML=list.map(p=>`
+<div class="product">
+<div class="pic">${p.icon}</div>
+<div class="info">
+<div class="category">${p.cat}</div>
+<div class="name">${p.name}</div>
+<div class="desc">${p.desc}</div>
+<div class="bottom">
+<span class="price">${money(p.price)}</span>
+<button class="add" onclick="add(${p.id})">Add</button>
+</div>
+</div>
+</div>`).join("");
+}
+
+function add(id){
+let x=cart.find(i=>i.id===id);
+x?x.qty++:cart.push({id,qty:1});
+save();
+openCart();
+}
+
+function save(){
+localStorage.setItem("clkcart",JSON.stringify(cart));
+renderCart();
+}
+
+function renderCart(){
+let total=0,count=0;
+
+document.getElementById("items").innerHTML=cart.map(i=>{
+let p=products.find(x=>x.id===i.id);
+total+=p.price*i.qty;
+count+=i.qty;
+
+return `<div class="item">
+<div style="flex:1">
+<strong>${p.name}</strong>
+<small>${money(p.price)}</small>
+<div class="qty">
+<button onclick="change(${p.id},-1)">−</button>
+<span>${i.qty}</span>
+<button onclick="change(${p.id},1)">+</button>
+</div>
+<button class="remove" onclick="removeItem(${p.id})">Remove</button>
+</div>
+<strong>${money(p.price*i.qty)}</strong>
+</div>`;
+}).join("")||"<p style='text-align:center;padding:40px;color:#777'>Your cart is empty.</p>";
+
+document.getElementById("count").textContent=count;
+document.getElementById("total").textContent=money(total);
+document.getElementById("checkoutTotal").textContent=money(total);
+}
+
+function change(id,n){
+let i=cart.find(x=>x.id===id);
+if(!i)return;
+i.qty+=n;
+if(i.qty<1)cart=cart.filter(x=>x.id!==id);
+save();
+}
+
+function removeItem(id){
+cart=cart.filter(x=>x.id!==id);
+save();
+}
+
+function openCart(){
+document.getElementById("drawer").classList.add("open");
+document.getElementById("overlay").classList.add("show");
+renderCart();
+}
+
+function closeCart(){
+document.getElementById("drawer").classList.remove("open");
+document.getElementById("overlay").classList.remove("show");
+}
+
+function checkout(){
+if(!cart.length)return alert("Your cart is empty.");
+document.getElementById("modal").classList.add("show");
+document.getElementById("checkoutTotal").textContent=money(total());
+}
+
+function total(){
+return cart.reduce((s,i)=>{
+let p=products.find(x=>x.id===i.id);
+return s+p.price*i.qty;
+},0);
+}
+
+function order(e){
+e.preventDefault();
+
+let order={
+id:"CLK-"+Date.now(),
+name:document.getElementById("name").value,
+phone:document.getElementById("phone").value,
+email:document.getElementById("email").value,
+address:document.getElementById("address").value,
+payment:document.getElementById("payment").value,
+items:cart,
+total:total()
+};
+
+console.log(order);
+
+/* Connect this order to your Cloudflare Worker API later. */
+
+alert("Order received! Order ID: "+order.id);
+
+cart=[];
+save();
+document.getElementById("modal").classList.remove("show");
+closeCart();
+e.target.reset();
+}
+
+document.getElementById("year").textContent=new Date().getFullYear();
+
+showProducts();
+renderCart();
+</script>
+
+</body>
+</html>
