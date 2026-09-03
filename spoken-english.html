@@ -38,7 +38,7 @@ h1{font-size:23px;margin:5px 0}.subtitle{color:var(--m);font-size:13px}.date{mar
 .tamil{font-size:16px;font-weight:800;margin-bottom:7px}
 .sinhala{color:#475569;font-size:13px;margin-bottom:7px}
 .english{font-size:14px;line-height:1.5}
-.listen{border:0;background:#eff6ff;color:var(--b);border-radius:8px;padding:7px 9px;margin-top:9px;font-size:11px;font-weight:800}
+.listen{border:0;background:#eff6ff;color:var(--b);border-radius:8px;padding:7px 9px;margin-top:9px;font-size:11px;font-weight:800;cursor:pointer}
 .badge{display:inline-block;margin-top:9px;border-radius:20px;padding:4px 7px;font-size:9px;font-weight:900}
 .free-badge{background:#dcfce7;color:#166534}.premium-badge{background:#fef3c7;color:#92400e}
 .complete-button,.share-main,.premium-button,.manual-button{display:block;width:100%;padding:12px;margin-top:9px;border-radius:10px;font-size:13px;font-weight:900;text-align:center;cursor:pointer}
@@ -86,7 +86,9 @@ h1{font-size:23px;margin:5px 0}.subtitle{color:var(--m);font-size:13px}.date{mar
 <span>🎓 Certificate Progress</span>
 <span id="progressCount" class="progress-count">0 / 365</span>
 </div>
-<div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+<div class="progress-bar">
+<div id="progressFill" class="progress-fill"></div>
+</div>
 <div class="progress-bottom">
 <span id="progressPercent">0%</span>
 <span id="progressRemaining">365 remaining</span>
@@ -103,20 +105,33 @@ h1{font-size:23px;margin:5px 0}.subtitle{color:var(--m);font-size:13px}.date{mar
 
 <button id="completeButton"
 class="complete-button hidden"
-onclick="completeLesson()">✅ Complete Today's Lesson</button>
+onclick="completeLesson()">
+✅ Complete Today's Lesson
+</button>
 
 <button id="shareButton"
 class="share-main hidden"
-onclick="shareFirstLesson()">📤 Share Today's Lesson</button>
+onclick="shareFirstLesson()">
+📤 Share Today's Lesson
+</button>
 
 <section id="premiumBox" class="premium-box hidden">
+
 <div class="premium-box-title">⭐ Premium Membership</div>
+
 <div class="premium-box-text">
 Today's 3 dialogues are free.<br><br>
 Unlock all <strong>10 daily spoken English dialogues</strong> with Premium.
 </div>
-<button class="premium-button" onclick="checkout()">💳 Online Payment</button>
-<a class="manual-button" href="/bank.html">🏦 Manual Bank Payment</a>
+
+<button class="premium-button" onclick="checkout()">
+💳 Online Payment
+</button>
+
+<a class="manual-button" href="/bank.html">
+🏦 Manual Bank Payment
+</a>
+
 </section>
 
 </main>
@@ -127,6 +142,7 @@ Unlock all <strong>10 daily spoken English dialogues</strong> with Premium.
 </footer>
 
 <script>
+
 const API="https://spokenlessons.createlk.workers.dev",
 PAY="https://creatlk-payhere-checkout.createlk.workers.dev",
 AUTH="https://creatlk-auth.createlk.workers.dev",
@@ -135,11 +151,17 @@ KEY="createlk_student",
 LOCAL="createlk_spoken_completed",
 TOTAL=365;
 
-let student={},day=1,done=false,firstEnglish="",
-$=id=>document.getElementById(id);
+let student={},
+day=1,
+done=false,
+firstTamil="",
+firstSinhala="",
+firstEnglish="";
+
+const $=id=>document.getElementById(id);
 
 try{
-student=JSON.parse(localStorage.getItem(KEY)||"{}")
+student=JSON.parse(localStorage.getItem(KEY)||"{}");
 }catch(e){}
 
 const id=()=>Number(
@@ -149,9 +171,26 @@ student.student_id_number||
 student.student_id||0
 );
 
-const ta=x=>x.tamil||x.ta||x.tamil_text||x.question_tamil||"";
-const si=x=>x.sinhala||x.si||x.sinhala_text||x.translation_sinhala||"";
-const en=x=>x.english||x.en||x.english_text||x.answer_english||"";
+const ta=x=>
+x.tamil||
+x.ta||
+x.tamil_text||
+x.question_tamil||
+"";
+
+const si=x=>
+x.sinhala||
+x.si||
+x.sinhala_text||
+x.translation_sinhala||
+"";
+
+const en=x=>
+x.english||
+x.en||
+x.english_text||
+x.answer_english||
+"";
 
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({
 "&":"&amp;",
@@ -161,32 +200,94 @@ const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({
 "'":"&#039;"
 }[c]));
 
+/* FAST SPEECH INITIALIZATION */
+
+function warmSpeech(){
+
+if(!("speechSynthesis" in window))return;
+
+speechSynthesis.getVoices();
+speechReady=true;
+
+}
+
+let speechReady=false;
+
+if("speechSynthesis" in window){
+
+speechSynthesis.getVoices();
+
+if("onvoiceschanged" in speechSynthesis)
+speechSynthesis.onvoiceschanged=warmSpeech;
+
+setTimeout(warmSpeech,100);
+setTimeout(warmSpeech,500);
+
+document.addEventListener(
+"touchstart",
+warmSpeech,
+{once:true}
+);
+
+document.addEventListener(
+"click",
+warmSpeech,
+{once:true}
+);
+
+}
+
 async function refresh(){
+
 if(!id())return;
 
 try{
-let r=await fetch(AUTH+"/api/student?id="+id(),{cache:"no-store"});
+
+let r=await fetch(
+AUTH+"/api/student?id="+id(),
+{cache:"no-store"}
+);
+
 let d=await r.json();
 
 if(d.success){
-student={...student,...d.student,id:Number(d.student.id)};
-localStorage.setItem(KEY,JSON.stringify(student));
+
+student={
+...student,
+...d.student,
+id:Number(d.student.id)
+};
+
+localStorage.setItem(
+KEY,
+JSON.stringify(student)
+);
+
 }
+
 }catch(e){}
+
 }
 
 function premium(){
-let s=String(student.membership_status||"FREE").toUpperCase(),
-x=student.membership_expiry?
+
+let s=String(
+student.membership_status||"FREE"
+).toUpperCase();
+
+let x=student.membership_expiry?
 new Date(student.membership_expiry).getTime():0;
 
 return s==="PREMIUM"&&x>Date.now();
+
 }
 
 function membership(){
+
 let p=premium();
 
-$("membershipStatus").textContent=p?"✓ Premium":"Free";
+$("membershipStatus").textContent=
+p?"✓ Premium":"Free";
 
 $("membershipText").textContent=p?
 "Premium is active. All 10 daily dialogues are unlocked.":
@@ -199,134 +300,232 @@ $("limitNote").innerHTML=p?
 $("premiumBox").classList.toggle("hidden",p);
 
 return p;
+
 }
 
+/* SPEAK */
+
 function speak(t){
-if(!("speechSynthesis"in window))
+
+if(!("speechSynthesis" in window))
 return alert("Voice playback is not supported.");
 
 speechSynthesis.cancel();
+speechSynthesis.resume();
 
-let v=new SpeechSynthesisUtterance(t);
+const v=new SpeechSynthesisUtterance(t);
+
 v.lang="en-US";
 v.rate=.9;
+v.volume=1;
+v.pitch=1;
 
 speechSynthesis.speak(v);
+
 }
 
 function card(x,i){
-let a=ta(x),b=si(x),c=en(x),
+
+let a=ta(x),
+b=si(x),
+c=en(x),
 e=document.createElement("article");
 
-e.className="card "+(i<3?"free":"premium");
+e.className=
+"card "+(i<3?"free":"premium");
 
 e.innerHTML=`
-<div class="number">DIALOGUE ${i+1}</div>
-<div class="tamil">${esc(a)}</div>
-${b?`<div class="sinhala">${esc(b)}</div>`:""}
-<div class="english">${esc(c)}</div>
-${c?`<button class="listen">🔊 Listen</button>`:""}
-<span class="badge ${i<3?"free-badge":"premium-badge"}">
+
+<div class="number">
+DIALOGUE ${i+1}
+</div>
+
+<div class="tamil">
+${esc(a)}
+</div>
+
+${b?
+`<div class="sinhala">${esc(b)}</div>`:""}
+
+<div class="english">
+${esc(c)}
+</div>
+
+${c?
+`<button class="listen">🔊 Listen</button>`:""}
+
+<span class="badge ${
+i<3?"free-badge":"premium-badge"
+}">
 ${i<3?"✓ FREE":"⭐ PREMIUM"}
-</span>`;
+</span>
+`;
 
 let q=e.querySelector(".listen");
 
-if(q)q.onclick=()=>speak(c);
+if(q)
+q.onclick=()=>speak(c);
 
 return e;
+
 }
 
 function data(j){
-if(Array.isArray(j))return j;
 
-for(let k of ["dialogues","conversations","items","lessons"])
-if(Array.isArray(j?.[k]))return j[k];
+if(Array.isArray(j))
+return j;
 
-if(j?.data)return data(j.data);
-if(j?.lesson)return data(j.lesson);
+for(let k of[
+"dialogues",
+"conversations",
+"items",
+"lessons"
+])
+if(Array.isArray(j?.[k]))
+return j[k];
 
-if(j?.english||j?.en)return[j];
+if(j?.data)
+return data(j.data);
 
-throw Error("No dialogues were returned.");
+if(j?.lesson)
+return data(j.lesson);
+
+if(j?.english||j?.en)
+return[j];
+
+throw Error(
+"No dialogues were returned."
+);
+
 }
 
 function local(){
+
 try{
+
 return JSON.parse(
 localStorage.getItem(LOCAL)||"[]"
 ).map(Number);
+
 }catch(e){
+
 return[];
+
 }
+
 }
 
 function save(){
+
 let a=local();
 
 if(!a.includes(day)){
+
 a.push(day);
-localStorage.setItem(LOCAL,JSON.stringify(a));
+
+localStorage.setItem(
+LOCAL,
+JSON.stringify(a)
+);
+
 }
+
 }
 
 function progress(n){
-n=Math.min(TOTAL,Math.max(0,Number(n)||0));
 
-let p=Math.round(n/TOTAL*100);
+n=Math.min(
+TOTAL,
+Math.max(0,Number(n)||0)
+);
 
-$("progressCount").textContent=`${n} / ${TOTAL}`;
-$("progressFill").style.width=p+"%";
-$("progressPercent").textContent=p+"%";
+let p=Math.round(
+n/TOTAL*100
+);
 
-$("progressRemaining").textContent=n>=TOTAL?
+$("progressCount").textContent=
+`${n} / ${TOTAL}`;
+
+$("progressFill").style.width=
+p+"%";
+
+$("progressPercent").textContent=
+p+"%";
+
+$("progressRemaining").textContent=
+n>=TOTAL?
 "🎓 Certificate ready":
 `${TOTAL-n} remaining`;
+
 }
 
 function mark(){
+
 done=true;
 
 $("completeButton").disabled=true;
-$("completeButton").textContent="✓ Today's Lesson Completed";
+
+$("completeButton").textContent=
+"✓ Today's Lesson Completed";
+
 $("completeButton").classList.add("done");
+
 }
 
 async function loadProgress(){
+
 if(!id()){
+
 progress(local().length);
 return;
+
 }
 
 try{
+
 let r=await fetch(
 PROG+"/api/progress?student_id="+id(),
 {cache:"no-store"}
 );
 
-let d=await r.json(),
-n=Number(d.completed_lessons||d.completed||0);
+let d=await r.json();
+
+let n=Number(
+d.completed_lessons||
+d.completed||
+0
+);
 
 progress(n);
 
 if(
-(d.completed_today||d.today_completed)||
-(Array.isArray(d.completed_days)&&
-d.completed_days.map(Number).includes(day))
-)mark();
+(d.completed_today||
+d.today_completed)||
+(
+Array.isArray(d.completed_days)&&
+d.completed_days
+.map(Number)
+.includes(day)
+)
+)
+mark();
 
 if(n>=TOTAL)
 location.href="certificate.html";
 
 }catch(e){
+
 progress(local().length);
 
 if(local().includes(day))
 mark();
+
 }
+
 }
 
 async function completeLesson(){
+
 if(done)return;
 
 if(!id())
@@ -338,59 +537,99 @@ b.disabled=true;
 b.textContent="⏳ Saving...";
 
 try{
-let r=await fetch(PROG+"/api/complete",{
+
+let r=await fetch(
+PROG+"/api/complete",
+{
 method:"POST",
-headers:{"Content-Type":"application/json"},
+headers:{
+"Content-Type":"application/json"
+},
 body:JSON.stringify({
 student_id:id(),
 lesson_day:day
 })
-});
+}
+);
 
 let d=await r.json();
 
 if(!r.ok||d.success!==true)
-throw Error(d.error||"Could not save the lesson.");
+throw Error(
+d.error||
+"Could not save the lesson."
+);
 
 save();
 mark();
 loadProgress();
 
 }catch(e){
+
 b.disabled=false;
-b.textContent="✅ Complete Today's Lesson";
+
+b.textContent=
+"✅ Complete Today's Lesson";
+
 alert(e.message);
-}
+
 }
 
+}
+
+/* SHARE FIRST LESSON */
+
 function shareFirstLesson(){
-if(firstEnglish)
-share(firstEnglish);
+
+if(
+firstTamil||
+firstSinhala||
+firstEnglish
+)
+share(
+firstTamil,
+firstSinhala,
+firstEnglish
+);
+
 }
 
 function wrap(ctx,text,max){
+
 const words=text.trim().split(/\s+/),
 lines=[];
 
 let line="";
 
 words.forEach(w=>{
-let test=line?line+" "+w:w;
 
-if(ctx.measureText(test).width>max&&line){
+const test=
+line?line+" "+w:w;
+
+if(
+ctx.measureText(test).width>max&&
+line
+){
+
 lines.push(line);
 line=w;
+
 }else{
+
 line=test;
+
 }
+
 });
 
-if(line)lines.push(line);
+if(line)
+lines.push(line);
 
 return lines;
+
 }
 
-function share(text){
+function share(tamil,sinhala,english){
 
 const c=document.createElement("canvas"),
 x=c.getContext("2d");
@@ -405,72 +644,168 @@ x.textAlign="center";
 
 const center=540;
 
-/* TOP */
+/* HEADER */
 
 x.fillStyle="#2563eb";
 x.font="900 50px Arial";
-x.fillText("CreateLK Academy",center,115);
+
+x.fillText(
+"CreateLK Academy",
+center,
+105
+);
 
 x.fillStyle="#172033";
 x.font="900 29px Arial";
-x.fillText("DAILY SPOKEN ENGLISH",center,165);
+
+x.fillText(
+"DAILY SPOKEN ENGLISH",
+center,
+155
+);
 
 /* TITLE */
 
 x.fillStyle="#2563eb";
 x.font="900 35px Arial";
-x.fillText("TODAY'S LESSON",center,270);
 
-/* FULL FIRST ENGLISH LESSON */
+x.fillText(
+"TODAY'S LESSON",
+center,
+245
+);
 
-let size=44,lines;
+/* THREE LANGUAGES */
 
-do{
-x.font=`700 ${size}px Arial`;
-lines=wrap(x,text,820);
+const sections=[
+{
+text:tamil,
+size:36,
+color:"#172033",
+weight:"700"
+},
+{
+text:sinhala,
+size:29,
+color:"#475569",
+weight:"600"
+},
+{
+text:english,
+size:38,
+color:"#172033",
+weight:"700"
+}
+].filter(v=>v.text);
 
-if(lines.length<=5)break;
+let all=[];
 
-size-=3;
+sections.forEach(s=>{
 
-}while(size>=28);
+x.font=
+`${s.weight} ${s.size}px Arial`;
 
-x.font=`700 ${size}px Arial`;
+let lines=
+wrap(x,s.text,820);
 
-const lineH=size+20;
-const lessonTop=365;
-const lessonArea=350;
+all.push({
+...s,
+lines
+});
 
-let y=lessonTop+
-(lessonArea-lines.length*lineH)/2+
-size;
+});
 
-lines.forEach(line=>{
-x.fillText(line,center,y);
+/* BALANCED CENTER */
+
+let totalHeight=
+all.reduce(
+(n,s)=>
+n+
+s.lines.length*(s.size+16)+30,
+0
+);
+
+const maxArea=530;
+
+let scale=
+totalHeight>maxArea?
+maxArea/totalHeight:
+1;
+
+let y=320+
+(maxArea-totalHeight*scale)/2;
+
+all.forEach(s=>{
+
+let size=Math.max(
+22,
+Math.floor(s.size*scale)
+);
+
+x.fillStyle=s.color;
+
+x.font=
+`${s.weight} ${size}px Arial`;
+
+let lineH=size+15;
+
+s.lines.forEach(line=>{
+
 y+=lineH;
+
+x.fillText(
+line,
+center,
+y
+);
+
+});
+
+y+=25;
+
 });
 
 /* LOWER */
 
-const bottom=900;
-
 x.fillStyle="#7c3aed";
 x.font="900 30px Arial";
-x.fillText("LEARN. SPEAK. IMPROVE.",center,bottom);
+
+x.fillText(
+"LEARN. SPEAK. IMPROVE.",
+center,
+930
+);
 
 x.fillStyle="#166534";
 x.font="900 28px Arial";
-x.fillText("3 FREE LESSONS DAILY",center,bottom+65);
+
+x.fillText(
+"3 FREE LESSONS DAILY",
+center,
+995
+);
 
 /* FOOTER */
 
 x.fillStyle="#2563eb";
 x.font="900 37px Arial";
-x.fillText("creatlk.com",center,1190);
+
+x.fillText(
+"creatlk.com",
+center,
+1190
+);
 
 x.fillStyle="#475569";
 x.font="700 25px Arial";
-x.fillText("WhatsApp: +94 77 119 0395",center,1235);
+
+x.fillText(
+"WhatsApp: +94 77 119 0395",
+center,
+1235
+);
+
+/* SHARE */
 
 c.toBlob(async blob=>{
 
@@ -482,27 +817,39 @@ const f=new File(
 
 if(
 navigator.share&&
-navigator.canShare?.({files:[f]})
+navigator.canShare?.({
+files:[f]
+})
 ){
 
 try{
+
 await navigator.share({
 title:"CreateLK Academy",
 files:[f]
 });
+
 }catch(e){}
 
 }else{
 
 const a=document.createElement("a");
 
-a.href=URL.createObjectURL(blob);
-a.download="creatlk-lesson.png";
+a.href=
+URL.createObjectURL(blob);
+
+a.download=
+"creatlk-lesson.png";
+
 a.click();
+
 }
 
 },"image/png");
+
 }
+
+/* LOAD LESSON */
 
 async function lesson(){
 
@@ -521,7 +868,11 @@ day=Math.min(
 Math.floor(
 (
 new Date()-
-new Date(new Date().getFullYear(),0,1)
+new Date(
+new Date().getFullYear(),
+0,
+1
+)
 )/86400000
 )+1
 );
@@ -530,8 +881,10 @@ let p=membership();
 
 try{
 
-let m=new Date(),
-md=String(m.getMonth()+1).padStart(2,"0")+
+let m=new Date();
+
+let md=
+String(m.getMonth()+1).padStart(2,"0")+
 "-"+
 String(m.getDate()).padStart(2,"0");
 
@@ -543,34 +896,55 @@ API+"/api/today?month_day="+md,
 let a=data(await r.json());
 
 if(a.length<3)
-throw Error("Today's lesson has fewer than 3 dialogues.");
+throw Error(
+"Today's lesson has fewer than 3 dialogues."
+);
 
+/* FIRST LESSON FOR SHARING */
+
+firstTamil=ta(a[0]);
+firstSinhala=si(a[0]);
 firstEnglish=en(a[0]);
 
-let g=$("lessonGrid"),
-n=p?Math.min(10,a.length):3;
+let g=$("lessonGrid");
+
+let n=p?
+Math.min(10,a.length):
+3;
 
 g.innerHTML="";
 
 for(let i=0;i<n;i++)
-g.appendChild(card(a[i],i));
+g.appendChild(
+card(a[i],i)
+);
 
 $("loading").classList.add("hidden");
+
 g.classList.remove("hidden");
 
-$("completeButton").classList.remove("hidden");
-$("shareButton").classList.remove("hidden");
+$("completeButton")
+.classList.remove("hidden");
+
+$("shareButton")
+.classList.remove("hidden");
 
 await loadProgress();
 
 }catch(e){
 
 $("loading").classList.add("hidden");
-$("error").textContent="⚠️ "+e.message;
+
+$("error").textContent=
+"⚠️ "+e.message;
+
 $("error").classList.remove("hidden");
 
 }
+
 }
+
+/* PAYMENT */
 
 async function checkout(){
 
@@ -583,31 +957,50 @@ let r=await fetch(
 PAY+"/api/checkout",
 {
 method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({student_id:id()})
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+student_id:id()
+})
 }
 );
 
 let t=await r.text();
 
 if(t.includes("<form")){
+
 document.open();
 document.write(t);
 document.close();
+
 }else{
+
 let d=JSON.parse(t);
-location.href=d.url||d.checkout_url;
+
+location.href=
+d.url||
+d.checkout_url;
+
 }
 
 }catch(e){
+
 alert(e.message);
-}
+
 }
 
+}
+
+/* START */
+
 (async()=>{
+
 await refresh();
 await lesson();
+
 })();
+
 </script>
 
 </body>
