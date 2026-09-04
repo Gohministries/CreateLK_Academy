@@ -14,39 +14,77 @@ function json(data, status = 200) {
   });
 }
 
-async function authenticate(request, env) {
-  const auth = request.headers.get("Authorization");
 
-  if (!auth || !auth.startsWith("Bearer ")) {
+// =====================================================
+// AUTHENTICATION
+// =====================================================
+
+async function authenticate(request, env) {
+
+  const auth =
+    request.headers.get("Authorization");
+
+  if (
+    !auth ||
+    !auth.startsWith("Bearer ")
+  ) {
     return null;
   }
 
-  const token = auth.substring(7);
+  const token =
+    auth.substring(7);
 
   try {
-    const response = await env.AUTH.fetch(
-      new Request("https://auth.internal/auth/me", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-    );
+
+    const response =
+      await env.AUTH.fetch(
+        new Request(
+          "https://auth.internal/auth/me",
+          {
+            method: "GET",
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+            },
+          }
+        )
+      );
 
     if (!response.ok) {
       return null;
     }
 
-    const data = await response.json();
+    const data =
+      await response.json();
 
-    return data.customer || data.user || data;
+    return (
+      data.customer ||
+      data.user ||
+      data
+    );
+
   } catch (error) {
-    console.error("Authentication error:", error);
+
+    console.error(
+      "Authentication error:",
+      error
+    );
+
     return null;
   }
 }
 
-async function getSubscription(env, customerId, grade) {
+
+// =====================================================
+// GET ACTIVE SUBSCRIPTION
+// =====================================================
+
+async function getSubscription(
+  env,
+  customerId,
+  grade
+) {
+
   return await env.DB.prepare(`
     SELECT
       id,
@@ -67,77 +105,276 @@ async function getSubscription(env, customerId, grade) {
     ORDER BY id DESC
     LIMIT 1
   `)
-    .bind(customerId, grade)
+    .bind(
+      customerId,
+      grade
+    )
     .first();
 }
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: corsHeaders,
-      });
+// =====================================================
+// MAIN WORKER
+// =====================================================
+
+export default {
+
+  async fetch(request, env) {
+
+    const url =
+      new URL(request.url);
+
+
+    // =================================================
+    // CORS
+    // =================================================
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          headers:
+            corsHeaders,
+        }
+      );
     }
+
 
     try {
 
-      // =====================================================
-      // HOME / HEALTH CHECK
-      // =====================================================
 
-      if (url.pathname === "/") {
+      // =================================================
+      // HOME / HEALTH CHECK
+      // =================================================
+
+      if (
+        url.pathname === "/" &&
+        request.method === "GET"
+      ) {
+
         return json({
+
           success: true,
-          service: "CreateLK Academy API",
-          status: "online",
-          version: "1.0.0",
-          message: "CreateLK Academy API is running.",
+
+          service:
+            "CreateLK Academy API",
+
+          status:
+            "online",
+
+          version:
+            "1.0.0",
+
+          message:
+            "CreateLK Academy API is running.",
+
         });
       }
 
 
-      // =====================================================
+      // =================================================
       // AUTH TEST
-      // =====================================================
+      // =================================================
 
-      if (url.pathname === "/auth-test") {
-        const customer = await authenticate(request, env);
+      if (
+        url.pathname === "/auth-test" &&
+        request.method === "GET"
+      ) {
+
+        const customer =
+          await authenticate(
+            request,
+            env
+          );
 
         if (!customer) {
+
           return json({
+
             success: false,
-            authenticated: false,
+
+            authenticated:
+              false,
+
           }, 401);
         }
 
         return json({
+
           success: true,
-          authenticated: true,
+
+          authenticated:
+            true,
+
           customer,
+
         });
       }
 
 
-      // =====================================================
+      // =================================================
+      // LIST GRADE SUBJECTS
+      //
+      // GET /subjects?grade=06
+      // =================================================
+
+      if (
+        url.pathname === "/subjects" &&
+        request.method === "GET"
+      ) {
+
+        const grade =
+          url.searchParams.get(
+            "grade"
+          ) || "06";
+
+
+        const result =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              grade,
+              subject,
+              sinhala_name,
+              tamil_name,
+              display_order
+            FROM academy_subjects
+            WHERE grade = ?
+              AND is_active = 1
+            ORDER BY display_order ASC
+          `)
+            .bind(grade)
+            .all();
+
+
+        return json({
+
+          success: true,
+
+          grade,
+
+          subjects:
+            result.results || [],
+
+        });
+      }
+
+
+      // =================================================
+      // LIST SUBJECT UNITS
+      //
+      // GET
+      // /units?grade=06&subject=English%20Language
+      // =================================================
+
+      if (
+        url.pathname === "/units" &&
+        request.method === "GET"
+      ) {
+
+        const grade =
+          url.searchParams.get(
+            "grade"
+          ) || "06";
+
+
+        const subject =
+          url.searchParams.get(
+            "subject"
+          );
+
+
+        if (!subject) {
+
+          return json({
+
+            success: false,
+
+            error:
+              "Subject is required.",
+
+          }, 400);
+        }
+
+
+        const result =
+          await env.DB.prepare(`
+            SELECT
+              u.id,
+              u.unit_number,
+              u.unit_name,
+              u.sinhala_name,
+              u.tamil_name,
+              u.display_order
+            FROM academy_units u
+            INNER JOIN academy_subjects s
+              ON s.id = u.subject_id
+            WHERE s.grade = ?
+              AND s.subject = ?
+              AND s.is_active = 1
+              AND u.is_active = 1
+            ORDER BY u.unit_number ASC
+          `)
+            .bind(
+              grade,
+              subject
+            )
+            .all();
+
+
+        return json({
+
+          success: true,
+
+          grade,
+
+          subject,
+
+          units:
+            result.results || [],
+
+        });
+      }
+
+
+      // =================================================
       // LIST ALL LESSONS
-      // =====================================================
+      //
+      // GET /lessons?grade=06
+      // GET /lessons?grade=06&subject=English%20Language
+      // =================================================
 
       if (
         url.pathname === "/lessons" &&
         request.method === "GET"
       ) {
 
-        const grade = url.searchParams.get("grade");
-        const subject = url.searchParams.get("subject");
+        const grade =
+          url.searchParams.get(
+            "grade"
+          );
+
+        const subject =
+          url.searchParams.get(
+            "subject"
+          );
+
 
         if (!grade) {
+
           return json({
+
             success: false,
-            error: "Grade is required.",
+
+            error:
+              "Grade is required.",
+
           }, 400);
         }
+
 
         let query = `
           SELECT
@@ -158,142 +395,238 @@ export default {
             AND is_active = 1
         `;
 
-        const params = [grade];
+
+        const params = [
+          grade
+        ];
+
 
         if (subject) {
-          query += ` AND subject = ? `;
-          params.push(subject);
+
+          query += `
+            AND subject = ?
+          `;
+
+          params.push(
+            subject
+          );
         }
 
+
         query += `
-          ORDER BY subject ASC, lesson_number ASC
+          ORDER BY
+            subject ASC,
+            unit ASC,
+            lesson_number ASC
         `;
 
-        const result = await env.DB
-          .prepare(query)
-          .bind(...params)
-          .all();
+
+        const result =
+          await env.DB
+            .prepare(query)
+            .bind(...params)
+            .all();
+
 
         return json({
+
           success: true,
+
           grade,
-          subject: subject || null,
-          lessons: result.results || [],
+
+          subject:
+            subject || null,
+
+          lessons:
+            result.results || [],
+
         });
       }
 
 
-      // =====================================================
+      // =================================================
       // GET SINGLE LESSON
-      // =====================================================
+      //
+      // GET
+      // /lesson?grade=06
+      // &subject=English%20Language
+      // &lesson=1
+      // &language=en
+      // =================================================
 
       if (
         url.pathname === "/lesson" &&
         request.method === "GET"
       ) {
 
-        const grade = url.searchParams.get("grade");
-        const subject = url.searchParams.get("subject");
+        const grade =
+          url.searchParams.get(
+            "grade"
+          );
+
+
+        const subject =
+          url.searchParams.get(
+            "subject"
+          );
+
+
         const language =
-          url.searchParams.get("language") || "en";
+          url.searchParams.get(
+            "language"
+          ) || "en";
+
 
         const lessonNumber =
           Number(
-            url.searchParams.get("lesson") || "1"
+            url.searchParams.get(
+              "lesson"
+            ) || "1"
           );
 
-        if (!grade || !subject) {
+
+        if (
+          !grade ||
+          !subject
+        ) {
+
           return json({
+
             success: false,
-            error: "Grade and subject are required.",
+
+            error:
+              "Grade and subject are required.",
+
           }, 400);
         }
 
-        if (!Number.isInteger(lessonNumber) || lessonNumber < 1) {
+
+        if (
+          !Number.isInteger(
+            lessonNumber
+          ) ||
+          lessonNumber < 1
+        ) {
+
           return json({
+
             success: false,
-            error: "Invalid lesson number.",
+
+            error:
+              "Invalid lesson number.",
+
           }, 400);
         }
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // AUTHENTICATION
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
-        const customer = await authenticate(request, env);
+        const customer =
+          await authenticate(
+            request,
+            env
+          );
+
 
         if (!customer) {
+
           return json({
+
             success: false,
-            error: "Unauthorized.",
+
+            error:
+              "Unauthorized.",
+
           }, 401);
         }
+
 
         const customerId =
           customer.id ||
           customer.customer_id;
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // FIND LESSON
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
-        const lesson = await env.DB.prepare(`
-          SELECT
-            id,
-            grade,
-            subject,
-            unit,
-            lesson_number,
-            lesson_code,
-            duration,
-            video_url,
-            image_url,
-            is_active,
-            is_free,
-            created_at
-          FROM premium_lessons
-          WHERE grade = ?
-            AND subject = ?
-            AND lesson_number = ?
-            AND is_active = 1
-          LIMIT 1
-        `)
-          .bind(
-            grade,
-            subject,
-            lessonNumber
-          )
-          .first();
+        const lesson =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              grade,
+              subject,
+              unit,
+              lesson_number,
+              lesson_code,
+              duration,
+              video_url,
+              image_url,
+              is_active,
+              is_free,
+              created_at
+            FROM premium_lessons
+            WHERE grade = ?
+              AND subject = ?
+              AND lesson_number = ?
+              AND is_active = 1
+            LIMIT 1
+          `)
+            .bind(
+              grade,
+              subject,
+              lessonNumber
+            )
+            .first();
+
 
         if (!lesson) {
+
           return json({
+
             success: false,
-            error: "Lesson not found.",
+
+            error:
+              "Lesson not found.",
+
           }, 404);
         }
 
 
-        // ---------------------------------------------------
-        // CHECK FREE / PREMIUM ACCESS
-        // ---------------------------------------------------
+        // ---------------------------------------------
+        // FREE / PREMIUM ACCESS
+        // ---------------------------------------------
 
         const isFree =
-          Number(lesson.is_free) === 1;
+          Number(
+            lesson.is_free
+          ) === 1;
 
-        let subscription = null;
 
-        let hasAccess = isFree;
+        let subscription =
+          null;
+
+
+        let hasAccess =
+          isFree;
+
 
         if (!isFree) {
 
           if (!customerId) {
+
             return json({
+
               success: false,
-              error: "Customer ID not found.",
+
+              error:
+                "Customer ID not found.",
+
             }, 401);
           }
+
 
           subscription =
             await getSubscription(
@@ -302,41 +635,63 @@ export default {
               grade
             );
 
-          hasAccess = !!subscription;
+
+          hasAccess =
+            !!subscription;
         }
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // PREMIUM LOCK
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
         if (!hasAccess) {
 
           return json({
+
             success: false,
 
-            premium_required: true,
+            premium_required:
+              true,
 
             message:
               "This lesson requires a Premium subscription.",
 
             lesson: {
-              id: lesson.id,
-              grade: lesson.grade,
-              subject: lesson.subject,
-              unit: lesson.unit,
-              lesson_number: lesson.lesson_number,
-              lesson_code: lesson.lesson_code,
-              duration: lesson.duration,
-              free: false,
+
+              id:
+                lesson.id,
+
+              grade:
+                lesson.grade,
+
+              subject:
+                lesson.subject,
+
+              unit:
+                lesson.unit,
+
+              lesson_number:
+                lesson.lesson_number,
+
+              lesson_code:
+                lesson.lesson_code,
+
+              duration:
+                lesson.duration,
+
+              free:
+                false,
+
             },
+
           }, 403);
         }
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // GET TRANSLATION
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
         let translation =
           await env.DB.prepare(`
@@ -360,9 +715,9 @@ export default {
             .first();
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // ENGLISH FALLBACK
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
         if (
           !translation &&
@@ -384,26 +739,34 @@ export default {
                 AND language = 'en'
               LIMIT 1
             `)
-              .bind(lesson.id)
+              .bind(
+                lesson.id
+              )
               .first();
         }
 
 
         if (!translation) {
+
           return json({
+
             success: false,
-            error: "Lesson translation not found.",
+
+            error:
+              "Lesson translation not found.",
+
           }, 404);
         }
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // GET QUESTIONS
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
         let questions = {
-          results: [],
+          results: []
         };
+
 
         try {
 
@@ -435,13 +798,12 @@ export default {
             "Questions table unavailable:",
             error.message
           );
-
         }
 
 
-        // ---------------------------------------------------
+        // ---------------------------------------------
         // RETURN LESSON
-        // ---------------------------------------------------
+        // ---------------------------------------------
 
         return json({
 
@@ -449,21 +811,28 @@ export default {
 
           access: true,
 
-          free: isFree,
+          free:
+            isFree,
 
-          grade: lesson.grade,
+          grade:
+            lesson.grade,
 
-          subject: lesson.subject,
+          subject:
+            lesson.subject,
 
           lesson: {
 
-            id: lesson.id,
+            id:
+              lesson.id,
 
-            grade: lesson.grade,
+            grade:
+              lesson.grade,
 
-            subject: lesson.subject,
+            subject:
+              lesson.subject,
 
-            unit: lesson.unit,
+            unit:
+              lesson.unit,
 
             lesson_number:
               lesson.lesson_number,
@@ -503,17 +872,25 @@ export default {
 
             questions:
               questions.results || [],
+
           },
 
           subscription:
             subscription
               ? {
-                  active: true,
-                  grade: subscription.grade,
+
+                  active:
+                    true,
+
+                  grade:
+                    subscription.grade,
+
                   starts_at:
                     subscription.starts_at,
+
                   expires_at:
                     subscription.expires_at,
+
                 }
               : null,
 
@@ -521,9 +898,11 @@ export default {
       }
 
 
-      // =====================================================
+      // =================================================
       // PREMIUM STATUS
-      // =====================================================
+      //
+      // GET /premium/status?grade=06
+      // =================================================
 
       if (
         url.pathname === "/premium/status" &&
@@ -531,23 +910,40 @@ export default {
       ) {
 
         const grade =
-          url.searchParams.get("grade");
+          url.searchParams.get(
+            "grade"
+          );
+
 
         if (!grade) {
+
           return json({
+
             success: false,
-            error: "Grade is required.",
+
+            error:
+              "Grade is required.",
+
           }, 400);
         }
 
 
         const customer =
-          await authenticate(request, env);
+          await authenticate(
+            request,
+            env
+          );
+
 
         if (!customer) {
+
           return json({
+
             success: false,
-            error: "Unauthorized.",
+
+            error:
+              "Unauthorized.",
+
           }, 401);
         }
 
@@ -577,16 +973,25 @@ export default {
           subscription:
             subscription
               ? {
-                  id: subscription.id,
-                  status: subscription.status,
+
+                  id:
+                    subscription.id,
+
+                  status:
+                    subscription.status,
+
                   starts_at:
                     subscription.starts_at,
+
                   expires_at:
                     subscription.expires_at,
+
                   amount:
                     subscription.amount,
+
                   currency:
                     subscription.currency,
+
                 }
               : null,
 
@@ -594,9 +999,11 @@ export default {
       }
 
 
-      // =====================================================
-      // CHECKOUT PLACEHOLDER
-      // =====================================================
+      // =================================================
+      // PREMIUM CHECKOUT
+      //
+      // GET /premium/checkout?grade=06
+      // =================================================
 
       if (
         url.pathname === "/premium/checkout" &&
@@ -604,23 +1011,40 @@ export default {
       ) {
 
         const grade =
-          url.searchParams.get("grade");
+          url.searchParams.get(
+            "grade"
+          );
+
 
         if (!grade) {
+
           return json({
+
             success: false,
-            error: "Grade is required.",
+
+            error:
+              "Grade is required.",
+
           }, 400);
         }
 
 
         const customer =
-          await authenticate(request, env);
+          await authenticate(
+            request,
+            env
+          );
+
 
         if (!customer) {
+
           return json({
+
             success: false,
-            error: "Unauthorized.",
+
+            error:
+              "Unauthorized.",
+
           }, 401);
         }
 
@@ -629,44 +1053,55 @@ export default {
 
           success: false,
 
-          configured: false,
+          configured:
+            false,
 
           message:
             "Premium payment is not configured yet.",
 
           grade,
 
-          price: 999,
+          price:
+            999,
 
-          currency: "LKR",
+          currency:
+            "LKR",
 
-          period_days: 30,
+          period_days:
+            30,
 
         }, 501);
       }
 
 
-      // =====================================================
+      // =================================================
       // 404
-      // =====================================================
+      // =================================================
 
       return json({
 
         success: false,
 
-        error: "API route not found.",
+        error:
+          "API route not found.",
 
-        path: url.pathname,
+        path:
+          url.pathname,
 
       }, 404);
 
 
     } catch (error) {
 
+      // =================================================
+      // GLOBAL ERROR HANDLER
+      // =================================================
+
       console.error(
         "Fatal Worker Error:",
         error
       );
+
 
       return json({
 
