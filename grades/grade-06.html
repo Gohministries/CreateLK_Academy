@@ -17,6 +17,7 @@ header{height:64px;background:#fff;border-bottom:1px solid #ddd;display:flex;ali
 
 .overlay{display:none;position:fixed;inset:0;background:#0008;z-index:19}
 .overlay.show{display:block}
+
 .drawer{position:fixed;top:0;left:-320px;width:300px;max-width:88%;height:100%;background:#fff;z-index:20;transition:.25s;overflow:auto}
 .drawer.open{left:0}
 .drawer-head{padding:18px;background:linear-gradient(135deg,#071a3d,#1261d6);color:#fff;display:flex;justify-content:space-between}
@@ -37,11 +38,20 @@ header{height:64px;background:#fff;border-bottom:1px solid #ddd;display:flex;ali
 label{font-size:13px;font-weight:bold;display:block;margin-bottom:7px}
 select{width:100%;padding:11px;border:1px solid #d0d5dd;border-radius:8px}
 
-.status{padding:11px 14px;border-radius:9px;margin-bottom:15px;font-size:13px;font-weight:bold}
+.status{padding:13px 15px;border-radius:10px;margin-bottom:15px;font-size:13px;font-weight:bold}
 .status.ok{background:#ecfdf3;color:#027a48}
 .status.lock{background:#fff7e6;color:#b54708}
+.status.expired{background:#fff1f0;color:#b42318}
+
+.status .countdown{
+display:block;
+margin-top:7px;
+font-size:12px;
+font-weight:600
+}
 
 h2.section{font-size:20px;margin:22px 0 10px}
+
 .units{display:flex;gap:8px;overflow:auto;margin-bottom:15px}
 .unit{white-space:nowrap;padding:9px 14px;border:1px solid #ddd;background:#fff;border-radius:20px;cursor:pointer}
 .unit.active{background:#175cd3;color:#fff;border-color:#175cd3}
@@ -64,7 +74,7 @@ h2.section{font-size:20px;margin:22px 0 10px}
 .lock{background:linear-gradient(135deg,#071a3d,#175cd3);color:#fff;text-align:center;padding:30px 20px;border-radius:15px;margin-top:20px}
 .lock h2{margin:8px 0}
 .lock p{opacity:.9}
-.btn{display:inline-block;background:#fff;color:#175cd3;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:bold}
+.btn{display:inline-block;background:#fff;color:#175cd3;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:8px}
 
 .empty{text-align:center;padding:25px;color:#667085}
 .loading{text-align:center;padding:25px;color:#667085}
@@ -83,7 +93,8 @@ h2.section{font-size:20px;margin:22px 0 10px}
 <button class="menu" onclick="openMenu()">☰</button>
 
 <img class="logo"
-src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png">
+src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png"
+alt="CreateLK Academy">
 
 <div class="brand">CreateLK Academy</div>
 
@@ -92,391 +103,1057 @@ src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png">
 <a class="dash" href="/dashboard.html">Dashboard</a>
 </header>
 
+
 <div id="overlay" class="overlay" onclick="closeMenu()"></div>
 
+
 <aside id="drawer" class="drawer">
+
 <div class="drawer-head">
 <h2>Grade 06 Subjects</h2>
 <button class="close" onclick="closeMenu()">×</button>
 </div>
+
 <div id="subjects" style="padding:10px">
 <div class="loading">Loading...</div>
 </div>
+
 </aside>
 
+
 <section class="hero">
+
 <div class="hero-inner">
+
 <small>CreateLK Academy • Grade 06</small>
-<h1 id="title">English Language</h1>
-<p>Learn step by step with structured lessons and practice.</p>
+
+<h1 id="title">
+English Language
+</h1>
+
+<p>
+Learn step by step with structured lessons and practice.
+</p>
+
 </div>
+
 </section>
+
 
 <main class="main">
 
 <div class="box">
-<label>Learning Language</label>
+
+<label>
+Learning Language
+</label>
+
 <select id="language">
-<option value="en">English</option>
-<option value="si">සිංහල</option>
-<option value="ta">தமிழ்</option>
+
+<option value="en">
+English
+</option>
+
+<option value="si">
+සිංහල
+</option>
+
+<option value="ta">
+தமிழ்
+</option>
+
 </select>
+
 </div>
+
 
 <div id="status"></div>
 
-<h2 class="section">Units</h2>
+
+<h2 class="section">
+Units
+</h2>
+
 <div id="units" class="units"></div>
 
-<h2 class="section">Lessons</h2>
+
+<h2 class="section">
+Lessons
+</h2>
+
 <div id="lessons" class="lessons">
-<div class="loading">Loading lessons...</div>
+<div class="loading">
+Loading lessons...
 </div>
+</div>
+
 
 <div id="content"></div>
 
 </main>
 
+
 <script>
-const API="https://createlk-academy-api.createlk.workers.dev";
-const PREMIUM="https://createlk-premium-api.createlk.workers.dev";
-const GRADE="06";
 
-let subject="English Language";
-let lessons=[];
-let unit="";
-let selected=null;
-let premiumActive=false;
+/* ================= CONFIG ================= */
 
-const $=id=>document.getElementById(id);
-const token=()=>localStorage.getItem("createlk_token");
+const API =
+"https://createlk-academy-api.createlk.workers.dev";
+
+const PREMIUM_API =
+"https://createlk-premium-api.createlk.workers.dev";
+
+const PAYHERE_URL =
+"https://createlk-payhere.createlk.workers.dev";
+
+const GRADE = "06";
+
+
+/* ================= STATE ================= */
+
+let subject = "English Language";
+let lessons = [];
+let unit = "";
+let selected = null;
+
+let premiumActive = false;
+let expiresAt = null;
+let countdownTimer = null;
+
+
+/* ================= HELPERS ================= */
+
+const $ = id =>
+document.getElementById(id);
+
+function token(){
+return localStorage.getItem("createlk_token");
+}
 
 function headers(){
- return token()?{Authorization:`Bearer ${token()}`}:{};
+
+return token()
+? {Authorization:`Bearer ${token()}`}
+: {};
+
 }
 
 function esc(v){
- return String(v??"")
- .replace(/&/g,"&amp;")
- .replace(/</g,"&lt;")
- .replace(/>/g,"&gt;")
- .replace(/"/g,"&quot;");
+
+return String(v ?? "")
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;");
+
 }
 
-function free(l){
- return subject==="English Language" &&
-        Number(l.lesson_number)===1;
+
+/* ================= FREE LESSON ================= */
+
+function isFree(lesson){
+
+return subject === "English Language"
+&& Number(lesson.lesson_number) === 1;
+
 }
+
+
+/* ================= MENU ================= */
 
 function openMenu(){
- $("drawer").classList.add("open");
- $("overlay").classList.add("show");
+
+$("drawer").classList.add("open");
+$("overlay").classList.add("show");
+
 }
 
 function closeMenu(){
- $("drawer").classList.remove("open");
- $("overlay").classList.remove("show");
+
+$("drawer").classList.remove("open");
+$("overlay").classList.remove("show");
+
 }
+
+
+/* ================= PREMIUM STATUS ================= */
 
 async function premiumStatus(){
- premiumActive=false;
 
- if(!token()){
-  showStatus();
-  return;
- }
+clearInterval(countdownTimer);
 
- try{
-  const r=await fetch(
-   `${PREMIUM}/premium/status?grade=${GRADE}`,
-   {headers:headers()}
-  );
+premiumActive = false;
+expiresAt = null;
 
-  if(r.ok){
-   const d=await r.json();
-   premiumActive=
-    d.active===true||
-    d.premium===true||
-    d.subscription_active===true;
-  }
- }catch(e){}
 
- showStatus();
+if(!token()){
+
+showPremiumStatus();
+
+return;
+
 }
 
-function showStatus(){
- if(!token()){
-  $("status").className="status lock";
-  $("status").textContent="🔒 Login to access Premium lessons.";
- }else if(premiumActive){
-  $("status").className="status ok";
-  $("status").textContent="✓ Premium membership active.";
- }else{
-  $("status").className="status lock";
-  $("status").textContent="🔒 Premium membership required.";
- }
+
+try{
+
+const r = await fetch(
+
+`${PREMIUM_API}/premium/status?grade=${GRADE}`,
+
+{
+headers:headers()
 }
+
+);
+
+
+const d = await r.json();
+
+
+premiumActive =
+d.active === true ||
+d.premium === true ||
+d.subscription_active === true;
+
+
+expiresAt =
+d.expires_at ||
+d.expiresAt ||
+null;
+
+
+if(premiumActive && expiresAt){
+
+if(new Date(expiresAt).getTime() <= Date.now()){
+
+premiumActive = false;
+expiresAt = null;
+
+}
+
+}
+
+
+}catch(e){
+
+console.error(
+"Premium status error:",
+e
+);
+
+}
+
+
+showPremiumStatus();
+
+}
+
+
+/* ================= PREMIUM UI ================= */
+
+function showPremiumStatus(){
+
+clearInterval(countdownTimer);
+
+
+if(!token()){
+
+$("status").className =
+"status lock";
+
+$("status").innerHTML = `
+
+🔒 Premium membership required.
+
+<br>
+
+<a class="btn"
+href="${PAYHERE_URL}/?grade=${GRADE}">
+Get Premium
+</a>
+
+`;
+
+return;
+
+}
+
+
+if(premiumActive && expiresAt){
+
+$("status").className =
+"status ok";
+
+$("status").innerHTML = `
+
+✓ Premium Active
+
+<span
+id="countdown"
+class="countdown">
+Loading...
+</span>
+
+`;
+
+updateCountdown();
+
+countdownTimer =
+setInterval(
+updateCountdown,
+1000
+);
+
+return;
+
+}
+
+
+$("status").className =
+"status expired";
+
+$("status").innerHTML = `
+
+⚠ Premium expired.
+
+<br>
+
+<a class="btn"
+href="${PAYHERE_URL}/?grade=${GRADE}">
+Renew Premium
+</a>
+
+`;
+
+}
+
+
+/* ================= COUNTDOWN ================= */
+
+function updateCountdown(){
+
+if(!expiresAt){
+
+return;
+
+}
+
+
+const end =
+new Date(expiresAt).getTime();
+
+const diff =
+end - Date.now();
+
+
+if(diff <= 0){
+
+clearInterval(countdownTimer);
+
+premiumActive = false;
+expiresAt = null;
+
+showPremiumStatus();
+
+return;
+
+}
+
+
+const days =
+Math.floor(
+diff / 86400000
+);
+
+const hours =
+Math.floor(
+(diff % 86400000) / 3600000
+);
+
+const minutes =
+Math.floor(
+(diff % 3600000) / 60000
+);
+
+const seconds =
+Math.floor(
+(diff % 60000) / 1000
+);
+
+
+const el =
+$("countdown");
+
+
+if(el){
+
+el.textContent =
+`⏳ ${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
+
+}
+
+}
+
+
+/* ================= SUBJECTS ================= */
 
 async function loadSubjects(){
- try{
-  const r=await fetch(`${API}/subjects?grade=${GRADE}`);
-  const d=await r.json();
-  const list=d.subjects||d.data||[];
 
-  $("subjects").innerHTML=list.map((s,i)=>{
-   const n=s.subject||s.name||"";
-   return `
-   <button class="subject ${n===subject?"active":""}"
-   data-s="${encodeURIComponent(n)}"
-   onclick="selectSubject(this.dataset.s)">
-   <b>${String(i+1).padStart(2,"0")}. ${esc(n)}</b>
-   <small>${esc(s.sinhala_name||"")}</small>
-   </button>`;
-  }).join("");
- }catch(e){
-  $("subjects").innerHTML=`<div class="empty">Unable to load subjects.</div>`;
- }
+try{
+
+const r =
+await fetch(
+`${API}/subjects?grade=${GRADE}`
+);
+
+const d =
+await r.json();
+
+const list =
+d.subjects ||
+d.data ||
+[];
+
+
+if(!list.length){
+
+$("subjects").innerHTML =
+`<div class="empty">
+No subjects available.
+</div>`;
+
+return;
+
 }
+
+
+$("subjects").innerHTML =
+list.map((s,i)=>{
+
+const name =
+s.subject ||
+s.name ||
+"";
+
+return `
+
+<button
+class="subject ${name===subject?"active":""}"
+data-s="${encodeURIComponent(name)}"
+onclick="selectSubject(this.dataset.s)">
+
+<b>
+${String(i+1).padStart(2,"0")}.
+${esc(name)}
+</b>
+
+<small>
+${esc(s.sinhala_name || "")}
+</small>
+
+</button>
+
+`;
+
+}).join("");
+
+
+}catch(e){
+
+$("subjects").innerHTML =
+`<div class="empty">
+Unable to load subjects.
+</div>`;
+
+}
+
+}
+
+
+/* ================= SUBJECT ================= */
 
 async function selectSubject(s){
- subject=decodeURIComponent(s);
- $("title").textContent=subject;
- closeMenu();
- $("content").innerHTML="";
- unit="";
- selected=null;
- await premiumStatus();
- await loadLessons();
- loadSubjects();
+
+subject =
+decodeURIComponent(s);
+
+$("title").textContent =
+subject;
+
+closeMenu();
+
+unit = "";
+selected = null;
+
+$("content").innerHTML = "";
+
+await premiumStatus();
+
+await loadLessons();
+
+loadSubjects();
+
 }
+
+
+/* ================= LESSONS ================= */
 
 async function loadLessons(){
- $("units").innerHTML="";
- $("lessons").innerHTML=`<div class="loading">Loading lessons...</div>`;
 
- try{
-  const r=await fetch(
-   `${API}/lessons?grade=${GRADE}&subject=${encodeURIComponent(subject)}`
-  );
+$("units").innerHTML = "";
 
-  const d=await r.json();
-  lessons=d.lessons||d.data||[];
+$("lessons").innerHTML =
+`<div class="loading">
+Loading lessons...
+</div>`;
 
-  if(!lessons.length){
-   $("lessons").innerHTML=
-    `<div class="empty">No lessons available.</div>`;
-   return;
-  }
 
-  const units=[...new Set(
-   lessons.map(x=>x.unit||"General")
-  )];
+try{
 
-  unit=unit&&units.includes(unit)?unit:units[0];
+const r =
+await fetch(
 
-  $("units").innerHTML=units.map(u=>`
-   <button class="unit ${u===unit?"active":""}"
-   onclick="selectUnit(${JSON.stringify(u)})">
-   ${esc(u)}
-   </button>
-  `).join("");
+`${API}/lessons?grade=${GRADE}&subject=${encodeURIComponent(subject)}`
 
-  renderLessons();
+);
 
- }catch(e){
-  $("lessons").innerHTML=
-   `<div class="empty">Unable to load lessons.</div>`;
- }
+
+const d =
+await r.json();
+
+lessons =
+d.lessons ||
+d.data ||
+[];
+
+
+if(!lessons.length){
+
+$("lessons").innerHTML =
+`<div class="empty">
+No lessons available.
+</div>`;
+
+return;
+
 }
+
+
+const units =
+[...new Set(
+lessons.map(
+x => x.unit || "General"
+)
+)];
+
+
+unit =
+unit && units.includes(unit)
+? unit
+: units[0];
+
+
+$("units").innerHTML =
+units.map(u=>`
+
+<button
+class="unit ${u===unit?"active":""}"
+onclick="selectUnit(${JSON.stringify(u)})">
+
+${esc(u)}
+
+</button>
+
+`).join("");
+
+
+renderLessons();
+
+
+}catch(e){
+
+$("lessons").innerHTML =
+`<div class="empty">
+Unable to load lessons.
+</div>`;
+
+}
+
+}
+
+
+/* ================= UNIT ================= */
 
 function selectUnit(u){
- unit=u;
 
- document.querySelectorAll(".unit").forEach(x=>
-  x.classList.toggle("active",x.textContent.trim()===u)
- );
+unit = u;
 
- renderLessons();
+document
+.querySelectorAll(".unit")
+.forEach(x =>
+x.classList.toggle(
+"active",
+x.textContent.trim() === u
+)
+);
+
+renderLessons();
+
 }
+
+
+/* ================= RENDER LESSONS ================= */
 
 function renderLessons(){
- const list=lessons.filter(
-  x=>(x.unit||"General")===unit
- );
 
- $("lessons").innerHTML=list.map(l=>{
-  const f=free(l);
+const list =
+lessons.filter(
+x => (x.unit || "General") === unit
+);
 
-  return `
-  <div class="lesson"
-  onclick="openLesson(${Number(l.lesson_number)})">
 
-   <div class="num">${Number(l.lesson_number)}</div>
+$("lessons").innerHTML =
+list.map(l=>{
 
-   <div class="info">
-    <h3>${esc(
-     l.title||
-     l.lesson_title||
-     `Lesson ${l.lesson_number}`
-    )}</h3>
+const free =
+isFree(l);
 
-    <div class="meta">
-     ${l.duration?l.duration+" minutes":"Lesson"}
-    </div>
-   </div>
+return `
 
-   <span class="access ${f?"free":"premium"}">
-    ${f?"FREE":"PREMIUM"}
-   </span>
+<div
+class="lesson"
+onclick="openLesson(${Number(l.lesson_number)})">
 
-  </div>`;
- }).join("");
+<div class="num">
+${Number(l.lesson_number)}
+</div>
+
+<div class="info">
+
+<h3>
+${esc(
+l.title ||
+l.lesson_title ||
+`Lesson ${l.lesson_number}`
+)}
+</h3>
+
+<div class="meta">
+${l.duration
+? l.duration + " minutes"
+: "Lesson"}
+</div>
+
+</div>
+
+<span
+class="access ${free?"free":"premium"}">
+
+${free ? "FREE" : "PREMIUM"}
+
+</span>
+
+</div>
+
+`;
+
+}).join("");
+
 }
+
+
+/* ================= OPEN LESSON ================= */
 
 async function openLesson(n){
- const l=lessons.find(
-  x=>Number(x.lesson_number)===Number(n)
- );
 
- if(!l)return;
+const lesson =
+lessons.find(
+x => Number(x.lesson_number) === Number(n)
+);
 
- selected=l;
 
- if(!free(l)&&!token()){
-  $("content").innerHTML=`
-   <div class="lock">
-    <div style="font-size:40px">🔐</div>
-    <h2>Login Required</h2>
-    <p>Please login to access this lesson.</p>
-    <a class="btn" href="/auth/login.html">Login</a>
-   </div>`;
-  return;
- }
+if(!lesson)return;
 
- if(!free(l)&&!premiumActive){
-  $("content").innerHTML=`
-   <div class="lock">
-    <div style="font-size:40px">🔒</div>
-    <h2>Premium Lesson</h2>
-    <p>This lesson is available for Premium members.</p>
-    <a class="btn" href="/premium.html">Get Premium</a>
-   </div>`;
-  return;
- }
+selected = lesson;
 
- await getLesson(n);
+
+if(isFree(lesson)){
+
+await getLesson(n);
+
+return;
+
 }
+
+
+if(!token()){
+
+showLogin();
+
+return;
+
+}
+
+
+if(!premiumActive){
+
+showPremiumLock();
+
+return;
+
+}
+
+
+await getLesson(n);
+
+}
+
+
+/* ================= LOGIN ================= */
+
+function showLogin(){
+
+$("content").innerHTML = `
+
+<div class="lock">
+
+<div style="font-size:40px">
+🔐
+</div>
+
+<h2>
+Login Required
+</h2>
+
+<p>
+Please login to access this lesson.
+</p>
+
+<a
+class="btn"
+href="/auth/login.html">
+
+Login
+
+</a>
+
+</div>
+
+`;
+
+}
+
+
+/* ================= PREMIUM LOCK ================= */
+
+function showPremiumLock(){
+
+$("content").innerHTML = `
+
+<div class="lock">
+
+<div style="font-size:40px">
+🔒
+</div>
+
+<h2>
+Premium Lesson
+</h2>
+
+<p>
+This lesson is available for Premium members.
+</p>
+
+<a
+class="btn"
+href="${PAYHERE_URL}/?grade=${GRADE}">
+
+Get Premium
+
+</a>
+
+</div>
+
+`;
+
+}
+
+
+/* ================= GET LESSON ================= */
 
 async function getLesson(n){
- $("content").innerHTML=
-  `<div class="loading">Loading lesson...</div>`;
 
- try{
-  const url=
-   `${API}/lesson?grade=${GRADE}`+
-   `&subject=${encodeURIComponent(subject)}`+
-   `&lesson=${n}`+
-   `&language=${language.value}`;
+$("content").innerHTML =
+`<div class="loading">
+Loading lesson...
+</div>`;
 
-  const r=await fetch(url,{headers:headers()});
-  const d=await r.json();
 
-  if(r.status===401){
-   $("content").innerHTML=`
-   <div class="lock">
-    <h2>Login Required</h2>
-    <a class="btn" href="/auth/login.html">Login</a>
-   </div>`;
-   return;
-  }
+try{
 
-  if(r.status===403){
-   $("content").innerHTML=`
-   <div class="lock">
-    <h2>Premium Lesson</h2>
-    <p>Premium membership is required.</p>
-    <a class="btn" href="/premium.html">Get Premium</a>
-   </div>`;
-   return;
-  }
+const url =
+`${API}/lesson?grade=${GRADE}` +
+`&subject=${encodeURIComponent(subject)}` +
+`&lesson=${n}` +
+`&language=${language.value}`;
 
-  if(!r.ok)throw Error();
 
-  renderLesson(d);
-
- }catch(e){
-  $("content").innerHTML=
-   `<div class="empty">Unable to load lesson.</div>`;
- }
+const r =
+await fetch(
+url,
+{
+headers:headers()
 }
+);
+
+
+const d =
+await r.json();
+
+
+if(r.status === 401){
+
+showLogin();
+
+return;
+
+}
+
+
+if(r.status === 403){
+
+showPremiumLock();
+
+return;
+
+}
+
+
+if(!r.ok){
+
+throw Error();
+
+}
+
+
+renderLesson(d);
+
+
+}catch(e){
+
+$("content").innerHTML =
+`<div class="empty">
+Unable to load lesson.
+</div>`;
+
+}
+
+}
+
+
+/* ================= RENDER CONTENT ================= */
 
 function renderLesson(d){
- const l=d.lesson||d.data||d;
- const q=d.questions||[];
 
- let html=`
- <div class="content">
- <h2>${esc(l.title||"Lesson")}</h2>`;
+const l =
+d.lesson ||
+d.data ||
+d;
 
- if(l.objectives)
- html+=`
- <h3>Learning Objectives</h3>
- <div class="content-box">${esc(l.objectives)}</div>`;
+const questions =
+d.questions ||
+[];
 
- if(l.content)
- html+=`
- <h3>Lesson Content</h3>
- <div class="content-box">${esc(l.content)}</div>`;
 
- if(l.key_points)
- html+=`
- <h3>Key Points</h3>
- <div class="content-box">${esc(l.key_points)}</div>`;
+let html = `
 
- if(l.summary)
- html+=`
- <h3>Summary</h3>
- <div class="content-box">${esc(l.summary)}</div>`;
+<div class="content">
 
- if(l.video_url)
- html+=`
- <h3>Video</h3>
- <a href="${esc(l.video_url)}"
- target="_blank">Watch Lesson Video</a>`;
+<h2>
+${esc(l.title || "Lesson")}
+</h2>
 
- if(q.length){
-  html+="<h3>Practice Questions</h3>";
+`;
 
-  q.forEach((x,i)=>{
-   html+=`
-   <div class="content-box">
-   <b>${i+1}. ${esc(x.question)}</b>
-   <div>A. ${esc(x.option_a)}</div>
-   <div>B. ${esc(x.option_b)}</div>
-   <div>C. ${esc(x.option_c)}</div>
-   <div>D. ${esc(x.option_d)}</div>
-   </div>`;
-  });
- }
 
- html+="</div>";
+if(l.objectives){
 
- $("content").innerHTML=html;
+html += `
 
- $("content").scrollIntoView({
-  behavior:"smooth"
- });
+<h3>
+Learning Objectives
+</h3>
+
+<div class="content-box">
+${esc(l.objectives)}
+</div>
+
+`;
+
 }
 
-language.onchange=()=>{
- if(selected)openLesson(selected.lesson_number);
+
+if(l.content){
+
+html += `
+
+<h3>
+Lesson Content
+</h3>
+
+<div class="content-box">
+${esc(l.content)}
+</div>
+
+`;
+
+}
+
+
+if(l.key_points){
+
+html += `
+
+<h3>
+Key Points
+</h3>
+
+<div class="content-box">
+${esc(l.key_points)}
+</div>
+
+`;
+
+}
+
+
+if(l.summary){
+
+html += `
+
+<h3>
+Summary
+</h3>
+
+<div class="content-box">
+${esc(l.summary)}
+</div>
+
+`;
+
+}
+
+
+if(l.video_url){
+
+html += `
+
+<h3>
+Video
+</h3>
+
+<a
+href="${esc(l.video_url)}"
+target="_blank"
+rel="noopener">
+
+Watch Lesson Video
+
+</a>
+
+`;
+
+}
+
+
+if(questions.length){
+
+html += `
+<h3>
+Practice Questions
+</h3>
+`;
+
+
+questions.forEach((q,i)=>{
+
+html += `
+
+<div class="content-box">
+
+<b>
+${i+1}. ${esc(q.question)}
+</b>
+
+<div>
+A. ${esc(q.option_a)}
+</div>
+
+<div>
+B. ${esc(q.option_b)}
+</div>
+
+<div>
+C. ${esc(q.option_c)}
+</div>
+
+<div>
+D. ${esc(q.option_d)}
+</div>
+
+</div>
+
+`;
+
+});
+
+}
+
+
+html += `
+</div>
+`;
+
+
+$("content").innerHTML =
+html;
+
+
+$("content").scrollIntoView({
+behavior:"smooth"
+});
+
+}
+
+
+/* ================= LANGUAGE ================= */
+
+$("language").onchange = () => {
+
+if(selected){
+
+openLesson(
+selected.lesson_number
+);
+
+}
+
 };
 
+
+/* ================= START ================= */
+
 (async()=>{
- await loadSubjects();
- await premiumStatus();
- await loadLessons();
+
+await loadSubjects();
+
+await premiumStatus();
+
+await loadLessons();
+
 })();
+
 </script>
 
 </body>
