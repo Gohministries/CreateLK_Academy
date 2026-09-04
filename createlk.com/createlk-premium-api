@@ -1,0 +1,267 @@
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders() });
+    }
+
+    try {
+      /* =========================
+         PREMIUM STATUS
+         ========================= */
+
+      if (url.pathname === "/premium/status") {
+        const grade = url.searchParams.get("grade");
+
+        if (!grade) {
+          return json({
+            success: false,
+            error: "Grade is required"
+          }, 400);
+        }
+
+        const customer = await getCustomer(request);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized"
+          }, 401);
+        }
+
+        const subscription = await env.DB.prepare(`
+          SELECT
+            id,
+            customer_id,
+            grade,
+            status,
+            starts_at,
+            expires_at
+          FROM premium_subscriptions
+          WHERE customer_id = ?
+            AND grade = ?
+            AND status = 'ACTIVE'
+            AND expires_at > datetime('now')
+          ORDER BY id DESC
+          LIMIT 1
+        `)
+        .bind(customer.id, grade)
+        .first();
+
+        if (!subscription) {
+          return json({
+            success: true,
+            premium: {
+              active: false,
+              grade: grade
+            }
+          });
+        }
+
+        return json({
+          success: true,
+          premium: {
+            active: true,
+            grade: subscription.grade,
+            starts_at: subscription.starts_at,
+            expires_at: subscription.expires_at
+          }
+        });
+      }
+
+
+      /* =========================
+         PREMIUM CONTENT
+         ========================= */
+
+      if (url.pathname === "/content") {
+        const grade = url.searchParams.get("grade");
+        const subject = url.searchParams.get("subject");
+        const language = url.searchParams.get("language") || "en";
+
+        if (!grade || !subject) {
+          return json({
+            success: false,
+            error: "Grade and subject are required"
+          }, 400);
+        }
+
+        const customer = await getCustomer(request);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized"
+          }, 401);
+        }
+
+        /*
+          IMPORTANT:
+          The subscription must match BOTH
+          customer AND grade.
+        */
+
+        const subscription = await env.DB.prepare(`
+          SELECT id
+          FROM premium_subscriptions
+          WHERE customer_id = ?
+            AND grade = ?
+            AND status = 'ACTIVE'
+            AND expires_at > datetime('now')
+          ORDER BY id DESC
+          LIMIT 1
+        `)
+        .bind(customer.id, grade)
+        .first();
+
+        if (!subscription) {
+          return json({
+            success: false,
+            error: "Premium required",
+            payment_required: true
+          }, 403);
+        }
+
+
+        /*
+          CONTENT TABLE
+
+          Change this table name only if your
+          existing content table has another name.
+        */
+
+        const content = await env.DB.prepare(`
+          SELECT *
+          FROM premium_content
+          WHERE grade = ?
+            AND subject = ?
+            AND language = ?
+          LIMIT 1
+        `)
+        .bind(grade, subject, language)
+        .first();
+
+        if (!content) {
+          return json({
+            success: false,
+            error: "Content not found"
+          }, 404);
+        }
+
+        return json({
+          success: true,
+          product: content
+        });
+      }
+
+
+      /* =========================
+         HEALTH CHECK
+         ========================= */
+
+      if (url.pathname === "/") {
+        return json({
+          success: true,
+          service: "CreateLK Premium API",
+          status: "online"
+        });
+      }
+
+
+      return json({
+        success: false,
+        error: "Not found"
+      }, 404);
+
+    } catch (error) {
+
+      return json({
+        success: false,
+        error: error.message
+      }, 500);
+
+    }
+  }
+};
+
+
+/* =========================
+   GET LOGGED-IN CUSTOMER
+   ========================= */
+
+async function getCustomer(request) {
+
+  const auth = request.headers.get("Authorization");
+
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = auth.substring(7);
+
+  try {
+
+    const response = await fetch(
+      "https://createlk-auth-api.createlk.workers.dev/auth/me",
+      {
+        method: "GET",
+        headers: {
+          "Authorization": "Bearer " + token
+        }
+      }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.customer) {
+      return null;
+    }
+
+    return data.customer;
+
+  } catch (error) {
+    return null;
+  }
+}
+
+
+/* =========================
+   JSON RESPONSE
+   ========================= */
+
+function json(data, status = 200) {
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        ...corsHeaders()
+      }
+    }
+  );
+
+}
+
+
+/* =========================
+   CORS
+   ========================= */
+
+function corsHeaders() {
+
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers":
+      "Authorization, Content-Type",
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS"
+  };
+
+}
