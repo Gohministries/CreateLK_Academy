@@ -1,0 +1,684 @@
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+async function authenticate(request, env) {
+  const auth = request.headers.get("Authorization");
+
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = auth.substring(7);
+
+  try {
+    const response = await env.AUTH.fetch(
+      new Request("https://auth.internal/auth/me", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+
+    return data.customer || data.user || data;
+  } catch (error) {
+    console.error("Authentication error:", error);
+    return null;
+  }
+}
+
+async function getSubscription(env, customerId, grade) {
+  return await env.DB.prepare(`
+    SELECT
+      id,
+      customer_id,
+      grade,
+      status,
+      order_id,
+      payment_id,
+      amount,
+      currency,
+      starts_at,
+      expires_at
+    FROM premium_subscriptions
+    WHERE customer_id = ?
+      AND grade = ?
+      AND status = 'ACTIVE'
+      AND expires_at > datetime('now')
+    ORDER BY id DESC
+    LIMIT 1
+  `)
+    .bind(customerId, grade)
+    .first();
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: corsHeaders,
+      });
+    }
+
+    try {
+
+      // =====================================================
+      // HOME / HEALTH CHECK
+      // =====================================================
+
+      if (url.pathname === "/") {
+        return json({
+          success: true,
+          service: "CreateLK Academy API",
+          status: "online",
+          version: "1.0.0",
+          message: "CreateLK Academy API is running.",
+        });
+      }
+
+
+      // =====================================================
+      // AUTH TEST
+      // =====================================================
+
+      if (url.pathname === "/auth-test") {
+        const customer = await authenticate(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            authenticated: false,
+          }, 401);
+        }
+
+        return json({
+          success: true,
+          authenticated: true,
+          customer,
+        });
+      }
+
+
+      // =====================================================
+      // LIST ALL LESSONS
+      // =====================================================
+
+      if (
+        url.pathname === "/lessons" &&
+        request.method === "GET"
+      ) {
+
+        const grade = url.searchParams.get("grade");
+        const subject = url.searchParams.get("subject");
+
+        if (!grade) {
+          return json({
+            success: false,
+            error: "Grade is required.",
+          }, 400);
+        }
+
+        let query = `
+          SELECT
+            id,
+            grade,
+            subject,
+            unit,
+            lesson_number,
+            lesson_code,
+            duration,
+            video_url,
+            image_url,
+            is_active,
+            is_free,
+            created_at
+          FROM premium_lessons
+          WHERE grade = ?
+            AND is_active = 1
+        `;
+
+        const params = [grade];
+
+        if (subject) {
+          query += ` AND subject = ? `;
+          params.push(subject);
+        }
+
+        query += `
+          ORDER BY subject ASC, lesson_number ASC
+        `;
+
+        const result = await env.DB
+          .prepare(query)
+          .bind(...params)
+          .all();
+
+        return json({
+          success: true,
+          grade,
+          subject: subject || null,
+          lessons: result.results || [],
+        });
+      }
+
+
+      // =====================================================
+      // GET SINGLE LESSON
+      // =====================================================
+
+      if (
+        url.pathname === "/lesson" &&
+        request.method === "GET"
+      ) {
+
+        const grade = url.searchParams.get("grade");
+        const subject = url.searchParams.get("subject");
+        const language =
+          url.searchParams.get("language") || "en";
+
+        const lessonNumber =
+          Number(
+            url.searchParams.get("lesson") || "1"
+          );
+
+        if (!grade || !subject) {
+          return json({
+            success: false,
+            error: "Grade and subject are required.",
+          }, 400);
+        }
+
+        if (!Number.isInteger(lessonNumber) || lessonNumber < 1) {
+          return json({
+            success: false,
+            error: "Invalid lesson number.",
+          }, 400);
+        }
+
+
+        // ---------------------------------------------------
+        // AUTHENTICATION
+        // ---------------------------------------------------
+
+        const customer = await authenticate(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized.",
+          }, 401);
+        }
+
+        const customerId =
+          customer.id ||
+          customer.customer_id;
+
+
+        // ---------------------------------------------------
+        // FIND LESSON
+        // ---------------------------------------------------
+
+        const lesson = await env.DB.prepare(`
+          SELECT
+            id,
+            grade,
+            subject,
+            unit,
+            lesson_number,
+            lesson_code,
+            duration,
+            video_url,
+            image_url,
+            is_active,
+            is_free,
+            created_at
+          FROM premium_lessons
+          WHERE grade = ?
+            AND subject = ?
+            AND lesson_number = ?
+            AND is_active = 1
+          LIMIT 1
+        `)
+          .bind(
+            grade,
+            subject,
+            lessonNumber
+          )
+          .first();
+
+        if (!lesson) {
+          return json({
+            success: false,
+            error: "Lesson not found.",
+          }, 404);
+        }
+
+
+        // ---------------------------------------------------
+        // CHECK FREE / PREMIUM ACCESS
+        // ---------------------------------------------------
+
+        const isFree =
+          Number(lesson.is_free) === 1;
+
+        let subscription = null;
+
+        let hasAccess = isFree;
+
+        if (!isFree) {
+
+          if (!customerId) {
+            return json({
+              success: false,
+              error: "Customer ID not found.",
+            }, 401);
+          }
+
+          subscription =
+            await getSubscription(
+              env,
+              customerId,
+              grade
+            );
+
+          hasAccess = !!subscription;
+        }
+
+
+        // ---------------------------------------------------
+        // PREMIUM LOCK
+        // ---------------------------------------------------
+
+        if (!hasAccess) {
+
+          return json({
+            success: false,
+
+            premium_required: true,
+
+            message:
+              "This lesson requires a Premium subscription.",
+
+            lesson: {
+              id: lesson.id,
+              grade: lesson.grade,
+              subject: lesson.subject,
+              unit: lesson.unit,
+              lesson_number: lesson.lesson_number,
+              lesson_code: lesson.lesson_code,
+              duration: lesson.duration,
+              free: false,
+            },
+          }, 403);
+        }
+
+
+        // ---------------------------------------------------
+        // GET TRANSLATION
+        // ---------------------------------------------------
+
+        let translation =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              language,
+              title,
+              objectives,
+              content,
+              key_points,
+              summary
+            FROM premium_lesson_translations
+            WHERE lesson_id = ?
+              AND language = ?
+            LIMIT 1
+          `)
+            .bind(
+              lesson.id,
+              language
+            )
+            .first();
+
+
+        // ---------------------------------------------------
+        // ENGLISH FALLBACK
+        // ---------------------------------------------------
+
+        if (
+          !translation &&
+          language !== "en"
+        ) {
+
+          translation =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                language,
+                title,
+                objectives,
+                content,
+                key_points,
+                summary
+              FROM premium_lesson_translations
+              WHERE lesson_id = ?
+                AND language = 'en'
+              LIMIT 1
+            `)
+              .bind(lesson.id)
+              .first();
+        }
+
+
+        if (!translation) {
+          return json({
+            success: false,
+            error: "Lesson translation not found.",
+          }, 404);
+        }
+
+
+        // ---------------------------------------------------
+        // GET QUESTIONS
+        // ---------------------------------------------------
+
+        let questions = {
+          results: [],
+        };
+
+        try {
+
+          questions =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                question,
+                option_a,
+                option_b,
+                option_c,
+                option_d,
+                correct_answer,
+                explanation
+              FROM premium_questions
+              WHERE lesson_id = ?
+                AND language = ?
+              ORDER BY id ASC
+            `)
+              .bind(
+                lesson.id,
+                language
+              )
+              .all();
+
+        } catch (error) {
+
+          console.log(
+            "Questions table unavailable:",
+            error.message
+          );
+
+        }
+
+
+        // ---------------------------------------------------
+        // RETURN LESSON
+        // ---------------------------------------------------
+
+        return json({
+
+          success: true,
+
+          access: true,
+
+          free: isFree,
+
+          grade: lesson.grade,
+
+          subject: lesson.subject,
+
+          lesson: {
+
+            id: lesson.id,
+
+            grade: lesson.grade,
+
+            subject: lesson.subject,
+
+            unit: lesson.unit,
+
+            lesson_number:
+              lesson.lesson_number,
+
+            lesson_code:
+              lesson.lesson_code,
+
+            duration:
+              lesson.duration,
+
+            video_url:
+              lesson.video_url,
+
+            image_url:
+              lesson.image_url,
+
+            free:
+              isFree,
+
+            language:
+              translation.language,
+
+            title:
+              translation.title,
+
+            objectives:
+              translation.objectives,
+
+            content:
+              translation.content,
+
+            key_points:
+              translation.key_points,
+
+            summary:
+              translation.summary,
+
+            questions:
+              questions.results || [],
+          },
+
+          subscription:
+            subscription
+              ? {
+                  active: true,
+                  grade: subscription.grade,
+                  starts_at:
+                    subscription.starts_at,
+                  expires_at:
+                    subscription.expires_at,
+                }
+              : null,
+
+        });
+      }
+
+
+      // =====================================================
+      // PREMIUM STATUS
+      // =====================================================
+
+      if (
+        url.pathname === "/premium/status" &&
+        request.method === "GET"
+      ) {
+
+        const grade =
+          url.searchParams.get("grade");
+
+        if (!grade) {
+          return json({
+            success: false,
+            error: "Grade is required.",
+          }, 400);
+        }
+
+
+        const customer =
+          await authenticate(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized.",
+          }, 401);
+        }
+
+
+        const customerId =
+          customer.id ||
+          customer.customer_id;
+
+
+        const subscription =
+          await getSubscription(
+            env,
+            customerId,
+            grade
+          );
+
+
+        return json({
+
+          success: true,
+
+          grade,
+
+          premium:
+            !!subscription,
+
+          subscription:
+            subscription
+              ? {
+                  id: subscription.id,
+                  status: subscription.status,
+                  starts_at:
+                    subscription.starts_at,
+                  expires_at:
+                    subscription.expires_at,
+                  amount:
+                    subscription.amount,
+                  currency:
+                    subscription.currency,
+                }
+              : null,
+
+        });
+      }
+
+
+      // =====================================================
+      // CHECKOUT PLACEHOLDER
+      // =====================================================
+
+      if (
+        url.pathname === "/premium/checkout" &&
+        request.method === "GET"
+      ) {
+
+        const grade =
+          url.searchParams.get("grade");
+
+        if (!grade) {
+          return json({
+            success: false,
+            error: "Grade is required.",
+          }, 400);
+        }
+
+
+        const customer =
+          await authenticate(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized.",
+          }, 401);
+        }
+
+
+        return json({
+
+          success: false,
+
+          configured: false,
+
+          message:
+            "Premium payment is not configured yet.",
+
+          grade,
+
+          price: 999,
+
+          currency: "LKR",
+
+          period_days: 30,
+
+        }, 501);
+      }
+
+
+      // =====================================================
+      // 404
+      // =====================================================
+
+      return json({
+
+        success: false,
+
+        error: "API route not found.",
+
+        path: url.pathname,
+
+      }, 404);
+
+
+    } catch (error) {
+
+      console.error(
+        "Fatal Worker Error:",
+        error
+      );
+
+      return json({
+
+        success: false,
+
+        error:
+          "Internal server error.",
+
+        details:
+          error.message,
+
+      }, 500);
+    }
+  },
+};
