@@ -3,314 +3,243 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Premium Plan Admin</title>
+<title>365 Bible Calendar</title>
 
 <style>
 *{box-sizing:border-box}
 body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  background:#f4f7fb;
-  color:#172033;
+ margin:0;padding:20px;background:#eef1f5;
+ font-family:Arial,sans-serif;color:#172033
 }
-.header{
-  background:#071b3a;
-  color:white;
-  padding:18px 20px;
+.app{max-width:1000px;margin:auto}
+h2{text-align:center}
+.controls{
+ background:white;padding:18px;border-radius:15px;
+ margin-bottom:20px
 }
-.header h1{margin:0;font-size:21px}
-.header p{margin:5px 0 0;color:#b9c8df;font-size:13px}
-
-.container{
-  max-width:600px;
-  margin:30px auto;
-  padding:0 16px;
+input,button{
+ padding:11px;border:1px solid #ccc;border-radius:8px
 }
-
-.card{
-  background:white;
-  border-radius:16px;
-  padding:24px;
-  box-shadow:0 8px 30px rgba(0,0,0,.08);
-}
-
-.card h2{margin-top:0}
-
-.current{
-  background:#eef5ff;
-  padding:16px;
-  border-radius:12px;
-  margin-bottom:22px;
-}
-
-.current strong{
-  display:block;
-  font-size:28px;
-  color:#1264d6;
-  margin-top:5px;
-}
-
-label{
-  display:block;
-  font-weight:bold;
-  margin:16px 0 7px;
-}
-
-input{
-  width:100%;
-  padding:13px;
-  border:1px solid #ccd5e3;
-  border-radius:9px;
-  font-size:16px;
-}
-
 button{
-  width:100%;
-  margin-top:22px;
-  padding:14px;
-  border:0;
-  border-radius:10px;
-  background:#1264d6;
-  color:white;
-  font-size:16px;
-  font-weight:bold;
-  cursor:pointer;
+ background:#172033;color:white;cursor:pointer;
+ border:0;margin:4px
 }
-
-button:disabled{
-  opacity:.6;
-  cursor:not-allowed;
+canvas{
+ width:100%;display:block;
+ background:white;border-radius:4px
 }
-
-.message{
-  margin-top:15px;
-  padding:12px;
-  border-radius:9px;
-  display:none;
-}
-
-.success{
-  display:block;
-  background:#e8f8ee;
-  color:#137333;
-}
-
-.error{
-  display:block;
-  background:#fdecec;
-  color:#b3261e;
-}
-
-.back{
-  display:block;
-  text-align:center;
-  margin-top:18px;
-  color:#1264d6;
-  text-decoration:none;
-}
+.nav{text-align:center;margin-top:15px}
+#status{text-align:center;margin:10px;font-weight:bold}
 </style>
 </head>
 
 <body>
 
-<div class="header">
-  <h1>CreateLK Academy</h1>
-  <p>Premium Plan Administration</p>
+<div class="app">
+
+<h2>365 Days Bible Calendar</h2>
+
+<div class="controls">
+
+<input type="file" id="file" accept=".txt">
+
+<div id="status">Upload your 365-day text file</div>
+
+<div class="nav">
+<button onclick="prev()">← Previous</button>
+<button onclick="next()">Next →</button>
+<button onclick="generate()">Generate</button>
+<button onclick="save()">Save PNG</button>
 </div>
 
-<div class="container">
+</div>
 
-  <div class="card">
-
-    <h2>Premium Plan</h2>
-
-    <div class="current">
-      Current Price
-      <strong id="currentPrice">Loading...</strong>
-      <span id="currentDuration"></span>
-    </div>
-
-    <label for="price">Premium Price (LKR)</label>
-    <input
-      id="price"
-      type="number"
-      min="1"
-      step="1"
-      placeholder="999"
-    >
-
-    <label for="duration">Duration (Days)</label>
-    <input
-      id="duration"
-      type="number"
-      min="1"
-      step="1"
-      placeholder="30"
-    >
-
-    <button id="saveBtn" onclick="savePlan()">
-      Save Changes
-    </button>
-
-    <div id="message" class="message"></div>
-
-    <a class="back" href="/dashboard.html">
-      ← Back to Dashboard
-    </a>
-
-  </div>
+<canvas id="canvas" width="2400" height="1800"></canvas>
 
 </div>
 
 <script>
 
-const API =
-  "https://createlk-payhere.createlk.workers.dev";
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+let days=[],index=0;
 
-const token =
-  localStorage.getItem("createlk_token");
+document.getElementById("file").onchange=e=>{
+ const reader=new FileReader();
+ reader.onload=()=>{
+   days=parse(reader.result);
+   index=0;
+   generate();
+ };
+ reader.readAsText(e.target.files[0],"UTF-8");
+};
 
-if(!token){
-  showMessage(
-    "You are not logged in.",
-    "error"
-  );
-  document.getElementById("saveBtn").disabled = true;
+function parse(text){
+
+ const blocks=text.trim().split(/\n\s*\n/);
+
+ return blocks.map(block=>{
+
+   let d={};
+
+   block.split("\n").forEach(line=>{
+
+     let p=line.indexOf(":");
+
+     if(p<0)return;
+
+     let key=line.slice(0,p).trim().toUpperCase();
+     let value=line.slice(p+1).trim();
+
+     if(key==="DAY")d.day=value;
+     if(key==="DATE")d.date=value;
+     if(key==="ENGLISH")d.english=value;
+     if(key==="TAMIL")d.tamil=value;
+     if(key==="SINHALA")d.sinhala=value;
+     if(key==="REFERENCE")d.reference=value;
+
+   });
+
+   return d;
+ });
 }
 
-async function loadPlan(){
+function wrap(text,x,y,max,size,line){
 
-  try{
+ ctx.font=size+"px Arial";
+ ctx.textAlign="center";
+ ctx.fillStyle="#222";
 
-    const response = await fetch(
-      API + "/admin/premium-plan",
-      {
-        headers:{
-          "Authorization":"Bearer " + token
-        }
-      }
-    );
+ let words=text.split(" ");
+ let row="",rows=[];
 
-    const data = await response.json();
+ words.forEach(w=>{
+   let test=row?row+" "+w:w;
 
-    if(!response.ok || !data.success){
-      throw new Error(
-        data.error || "Unable to load premium plan."
-      );
-    }
+   if(ctx.measureText(test).width>max){
+     rows.push(row);
+     row=w;
+   }else row=test;
+ });
 
-    document.getElementById("currentPrice")
-      .textContent =
-      "LKR " + Number(data.plan.price_lkr).toLocaleString();
+ if(row)rows.push(row);
 
-    document.getElementById("currentDuration")
-      .textContent =
-      data.plan.duration_days + " days";
+ rows.forEach((r,i)=>{
+   ctx.fillText(r,x,y+i*line);
+ });
 
-    document.getElementById("price").value =
-      data.plan.price_lkr;
-
-    document.getElementById("duration").value =
-      data.plan.duration_days;
-
-  }catch(error){
-
-    showMessage(error.message,"error");
-
-  }
+ return rows.length;
 }
 
-async function savePlan(){
+function generate(){
 
-  const price =
-    Number(document.getElementById("price").value);
+ if(!days.length)return;
 
-  const duration =
-    Number(document.getElementById("duration").value);
+ let d=days[index];
 
-  if(!price || price < 1){
-    showMessage(
-      "Enter a valid Premium price.",
-      "error"
-    );
-    return;
-  }
+ ctx.fillStyle="#f8f3e7";
+ ctx.fillRect(0,0,2400,1800);
 
-  if(!duration || duration < 1){
-    showMessage(
-      "Enter a valid duration.",
-      "error"
-    );
-    return;
-  }
+ ctx.strokeStyle="#b28a35";
+ ctx.lineWidth=12;
+ ctx.strokeRect(70,70,2260,1660);
 
-  const button =
-    document.getElementById("saveBtn");
+ ctx.textAlign="center";
 
-  button.disabled = true;
-  button.textContent = "Saving...";
+ ctx.fillStyle="#9b7627";
+ ctx.font="bold 55px Arial";
+ ctx.fillText("365 DAYS WITH GOD'S WORD",1200,160);
 
-  try{
+ ctx.fillStyle="#172033";
+ ctx.font="bold 75px Arial";
+ ctx.fillText("DAY "+(d.day||String(index+1).padStart(3,"0")),1200,270);
 
-    const response = await fetch(
-      API + "/admin/premium-plan",
-      {
-        method:"POST",
+ ctx.font="38px Arial";
+ ctx.fillStyle="#666";
+ ctx.fillText(d.date||"",1200,330);
 
-        headers:{
-          "Authorization":"Bearer " + token,
-          "Content-Type":"application/json"
-        },
+ ctx.fillStyle="#b28a35";
+ ctx.fillRect(450,370,1500,6);
 
-        body:JSON.stringify({
-          price_lkr:price,
-          duration_days:duration
-        })
-      }
-    );
+ /* ENGLISH */
 
-    const data = await response.json();
+ ctx.fillStyle="#9b7627";
+ ctx.font="bold 34px Arial";
+ ctx.fillText("ENGLISH",1200,445);
 
-    if(!response.ok || !data.success){
-      throw new Error(
-        data.error || "Unable to save plan."
-      );
-    }
+ let englishSize=75;
 
-    showMessage(
-      "Premium plan updated successfully.",
-      "success"
-    );
+ let englishRows=wrap(
+   "“"+(d.english||"")+"”",
+   1200,560,1800,englishSize,100
+ );
 
-    await loadPlan();
+ if(d.reference){
+   ctx.fillStyle="#9b7627";
+   ctx.font="bold 34px Arial";
+   ctx.fillText("— "+d.reference,1200,560+englishRows*100+20);
+ }
 
-  }catch(error){
+ /* TAMIL */
 
-    showMessage(
-      error.message,
-      "error"
-    );
+ ctx.fillStyle="#555";
+ ctx.font="bold 30px Arial";
+ ctx.fillText("தமிழ்",1200,900);
 
-  }finally{
+ wrap(
+   "“"+(d.tamil||"")+"”",
+   1200,970,1800,45,65
+ );
 
-    button.disabled = false;
-    button.textContent = "Save Changes";
+ /* SINHALA */
 
-  }
-}
+ ctx.fillStyle="#555";
+ ctx.font="bold 30px Arial";
+ ctx.fillText("සිංහල",1200,1270);
 
-function showMessage(text,type){
+ wrap(
+   "“"+(d.sinhala||"")+"”",
+   1200,1340,1800,45,65
+ );
 
-  const box =
-    document.getElementById("message");
+ ctx.fillStyle="#9b7627";
+ ctx.font="italic 30px Arial";
+ ctx.fillText("Walk with God • Grow in His Word",1200,1640);
 
-  box.textContent = text;
-  box.className =
-    "message " + type;
+ document.getElementById("status").textContent=
+   "Day "+(index+1)+" of "+days.length;
 
 }
 
-loadPlan();
+function save(){
+
+ if(!days.length)return;
+
+ let link=document.createElement("a");
+
+ link.download=
+   "Bible-Calendar-Day-"+String(index+1).padStart(3,"0")+".png";
+
+ link.href=canvas.toDataURL("image/png");
+
+ link.click();
+}
+
+function next(){
+
+ if(index<days.length-1){
+   index++;
+   generate();
+ }
+}
+
+function prev(){
+
+ if(index>0){
+   index--;
+   generate();
+ }
+}
 
 </script>
 
