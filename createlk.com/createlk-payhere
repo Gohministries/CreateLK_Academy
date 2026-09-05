@@ -1,10 +1,10 @@
-const PAYHERE_MERCHANT_ID = "257692";
+const MERCHANT_ID = "257692";
 
 const RETURN_URL =
-  "https://createlk.com/shop.html?payment=success";
+  "https://createlk.com/dashboard.html?premium=success";
 
 const CANCEL_URL =
-  "https://createlk.com/shop.html?payment=cancelled";
+  "https://createlk.com/dashboard.html?premium=cancelled";
 
 const NOTIFY_URL =
   "https://createlk-payhere.createlk.workers.dev/notify";
@@ -15,7 +15,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type,Authorization"
 };
 
-function response(data, status = 200) {
+function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -25,29 +25,25 @@ function response(data, status = 200) {
   });
 }
 
-/* =========================
-   BASE64
-   ========================= */
+/* BASE64 */
 
-function base64urlEncode(input) {
+function base64Encode(data) {
   return btoa(
-    String.fromCharCode(...new Uint8Array(input))
+    String.fromCharCode(...new Uint8Array(data))
   )
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 }
 
-function base64urlDecode(input) {
-  input = input
+function base64Decode(value) {
+  value = value
     .replace(/-/g, "+")
     .replace(/_/g, "/");
 
-  while (input.length % 4) {
-    input += "=";
-  }
+  while (value.length % 4) value += "=";
 
-  const binary = atob(input);
+  const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
 
   for (let i = 0; i < binary.length; i++) {
@@ -57,20 +53,15 @@ function base64urlDecode(input) {
   return bytes;
 }
 
-/* =========================
-   AUTH TOKEN
-   ========================= */
+/* SESSION */
 
 async function verifyToken(token, secret) {
-  if (!token || !secret) return null;
-
   try {
+    if (!token || !secret) return null;
+
     const parts = token.split(".");
 
     if (parts.length !== 2) return null;
-
-    const payloadText = parts[0];
-    const signature = parts[1];
 
     const key = await crypto.subtle.importKey(
       "raw",
@@ -83,65 +74,47 @@ async function verifyToken(token, secret) {
       ["sign"]
     );
 
-    const expected =
-      await crypto.subtle.sign(
-        "HMAC",
-        key,
-        new TextEncoder().encode(payloadText)
-      );
+    const signature = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(parts[0])
+    );
 
-    const expectedSignature =
-      base64urlEncode(expected);
-
-    if (signature !== expectedSignature) {
+    if (base64Encode(signature) !== parts[1]) {
       return null;
     }
 
-    const payload =
-      JSON.parse(
-        new TextDecoder().decode(
-          base64urlDecode(payloadText)
-        )
-      );
+    const payload = JSON.parse(
+      new TextDecoder().decode(
+        base64Decode(parts[0])
+      )
+    );
 
     if (
       !payload.exp ||
-      Date.now() > payload.exp
+      Date.now() >= Number(payload.exp)
     ) {
       return null;
     }
 
     return payload;
 
-  } catch (error) {
-    console.error("Token error:", error);
+  } catch {
     return null;
   }
 }
 
-/* =========================
-   CUSTOMER
-   ========================= */
-
 async function getCustomer(request, env) {
 
-  const auth =
+  const authorization =
     request.headers.get("Authorization") || "";
 
-  if (!auth.startsWith("Bearer ")) {
+  if (!authorization.startsWith("Bearer ")) {
     return null;
   }
 
   const token =
-    auth.slice(7).trim();
-
-  if (
-    !token ||
-    !env.SESSION_SECRET ||
-    !env.DB
-  ) {
-    return null;
-  }
+    authorization.slice(7).trim();
 
   const payload =
     await verifyToken(
@@ -149,118 +122,92 @@ async function getCustomer(request, env) {
       env.SESSION_SECRET
     );
 
-  if (!payload || !payload.id) {
+  if (!payload?.id) {
     return null;
   }
 
-  try {
-
-    const customer =
-      await env.DB
-        .prepare(`
-          SELECT
-            id,
-            first_name,
-            last_name,
-            email,
-            phone
-          FROM customers
-          WHERE id = ?
-          LIMIT 1
-        `)
-        .bind(payload.id)
-        .first();
-
-    if (!customer) {
-      return null;
-    }
-
-    return {
-      id: customer.id,
-      name:
-        `${customer.first_name || ""} ${customer.last_name || ""}`.trim(),
-      email: customer.email,
-      phone: customer.phone || ""
-    };
-
-  } catch (error) {
-
-    console.error(
-      "Customer lookup error:",
-      error
-    );
-
-    return null;
-  }
+  return await env.DB.prepare(`
+    SELECT
+      id,
+      first_name,
+      last_name,
+      email,
+      phone
+    FROM customers
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(payload.id)
+    .first();
 }
 
-/* =========================
-   MD5
-   ========================= */
+/* MD5 */
 
 function md5(input) {
 
-  function rotateLeft(value, amount) {
-    return (
-      (value << amount) |
-      (value >>> (32 - amount))
-    );
-  }
-
-  function add32(a, b) {
-    return (a + b) | 0;
-  }
-
   const S = [
-    7,12,17,22,7,12,17,22,
-    7,12,17,22,7,12,17,22,
-    5,9,14,20,5,9,14,20,
-    5,9,14,20,5,9,14,20,
-    4,11,16,23,4,11,16,23,
-    4,11,16,23,4,11,16,23,
-    6,10,15,21,6,10,15,21,
-    6,10,15,21,6,10,15,21
+    7,12,17,22,
+    7,12,17,22,
+    7,12,17,22,
+    7,12,17,22,
+
+    5,9,14,20,
+    5,9,14,20,
+    5,9,14,20,
+    5,9,14,20,
+
+    4,11,16,23,
+    4,11,16,23,
+    4,11,16,23,
+    4,11,16,23,
+
+    6,10,15,21,
+    6,10,15,21,
+    6,10,15,21,
+    6,10,15,21
   ];
 
   const K = [
     0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,
     0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
-    0x8f1bbcdc,0x895cd7be,0x6b901122,0xfd987193,
-    0xa679438e,0x49b40821,0xf61e2562,0xc040b340,
-    0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,
-    0xd8a1e681,0xe7d3fbc8,0x21e1cde6,0xc33707d6,
-    0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,
-    0x676f02d9,0x8d2a4c8a,0xfffa3942,0x8771f681,
-    0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,
-    0xf6bb4b60,0xbebfbc70,0x289b7ec6,0xeaa127fa,
-    0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,
-    0x1fa27cf8,0xc4ac5665,0xf4292244,0x432aff97,
-    0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,
-    0xffeff47d,0x85845dd1,0x6fa87e4f,0xfe2ce6e0,
-    0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,
-    0x2ad7d2bb,0xeb86d391
+    0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,
+    0x6b901122,0xfd987193,0xa679438e,0x49b40821,
+    0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,
+    0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
+    0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,
+    0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
+    0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,
+    0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
+    0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,
+    0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
+    0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,
+    0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
+    0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,
+    0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
   ];
 
-  const data =
+  const bytes =
     Array.from(
       new TextEncoder().encode(input)
     );
 
-  const length = data.length;
+  const originalLength = bytes.length;
 
-  data.push(0x80);
+  bytes.push(0x80);
 
-  while (data.length % 64 !== 56) {
-    data.push(0);
+  while (bytes.length % 64 !== 56) {
+    bytes.push(0);
   }
 
-  const bitLength = length * 8;
+  const bitLength =
+    originalLength * 8;
 
   for (let i = 0; i < 8; i++) {
-    data.push(
+    bytes.push(
       Math.floor(
-        bitLength / Math.pow(2, 8 * i)
-      ) & 0xff
+        bitLength /
+        Math.pow(2, i * 8)
+      ) & 255
     );
   }
 
@@ -269,9 +216,16 @@ function md5(input) {
   let C = 0x98badcfe;
   let D = 0x10325476;
 
+  const add32 = (a, b) =>
+    (a + b) | 0;
+
+  const rotateLeft = (x, n) =>
+    (x << n) |
+    (x >>> (32 - n));
+
   for (
     let offset = 0;
-    offset < data.length;
+    offset < bytes.length;
     offset += 64
   ) {
 
@@ -279,16 +233,14 @@ function md5(input) {
 
     for (let i = 0; i < 16; i++) {
 
-      const index =
+      const j =
         offset + i * 4;
 
       M[i] =
-        (
-          data[index] |
-          (data[index + 1] << 8) |
-          (data[index + 2] << 16) |
-          (data[index + 3] << 24)
-        ) | 0;
+        bytes[j] |
+        (bytes[j + 1] << 8) |
+        (bytes[j + 2] << 16) |
+        (bytes[j + 3] << 24);
     }
 
     let a = A;
@@ -302,37 +254,60 @@ function md5(input) {
       let g;
 
       if (i < 16) {
-        F = (b & c) | (~b & d);
+
+        F =
+          (b & c) |
+          (~b & d);
+
         g = i;
+
       } else if (i < 32) {
-        F = (d & b) | (~d & c);
-        g = (5 * i + 1) % 16;
+
+        F =
+          (d & b) |
+          (~d & c);
+
+        g =
+          (5 * i + 1) % 16;
+
       } else if (i < 48) {
-        F = b ^ c ^ d;
-        g = (3 * i + 5) % 16;
+
+        F =
+          b ^ c ^ d;
+
+        g =
+          (3 * i + 5) % 16;
+
       } else {
-        F = c ^ (b | ~d);
-        g = (7 * i) % 16;
+
+        F =
+          c ^ (b | ~d);
+
+        g =
+          (7 * i) % 16;
       }
 
-      const temp = d;
+      const oldD = d;
 
-      const sum =
+      d = c;
+      c = b;
+
+      const value =
         add32(
           add32(a, F),
           add32(M[g], K[i])
         );
 
-      d = c;
-      c = b;
-
       b =
         add32(
           b,
-          rotateLeft(sum, S[i])
+          rotateLeft(
+            value,
+            S[i]
+          )
         );
 
-      a = temp;
+      a = oldD;
     }
 
     A = add32(A, a);
@@ -341,651 +316,566 @@ function md5(input) {
     D = add32(D, d);
   }
 
-  function wordToHex(word) {
+  function toHex(value) {
 
-    let output = "";
+    let result = "";
 
     for (let i = 0; i < 4; i++) {
 
-      output +=
-        (
-          (word >> (i * 8)) &
-          0xff
-        )
+      result +=
+        ((value >> (i * 8)) & 255)
           .toString(16)
           .padStart(2, "0");
     }
 
-    return output;
+    return result;
   }
 
   return (
-    wordToHex(A) +
-    wordToHex(B) +
-    wordToHex(C) +
-    wordToHex(D)
+    toHex(A) +
+    toHex(B) +
+    toHex(C) +
+    toHex(D)
   ).toUpperCase();
 }
 
-/* =========================
-   WORKER
-   ========================= */
+/* CREATE CHECKOUT */
+
+async function createCheckout(request, env) {
+
+  const customer =
+    await getCustomer(
+      request,
+      env
+    );
+
+  if (!customer) {
+    throw Error(
+      "Please login first."
+    );
+  }
+
+  if (!customer.email) {
+    throw Error(
+      "Please add your email address first."
+    );
+  }
+
+  const plan =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        name,
+        price_lkr,
+        duration_days
+      FROM premium_plans
+      WHERE active = 1
+      ORDER BY id DESC
+      LIMIT 1
+    `)
+      .first();
+
+  if (!plan) {
+    throw Error(
+      "Premium plan not found."
+    );
+  }
+
+  const amount =
+    Number(plan.price_lkr)
+      .toFixed(2);
+
+  const orderId =
+    "PREM-" +
+    Date.now() +
+    "-" +
+    crypto.randomUUID()
+      .replace(/-/g, "")
+      .slice(0, 8)
+      .toUpperCase();
+
+  /*
+    Your existing table requires
+    user_id, so both IDs are inserted.
+  */
+
+  await env.DB.prepare(`
+    INSERT INTO premium_orders
+    (
+      user_id,
+      customer_id,
+      plan_id,
+      order_id,
+      amount,
+      currency,
+      status,
+      duration_days
+    )
+    VALUES
+    (?, ?, ?, ?, ?, 'LKR', 'pending', ?)
+  `)
+    .bind(
+      customer.id,
+      customer.id,
+      plan.id,
+      orderId,
+      amount,
+      plan.duration_days
+    )
+    .run();
+
+  const secretHash =
+    md5(
+      env.PAYHERE_MERCHANT_SECRET
+    );
+
+  const hash =
+    md5(
+      MERCHANT_ID +
+      orderId +
+      amount +
+      "LKR" +
+      secretHash
+    );
+
+  return {
+    merchant_id:
+      MERCHANT_ID,
+
+    return_url:
+      RETURN_URL,
+
+    cancel_url:
+      CANCEL_URL,
+
+    notify_url:
+      NOTIFY_URL,
+
+    first_name:
+      customer.first_name ||
+      "Customer",
+
+    last_name:
+      customer.last_name ||
+      "",
+
+    email:
+      customer.email,
+
+    phone:
+      customer.phone ||
+      "",
+
+    address:
+      "Sri Lanka",
+
+    city:
+      "Kandy",
+
+    country:
+      "Sri Lanka",
+
+    order_id:
+      orderId,
+
+    items:
+      plan.name ||
+      "CreateLK Academy Premium",
+
+    currency:
+      "LKR",
+
+    amount:
+      amount,
+
+    hash:
+      hash
+  };
+}
+
+/* PAYHERE NOTIFY */
+
+async function handleNotify(request, env) {
+
+  const form =
+    await request.formData();
+
+  const merchantId =
+    String(
+      form.get("merchant_id") || ""
+    );
+
+  const orderId =
+    String(
+      form.get("order_id") || ""
+    );
+
+  const amount =
+    String(
+      form.get("payhere_amount") || ""
+    );
+
+  const currency =
+    String(
+      form.get("payhere_currency") || ""
+    );
+
+  const statusCode =
+    String(
+      form.get("status_code") || ""
+    );
+
+  const paymentId =
+    String(
+      form.get("payment_id") || ""
+    );
+
+  const receivedSignature =
+    String(
+      form.get("md5sig") || ""
+    );
+
+  if (
+    merchantId !== MERCHANT_ID ||
+    !orderId ||
+    !amount ||
+    !currency ||
+    !statusCode ||
+    !receivedSignature
+  ) {
+    return new Response(
+      "Invalid notification",
+      { status: 400 }
+    );
+  }
+
+  const secretHash =
+    md5(
+      env.PAYHERE_MERCHANT_SECRET
+    );
+
+  const expectedSignature =
+    md5(
+      merchantId +
+      orderId +
+      amount +
+      currency +
+      statusCode +
+      secretHash
+    );
+
+  if (
+    expectedSignature.toUpperCase() !==
+    receivedSignature.toUpperCase()
+  ) {
+    return new Response(
+      "Invalid signature",
+      { status: 400 }
+    );
+  }
+
+  const order =
+    await env.DB.prepare(`
+      SELECT *
+      FROM premium_orders
+      WHERE order_id = ?
+      LIMIT 1
+    `)
+      .bind(orderId)
+      .first();
+
+  if (!order) {
+    return new Response(
+      "Order not found",
+      { status: 404 }
+    );
+  }
+
+  if (
+    Number(amount).toFixed(2) !==
+    Number(order.amount).toFixed(2)
+  ) {
+    return new Response(
+      "Amount mismatch",
+      { status: 400 }
+    );
+  }
+
+  if (currency !== "LKR") {
+    return new Response(
+      "Currency mismatch",
+      { status: 400 }
+    );
+  }
+
+  /* SUCCESS */
+
+  if (statusCode === "2") {
+
+    if (
+      String(order.status).toLowerCase() ===
+      "paid"
+    ) {
+      return new Response(
+        "OK",
+        { status: 200 }
+      );
+    }
+
+    const duration =
+      Number(
+        order.duration_days || 30
+      );
+
+    const start =
+      new Date();
+
+    const expires =
+      new Date(
+        start.getTime() +
+        duration * 86400000
+      );
+
+    const formatDate =
+      date =>
+        date.toISOString()
+          .slice(0, 19)
+          .replace("T", " ");
+
+    /*
+      Mark order paid.
+    */
+
+    await env.DB.prepare(`
+      UPDATE premium_orders
+      SET
+        status = 'paid',
+        payment_id = ?,
+        paid_at = CURRENT_TIMESTAMP
+      WHERE order_id = ?
+    `)
+      .bind(
+        paymentId,
+        orderId
+      )
+      .run();
+
+    /*
+      Expire previous subscription.
+    */
+
+    await env.DB.prepare(`
+      UPDATE premium_subscriptions
+      SET status = 'EXPIRED'
+      WHERE
+        customer_id = ?
+        AND grade = 'spoken-english'
+        AND status = 'ACTIVE'
+    `)
+      .bind(
+        order.customer_id ||
+        order.user_id
+      )
+      .run();
+
+    /*
+      Create new subscription.
+    */
+
+    await env.DB.prepare(`
+      INSERT INTO premium_subscriptions
+      (
+        customer_id,
+        grade,
+        status,
+        order_id,
+        payment_id,
+        amount,
+        currency,
+        starts_at,
+        expires_at
+      )
+      VALUES
+      (
+        ?,
+        'spoken-english',
+        'ACTIVE',
+        ?,
+        ?,
+        ?,
+        'LKR',
+        ?,
+        ?
+      )
+    `)
+      .bind(
+        order.customer_id ||
+        order.user_id,
+        orderId,
+        paymentId,
+        order.amount,
+        formatDate(start),
+        formatDate(expires)
+      )
+      .run();
+
+    return new Response(
+      "OK",
+      { status: 200 }
+    );
+  }
+
+  /* PENDING */
+
+  if (statusCode === "0") {
+
+    await env.DB.prepare(`
+      UPDATE premium_orders
+      SET
+        status = 'pending',
+        payment_id = ?
+      WHERE order_id = ?
+    `)
+      .bind(
+        paymentId,
+        orderId
+      )
+      .run();
+
+    return new Response(
+      "OK",
+      { status: 200 }
+    );
+  }
+
+  /* FAILED / CANCELLED / OTHER */
+
+  await env.DB.prepare(`
+    UPDATE premium_orders
+    SET
+      status = 'failed',
+      payment_id = ?
+    WHERE order_id = ?
+  `)
+    .bind(
+      paymentId,
+      orderId
+    )
+    .run();
+
+  return new Response(
+    "OK",
+    { status: 200 }
+  );
+}
+
+/* WORKER */
 
 export default {
 
   async fetch(request, env) {
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: CORS
-      });
+    if (
+      request.method === "OPTIONS"
+    ) {
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: CORS
+        }
+      );
     }
 
-    const url = new URL(request.url);
+    const url =
+      new URL(request.url);
 
     const path =
-      url.pathname.replace(/\/$/, "");
+      url.pathname.replace(
+        /\/$/,
+        ""
+      );
 
-    /* =========================
-       HEALTH
-       ========================= */
+    try {
 
-    if (path === "" || path === "/") {
+      /* HEALTH */
 
-      return response({
-        success: true,
-        service: "CreateLK PayHere Worker",
-        status: "online"
-      });
-    }
+      if (
+        path === "" ||
+        path === "/"
+      ) {
+        return json({
+          success: true,
+          service:
+            "CreateLK PayHere Worker",
+          status:
+            "online",
+          price:
+            999,
+          duration_days:
+            30,
+          notify:
+            "/notify"
+        });
+      }
 
-    /* =========================
-       PREMIUM CHECKOUT
-       ========================= */
+      /* CHECKOUT */
 
-    if (
-      path === "/premium-checkout" &&
-      request.method === "POST"
-    ) {
+      if (
+        path === "/premium-checkout" &&
+        request.method === "POST"
+      ) {
 
-      try {
-
-        const customer =
-          await getCustomer(
+        const fields =
+          await createCheckout(
             request,
             env
           );
 
-        if (!customer) {
-
-          return response({
-            success: false,
-            error: "Please login first."
-          }, 401);
-        }
-
-        const plan =
-          await env.DB
-            .prepare(`
-              SELECT
-                id,
-                name,
-                price_lkr,
-                duration_days
-              FROM premium_plans
-              WHERE id = 1
-                AND active = 1
-              LIMIT 1
-            `)
-            .first();
-
-        if (!plan) {
-
-          return response({
-            success: false,
-            error:
-              "Premium plan not found."
-          }, 404);
-        }
-
-        const orderId =
-          "PREM-" +
-          Date.now() +
-          "-" +
-          crypto
-            .randomUUID()
-            .replace(/-/g, "")
-            .slice(0, 8)
-            .toUpperCase();
-
-        const amount =
-          Number(plan.price_lkr)
-            .toFixed(2);
-
-        await env.DB
-          .prepare(`
-            INSERT INTO premium_orders
-            (
-              customer_id,
-              plan_id,
-              order_id,
-              amount,
-              currency,
-              status
-            )
-            VALUES (?, ?, ?, ?, 'LKR', 'PENDING')
-          `)
-          .bind(
-            customer.id,
-            plan.id,
-            orderId,
-            amount
-          )
-          .run();
-
-        const secretHash =
-          md5(
-            env.PAYHERE_MERCHANT_SECRET
-          );
-
-        const hash =
-          md5(
-            PAYHERE_MERCHANT_ID +
-            orderId +
-            amount +
-            "LKR" +
-            secretHash
-          );
-
-        return response({
+        return json({
           success: true,
-
-          checkout: {
-
-            merchant_id:
-              PAYHERE_MERCHANT_ID,
-
-            return_url:
-              RETURN_URL,
-
-            cancel_url:
-              CANCEL_URL,
-
-            notify_url:
-              NOTIFY_URL,
-
-            order_id:
-              orderId,
-
-            items:
-              plan.name,
-
-            amount:
-              amount,
-
-            currency:
-              "LKR",
-
-            hash:
-              hash,
-
-            first_name:
-              customer.name ||
-              "Customer",
-
-            last_name:
-              "",
-
-            email:
-              customer.email,
-
-            phone:
-              customer.phone || "",
-
-            address:
-              "",
-
-            city:
-              "Kandy",
-
-            country:
-              "Sri Lanka"
-          }
+          fields
         });
-
-      } catch (error) {
-
-        console.error(
-          "Premium checkout error:",
-          error
-        );
-
-        return response({
-          success: false,
-          error:
-            error.message ||
-            "Premium checkout failed."
-        }, 500);
       }
-    }
 
-    /* =========================
-       PREMIUM PAYMENT STATUS
-       ========================= */
+      /* NOTIFY */
 
-    if (
-      path === "/premium-status" &&
-      request.method === "GET"
-    ) {
+      if (
+        path === "/notify" &&
+        request.method === "POST"
+      ) {
 
-      const customer =
-        await getCustomer(
+        return await handleNotify(
           request,
           env
         );
-
-      if (!customer) {
-
-        return response({
-          success: false,
-          error: "Please login first."
-        }, 401);
       }
 
-      const orderId =
-        url.searchParams.get(
-          "order_id"
-        );
-
-      if (!orderId) {
-
-        return response({
+      return json(
+        {
           success: false,
-          error: "Order ID is required."
-        }, 400);
-      }
+          error:
+            "Route not found."
+        },
+        404
+      );
 
-      const order =
-        await env.DB
-          .prepare(`
-            SELECT
-              order_id,
-              amount,
-              currency,
-              status,
-              payment_id,
-              paid_at
-            FROM premium_orders
-            WHERE order_id = ?
-              AND customer_id = ?
-            LIMIT 1
-          `)
-          .bind(
-            orderId,
-            customer.id
-          )
-          .first();
+    } catch (error) {
 
-      if (!order) {
+      console.error(
+        "Worker error:",
+        error
+      );
 
-        return response({
-          success: false,
-          error: "Order not found."
-        }, 404);
-      }
-
-      return response({
-        success: true,
-        order
-      });
-    }
-
-    /* =========================
-       PAYHERE NOTIFY
-       ========================= */
-
-    if (
-      path === "/notify" &&
-      request.method === "POST"
-    ) {
-
-      try {
-
-        const form =
-          await request.formData();
-
-        const merchantId =
-          String(
-            form.get("merchant_id") || ""
-          );
-
-        const orderId =
-          String(
-            form.get("order_id") || ""
-          );
-
-        const amount =
-          String(
-            form.get("payhere_amount") ||
-            form.get("amount") ||
-            ""
-          );
-
-        const currency =
-          String(
-            form.get("payhere_currency") ||
-            form.get("currency") ||
-            ""
-          );
-
-        const statusCode =
-          String(
-            form.get("status_code") || ""
-          );
-
-        const paymentId =
-          String(
-            form.get("payment_id") || ""
-          );
-
-        const receivedMd5sig =
-          String(
-            form.get("md5sig") || ""
-          );
-
-        if (
-          merchantId !==
-          PAYHERE_MERCHANT_ID
-        ) {
-
-          return response({
-            success: false,
-            error: "Invalid merchant ID."
-          }, 400);
-        }
-
-        if (
-          !orderId ||
-          !amount ||
-          !currency ||
-          !statusCode ||
-          !receivedMd5sig
-        ) {
-
-          return response({
-            success: false,
-            error:
-              "Invalid PayHere notification."
-          }, 400);
-        }
-
-        const secretHash =
-          md5(
-            env.PAYHERE_MERCHANT_SECRET
-          );
-
-        const localSignature =
-          md5(
-            merchantId +
-            orderId +
-            amount +
-            currency +
-            statusCode +
-            secretHash
-          );
-
-        if (
-          localSignature.toUpperCase() !==
-          receivedMd5sig.toUpperCase()
-        ) {
-
-          return response({
-            success: false,
-            error:
-              "Invalid payment signature."
-          }, 400);
-        }
-
-        /* =========================
-           PREMIUM ORDER
-           ========================= */
-
-        const premiumOrder =
-          await env.DB
-            .prepare(`
-              SELECT
-                *
-              FROM premium_orders
-              WHERE order_id = ?
-              LIMIT 1
-            `)
-            .bind(orderId)
-            .first();
-
-        if (premiumOrder) {
-
-          /* Verify amount */
-
-          if (
-            Number(amount).toFixed(2) !==
-            Number(premiumOrder.amount).toFixed(2)
-          ) {
-
-            return response({
-              success: false,
-              error:
-                "Payment amount mismatch."
-            }, 400);
-          }
-
-          /* Successful payment */
-
-          if (statusCode === "2") {
-
-            /* Prevent duplicate activation */
-
-            if (
-              premiumOrder.status !==
-              "PAID"
-            ) {
-
-              const now =
-                new Date();
-
-              const start =
-                now.toISOString()
-                  .slice(0, 19)
-                  .replace("T", " ");
-
-              const expires =
-                new Date(
-                  now.getTime() +
-                  30 * 24 * 60 * 60 * 1000
-                )
-                  .toISOString()
-                  .slice(0, 19)
-                  .replace("T", " ");
-
-              await env.DB
-                .prepare(`
-                  UPDATE premium_orders
-                  SET
-                    status = 'PAID',
-                    payment_id = ?,
-                    paid_at = CURRENT_TIMESTAMP
-                  WHERE order_id = ?
-                `)
-                .bind(
-                  paymentId,
-                  orderId
-                )
-                .run();
-
-              /* Activate subscription */
-
-              await env.DB
-                .prepare(`
-                  UPDATE premium_subscriptions
-                  SET
-                    status = 'EXPIRED'
-                  WHERE customer_id = ?
-                    AND grade = 'spoken-english'
-                    AND status = 'ACTIVE'
-                `)
-                .bind(
-                  premiumOrder.customer_id
-                )
-                .run();
-
-              await env.DB
-                .prepare(`
-                  INSERT INTO premium_subscriptions
-                  (
-                    customer_id,
-                    grade,
-                    status,
-                    order_id,
-                    payment_id,
-                    amount,
-                    currency,
-                    starts_at,
-                    expires_at
-                  )
-                  VALUES
-                  (?, 'spoken-english', 'ACTIVE',
-                   ?, ?, ?, 'LKR', ?, ?)
-                `)
-                .bind(
-                  premiumOrder.customer_id,
-                  orderId,
-                  paymentId,
-                  premiumOrder.amount,
-                  start,
-                  expires
-                )
-                .run();
-            }
-
-            return response({
-              success: true,
-              message:
-                "Premium payment confirmed."
-            });
-          }
-
-          /* Failed / cancelled */
-
-          await env.DB
-            .prepare(`
-              UPDATE premium_orders
-              SET
-                status = 'FAILED',
-                payment_id = ?
-              WHERE order_id = ?
-            `)
-            .bind(
-              paymentId,
-              orderId
-            )
-            .run();
-
-          return response({
-            success: true,
-            message:
-              "Premium payment status recorded."
-          });
-        }
-
-        /* =========================
-           NORMAL PRODUCT PAYMENT
-           ========================= */
-
-        const purchase =
-          await env.DB
-            .prepare(`
-              SELECT
-                id,
-                order_id,
-                customer_id,
-                product_id,
-                amount,
-                currency,
-                status
-              FROM purchases
-              WHERE order_id = ?
-              LIMIT 1
-            `)
-            .bind(orderId)
-            .first();
-
-        if (!purchase) {
-
-          return response({
-            success: false,
-            error:
-              "Purchase not found."
-          }, 404);
-        }
-
-        if (statusCode === "2") {
-
-          await env.DB
-            .prepare(`
-              UPDATE purchases
-              SET
-                status = 'PAID',
-                payment_id = ?
-              WHERE order_id = ?
-            `)
-            .bind(
-              paymentId,
-              orderId
-            )
-            .run();
-
-        } else {
-
-          await env.DB
-            .prepare(`
-              UPDATE purchases
-              SET
-                status = 'FAILED',
-                payment_id = ?
-              WHERE order_id = ?
-            `)
-            .bind(
-              paymentId,
-              orderId
-            )
-            .run();
-        }
-
-        return response({
-          success: true,
-          message:
-            "Payment status recorded."
-        });
-
-      } catch (error) {
-
-        console.error(
-          "Notify error:",
-          error
-        );
-
-        return response({
+      return json(
+        {
           success: false,
           error:
             error.message ||
-            "Notification failed."
-        }, 500);
-      }
+            "Internal server error."
+        },
+        500
+      );
     }
-
-    return response({
-      success: false,
-      error: "Route not found."
-    }, 404);
   }
 };
