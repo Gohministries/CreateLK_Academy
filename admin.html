@@ -60,16 +60,17 @@ button:hover{filter:brightness(.9)}
  box-shadow:0 2px 7px #0002
 }
 
-#art,#art svg{
+#art{
  width:100%;
- height:100%;
- display:block
+ height:100%
 }
 
-#art svg{
- min-width:100%;
- min-height:100%;
- border:0
+#art img{
+ width:100%;
+ height:100%;
+ display:block;
+ object-fit:cover;
+ object-position:center
 }
 
 .content{
@@ -189,7 +190,8 @@ button:hover{filter:brightness(.9)}
 <div>
 <label>Date</label>
 <input id="date" type="date"
- min="2027-01-01" max="2027-12-31"
+ min="2027-01-01"
+ max="2027-12-31"
  value="2027-01-01">
 </div>
 
@@ -200,32 +202,35 @@ button:hover{filter:brightness(.9)}
 
 </div>
 
+
 <div class="opts">
 
-<!-- SVG UPLOAD -->
+<!-- PHOTO -->
 
 <div>
-<label>Upload SVG Artwork</label>
-<input id="svgUpload" type="file" accept=".svg,image/svg+xml">
+<label>Upload Photo</label>
+<input id="photoUpload" type="file" accept="image/*">
 </div>
 
 <div>
-<label>SVG Fit</label>
-<select id="svgFit">
-<option value="slice">Fill / Crop</option>
-<option value="contain">Contain</option>
+<label>Photo Fit</label>
+<select id="photoFit">
+<option value="cover">Fill / Crop</option>
+<option value="contain">Show Full Photo</option>
 </select>
 </div>
 
 <div>
-<label>SVG Position</label>
-<select id="svgPos">
+<label>Photo Position</label>
+<select id="photoPos">
 <option value="center">Center</option>
 <option value="top">Top</option>
 <option value="bottom">Bottom</option>
 </select>
 </div>
 
+
+<!-- ENGLISH -->
 
 <div>
 <label>English Verse</label>
@@ -239,6 +244,8 @@ button:hover{filter:brightness(.9)}
 </div>
 
 
+<!-- TAMIL -->
+
 <div>
 <label>Tamil Verse</label>
 <textarea id="ta">தேவன் தம்முடைய ஒரேபேறான குமாரனை விசுவாசிக்கிறவன் எவனோ அவன் கெட்டுப்போகாமல் நித்தியஜீவனை அடையும்படிக்கு, அவரைத் தந்தருளி, உலகத்தில் அன்புகூர்ந்தார்.</textarea>
@@ -250,6 +257,8 @@ button:hover{filter:brightness(.9)}
 </div>
 </div>
 
+
+<!-- SINHALA -->
 
 <div>
 <label>Sinhala Verse</label>
@@ -263,6 +272,8 @@ button:hover{filter:brightness(.9)}
 </div>
 
 
+<!-- ALIGNMENT -->
+
 <div>
 <label>English Alignment</label>
 <select id="ena">
@@ -271,7 +282,6 @@ button:hover{filter:brightness(.9)}
 <option>right</option>
 </select>
 </div>
-
 
 <div>
 <label>Tamil Alignment</label>
@@ -282,7 +292,6 @@ button:hover{filter:brightness(.9)}
 </select>
 </div>
 
-
 <div>
 <label>Sinhala Alignment</label>
 <select id="sia">
@@ -292,6 +301,8 @@ button:hover{filter:brightness(.9)}
 </select>
 </div>
 
+
+<!-- POSITION -->
 
 <div>
 <label>Verse Position</label>
@@ -316,11 +327,10 @@ button:hover{filter:brightness(.9)}
 <div class="buttons">
 
 <button onclick="move(-1)">Previous</button>
+
 <button onclick="move(1)">Next</button>
 
-<button class="green" onclick="generate()">
-Generate
-</button>
+<button class="green" onclick="generate()">Generate</button>
 
 <button class="secondary" onclick="addDate()">
 Add Date to PDF
@@ -342,7 +352,7 @@ Download Selected PDF
 
 
 <div class="status" id="status">
-SVG: No artwork uploaded | Selected PDF pages: 0 / 10
+Photo: No photo uploaded | Selected PDF pages: 0 / 10
 </div>
 
 <div class="selectedDates" id="selected"></div>
@@ -355,7 +365,20 @@ SVG: No artwork uploaded | Selected PDF pages: 0 / 10
 <div class="calendar" id="calendar">
 
 <div class="photo">
-<div id="art"></div>
+<div id="art">
+<div style="
+width:100%;
+height:100%;
+display:flex;
+align-items:center;
+justify-content:center;
+background:#e5ddd2;
+color:#756c65;
+text-align:center;
+font:12px Georgia">
+Upload photo
+</div>
+</div>
 </div>
 
 
@@ -403,109 +426,78 @@ SVG: No artwork uploaded | Selected PDF pages: 0 / 10
 const $=id=>document.getElementById(id);
 
 let selectedDates=[];
-let svgData="";
+let photoData="";
 
 
-/* SVG UPLOAD */
+/* PHOTO UPLOAD */
 
-$("svgUpload").onchange=e=>{
+$("photoUpload").onchange=e=>{
 
- let file=e.target.files[0];
+ const file=e.target.files[0];
 
  if(!file)return;
 
- if(file.type!=="image/svg+xml" &&
-    !file.name.toLowerCase().endsWith(".svg")){
-
-  alert("Please select an SVG file.");
+ if(!file.type.startsWith("image/")){
+  alert("Please select an image.");
   return;
  }
 
- let reader=new FileReader();
+ const reader=new FileReader();
 
  reader.onload=()=>{
 
-  svgData=reader.result;
+  photoData=reader.result;
 
-  showSVG();
+  showPhoto();
 
-  $("status").textContent=
-   "SVG uploaded: "+file.name+
-   " | Selected PDF pages: "+
-   selectedDates.length+" / 10";
+  renderDates();
+
  };
 
- reader.readAsText(file);
+ reader.readAsDataURL(file);
 };
 
 
-/* DISPLAY SVG */
+/* PHOTO DISPLAY */
 
-function showSVG(){
+function showPhoto(){
 
- if(!svgData){
+ if(!photoData){
 
   $("art").innerHTML=`
   <div style="
-   width:100%;
-   height:100%;
-   display:flex;
-   align-items:center;
-   justify-content:center;
-   background:#e5ddd2;
-   color:#756c65;
-   text-align:center;
-   font:12px Georgia">
-   Upload SVG artwork
+  width:100%;
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#e5ddd2;
+  color:#756c65;
+  text-align:center;
+  font:12px Georgia">
+  Upload photo
   </div>`;
 
   return;
  }
 
 
- let box=document.createElement("div");
-
- box.innerHTML=svgData.trim();
-
- let svg=box.querySelector("svg");
-
- if(!svg){
-
-  alert("Invalid SVG file.");
-  svgData="";
-  return;
- }
-
-
- svg.removeAttribute("width");
- svg.removeAttribute("height");
-
- svg.style.width="100%";
- svg.style.height="100%";
- svg.style.display="block";
- svg.style.border="0";
-
- svg.setAttribute(
-  "preserveAspectRatio",
-  "xMidYMid "+
-  ($("svgFit").value==="contain"?"meet":"slice")
- );
-
- svg.style.objectFit=
-  $("svgFit").value==="contain"?
-  "contain":"cover";
-
- svg.style.objectPosition=
-  $("svgPos").value;
-
- $("art").replaceChildren(svg);
+ $("art").innerHTML=`
+ <img src="${photoData}"
+ style="
+ width:100%;
+ height:100%;
+ display:block;
+ object-fit:${$("photoFit").value};
+ object-position:${$("photoPos").value};
+ ">`;
 }
 
 
-/* SVG OPTIONS */
+/* PHOTO OPTIONS */
 
-$("svgFit").onchange=showSVG;
-$("svgPos").onchange=showSVG;
+$("photoFit").onchange=showPhoto;
+$("photoPos").onchange=showPhoto;
 
 
 /* GENERATE */
@@ -561,6 +553,7 @@ function generate(){
  requestAnimationFrame(()=>{
   requestAnimationFrame(position);
  });
+
 }
 
 
@@ -600,7 +593,7 @@ function position(){
 }
 
 
-/* DATE */
+/* DATE NAVIGATION */
 
 function move(n){
 
@@ -614,6 +607,7 @@ function move(n){
   d<new Date("2027-01-01")||
   d>new Date("2027-12-31")
  )return;
+
 
  $("date").value=
   d.getFullYear()+"-"+
@@ -659,11 +653,10 @@ function renderDates(){
  ).join("");
 
 
- let svgStatus=svgData?
-  "SVG uploaded":"SVG: No artwork uploaded";
-
  $("status").textContent=
-  svgStatus+
+  (photoData?
+   "Photo uploaded":
+   "Photo: No photo uploaded")+
   " | Selected PDF pages: "+
   selectedDates.length+
   " / 10";
@@ -707,56 +700,33 @@ async function capture(){
 }
 
 
-function newPDF(){
-
- return new jspdf.jsPDF({
-  orientation:"landscape",
-  unit:"in",
-  format:[9,5.625],
-  compress:true
- });
-}
-
-
-function addCanvas(pdf,c,newPage){
-
- if(newPage)
-  pdf.addPage([9,5.625],"landscape");
-
- pdf.addImage(
-  c.toDataURL("image/jpeg",.96),
-  "JPEG",
-  0,
-  0,
-  9,
-  5.625
- );
-}
-
-
 /* CURRENT PDF */
 
 async function currentPDF(){
 
  if(!window.jspdf?.jsPDF)
-  return alert(
-   "PDF library is not loaded."
-  );
+  return alert("PDF library is not loaded.");
 
- if(!svgData)
-  return alert(
-   "Please upload an SVG artwork first."
-  );
+ if(!photoData)
+  return alert("Please upload a photo first.");
 
  let c=await capture();
 
- let pdf=newPDF();
+ let pdf=new jspdf.jsPDF({
+  orientation:"landscape",
+  unit:"in",
+  format:[9,5.625],
+  compress:true
+ });
 
- addCanvas(pdf,c,false);
+ pdf.addImage(
+  c.toDataURL("image/jpeg",.96),
+  "JPEG",
+  0,0,9,5.625
+ );
 
  pdf.save(
-  "Bible-Calendar-"+
-  $("date").value+".pdf"
+  "Bible-Calendar-"+$("date").value+".pdf"
  );
 }
 
@@ -766,35 +736,36 @@ async function currentPDF(){
 async function multiPDF(){
 
  if(!selectedDates.length)
-  return alert(
-   "Add at least one date first."
-  );
+  return alert("Add at least one date first.");
 
- if(!svgData)
-  return alert(
-   "Please upload an SVG artwork first."
-  );
-
- if(!window.jspdf?.jsPDF)
-  return alert(
-   "PDF library is not loaded."
-  );
-
+ if(!photoData)
+  return alert("Please upload a photo first.");
 
  let original=$("date").value;
 
- let pdf=newPDF();
+ let pdf=new jspdf.jsPDF({
+  orientation:"landscape",
+  unit:"in",
+  format:[9,5.625],
+  compress:true
+ });
 
  try{
 
   for(let i=0;i<selectedDates.length;i++){
 
-   $("date").value=
-    selectedDates[i];
+   $("date").value=selectedDates[i];
 
    let c=await capture();
 
-   addCanvas(pdf,c,i>0);
+   if(i)
+    pdf.addPage([9,5.625],"landscape");
+
+   pdf.addImage(
+    c.toDataURL("image/jpeg",.96),
+    "JPEG",
+    0,0,9,5.625
+   );
 
    $("status").textContent=
     "Creating PDF: "+
@@ -804,11 +775,10 @@ async function multiPDF(){
 
 
   pdf.save(
-   "365-Bible-Calendar-"+
+   "Bible-Calendar-"+
    selectedDates.length+
    "-Pages.pdf"
   );
-
 
  }catch(e){
 
@@ -827,7 +797,7 @@ async function multiPDF(){
 }
 
 
-/* LIVE CONTROLS */
+/* LIVE */
 
 ["ens","tas","sis"].forEach(x=>{
 
@@ -848,14 +818,11 @@ async function multiPDF(){
 
 
 $("pos").oninput=position;
-
 $("space").oninput=generate;
-
 
 ["ena","taa","sia"].forEach(x=>{
  $(x).onchange=generate;
 });
-
 
 $("date").onchange=generate;
 $("ref").oninput=generate;
@@ -866,7 +833,7 @@ $("si").oninput=generate;
 
 /* START */
 
-showSVG();
+showPhoto();
 generate();
 renderDates();
 
