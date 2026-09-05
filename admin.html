@@ -14,22 +14,44 @@ body{
 .app{max-width:1000px;margin:auto}
 h2{text-align:center}
 .controls{
- background:white;padding:18px;border-radius:15px;
+ background:#fff;padding:18px;border-radius:15px;
  margin-bottom:20px
 }
-input,button{
- padding:11px;border:1px solid #ccc;border-radius:8px
+input,textarea,button{
+ width:100%;padding:12px;margin:6px 0;
+ border:1px solid #ccc;border-radius:8px;
+ font-family:Arial
 }
+textarea{height:90px;resize:vertical}
 button{
- background:#172033;color:white;cursor:pointer;
- border:0;margin:4px
+ background:#172033;color:#fff;
+ border:0;cursor:pointer
+}
+.row{
+ display:grid;
+ grid-template-columns:1fr 1fr;
+ gap:10px
+}
+.nav{
+ display:grid;
+ grid-template-columns:1fr 1fr;
+ gap:8px;
+ margin-top:10px
 }
 canvas{
  width:100%;display:block;
- background:white;border-radius:4px
+ background:#fff;border-radius:5px
 }
-.nav{text-align:center;margin-top:15px}
-#status{text-align:center;margin:10px;font-weight:bold}
+#status{
+ text-align:center;
+ margin:10px;
+ font-weight:bold
+}
+label{
+ display:block;
+ margin-top:8px;
+ font-weight:bold
+}
 </style>
 </head>
 
@@ -41,16 +63,39 @@ canvas{
 
 <div class="controls">
 
-<input type="file" id="file" accept=".txt">
+<div class="row">
+<div>
+<label>Day</label>
+<input id="day" placeholder="1">
+</div>
 
-<div id="status">Upload your 365-day text file</div>
+<div>
+<label>Date</label>
+<input id="date" placeholder="January 1, 2027">
+</div>
+</div>
+
+<label>English Bible Verse</label>
+<textarea id="english" placeholder="Enter English Bible verse"></textarea>
+
+<label>Tamil Bible Verse</label>
+<textarea id="tamil" placeholder="தமிழ் வேதாகம வசனத்தை உள்ளிடவும்"></textarea>
+
+<label>Sinhala Bible Verse</label>
+<textarea id="sinhala" placeholder="සිංහල බයිබල් පදය ඇතුළත් කරන්න"></textarea>
+
+<label>Bible Reference</label>
+<input id="reference" placeholder="John 3:16">
 
 <div class="nav">
 <button onclick="prev()">← Previous</button>
 <button onclick="next()">Next →</button>
+</div>
+
 <button onclick="generate()">Generate</button>
 <button onclick="save()">Save PNG</button>
-</div>
+
+<div id="status">Enter the Bible verses</div>
 
 </div>
 
@@ -62,70 +107,55 @@ canvas{
 
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
-let days=[],index=0;
 
-document.getElementById("file").onchange=e=>{
- const reader=new FileReader();
- reader.onload=()=>{
-   days=parse(reader.result);
-   index=0;
-   generate();
+let days=[];
+let index=0;
+
+function current(){
+ return {
+  day:document.getElementById("day").value,
+  date:document.getElementById("date").value,
+  english:document.getElementById("english").value,
+  tamil:document.getElementById("tamil").value,
+  sinhala:document.getElementById("sinhala").value,
+  reference:document.getElementById("reference").value
  };
- reader.readAsText(e.target.files[0],"UTF-8");
-};
+}
 
-function parse(text){
-
- const blocks=text.trim().split(/\n\s*\n/);
-
- return blocks.map(block=>{
-
-   let d={};
-
-   block.split("\n").forEach(line=>{
-
-     let p=line.indexOf(":");
-
-     if(p<0)return;
-
-     let key=line.slice(0,p).trim().toUpperCase();
-     let value=line.slice(p+1).trim();
-
-     if(key==="DAY")d.day=value;
-     if(key==="DATE")d.date=value;
-     if(key==="ENGLISH")d.english=value;
-     if(key==="TAMIL")d.tamil=value;
-     if(key==="SINHALA")d.sinhala=value;
-     if(key==="REFERENCE")d.reference=value;
-
-   });
-
-   return d;
- });
+function load(d){
+ document.getElementById("day").value=d.day||"";
+ document.getElementById("date").value=d.date||"";
+ document.getElementById("english").value=d.english||"";
+ document.getElementById("tamil").value=d.tamil||"";
+ document.getElementById("sinhala").value=d.sinhala||"";
+ document.getElementById("reference").value=d.reference||"";
+ generate();
 }
 
 function wrap(text,x,y,max,size,line){
 
  ctx.font=size+"px Arial";
  ctx.textAlign="center";
- ctx.fillStyle="#222";
 
- let words=text.split(" ");
- let row="",rows=[];
+ let words=text.split(/\s+/);
+ let row="";
+ let rows=[];
 
- words.forEach(w=>{
-   let test=row?row+" "+w:w;
+ words.forEach(word=>{
+  let test=row?row+" "+word:word;
 
-   if(ctx.measureText(test).width>max){
-     rows.push(row);
-     row=w;
-   }else row=test;
+  if(ctx.measureText(test).width>max && row){
+   rows.push(row);
+   row=word;
+  }else{
+   row=test;
+  }
  });
 
  if(row)rows.push(row);
 
  rows.forEach((r,i)=>{
-   ctx.fillText(r,x,y+i*line);
+  ctx.fillText(r,x,y+i*line);
  });
 
  return rows.length;
@@ -133,9 +163,7 @@ function wrap(text,x,y,max,size,line){
 
 function generate(){
 
- if(!days.length)return;
-
- let d=days[index];
+ let d=current();
 
  ctx.fillStyle="#f8f3e7";
  ctx.fillRect(0,0,2400,1800);
@@ -146,16 +174,25 @@ function generate(){
 
  ctx.textAlign="center";
 
+ /* TITLE */
+
  ctx.fillStyle="#9b7627";
  ctx.font="bold 55px Arial";
  ctx.fillText("365 DAYS WITH GOD'S WORD",1200,160);
 
+ /* DAY */
+
  ctx.fillStyle="#172033";
  ctx.font="bold 75px Arial";
- ctx.fillText("DAY "+(d.day||String(index+1).padStart(3,"0")),1200,270);
+ ctx.fillText(
+  "DAY "+(d.day||String(index+1).padStart(3,"0")),
+  1200,270
+ );
 
- ctx.font="38px Arial";
+ /* DATE */
+
  ctx.fillStyle="#666";
+ ctx.font="38px Arial";
  ctx.fillText(d.date||"",1200,330);
 
  ctx.fillStyle="#b28a35";
@@ -167,17 +204,23 @@ function generate(){
  ctx.font="bold 34px Arial";
  ctx.fillText("ENGLISH",1200,445);
 
- let englishSize=75;
+ ctx.fillStyle="#172033";
 
  let englishRows=wrap(
-   "“"+(d.english||"")+"”",
-   1200,560,1800,englishSize,100
+  "“"+(d.english||"")+"”",
+  1200,560,1800,75,100
  );
 
  if(d.reference){
-   ctx.fillStyle="#9b7627";
-   ctx.font="bold 34px Arial";
-   ctx.fillText("— "+d.reference,1200,560+englishRows*100+20);
+
+  ctx.fillStyle="#9b7627";
+  ctx.font="bold 34px Arial";
+
+  ctx.fillText(
+   "— "+d.reference,
+   1200,
+   560+englishRows*100+20
+  );
  }
 
  /* TAMIL */
@@ -186,9 +229,11 @@ function generate(){
  ctx.font="bold 30px Arial";
  ctx.fillText("தமிழ்",1200,900);
 
+ ctx.fillStyle="#222";
+
  wrap(
-   "“"+(d.tamil||"")+"”",
-   1200,970,1800,45,65
+  "“"+(d.tamil||"")+"”",
+  1200,970,1800,45,65
  );
 
  /* SINHALA */
@@ -197,49 +242,81 @@ function generate(){
  ctx.font="bold 30px Arial";
  ctx.fillText("සිංහල",1200,1270);
 
+ ctx.fillStyle="#222";
+
  wrap(
-   "“"+(d.sinhala||"")+"”",
-   1200,1340,1800,45,65
+  "“"+(d.sinhala||"")+"”",
+  1200,1340,1800,45,65
  );
+
+ /* FOOTER */
 
  ctx.fillStyle="#9b7627";
  ctx.font="italic 30px Arial";
- ctx.fillText("Walk with God • Grow in His Word",1200,1640);
+
+ ctx.fillText(
+  "Walk with God • Grow in His Word",
+  1200,1640
+ );
 
  document.getElementById("status").textContent=
-   "Day "+(index+1)+" of "+days.length;
+  "Day "+(index+1)+(days.length?" of "+days.length:"");
 
 }
 
+/* SAVE */
+
 function save(){
 
- if(!days.length)return;
+ generate();
 
  let link=document.createElement("a");
 
  link.download=
-   "Bible-Calendar-Day-"+String(index+1).padStart(3,"0")+".png";
+  "Bible-Calendar-Day-"+
+  String(index+1).padStart(3,"0")+
+  ".png";
 
  link.href=canvas.toDataURL("image/png");
 
  link.click();
 }
 
+/* NEXT */
+
 function next(){
 
- if(index<days.length-1){
+ if(days.length){
+
+  if(index<days.length-1){
    index++;
-   generate();
+   load(days[index]);
+  }
+
+ }else{
+
+  days.push(current());
+  index=days.length-1;
+
+  generate();
  }
 }
+
+/* PREVIOUS */
 
 function prev(){
 
  if(index>0){
-   index--;
-   generate();
+
+  days[index]=current();
+
+  index--;
+
+  load(days[index]);
  }
 }
+
+generate();
 
 </script>
 
