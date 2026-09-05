@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CreateLK Academy</title>
-
 <style>
 *{box-sizing:border-box;margin:0}
 body{font-family:Arial,sans-serif;background:#f5f7fb;color:#172033}
@@ -12,7 +11,7 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .head,.wrap{max-width:1050px;margin:auto}
 .head{display:flex;justify-content:space-between;align-items:center}
 .logo{font-size:21px;font-weight:800}.logo b{color:#fbbf24}
-.logout{background:#ffffff20;color:#fff;border:0;padding:9px 13px;border-radius:9px}
+.logout{background:#ffffff20;color:#fff;border:0;padding:9px 13px;border-radius:9px;cursor:pointer}
 .wrap{padding:25px 15px 50px}
 .hero{padding:30px;border-radius:23px;color:#fff;background:linear-gradient(135deg,#1d4ed8,#4f46e5);box-shadow:0 10px 30px #2563eb33}
 .hero h1{font-size:31px;margin:8px 0}.hero p{line-height:1.6;opacity:.9}
@@ -20,11 +19,12 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .card{background:#fff;padding:20px;border-radius:18px;margin-top:18px;box-shadow:0 5px 20px #0001}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .premium{background:#f59e0b;color:#fff;padding:11px 16px;border:0;border-radius:10px;font-weight:bold;cursor:pointer}
+.premium:disabled{opacity:.6;cursor:wait}
 .status{color:#64748b;font-size:14px;margin-top:5px}
 .active{color:#16a34a;font-weight:bold}
 .price{font-size:18px;color:#111827;margin-top:5px}
 .progress{height:10px;background:#e5e7eb;border-radius:20px;margin-top:12px;overflow:hidden}
-.fill{height:100%;width:0;background:#2563eb}
+.fill{height:100%;width:0;background:#2563eb;transition:.3s}
 .section{margin:30px 0 15px}
 .lessons{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
 .lesson{background:#fff;padding:18px;border-radius:17px;border:1px solid #e5e7eb}
@@ -34,7 +34,7 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .open,.complete{background:#2563eb;color:#fff;border:0;padding:9px 13px;border-radius:9px;font-weight:bold;cursor:pointer}
 .lock{background:#e5e7eb;color:#64748b;border:0;padding:9px 13px;border-radius:9px;cursor:pointer}
 .free{color:#16a34a;font-weight:bold;font-size:12px}
-.modal-bg{display:none;position:fixed;inset:0;background:#0009;padding:15px;overflow:auto}
+.modal-bg{display:none;position:fixed;inset:0;background:#0009;padding:15px;overflow:auto;z-index:10}
 .modal{background:#fff;max-width:760px;margin:25px auto;border-radius:20px;overflow:hidden}
 .modal-head{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:22px;position:relative}
 .close{position:absolute;right:15px;top:12px;background:#ffffff20;color:#fff;border:0;font-size:22px;border-radius:8px;padding:4px 10px;cursor:pointer}
@@ -49,7 +49,6 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .complete{width:100%;margin-top:15px}
 .loading{text-align:center;padding:35px;color:#64748b}
 .error{text-align:center;padding:30px;color:#dc2626}
-
 @media(max-width:750px){.lessons{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){
  .lessons{grid-template-columns:1fr}
@@ -131,6 +130,7 @@ const API="https://createlk-academy-api.createlk.workers.dev";
 const PAY="https://createlk-payhere.createlk.workers.dev";
 const COURSE="spoken-english";
 const PREMIUM_PRICE=999;
+
 const token=localStorage.getItem("createlk_token");
 
 let premium=false;
@@ -193,7 +193,7 @@ async function loadLessons(){
   const d=await r.json();
 
   if(!r.ok||!d.success)
-   throw Error(d.error||d.message);
+   throw Error(d.error||d.message||"Unable to load lessons.");
 
   premium=!!d.premium;
 
@@ -211,6 +211,7 @@ async function loadLessons(){
    titles.map((title,i)=>{
 
     const n=i+1;
+
     const api=apiLessons.find(
      x=>+x.lesson_number===n
     );
@@ -221,21 +222,33 @@ async function loadLessons(){
 
     return `
     <article class="lesson">
+
       <div class="num">LESSON ${n}</div>
+
       <h3>${esc(api?.title||title)}</h3>
-      <p>${esc(api?.summary||api?.objectives||"Practical English conversation")}</p>
+
+      <p>${esc(
+       api?.summary||
+       api?.objectives||
+       "Practical English conversation"
+      )}</p>
 
       <div class="bottom">
+
         <span class="free">
           ${done?"✓ COMPLETED":free?"FREE":"PREMIUM"}
         </span>
 
         <button
-          class="${unlocked?"open":"lock"}"
-          onclick="${unlocked?`openLesson(${n})`:"buyPremium()"}">
+         class="${unlocked?"open":"lock"}"
+         onclick="${unlocked
+          ?`openLesson(${n})`
+          :"buyPremium()"}">
           ${unlocked?"Open":"🔒 Locked"}
         </button>
+
       </div>
+
     </article>`;
    }).join("");
 
@@ -244,7 +257,7 @@ async function loadLessons(){
   console.error(e);
 
   $("lessons").innerHTML=
-   '<div class="error">Unable to load lessons.</div>';
+   `<div class="error">${esc(e.message||"Unable to load lessons.")}</div>`;
  }
 }
 
@@ -268,6 +281,9 @@ async function openLesson(n){
 
   const l=en.lesson;
 
+  if(!l)
+   throw Error("Lesson data not found.");
+
   $("modalTitle").textContent=l.title;
 
   dialogues=[];
@@ -279,7 +295,9 @@ async function openLesson(n){
   for(let i=0;i<enD.length;i++){
 
    dialogues.push({
+
     number:enD[i].dialogue_number,
+
     lines:[
      {
       language:"English",
@@ -318,6 +336,7 @@ async function openLesson(n){
   let html="";
 
   if(l.objectives){
+
    html+=`
    <div class="card" style="margin:0 0 15px">
    ${esc(l.objectives)}
@@ -331,24 +350,35 @@ async function openLesson(n){
   </div>`;
 
   html+=dialogues.map((d,i)=>`
+
    <div class="dialogue" id="dialogue-${i}">
-    <div class="num">DIALOGUE ${d.number}</div>
+
+    <div class="num">
+     DIALOGUE ${d.number}
+    </div>
 
     ${d.lines.map(x=>x.text?`
+
      <div class="lang">${x.language}</div>
+
      <div class="text">
-      <b>${esc(x.speaker)}:</b> ${esc(x.text)}
+      <b>${esc(x.speaker)}:</b>
+      ${esc(x.text)}
      </div>
+
     `:"").join("")}
 
    </div>
+
   `).join("");
 
   html+=`
    <button class="complete" onclick="completeLesson(${n})">
+
     ${completed.includes(n)
      ?"✓ Lesson Completed"
      :"Mark Lesson Complete"}
+
    </button>`;
 
   $("modalBody").innerHTML=html;
@@ -358,7 +388,9 @@ async function openLesson(n){
   console.error(e);
 
   $("modalBody").innerHTML=
-   '<div class="error">Unable to load this lesson.</div>';
+   `<div class="error">${esc(
+    e.message||"Unable to load this lesson."
+   )}</div>`;
  }
 }
 
@@ -369,16 +401,24 @@ async function getLesson(n,language){
   {headers}
  );
 
- const d=await r.json();
+ const text=await r.text();
+
+ let d;
+
+ try{
+  d=JSON.parse(text);
+ }catch{
+  throw Error(`Lesson server error (${r.status})`);
+ }
 
  if(!r.ok||!d.success)
-  throw Error(d.error||d.message);
+  throw Error(d.error||d.message||"Unable to load lesson.");
 
  return d;
 }
 
 /* =========================
-   PAYHERE
+   PAYHERE PREMIUM CHECKOUT
 ========================= */
 
 async function buyPremium(){
@@ -386,27 +426,56 @@ async function buyPremium(){
  const btn=$("premiumBtn");
 
  btn.disabled=true;
- btn.textContent="Loading...";
+ btn.textContent="Connecting...";
 
  try{
+
+  const token=localStorage.getItem("createlk_token");
+
+  if(!token)
+   throw Error(
+    "Your login session has expired. Please login again."
+   );
 
   const r=await fetch(
    `${PAY}/premium-checkout`,
    {
     method:"POST",
-    headers
+    headers:{
+     "Content-Type":"application/json",
+     "Authorization":"Bearer "+token
+    },
+    body:"{}"
    }
   );
 
-  const d=await r.json();
+  const text=await r.text();
 
-  if(!r.ok||!d.success)
-   throw Error(d.error||"Unable to start payment.");
+  let d;
+
+  try{
+   d=JSON.parse(text);
+  }catch{
+
+   throw Error(
+    "Payment server returned an invalid response ("+
+    r.status+")."
+   );
+  }
+
+  if(!r.ok||!d.success){
+
+   throw Error(
+    d.message||
+    d.error||
+    `Checkout failed (${r.status})`
+   );
+  }
 
   const fields=d.fields||d.checkout;
 
   if(!fields)
-   throw Error("Payment details missing.");
+   throw Error("Payment details are missing.");
 
   const form=document.createElement("form");
 
@@ -426,11 +495,20 @@ async function buyPremium(){
   });
 
   document.body.appendChild(form);
+
   form.submit();
 
  }catch(e){
 
-  alert(e.message||"Payment could not be started.");
+  console.error(
+   "CreateLK Premium Checkout:",
+   e
+  );
+
+  alert(
+   e.message||
+   "Payment could not be started."
+  );
 
   btn.disabled=false;
   btn.textContent="GET PREMIUM";
@@ -450,6 +528,7 @@ const voiceLang={
 function playAll(){
 
  stopSpeech();
+
  playing=true;
 
  let index=0;
@@ -457,6 +536,7 @@ function playAll(){
  function next(){
 
   if(!playing||index>=dialogues.length){
+
    playing=false;
    return;
   }
@@ -464,7 +544,9 @@ function playAll(){
   const box=$("dialogue-"+index);
 
   document.querySelectorAll(".dialogue")
-   .forEach(x=>x.classList.remove("playing"));
+   .forEach(x=>
+    x.classList.remove("playing")
+   );
 
   box.classList.add("playing");
 
@@ -506,8 +588,9 @@ function speakLines(lines,i,done){
  u.lang=voiceLang[line.language];
  u.rate=.88;
 
- u.onend=
-  ()=>speakLines(lines,i+1,done);
+ u.onend=()=>{
+  speakLines(lines,i+1,done);
+ };
 
  speechSynthesis.speak(u);
 }
@@ -515,10 +598,13 @@ function speakLines(lines,i,done){
 function stopSpeech(){
 
  playing=false;
+
  speechSynthesis.cancel();
 
  document.querySelectorAll(".dialogue")
-  .forEach(x=>x.classList.remove("playing"));
+  .forEach(x=>
+   x.classList.remove("playing")
+  );
 }
 
 /* =========================
@@ -550,10 +636,12 @@ async function completeLesson(n){
    completed.push(n);
 
   updateProgress(
-   d.completed_count||completed.length
+   d.completed_count||
+   completed.length
   );
 
   closeLesson();
+
   loadLessons();
 
  }catch(e){
@@ -587,12 +675,18 @@ async function loadProgress(){
    );
   }
 
- }catch(e){}
+ }catch(e){
+
+  console.error("Progress:",e);
+ }
 }
 
 function updateProgress(n){
 
- n=Math.min(100,+n||0);
+ n=Math.min(
+  100,
+  +n||0
+ );
 
  $("progressText").textContent=
   n+" of 100";
@@ -604,6 +698,7 @@ function updateProgress(n){
 function closeLesson(){
 
  stopSpeech();
+
  $("modalBg").style.display="none";
 }
 
