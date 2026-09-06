@@ -5,448 +5,96 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>365 Bible Calendar 2027</title>
 
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;700&family=Noto+Sans+Tamil:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;700&family=Noto+Sans+Tamil:wght@400;500;700&family=Playfair+Display:wght@400;500;600;700&family=Cinzel:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
 *{box-sizing:border-box}
+body{margin:0;padding:20px;background:#eef1f5;font-family:Arial;color:#172033}
+.app{max-width:1100px;margin:auto}
+h2{text-align:center;margin:0 0 15px}
+.controls{background:#fff;padding:15px;border-radius:12px;margin-bottom:18px;box-shadow:0 3px 12px #0001}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.field{display:flex;flex-direction:column;gap:5px}
+label{font-weight:bold;font-size:14px}
+input,select,textarea{width:100%;padding:9px;border:1px solid #ccd2da;border-radius:7px;font:inherit}
+textarea{min-height:75px;resize:vertical}
+.adjustment{margin-top:12px;padding:12px;background:#f7f8fa;border-radius:8px}
+.adjustment h3{margin:0 0 8px;font-size:15px}
+.range{display:grid;grid-template-columns:1fr 65px;gap:8px;align-items:center;margin:7px 0}
+.range input{padding:0}
+.range span{font-size:12px;text-align:right}
+.buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+button{border:0;border-radius:7px;padding:10px 15px;cursor:pointer;font-weight:bold}
+.secondary{background:#e8edf3;color:#172033}
+.gold{background:#c49a45;color:#fff}
+.danger,.deleteBtn{background:#b83b3b;color:#fff}
+.deleteBtn{padding:5px 9px;font-size:11px}
+button:disabled{opacity:.5}
+.status{margin-top:10px;font-size:13px;font-weight:bold}
+.generated{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.generatedRow{display:flex;align-items:center;justify-content:space-between;background:#f1f4f7;border:1px solid #d9dee5;border-radius:6px;padding:6px 8px}
+.generatedDate{font-size:13px;font-weight:bold;color:#17365d}
 
-body{
- margin:0;
- padding:12px;
- background:#eef1f4;
- font-family:Arial,sans-serif;
- color:#172033
-}
-
-.app{
- max-width:1200px;
- margin:auto
-}
-
-/* CALENDAR */
 .calendar{
- position:relative;
- width:100%;
- aspect-ratio:16/10;
- background:#FAF8F2;
- border:1px solid #C8B98A;
- outline:5px solid #F1ECE0;
- overflow:hidden;
- margin:0 auto 18px;
- box-shadow:0 5px 20px #0001
+position:relative;width:100%;aspect-ratio:16/10;
+background:#faf8f2;border:1px solid #c8b98a;
+outline:5px solid #f1ece0;overflow:hidden;margin:0 auto 18px
 }
 
-/* FULL PHOTO */
-.fullPhoto{
- position:absolute;
- inset:0;
- width:100%;
- height:100%;
- object-fit:cover;
- display:none;
- z-index:10
-}
+.photo{position:absolute;left:4.5%;top:8%;bottom:8%;width:29%;overflow:hidden;border-radius:8px;background:#ddd}
+.photo img,.fullPhoto{width:100%;height:100%;object-fit:cover;display:block}
 
-.calendar.full-view .fullPhoto{
- display:block
-}
+.fullPhoto{position:absolute;inset:0;display:none;z-index:10}
+.full-view .fullPhoto{display:block}
+.full-view .photo,.full-view .content{display:none}
 
-.calendar.full-view .photo,
-.calendar.full-view .content{
- display:none
+.coverVerses{
+position:absolute;left:7%;right:7%;top:7%;bottom:7%;
+z-index:20;display:none;grid-template-rows:repeat(3,minmax(0,1fr));
+color:#fff;text-align:center;
+text-shadow:0 2px 4px #000,0 4px 12px #0009
 }
+.full-view .coverVerses{display:grid}
+.coverVerse{min-height:0;overflow:hidden;padding:5px 10px;display:flex;align-items:center;justify-content:center}
+.coverText{width:100%;overflow:hidden;overflow-wrap:anywhere}
+#coverEnglish{font:600 34px/1.12 "Playfair Display",Georgia,serif}
+#coverTamil{font:500 24px/1.1 "Noto Sans Tamil",sans-serif}
+#coverSinhala{font:500 24px/1.1 "Noto Sans Sinhala",sans-serif}
 
-/* NORMAL PHOTO */
-.photo{
- position:absolute;
- left:4.5%;
- top:8%;
- bottom:8%;
- width:29%;
- overflow:hidden;
- border-radius:8px;
- background:#ddd;
- z-index:1
-}
-
-.photo img{
- width:100%;
- height:100%;
- object-fit:cover;
- display:block
-}
-
-/* CONTENT */
 .content{
- position:absolute;
- left:37%;
- right:5%;
- top:4%;
- bottom:4%;
- display:flex;
- flex-direction:column;
- min-width:0;
- min-height:0;
- z-index:2
+position:absolute;left:37%;right:5%;top:4%;bottom:4%;
+display:flex;flex-direction:column;min-width:0;min-height:0
 }
-
-/* DATE */
 .dateRow{
- height:9%;
- min-height:30px;
- display:flex;
- align-items:center;
- border-bottom:2px solid #C49A45;
- color:#17365D;
- position:relative;
- overflow:hidden
+height:9%;min-height:30px;display:flex;align-items:center;
+border-bottom:2px solid #c49a45;position:relative;color:#17365d
 }
+.dateGroup{display:flex;align-items:center;gap:8px}
+.month{font-size:clamp(16px,2.3vw,28px);font-weight:bold}
+.day{font-size:clamp(15px,2vw,24px);font-weight:bold}
+.cross{position:absolute;right:2px;top:1px;color:#c49a45;font:15px Georgia}
+.verses{flex:1;min-height:0;padding-top:5px;overflow:hidden}
+#verseBox{height:100%;display:grid;grid-template-rows:repeat(3,minmax(0,1fr))}
+.section{min-height:0;overflow:hidden;padding:4px 8px;display:flex;flex-direction:column;justify-content:center}
+.section+.section{border-top:1px solid #e5dfd2}
+.text{width:100%;overflow:hidden;overflow-wrap:anywhere}
+#english{font:600 25px/1.12 Georgia;color:#172033}
+#tamil{font:500 18px/1.1 "Noto Sans Tamil";color:#7a4e2d}
+#sinhala{font:500 18px/1.12 "Noto Sans Sinhala";color:#35634a}
 
-.dateGroup{
- display:flex;
- align-items:center;
- gap:8px;
- min-width:0
-}
-
-.month{
- font-size:clamp(16px,2.3vw,28px);
- font-weight:bold;
- letter-spacing:.5px
-}
-
-.day{
- font-size:clamp(15px,2vw,24px);
- font-weight:bold
-}
-
-.cross{
- position:absolute;
- right:2px;
- top:1px;
- color:#C49A45;
- font:15px Georgia,serif;
- z-index:5;
- pointer-events:none
-}
-
-/* VERSES */
-.verses{
- flex:1;
- min-height:0;
- padding-top:5px;
- overflow:hidden
-}
-
-#verseBox{
- height:100%;
- display:grid;
- grid-template-rows:repeat(3,minmax(0,1fr));
- overflow:hidden
-}
-
-.section{
- min-height:0;
- min-width:0;
- overflow:hidden;
- padding:4px 8px;
- display:flex;
- flex-direction:column;
- justify-content:center
-}
-
-.section+.section{
- border-top:1px solid #E5DFD2
-}
-
-.text{
- width:100%;
- min-height:0;
- max-width:100%;
- overflow:hidden;
- overflow-wrap:anywhere;
- word-break:normal;
- white-space:normal;
- display:block
-}
-
-#english{
- font-family:Georgia,"Times New Roman",serif;
- font-size:25px;
- line-height:1.12;
- font-weight:600;
- color:#172033
-}
-
-#tamil{
- font-family:"Noto Sans Tamil","Nirmala UI",sans-serif;
- font-size:18px;
- line-height:1.10;
- font-weight:500;
- color:#7A4E2D;
- padding:3px 0
-}
-
-#sinhala{
- font-family:"Noto Sans Sinhala","Nirmala UI",sans-serif;
- font-size:18px;
- line-height:1.12;
- font-weight:500;
- color:#35634A;
- padding:3px 0
-}
-
-/* CONTROLS */
-.controls{
- background:#fff;
- padding:14px;
- border-radius:12px;
- box-shadow:0 3px 15px #0001
-}
-
-.grid{
- display:grid;
- grid-template-columns:1fr 1fr;
- gap:10px
-}
-
-.field{
- display:flex;
- flex-direction:column;
- gap:5px;
- min-width:0
-}
-
-.full{
- grid-column:1/-1
-}
-
-label{
- font-size:13px;
- font-weight:bold;
- color:#38455a
-}
-
-input,textarea,select{
- width:100%;
- border:1px solid #ccd2da;
- border-radius:7px;
- padding:9px 10px;
- font-size:14px;
- outline:none;
- font-family:inherit;
- background:#fff
-}
-
-input:focus,
-textarea:focus,
-select:focus{
- border-color:#C49A45
-}
-
-textarea{
- resize:vertical;
- min-height:65px
-}
-
-.photoInput{
- padding:7px;
- background:#fafafa
-}
-
-/* ADJUSTMENT */
-.adjustment{
- margin:0 0 12px;
- padding:12px;
- background:#f7f8fa;
- border:1px solid #e0e3e8;
- border-radius:8px
-}
-
-.adjustmentTitle{
- font-size:14px;
- font-weight:bold;
- color:#17365D;
- margin-bottom:10px
-}
-
-.adjustGrid{
- display:grid;
- grid-template-columns:repeat(3,1fr);
- gap:10px
-}
-
-.rangeBox{
- display:flex;
- flex-direction:column;
- gap:5px;
- min-width:0
-}
-
-.rangeTop{
- display:flex;
- justify-content:space-between;
- font-size:12px;
- font-weight:bold
-}
-
-.rangeTop span{
- color:#17365D
-}
-
-input[type=range]{
- padding:0;
- accent-color:#17365D
-}
-
-/* BUTTONS */
-.buttons{
- display:flex;
- flex-wrap:wrap;
- gap:8px;
- margin-top:12px
-}
-
-button{
- border:0;
- border-radius:7px;
- padding:10px 15px;
- font-weight:bold;
- cursor:pointer;
- background:#17365D;
- color:white
-}
-
-button.secondary{
- background:#6d7480
-}
-
-button.gold{
- background:#C49A45
-}
-
-button:disabled{
- opacity:.5;
- cursor:not-allowed
-}
-
-/* GENERATED */
-.generated{
- margin-top:12px;
- padding:10px;
- background:#f7f8fa;
- border:1px solid #e0e3e8;
- border-radius:8px
-}
-
-.generatedTitle{
- font-size:13px;
- font-weight:bold;
- color:#17365D
-}
-
-#generatedList{
- display:flex;
- flex-wrap:wrap;
- gap:6px;
- margin-top:7px
-}
-
-.item{
- padding:5px 8px;
- border-radius:5px;
- background:#e9edf2;
- font-size:12px;
- font-weight:bold
-}
-
-.status{
- margin-top:7px;
- font-size:12px;
- color:#566174
-}
-
-/* MOBILE */
 @media(max-width:700px){
-
- body{
-  padding:8px
- }
-
- .grid,
- .adjustGrid{
-  grid-template-columns:1fr
- }
-
- .full{
-  grid-column:auto
- }
-
- .photo{
-  left:3.5%;
-  width:30%
- }
-
- .content{
-  left:36%;
-  right:4%
- }
-
- .section{
-  padding:3px 5px
- }
-
- #english{
-  font-size:19px
- }
-
- #tamil,
- #sinhala{
-  font-size:15px
- }
-
- .buttons button{
-  flex:1
- }
-
- .dateGroup{
-  gap:5px
- }
-
- .cross{
-  right:2px;
-  top:1px;
-  font-size:13px
- }
+.grid{grid-template-columns:1fr}
+body{padding:10px}
 }
 
-/* PRINT */
 @media print{
-
- @page{
-  size:9in 5.625in landscape;
-  margin:0
- }
-
- body{
-  padding:0;
-  background:white
- }
-
- .controls,
- .adjustment{
-  display:none
- }
-
- .calendar{
-  width:9in;
-  height:5.625in;
-  margin:0;
-  outline:none;
-  box-shadow:none
- }
+@page{size:9in 5.625in landscape;margin:0}
+body{padding:0;background:#fff}
+.controls{display:none}
+.calendar{width:9in;height:5.625in;margin:0;outline:none}
 }
 </style>
 </head>
@@ -455,956 +103,692 @@ button:disabled{
 
 <div class="app">
 
-<!-- CALENDAR -->
-<div class="calendar" id="calendar">
+<h2>365 Bible Calendar 2027</h2>
 
- <!-- FULL PHOTO -->
- <img id="fullPhoto" class="fullPhoto" alt="Full Cover Photo">
-
- <!-- NORMAL PHOTO -->
- <div class="photo">
-  <img id="photoPreview" alt="Calendar Photo">
- </div>
-
- <!-- NORMAL CALENDAR CONTENT -->
- <div class="content">
-
-  <div class="dateRow">
-
-   <div class="dateGroup">
-    <div class="month" id="monthText">JANUARY</div>
-    <div class="day" id="dayText">1</div>
-   </div>
-
-   <div class="cross">✝</div>
-
-  </div>
-
-  <div class="verses">
-
-   <div id="verseBox">
-
-    <section class="section">
-     <div class="text" id="english">
-      Your word is a lamp for my feet, a light on my path.
-     </div>
-    </section>
-
-    <section class="section">
-     <div class="text" id="tamil">
-      உமது வார்த்தை என் கால்களுக்கு விளக்கும், என் பாதைக்கு வெளிச்சமுமாயிருக்கிறது.
-     </div>
-    </section>
-
-    <section class="section">
-     <div class="text" id="sinhala">
-      ඔබගේ වචනය මාගේ පාදවලට පහනක්ද, මාගේ මාර්ගයට ආලෝකයක්ද වේ.
-     </div>
-    </section>
-
-   </div>
-
-  </div>
-
- </div>
-
-</div>
-
-<!-- FONT ADJUSTMENT -->
-<div class="adjustment">
-
- <div class="adjustmentTitle">
-  Font Size Adjustment
- </div>
-
- <div class="adjustGrid">
-
-  <div class="rangeBox">
-   <div class="rangeTop">
-    <span>First</span>
-    <span id="englishSizeValue">25px</span>
-   </div>
-
-   <input
-    type="range"
-    id="englishSize"
-    min="0.5"
-    max="30"
-    step="0.5"
-    value="25">
-  </div>
-
-  <div class="rangeBox">
-   <div class="rangeTop">
-    <span>Second</span>
-    <span id="tamilSizeValue">18px</span>
-   </div>
-
-   <input
-    type="range"
-    id="tamilSize"
-    min="0.5"
-    max="24"
-    step="0.5"
-    value="18">
-  </div>
-
-  <div class="rangeBox">
-   <div class="rangeTop">
-    <span>Third</span>
-    <span id="sinhalaSizeValue">18px</span>
-   </div>
-
-   <input
-    type="range"
-    id="sinhalaSize"
-    min="0.5"
-    max="24"
-    step="0.5"
-    value="18">
-  </div>
-
- </div>
-
-</div>
-
-<!-- CONTROLS -->
 <div class="controls">
 
- <div class="grid">
+<div class="grid">
 
-  <div class="field">
+<div class="field">
+<label>View</label>
+<select id="photoView">
+<option value="calendar">Calendar View — Photo + Bible Text</option>
+<option value="full">Full Photo — 3 Bible Verses</option>
+</select>
+</div>
 
-   <label>Date</label>
+<div class="field">
+<label>Upload Photo</label>
+<input type="file" id="photo" accept="image/*">
+</div>
 
-   <input
-    type="date"
-    id="date"
-    min="2027-01-01"
-    max="2027-12-31"
-    value="2027-01-01">
+<div class="field" id="dateField">
+<label>Calendar Date</label>
+<input type="date" id="date" min="2027-01-01" max="2027-12-31" value="2027-01-01">
+</div>
 
-  </div>
+<div class="field">
+<label>Full Photo English Font</label>
+<select id="coverFont">
+<option>Playfair Display</option>
+<option>Cinzel</option>
+<option>Montserrat</option>
+<option>Georgia</option>
+<option>Arial</option>
+</select>
+</div>
 
-  <!-- PHOTO VIEW -->
-  <div class="field">
+<div class="field">
+<label>English Bible Verse</label>
+<textarea id="englishInput">Your word is a lamp for my feet, a light on my path.</textarea>
+</div>
 
-   <label>Cover Photo View</label>
+<div class="field">
+<label>Tamil Bible Verse</label>
+<textarea id="tamilInput">உமது வார்த்தை என் கால்களுக்கு விளக்கும், என் பாதைக்கு வெளிச்சமுமாயிருக்கிறது.</textarea>
+</div>
 
-   <select id="photoView">
+<div class="field">
+<label>Sinhala Bible Verse</label>
+<textarea id="sinhalaInput">ඔබගේ වචනය මාගේ පාදවලට පහනක්ද, මාගේ මාර්ගයට ආලෝකයක්ද වේ.</textarea>
+</div>
 
-    <option value="calendar">
-     Calendar View — Photo + Bible Text
-    </option>
+</div>
 
-    <option value="full">
-     Full Photo — Photo Only
-    </option>
+<div class="adjustment">
 
-   </select>
+<h3>Calendar Text Size</h3>
 
-  </div>
+<div class="range">
+<input type="range" id="englishSize" min=".5" max="30" step=".1" value="25">
+<span id="englishSizeValue">25px</span>
+</div>
 
-  <!-- PHOTO -->
-  <div class="field full">
+<div class="range">
+<input type="range" id="tamilSize" min=".5" max="24" step=".1" value="18">
+<span id="tamilSizeValue">18px</span>
+</div>
 
-   <label>Cover / Calendar Photo</label>
+<div class="range">
+<input type="range" id="sinhalaSize" min=".5" max="24" step=".1" value="18">
+<span id="sinhalaSizeValue">18px</span>
+</div>
 
-   <input
-    class="photoInput"
-    type="file"
-    id="photo"
-    accept="image/*">
+<h3>Full Photo Text Size</h3>
 
-  </div>
+<div class="range">
+<input type="range" id="coverEnglishSize" min="8" max="70" step=".1" value="34">
+<span id="coverEnglishSizeValue">34px</span>
+</div>
 
-  <!-- ENGLISH -->
-  <div class="field full">
+<div class="range">
+<input type="range" id="coverTamilSize" min="8" max="55" step=".1" value="24">
+<span id="coverTamilSizeValue">24px</span>
+</div>
 
-   <label>English Bible Verse</label>
+<div class="range">
+<input type="range" id="coverSinhalaSize" min="8" max="55" step=".1" value="24">
+<span id="coverSinhalaSizeValue">24px</span>
+</div>
 
-   <textarea id="englishInput">Your word is a lamp for my feet, a light on my path.</textarea>
+</div>
 
-  </div>
+<div class="buttons">
 
-  <!-- TAMIL -->
-  <div class="field full">
+<button type="button" class="secondary" id="prevBtn">← Previous</button>
+<button type="button" class="secondary" id="nextBtn">Next →</button>
+<button type="button" class="gold" id="generateBtn">Generate</button>
+<button type="button" class="danger" id="clearBtn">Clear All</button>
+<button type="button" class="gold" id="downloadBtn">Download All PDF</button>
 
-   <label>Tamil Bible Verse</label>
+</div>
 
-   <textarea id="tamilInput">உமது வார்த்தை என் கால்களுக்கு விளக்கும், என் பாதைக்கு வெளிச்சமுமாயிருக்கிறது.</textarea>
+<div class="status" id="status"></div>
+<div class="generated" id="generatedList"></div>
 
-  </div>
+</div>
 
-  <!-- SINHALA -->
-  <div class="field full">
 
-   <label>Sinhala Bible Verse</label>
+<div class="calendar" id="calendar">
 
-   <textarea id="sinhalaInput">ඔබගේ වචනය මාගේ පාදවලට පහනක්ද, මාගේ මාර්ගයට ආලෝකයක්ද වේ.</textarea>
+<img id="fullPhoto" class="fullPhoto">
 
-  </div>
+<div class="coverVerses">
 
- </div>
+<div class="coverVerse">
+<div class="coverText" id="coverEnglish"></div>
+</div>
 
- <div class="buttons">
+<div class="coverVerse">
+<div class="coverText" id="coverTamil"></div>
+</div>
 
-  <button
-   class="secondary"
-   type="button"
-   onclick="move(-1)">
-   ← Previous
-  </button>
+<div class="coverVerse">
+<div class="coverText" id="coverSinhala"></div>
+</div>
 
-  <button
-   class="secondary"
-   type="button"
-   onclick="move(1)">
-   Next →
-  </button>
+</div>
 
-  <button
-   class="gold"
-   type="button"
-   onclick="generate(true)">
-   Generate
-  </button>
+<div class="photo">
+<img id="photoPreview">
+</div>
 
-  <button
-   id="downloadBtn"
-   type="button"
-   onclick="downloadGenerated()">
-   Download Generated
-  </button>
+<div class="content">
 
- </div>
+<div class="dateRow">
 
- <div class="generated">
+<div class="dateGroup">
+<div class="month" id="monthText">JANUARY</div>
+<div class="day" id="dayText">1</div>
+</div>
 
-  <div class="generatedTitle">
-   Generated Pages
-  </div>
+<div class="cross">✝</div>
 
-  <div id="generatedList"></div>
+</div>
 
-  <div class="status" id="status">
-   Generated: 0/10
-  </div>
+<div class="verses">
 
- </div>
+<div id="verseBox">
+
+<section class="section">
+<div class="text" id="english"></div>
+</section>
+
+<section class="section">
+<div class="text" id="tamil"></div>
+</section>
+
+<section class="section">
+<div class="text" id="sinhala"></div>
+</section>
+
+</div>
+
+</div>
+
+</div>
 
 </div>
 
 </div>
 
 <script>
+
 const $=id=>document.getElementById(id);
+const months=["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
 const KEY="BibleCalendar2027";
 
 let selected=[];
 let photoData="";
-let previewRunning=false;
-let previewAgain=false;
+let busy=false;
 
-/* DATE */
-function dateInfo(v){
- const d=new Date(v+"T00:00:00");
-
- const months=[
-  "JANUARY","FEBRUARY","MARCH","APRIL",
-  "MAY","JUNE","JULY","AUGUST",
-  "SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"
- ];
-
- return [months[d.getMonth()],d.getDate()];
-}
-
-/* SAVE */
 function save(){
-
- try{
-
-  localStorage.setItem(
-   KEY,
-   JSON.stringify({
-
-    selected,
-    photoData,
-
-    date:$("date").value,
-
-    photoView:$("photoView").value,
-
-    english:$("englishInput").value,
-    tamil:$("tamilInput").value,
-    sinhala:$("sinhalaInput").value,
-
-    englishSize:$("englishSize").value,
-    tamilSize:$("tamilSize").value,
-    sinhalaSize:$("sinhalaSize").value
-
-   })
-  );
-
- }catch(e){}
+try{
+localStorage.setItem(KEY,JSON.stringify({
+selected,photoData,
+date:$("date").value,
+view:$("photoView").value,
+font:$("coverFont").value,
+en:$("englishInput").value,
+ta:$("tamilInput").value,
+si:$("sinhalaInput").value,
+es:$("englishSize").value,
+ts:$("tamilSize").value,
+ss:$("sinhalaSize").value,
+ces:$("coverEnglishSize").value,
+cts:$("coverTamilSize").value,
+css:$("coverSinhalaSize").value
+}));
+}catch(e){}
 }
 
-/* LOAD */
 function load(){
+try{
+let x=JSON.parse(localStorage.getItem(KEY)||"null");
+if(!x)return;
 
- try{
+selected=(x.selected||[]).slice(0,10);
+photoData=x.photoData||"";
 
-  const x=JSON.parse(
-   localStorage.getItem(KEY)||"null"
-  );
+if(x.date)$("date").value=x.date;
+if(x.view)$("photoView").value=x.view;
+if(x.font)$("coverFont").value=x.font;
+if(x.en!=null)$("englishInput").value=x.en;
+if(x.ta!=null)$("tamilInput").value=x.ta;
+if(x.si!=null)$("sinhalaInput").value=x.si;
 
-  if(!x)return;
+[
+["englishSize","es"],
+["tamilSize","ts"],
+["sinhalaSize","ss"],
+["coverEnglishSize","ces"],
+["coverTamilSize","cts"],
+["coverSinhalaSize","css"]
+].forEach(a=>{
+if(x[a[1]]!=null)$(a[0]).value=x[a[1]];
+});
 
-  selected=
-   Array.isArray(x.selected)
-    ?x.selected.slice(0,10)
-    :[];
-
-  photoData=x.photoData||"";
-
-  if(x.date)
-   $("date").value=x.date;
-
-  if(x.photoView)
-   $("photoView").value=x.photoView;
-
-  if(x.english!=null)
-   $("englishInput").value=x.english;
-
-  if(x.tamil!=null)
-   $("tamilInput").value=x.tamil;
-
-  if(x.sinhala!=null)
-   $("sinhalaInput").value=x.sinhala;
-
-  if(x.englishSize)
-   $("englishSize").value=x.englishSize;
-
-  if(x.tamilSize)
-   $("tamilSize").value=x.tamilSize;
-
-  if(x.sinhalaSize)
-   $("sinhalaSize").value=x.sinhalaSize;
-
-  if(photoData){
-
-   $("photoPreview").src=photoData;
-   $("fullPhoto").src=photoData;
-
-  }
-
- }catch(e){}
+if(photoData){
+$("photoPreview").src=photoData;
+$("fullPhoto").src=photoData;
 }
 
-/* VIEW */
-function applyPhotoView(){
-
- const mode=$("photoView").value;
-
- $("calendar").classList.toggle(
-  "full-view",
-  mode==="full"
- );
-
- if(photoData){
-
-  $("photoPreview").src=photoData;
-  $("fullPhoto").src=photoData;
-
- }
-
- save();
+}catch(e){}
 }
 
-/* GENERATED LIST */
 function render(){
+$("generatedList").innerHTML=selected.map((v,i)=>{
+let d=new Date(v+"T00:00:00");
+return `<div class="generatedRow">
+<span class="generatedDate">${i+1}. ${d.toLocaleDateString("en-GB")}</span>
+<button type="button" class="deleteBtn" data-date="${v}">Delete</button>
+</div>`;
+}).join("");
 
- $("generatedList").innerHTML=
-  selected.map((x,i)=>{
-
-   const d=new Date(x+"T00:00:00");
-
-   return `
-    <div class="item">
-     ${i+1}/10 ${d.toLocaleDateString("en-GB")}
-    </div>
-   `;
-
-  }).join("");
-
- $("status").textContent=
-  `Generated: ${selected.length}/10`;
+$("status").textContent=`Generated: ${selected.length}/10`;
 }
 
-/* ADD DATE */
-function addDate(v){
+function update(){
 
- if(selected.includes(v)){
-  render();
-  return true;
- }
+let d=new Date($("date").value+"T00:00:00");
 
- if(selected.length>=10){
+$("monthText").textContent=months[d.getMonth()];
+$("dayText").textContent=d.getDate();
 
-  alert("Maximum 10 generated pages.");
+let en=$("englishInput").value.trim();
+let ta=$("tamilInput").value.trim();
+let si=$("sinhalaInput").value.trim();
 
-  return false;
- }
+$("english").textContent=en;
+$("tamil").textContent=ta;
+$("sinhala").textContent=si;
 
- selected.push(v);
+$("coverEnglish").textContent=en;
+$("coverTamil").textContent=ta;
+$("coverSinhala").textContent=si;
 
- save();
- render();
+$("english").style.fontSize=$("englishSize").value+"px";
+$("tamil").style.fontSize=$("tamilSize").value+"px";
+$("sinhala").style.fontSize=$("sinhalaSize").value+"px";
 
- return true;
+$("coverEnglish").style.fontSize=$("coverEnglishSize").value+"px";
+$("coverTamil").style.fontSize=$("coverTamilSize").value+"px";
+$("coverSinhala").style.fontSize=$("coverSinhalaSize").value+"px";
+
+$("coverEnglish").style.fontFamily=
+`"${$("coverFont").value}",Georgia,serif`;
+
+$("englishSizeValue").textContent=$("englishSize").value+"px";
+$("tamilSizeValue").textContent=$("tamilSize").value+"px";
+$("sinhalaSizeValue").textContent=$("sinhalaSize").value+"px";
+
+$("coverEnglishSizeValue").textContent=$("coverEnglishSize").value+"px";
+$("coverTamilSizeValue").textContent=$("coverTamilSize").value+"px";
+$("coverSinhalaSizeValue").textContent=$("coverSinhalaSize").value+"px";
+
+let full=$("photoView").value==="full";
+
+$("calendar").classList.toggle("full-view",full);
+$("dateField").style.display=full?"none":"";
 }
 
-/* FONT SIZES */
-function applySizes(){
+async function fit(id,range){
 
- $("english").style.fontSize=
-  $("englishSize").value+"px";
+let el=$(id);
+let box=el.closest(id.startsWith("cover")?".coverVerse":".section");
 
- $("tamil").style.fontSize=
-  $("tamilSize").value+"px";
+await document.fonts.ready;
 
- $("sinhala").style.fontSize=
-  $("sinhalaSize").value+"px";
+let max=parseFloat($(range).value);
+let min=id.startsWith("cover")?8:.5;
 
- $("englishSizeValue").textContent=
-  $("englishSize").value+"px";
-
- $("tamilSizeValue").textContent=
-  $("tamilSize").value+"px";
-
- $("sinhalaSizeValue").textContent=
-  $("sinhalaSize").value+"px";
+function ok(n){
+el.style.fontSize=n+"px";
+return el.scrollHeight<=box.clientHeight-6 &&
+el.scrollWidth<=box.clientWidth;
 }
 
-/* AUTO FIT */
-async function fit(id){
+if(ok(max))return;
 
- const el=$(id);
+let lo=min,hi=max,best=min;
 
- if(!el)return;
+for(let i=0;i<25;i++){
 
- const section=el.closest(".section");
+let mid=(lo+hi)/2;
 
- if(!section)return;
-
- let size=parseFloat(el.style.fontSize);
-
- if(!size)return;
-
- const min=.5;
-
- if(document.fonts)
-  await document.fonts.ready;
-
- function apply(n){
-
-  el.style.fontSize=n+"px";
-
-  if(id==="english")
-   el.style.lineHeight="1.12";
-
-  else if(id==="tamil")
-   el.style.lineHeight=n<=12?"1.08":"1.10";
-
-  else
-   el.style.lineHeight=n<=12?"1.08":"1.12";
-
-  void el.offsetHeight;
- }
-
- function fits(n){
-
-  apply(n);
-
-  return(
-   el.scrollHeight<=
-   section.clientHeight-8
-  );
- }
-
- let low=min;
- let high=size;
- let best=min;
-
- if(fits(high)){
-
-  best=high;
-
- }else{
-
-  for(let i=0;i<60;i++){
-
-   const mid=(low+high)/2;
-
-   if(fits(mid)){
-
-    best=mid;
-    low=mid;
-
-   }else{
-
-    high=mid;
-
-   }
-  }
- }
-
- best=Math.floor(best*10)/10;
-
- apply(best);
-
- while(
-  best>min &&
-  el.scrollHeight>
-  section.clientHeight-8
- ){
-
-  best=Math.max(
-   min,
-   Math.round((best-.1)*10)/10
-  );
-
-  apply(best);
- }
-
- const rangeId=
-  id==="english"
-   ?"englishSize"
-   :id==="tamil"
-    ?"tamilSize"
-    :"sinhalaSize";
-
- const valueId=
-  id==="english"
-   ?"englishSizeValue"
-   :id==="tamil"
-    ?"tamilSizeValue"
-    :"sinhalaSizeValue";
-
- $(rangeId).value=best.toFixed(1);
- $(valueId).textContent=best.toFixed(1)+"px";
+if(ok(mid)){
+best=mid;
+lo=mid;
+}else{
+hi=mid;
 }
 
-/* PREVIEW */
-async function updatePreview(){
-
- if(previewRunning){
-
-  previewAgain=true;
-  return;
-
- }
-
- previewRunning=true;
-
- try{
-
-  const v=$("date").value;
-
-  if(!v)return;
-
-  const info=dateInfo(v);
-
-  $("monthText").textContent=info[0];
-  $("dayText").textContent=info[1];
-
-  $("english").textContent=
-   $("englishInput").value.trim();
-
-  $("tamil").textContent=
-   $("tamilInput").value.trim();
-
-  $("sinhala").textContent=
-   $("sinhalaInput").value.trim();
-
-  applySizes();
-
-  applyPhotoView();
-
-  await new Promise(
-   r=>requestAnimationFrame(r)
-  );
-
-  if($("photoView").value!=="full"){
-
-   await fit("english");
-   await fit("tamil");
-   await fit("sinhala");
-
-  }
-
- }finally{
-
-  previewRunning=false;
-
-  if(previewAgain){
-
-   previewAgain=false;
-
-   setTimeout(
-    updatePreview,
-    0
-   );
-  }
- }
 }
 
-/* GENERATE */
-async function generate(add=false){
-
- const v=$("date").value;
-
- if(!v)return;
-
- await updatePreview();
-
- if(add){
-
-  addDate(v);
-
- }else{
-
-  save();
-  render();
-
- }
+el.style.fontSize=best.toFixed(1)+"px";
+$(range).value=best.toFixed(1);
+$(range+"Value").textContent=best.toFixed(1)+"px";
 }
 
-/* PREVIOUS / NEXT */
-async function move(n){
+async function refresh(){
 
- const current=$("date").value;
+update();
 
- if(!current)return;
+await new Promise(r=>requestAnimationFrame(r));
 
- const d=new Date(
-  current+"T00:00:00"
- );
+if($("photoView").value==="full"){
 
- d.setDate(
-  d.getDate()+n
- );
+await fit("coverEnglish","coverEnglishSize");
+await fit("coverTamil","coverTamilSize");
+await fit("coverSinhala","coverSinhalaSize");
 
- if(d.getFullYear()!==2027)
-  return;
+}else{
 
- $("date").value=
-  d.getFullYear()+"-"+
-  String(d.getMonth()+1).padStart(2,"0")+"-"+
-  String(d.getDate()).padStart(2,"0");
+await fit("english","englishSize");
+await fit("tamil","tamilSize");
+await fit("sinhala","sinhalaSize");
 
- save();
-
- await updatePreview();
 }
+
+save();
+}
+
 
 /* PHOTO */
-$("photo").addEventListener(
- "change",
- function(e){
 
-  const file=
-   e.target.files&&e.target.files[0];
+$("photo").onchange=e=>{
 
-  if(!file)return;
+let file=e.target.files[0];
 
-  if(!file.type.startsWith("image/")){
+if(!file)return;
 
-   alert("Please select an image file.");
+let reader=new FileReader();
 
-   return;
-  }
+reader.onload=()=>{
 
-  const reader=new FileReader();
+photoData=reader.result;
 
-  reader.onload=function(){
+$("photoPreview").src=photoData;
+$("fullPhoto").src=photoData;
 
-   photoData=reader.result;
+save();
 
-   $("photoPreview").src=photoData;
-   $("fullPhoto").src=photoData;
-
-   save();
-
-   updatePreview();
-
-  };
-
-  reader.readAsDataURL(file);
- }
-);
-
-/* PHOTO VIEW */
-$("photoView").addEventListener(
- "change",
- function(){
-
-  applyPhotoView();
-  updatePreview();
-
- }
-);
-
-/* FONT SLIDERS */
-[
- "englishSize",
- "tamilSize",
- "sinhalaSize"
-].forEach(id=>{
-
- $(id).addEventListener(
-  "input",
-  async function(){
-
-   applySizes();
-
-   await new Promise(
-    r=>requestAnimationFrame(r)
-   );
-
-   const lang=
-    id==="englishSize"
-     ?"english"
-     :id==="tamilSize"
-      ?"tamil"
-      :"sinhala";
-
-   if($("photoView").value!=="full")
-    await fit(lang);
-
-   save();
-
-  }
- );
-});
-
-/* TEXT INPUT */
-[
- "englishInput",
- "tamilInput",
- "sinhalaInput"
-].forEach(id=>{
-
- $(id).addEventListener(
-  "input",
-  function(){
-
-   save();
-   updatePreview();
-
-  }
- );
-});
-
-/* DATE */
-$("date").addEventListener(
- "input",
- function(){
-
-  save();
-  updatePreview();
-
- }
-);
-
-$("date").addEventListener(
- "change",
- function(){
-
-  save();
-  updatePreview();
-
- }
-);
-
-/* CAPTURE */
-async function capture(v){
-
- $("date").value=v;
-
- await updatePreview();
-
- await new Promise(
-  r=>setTimeout(r,250)
- );
-
- const canvas=
-  await html2canvas(
-   $("calendar"),
-   {
-    scale:3,
-    useCORS:true,
-    backgroundColor:"#FAF8F2",
-    logging:false
-   }
-  );
-
- return canvas.toDataURL(
-  "image/png",
-  1
- );
-}
-
-/* DOWNLOAD PDF */
-async function downloadGenerated(){
-
- if(!selected.length){
-
-  alert(
-   "Please generate at least one page first."
-  );
-
-  return;
- }
-
- if(!photoData){
-
-  alert(
-   "Please upload a calendar photo first."
-  );
-
-  return;
- }
-
- const btn=$("downloadBtn");
-
- btn.disabled=true;
- btn.textContent="Creating PDF...";
-
- try{
-
-  const {jsPDF}=window.jspdf;
-
-  const pdf=new jsPDF({
-   orientation:"landscape",
-   unit:"in",
-   format:[9,5.625],
-   compress:true
-  });
-
-  const oldDate=$("date").value;
-
-  for(
-   let i=0;
-   i<selected.length;
-   i++
-  ){
-
-   const img=
-    await capture(selected[i]);
-
-   if(i){
-
-    pdf.addPage(
-     [9,5.625],
-     "landscape"
-    );
-
-   }
-
-   pdf.addImage(
-    img,
-    "PNG",
-    0,
-    0,
-    9,
-    5.625,
-    undefined,
-    "FAST"
-   );
-
-   $("status").textContent=
-    `Creating PDF: ${i+1}/${selected.length}`;
-  }
-
-  pdf.save(
-   "365-Bible-Calendar-2027.pdf"
-  );
-
-  $("date").value=oldDate;
-
-  await updatePreview();
-
-  save();
-
- }catch(e){
-
-  console.error(e);
-
-  alert(
-   "PDF creation failed."
-  );
-
- }finally{
-
-  btn.disabled=false;
-
-  btn.textContent=
-   "Download Generated";
-
-  render();
-
- }
-}
-
-/* START */
-window.onload=async function(){
-
- load();
-
- render();
-
- applySizes();
-
- applyPhotoView();
-
- await updatePreview();
+$("status").textContent="Photo uploaded.";
 
 };
 
-/* FONT READY */
-if(document.fonts){
+reader.readAsDataURL(file);
+};
 
- document.fonts.ready.then(
-  function(){
 
-   updatePreview();
+/* GENERATE */
 
-  }
- );
+$("generateBtn").onclick=async()=>{
+
+if(busy)return;
+
+if(!photoData){
+alert("Please upload a photo first.");
+return;
 }
 
-/* RESIZE */
-window.addEventListener(
- "resize",
- function(){
+await refresh();
 
-  clearTimeout(
-   window._resize
-  );
+if($("photoView").value==="full"){
 
-  window._resize=
-   setTimeout(
-    function(){
+$("status").textContent=
+"Full Photo ready. Press Download All PDF.";
 
-     updatePreview();
+return;
+}
 
-    },
-    150
-   );
+let v=$("date").value;
 
- }
+if(selected.includes(v)){
+alert("This date is already generated.");
+return;
+}
+
+if(selected.length>=10){
+alert("Maximum 10 pages.");
+return;
+}
+
+selected.push(v);
+
+save();
+render();
+
+$("status").textContent=
+"Generated "+selected.length+"/10";
+};
+
+
+/* DELETE */
+
+$("generatedList").onclick=e=>{
+
+let b=e.target.closest(".deleteBtn");
+
+if(!b)return;
+
+selected=selected.filter(
+x=>x!==b.dataset.date
 );
+
+save();
+render();
+};
+
+
+/* CLEAR */
+
+$("clearBtn").onclick=()=>{
+
+if(!selected.length){
+alert("No generated pages.");
+return;
+}
+
+if(confirm("Delete all generated pages?")){
+
+selected=[];
+
+save();
+render();
+
+}
+};
+
+
+/* PREVIOUS */
+
+$("prevBtn").onclick=async()=>{
+
+if(busy||$("photoView").value==="full")return;
+
+let d=new Date($("date").value+"T00:00:00");
+
+d.setDate(d.getDate()-1);
+
+if(d.getFullYear()!=2027)return;
+
+$("date").value=
+d.getFullYear()+"-"+
+String(d.getMonth()+1).padStart(2,"0")+"-"+
+String(d.getDate()).padStart(2,"0");
+
+await refresh();
+};
+
+
+/* NEXT */
+
+$("nextBtn").onclick=async()=>{
+
+if(busy||$("photoView").value==="full")return;
+
+let d=new Date($("date").value+"T00:00:00");
+
+d.setDate(d.getDate()+1);
+
+if(d.getFullYear()!=2027)return;
+
+$("date").value=
+d.getFullYear()+"-"+
+String(d.getMonth()+1).padStart(2,"0")+"-"+
+String(d.getDate()).padStart(2,"0");
+
+await refresh();
+};
+
+
+/* LIVE UPDATE */
+
+[
+"photoView",
+"coverFont",
+"date",
+"englishInput",
+"tamilInput",
+"sinhalaInput",
+"englishSize",
+"tamilSize",
+"sinhalaSize",
+"coverEnglishSize",
+"coverTamilSize",
+"coverSinhalaSize"
+].forEach(id=>{
+$(id).addEventListener("input",refresh);
+$(id).addEventListener("change",refresh);
+});
+
+
+/* CAPTURE */
+
+async function capture(){
+
+await refresh();
+
+await new Promise(r=>setTimeout(r,400));
+
+let canvas=await html2canvas(
+$("calendar"),
+{
+scale:3,
+useCORS:true,
+allowTaint:true,
+backgroundColor:"#faf8f2",
+logging:false
+}
+);
+
+return canvas.toDataURL("image/jpeg",.95);
+}
+
+
+/* DOWNLOAD */
+
+$("downloadBtn").onclick=async()=>{
+
+if(busy)return;
+
+if(!photoData){
+alert("Please upload a photo first.");
+return;
+}
+
+if(!window.jspdf||!window.html2canvas){
+alert("PDF library is not loaded. Check your internet connection and reload.");
+return;
+}
+
+busy=true;
+
+let btn=$("downloadBtn");
+btn.disabled=true;
+btn.textContent="Creating PDF...";
+
+let oldDate=$("date").value;
+
+try{
+
+const PDF=window.jspdf.jsPDF;
+
+let full=$("photoView").value==="full";
+
+
+/* FULL PHOTO */
+
+if(full){
+
+let img=await capture();
+
+let pdf=new PDF({
+orientation:"landscape",
+unit:"in",
+format:[9,5.625]
+});
+
+pdf.addImage(
+img,
+"JPEG",
+0,
+0,
+9,
+5.625
+);
+
+pdf.save("365-Bible-Calendar-Cover.pdf");
+
+$("status").textContent=
+"Full Photo PDF downloaded.";
+
+return;
+}
+
+
+/* CALENDAR */
+
+if(!selected.length){
+
+alert("Generate at least one calendar page.");
+return;
+}
+
+let pdf=new PDF({
+orientation:"landscape",
+unit:"in",
+format:[9,5.625]
+});
+
+for(let i=0;i<selected.length;i++){
+
+$("date").value=selected[i];
+
+let img=await capture();
+
+if(i)pdf.addPage(
+[9,5.625],
+"landscape"
+);
+
+pdf.addImage(
+img,
+"JPEG",
+0,
+0,
+9,
+5.625
+);
+
+$("status").textContent=
+`Creating page ${i+1} of ${selected.length}...`;
+
+}
+
+pdf.save("365-Bible-Calendar-2027.pdf");
+
+$("status").textContent=
+"PDF downloaded successfully.";
+
+}catch(e){
+
+console.error(e);
+
+alert(
+"PDF error: "+
+(e.message||e)
+);
+
+}finally{
+
+$("date").value=oldDate;
+
+await refresh();
+
+busy=false;
+
+btn.disabled=false;
+btn.textContent="Download All PDF";
+
+}
+
+};
+
+
+/* START */
+
+window.onload=async()=>{
+
+load();
+
+render();
+
+await refresh();
+
+};
+
 </script>
 
 </body>
