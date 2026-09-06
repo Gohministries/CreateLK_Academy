@@ -628,8 +628,6 @@ Download All PDF
 </div>
 
 
-<!-- PAGE -->
-
 <div class="calendar" id="calendar">
 
 <img id="fullPhoto" class="fullPhoto">
@@ -653,9 +651,7 @@ Download All PDF
 
 
 <div class="photo">
-
 <img id="photoPreview">
-
 </div>
 
 
@@ -781,14 +777,10 @@ localStorage.getItem(KEY)||"null"
 if(!data)return;
 
 
-/* RESTORE PAGES */
-
 if(Array.isArray(data.pages)){
 pages=data.pages.slice(0,10);
 }
 
-
-/* RESTORE PHOTO */
 
 if(data.photo){
 
@@ -799,8 +791,6 @@ $("fullPhoto").src=photoData;
 
 }
 
-
-/* RESTORE SETTINGS */
 
 let s=data.settings||{};
 
@@ -943,7 +933,7 @@ full?"none":"";
 }
 
 
-/* AUTO FIT */
+/* AUTO FIT — FIXED */
 
 async function fit(id,range){
 
@@ -959,7 +949,7 @@ if(!el||!box)return;
 
 await document.fonts.ready;
 
-let max=parseFloat(
+let requested=parseFloat(
 $(range).value
 );
 
@@ -967,33 +957,76 @@ let min=
 id.startsWith("cover")?8:.5;
 
 
-function fits(size){
+/*
+Always start from the value selected
+by the slider.
+*/
 
-el.style.fontSize=size+"px";
+el.style.fontSize=
+requested+"px";
 
 void el.offsetHeight;
 
-return(
-el.scrollHeight<=box.clientHeight-14 &&
-el.scrollWidth<=box.clientWidth-14
+
+/*
+Because the parent has overflow:hidden,
+measure the real text dimensions
+using a temporary clone.
+*/
+
+let clone=el.cloneNode(true);
+
+clone.style.position="absolute";
+clone.style.left="-99999px";
+clone.style.top="0";
+clone.style.width=box.clientWidth-20+"px";
+clone.style.height="auto";
+clone.style.maxHeight="none";
+clone.style.overflow="visible";
+clone.style.fontSize=requested+"px";
+
+document.body.appendChild(clone);
+
+let fits=()=>{
+return (
+clone.scrollHeight<=box.clientHeight-14 &&
+clone.scrollWidth<=box.clientWidth-14
 );
+};
+
+
+/*
+If selected size fits, keep it.
+*/
+
+if(fits()){
+
+document.body.removeChild(clone);
+
+el.style.fontSize=
+requested+"px";
+
+return;
 
 }
 
 
-if(fits(max))return;
-
+/*
+Only reduce if it actually overflows.
+*/
 
 let low=min;
-let high=max;
+let high=requested;
 let best=min;
-
 
 for(let i=0;i<25;i++){
 
 let mid=(low+high)/2;
 
-if(fits(mid)){
+clone.style.fontSize=
+mid+"px";
+
+if(fits()){
 
 best=mid;
 low=mid;
@@ -1006,6 +1039,7 @@ high=mid;
 
 }
 
+document.body.removeChild(clone);
 
 el.style.fontSize=
 best.toFixed(1)+"px";
@@ -1022,7 +1056,6 @@ update();
 await new Promise(
 r=>requestAnimationFrame(r)
 );
-
 
 if($("photoView").value==="full"){
 
@@ -1192,12 +1225,6 @@ $("status").textContent=
 "Creating page...";
 
 
-/*
-IMPORTANT:
-Save the actual generated image.
-This makes every page independent.
-*/
-
 let image=await capture();
 
 
@@ -1269,11 +1296,6 @@ logging:false
 }
 );
 
-
-/*
-JPEG keeps LocalStorage size
-much smaller than PNG.
-*/
 
 return canvas.toDataURL(
 "image/jpeg",
@@ -1504,11 +1526,6 @@ compress:true
 });
 
 
-/*
-Use saved generated images.
-Nothing is re-rendered here.
-*/
-
 for(
 let i=0;
 i<pages.length;
@@ -1600,12 +1617,6 @@ button.textContent=
 /* START */
 
 window.onload=async()=>{
-
-/*
-IMPORTANT:
-DO NOT clear pages here.
-Load saved LocalStorage instead.
-*/
 
 load();
 
