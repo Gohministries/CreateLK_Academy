@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>365 Bible Control</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;600;700&family=Noto+Sans+Tamil:wght@400;600;700&display=swap" rel="stylesheet">
+
+<style>
+*{box-sizing:border-box}
+
+body{
+margin:0;
+font-family:Arial,"Noto Sans Sinhala","Noto Sans Tamil",sans-serif;
+background:#f1f5f9;
+color:#1e293b
+}
+
+header{
+background:#172554;
+color:white;
+text-align:center;
+padding:14px;
+position:sticky;
+top:0;
+z-index:10
+}
+
+header h2{margin:0;font-size:20px}
+header p{margin:4px 0 0;font-size:12px}
+
+main{
+max-width:850px;
+margin:15px auto;
+padding:0 10px
+}
+
+.box{
+background:white;
+padding:14px;
+border-radius:12px;
+margin-bottom:12px;
+box-shadow:0 2px 8px #0001
+}
+
+input,textarea,select{
+width:100%;
+padding:10px;
+border:1px solid #cbd5e1;
+border-radius:8px;
+font-size:14px
+}
+
+textarea{
+height:130px;
+resize:vertical;
+line-height:1.6
+}
+
+.sinhala{font-family:"Noto Sans Sinhala",sans-serif}
+.tamil{font-family:"Noto Sans Tamil",sans-serif}
+
+.search{
+display:flex;
+gap:8px
+}
+
+.search input{flex:1}
+.search select{width:120px}
+
+.progress{
+margin-top:10px;
+font-size:13px;
+font-weight:bold
+}
+
+.bar{
+height:7px;
+background:#e2e8f0;
+border-radius:10px;
+margin-top:5px;
+overflow:hidden
+}
+
+.fill{
+height:100%;
+width:0;
+background:#2563eb
+}
+
+.days{
+display:grid;
+grid-template-columns:repeat(15,1fr);
+gap:4px;
+max-height:210px;
+overflow:auto
+}
+
+.day{
+border:0;
+padding:7px 2px;
+border-radius:6px;
+background:#e2e8f0;
+cursor:pointer;
+font-size:12px
+}
+
+.day.saved{
+background:#bbf7d0;
+color:#166534
+}
+
+.day.active{
+background:#2563eb;
+color:white
+}
+
+h3{
+margin:0 0 12px;
+font-size:18px
+}
+
+label{
+display:block;
+font-weight:bold;
+font-size:13px;
+margin:10px 0 5px
+}
+
+.lang{
+display:flex;
+justify-content:space-between;
+align-items:center
+}
+
+button{
+border:0;
+border-radius:8px;
+padding:9px 13px;
+cursor:pointer;
+font-weight:bold
+}
+
+.copy{
+background:#e2e8f0;
+font-size:11px;
+padding:5px 9px
+}
+
+.actions{
+display:flex;
+gap:7px;
+flex-wrap:wrap;
+margin-top:12px
+}
+
+.save{background:#2563eb;color:white}
+.delete{background:#dc2626;color:white}
+.clear{background:#64748b;color:white}
+.prev,.next{background:#e2e8f0}
+
+.nav{
+display:flex;
+gap:7px;
+margin-top:8px
+}
+
+.nav button{flex:1}
+
+.status{
+display:none;
+padding:9px;
+margin-top:10px;
+border-radius:7px;
+font-size:13px;
+font-weight:bold
+}
+
+.status.show{display:block}
+.success{background:#dcfce7;color:#166534}
+.error{background:#fee2e2;color:#991b1b}
+.info{background:#dbeafe;color:#1e40af}
+
+@media(max-width:600px){
+.days{grid-template-columns:repeat(10,1fr)}
+.search select{width:100px}
+textarea{height:150px}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h2>📖 365 Bible Control</h2>
+<p>English • Sinhala • Tamil</p>
+</header>
+
+<main>
+
+<!-- SEARCH -->
+<div class="box">
+
+<div class="search">
+<input id="search"
+placeholder="Search day or reference..."
+oninput="searchDays()">
+
+<select id="select" onchange="loadDay(+this.value)"></select>
+</div>
+
+<div class="progress">
+<span id="count">0 / 365</span>
+<div class="bar">
+<div id="fill" class="fill"></div>
+</div>
+</div>
+
+</div>
+
+
+<!-- DAYS -->
+<div class="box">
+
+<h3>Days</h3>
+
+<div id="days" class="days"></div>
+
+</div>
+
+
+<!-- EDITOR -->
+<div class="box">
+
+<h3>
+Day <span id="day">1</span>
+</h3>
+
+<label>Bible Reference</label>
+
+<input
+id="reference"
+placeholder="Example: John 3:16"
+>
+
+
+<div class="lang">
+<label>English</label>
+<button class="copy" onclick="copy('english')">
+Copy
+</button>
+</div>
+
+<textarea
+id="english"
+placeholder="English Bible verse..."
+></textarea>
+
+
+<div class="lang">
+<label>සිංහල</label>
+<button class="copy" onclick="copy('sinhala')">
+Copy
+</button>
+</div>
+
+<textarea
+id="sinhala"
+class="sinhala"
+placeholder="සිංහල බයිබල් පදය..."
+></textarea>
+
+
+<div class="lang">
+<label>தமிழ்</label>
+<button class="copy" onclick="copy('tamil')">
+Copy
+</button>
+</div>
+
+<textarea
+id="tamil"
+class="tamil"
+placeholder="தமிழ் வேதாகம வசனம்..."
+></textarea>
+
+
+<div class="actions">
+
+<button class="save" onclick="save()">
+💾 Save / Update
+</button>
+
+<button class="delete" onclick="remove()">
+🗑 Delete
+</button>
+
+<button class="clear" onclick="clearForm()">
+Clear
+</button>
+
+</div>
+
+
+<div class="nav">
+
+<button class="prev" onclick="previous()">
+← Previous
+</button>
+
+<button class="next" onclick="next()">
+Next →
+</button>
+
+</div>
+
+
+<div id="status" class="status"></div>
+
+</div>
+
+</main>
+
+
+<script>
+
+const API="https://bible.createlk.workers.dev";
+
+let data=[];
+let current=1;
+
+
+/* LOAD */
+
+async function init(){
+
+const select=document.getElementById("select");
+
+for(let i=1;i<=365;i++){
+
+let o=document.createElement("option");
+
+o.value=i;
+o.textContent="Day "+i;
+
+select.appendChild(o);
+
+let b=document.createElement("button");
+
+b.className="day";
+b.id="d"+i;
+b.textContent=i;
+
+b.onclick=()=>loadDay(i);
+
+document.getElementById("days").appendChild(b);
+}
+
+await loadAll();
+loadDay(1);
+}
+
+
+/* GET ALL */
+
+async function loadAll(){
+
+try{
+
+let r=await fetch(API+"/api/verses");
+
+data=await r.json();
+
+if(!Array.isArray(data))data=[];
+
+updateDays();
+
+}catch(e){
+
+status("Unable to load data","error");
+
+}
+}
+
+
+/* DAY */
+
+function loadDay(n){
+
+current=n;
+
+document.getElementById("day").textContent=n;
+document.getElementById("select").value=n;
+
+let v=data.find(x=>+x.day===n);
+
+document.getElementById("reference").value=v?.reference||"";
+document.getElementById("english").value=v?.english||"";
+document.getElementById("sinhala").value=v?.sinhala||"";
+document.getElementById("tamil").value=v?.tamil||"";
+
+document.querySelectorAll(".day")
+.forEach(x=>x.classList.remove("active"));
+
+document.getElementById("d"+n)
+.classList.add("active");
+
+window.scrollTo({top:0,behavior:"smooth"});
+}
+
+
+/* UPDATE DAYS */
+
+function updateDays(){
+
+let count=data.length;
+
+document.getElementById("count").textContent=
+count+" / 365";
+
+document.getElementById("fill").style.width=
+(count/365*100)+"%";
+
+for(let i=1;i<=365;i++){
+
+let exists=data.some(x=>+x.day===i);
+
+document.getElementById("d"+i)
+.classList.toggle("saved",exists);
+}
+
+}
+
+
+/* SAVE */
+
+async function save(){
+
+let reference=document.getElementById("reference").value.trim();
+let english=document.getElementById("english").value.trim();
+let sinhala=document.getElementById("sinhala").value.trim();
+let tamil=document.getElementById("tamil").value.trim();
+
+if(!reference||!english||!sinhala||!tamil){
+
+status("Please fill all four fields","error");
+return;
+
+}
+
+status("Saving...","info");
+
+try{
+
+let r=await fetch(API+"/api/verses",{
+
+method:"POST",
+
+headers:{
+"Content-Type":"application/json"
+},
+
+body:JSON.stringify({
+
+day:current,
+reference,
+english,
+sinhala,
+tamil
+
+})
+
+});
+
+let result=await r.json();
+
+if(!r.ok)throw Error(result.error||"Save failed");
+
+status("✓ Day "+current+" saved","success");
+
+await loadAll();
+
+loadDay(current);
+
+}catch(e){
+
+status(e.message,"error");
+
+}
+
+}
+
+
+/* DELETE */
+
+async function remove(){
+
+let exists=data.some(x=>+x.day===current);
+
+if(!exists){
+
+status("Nothing saved for Day "+current,"info");
+return;
+
+}
+
+if(!confirm(
+"Delete Day "+current+" permanently?"
+))return;
+
+status("Deleting...","info");
+
+try{
+
+let r=await fetch(
+API+"/api/verses/"+current,
+{method:"DELETE"}
+);
+
+let result=await r.json();
+
+if(!r.ok)throw Error(result.error||"Delete failed");
+
+status("✓ Day "+current+" deleted","success");
+
+await loadAll();
+
+clearForm();
+
+}catch(e){
+
+status(e.message,"error");
+
+}
+
+}
+
+
+/* CLEAR */
+
+function clearForm(){
+
+document.getElementById("reference").value="";
+document.getElementById("english").value="";
+document.getElementById("sinhala").value="";
+document.getElementById("tamil").value="";
+
+}
+
+
+/* COPY */
+
+async function copy(id){
+
+let text=document.getElementById(id).value;
+
+if(!text)return;
+
+try{
+
+await navigator.clipboard.writeText(text);
+
+status("✓ Copied","success");
+
+}catch{
+
+document.getElementById(id).select();
+
+document.execCommand("copy");
+
+status("✓ Copied","success");
+
+}
+
+}
+
+
+/* PREVIOUS */
+
+function previous(){
+
+if(current>1)
+loadDay(current-1);
+
+}
+
+
+/* NEXT */
+
+function next(){
+
+if(current<365)
+loadDay(current+1);
+
+}
+
+
+/* SEARCH */
+
+function searchDays(){
+
+let q=document
+.getElementById("search")
+.value
+.toLowerCase()
+.trim();
+
+for(let i=1;i<=365;i++){
+
+let v=data.find(x=>+x.day===i);
+
+let match=
+!q||
+String(i).includes(q)||
+v?.reference?.toLowerCase().includes(q);
+
+document.getElementById("d"+i)
+.style.display=match?"":"none";
+
+}
+
+}
+
+
+/* STATUS */
+
+function status(text,type){
+
+let s=document.getElementById("status");
+
+s.textContent=text;
+
+s.className="status show "+type;
+
+setTimeout(()=>{
+
+s.className="status";
+
+},3000);
+
+}
+
+
+/* START */
+
+init();
+
+</script>
+
+</body>
+</html>
