@@ -1,473 +1,826 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>365 Bible Calendar 2027</title><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;700&family=Noto+Sans+Tamil:wght@400;500;700&display=swap" rel="stylesheet">
+<title>365 Bible Calendar 2027</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;700&family=Noto+Sans+Tamil:wght@400;500;700&display=swap" rel="stylesheet">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#d8d1c8;color:#302c28;font:14px Arial;padding:18px}
-.controls{max-width:1150px;margin:auto auto 18px;background:#fffdf9;padding:15px;border:1px solid #b9ad9f;border-radius:12px;box-shadow:0 5px 20px #0002}
-h2{font:700 19px Georgia;color:#4d3b51;margin-bottom:12px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
-label{display:block;font-size:10px;font-weight:bold;margin:5px 0;color:#554c46}
-input,textarea,select{width:100%;padding:8px;border:1px solid #c8bcaf;border-radius:7px;background:#fff;font:inherit}
-textarea{height:60px;resize:vertical}
-input[type=range]{padding:0;accent-color:#70547b}
-.bar{display:grid;grid-template-columns:1fr 42px;gap:6px;align-items:center}
-.value{text-align:center;font-size:10px;font-weight:bold;color:#70547b}
-.buttons{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-button{padding:9px 13px;border:1px solid #5e4968;border-radius:7px;background:#70547b;color:#fff;font-weight:bold;cursor:pointer}
-.secondary{background:#817265;border-color:#6f6155}
-.green{background:#58735e;border-color:#4a6250}
-.red{background:#985c58;border-color:#814b48}
-.status{margin-top:9px;padding:8px;background:#f0ebe4;border-radius:7px;font-size:11px;color:#655c55}
-.selectedDates{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.chip{padding:5px 8px;border-radius:20px;background:#ece4da;border:1px solid #c9bdae;font-size:10px}
-.chip button{padding:1px 5px;border:0;border-radius:50%;background:#9a625e;font-size:9px}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-/* 9 × 12 PAGE */
+<style>
+*{
+  box-sizing:border-box;
+}
+
+body{
+  margin:0;
+  padding:20px;
+  background:#eee;
+  font-family:Arial,sans-serif;
+  color:#222;
+}
+
+h1{
+  text-align:center;
+  margin:0 0 15px;
+}
+
+.controls{
+  max-width:1100px;
+  margin:auto;
+  background:#fff;
+  padding:15px;
+  border-radius:10px;
+  box-shadow:0 3px 12px #0002;
+}
+
+.row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-bottom:10px;
+}
+
+label{
+  font-size:13px;
+  font-weight:bold;
+}
+
+input,
+select,
+button{
+  padding:7px;
+  border:1px solid #bbb;
+  border-radius:5px;
+}
+
+button{
+  cursor:pointer;
+  background:#333;
+  color:#fff;
+  border:0;
+}
+
+button:hover{
+  opacity:.85;
+}
+
+.range{
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
+
+.preview{
+  margin:20px auto;
+  max-width:900px;
+}
+
+/* 9 x 12 ratio */
 .calendar{
- width:min(900px,100%);
- aspect-ratio:3/4;
- margin:auto;
- position:relative;
- overflow:hidden;
- background:#f5eee3;
- border:1px solid #5f574f;
- outline:2px solid #5f574f;
- outline-offset:-7px;
- box-shadow:0 8px 25px #0003;
- print-color-adjust:exact;
- -webkit-print-color-adjust:exact
+  width:min(900px,100%);
+  aspect-ratio:3/4;
+  margin:auto;
+  position:relative;
+  overflow:hidden;
+  background:#f5eee3;
+  border:1px solid #5f574f;
+  outline:2px solid #5f574f;
+  outline-offset:-7px;
+  box-shadow:0 8px 25px #0003;
+  print-color-adjust:exact;
+  -webkit-print-color-adjust:exact;
 }
 
-.photo,.coverPhoto{position:absolute;overflow:hidden;background:#ddd4ca}
-.photo{left:4.5%;top:8%;bottom:8%;width:29%;z-index:1}
-.coverPhoto{inset:0;z-index:0;display:none}
-.photo img,.coverPhoto img{width:100%;height:100%;display:block;object-fit:cover;object-position:center;transform-origin:center}
-.coverOverlay{position:absolute;inset:0;background:#000}
-
-.content{position:absolute;left:37%;right:5%;top:5%;bottom:5%;display:flex;flex-direction:column;min-width:0;min-height:0;z-index:3}
-
-.coverMode .photo{display:none}
-.coverMode .coverPhoto{display:block}
-.coverMode .content{left:7%;right:7%;top:7%;bottom:7%;text-shadow:0 1px 5px #0009}
-.coverMode .dateText,.coverMode .cross,.coverMode .en,.coverMode .ta,.coverMode .si,.coverMode .ref{color:#fff}
-.coverMode .dateRow,.coverMode .section,.coverMode .ref{border-color:#ffffff70}
-
-.dateRow{height:14%;min-height:50px;display:flex;align-items:center;border-bottom:1px solid #d8cec1;position:relative}
-.dateText{font:700 clamp(35px,5.5vw,68px)/1 Georgia;color:#51465b}
-.cross{position:absolute;right:1px;top:2px;font:18px Georgia;color:#69546f}
-
-.verses{flex:1;min-height:0;overflow:hidden;margin:6px 0}
-#verseBox{height:100%;display:flex;flex-direction:column;overflow:hidden}
-.section{flex:1;min-height:0;padding:7px 13px;border-top:1px solid #ddd3c8;overflow:hidden}
-.section:first-child{border-top:0}
-.txt{width:100%;max-height:100%;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}
-.en{font:500 25px/1.28 Georgia;color:#49334f}
-.ta{font:500 18px/1.42 "Noto Sans Tamil",sans-serif;color:#76502f}
-.si{font:500 18px/1.42 "Noto Sans Sinhala",sans-serif;color:#3f604a}
-.left{text-align:left}.center{text-align:center}.right{text-align:right}
-
-.ref{min-height:27px;border-top:1px solid #d8cec1;display:flex;align-items:center;justify-content:center;text-align:center;font:700 12px Georgia;color:#756c65;overflow:hidden}
-
-@media(max-width:700px){
- body{padding:7px}
- .controls{padding:10px}
- .grid{grid-template-columns:1fr}
- .photo{left:4%;width:29%}
- .content{left:37%;right:4%;top:4%;bottom:4%}
- .coverMode .content{left:8%;right:8%}
- .dateText{font-size:clamp(22px,6vw,42px)}
- .section{padding:4px 8px}
+.photo,
+.coverPhoto{
+  position:absolute;
+  overflow:hidden;
+  background:#ddd4ca;
 }
 
+.photo{
+  left:4.5%;
+  top:8%;
+  bottom:8%;
+  width:29%;
+  z-index:1;
+}
+
+.coverPhoto{
+  inset:0;
+  z-index:0;
+  display:none;
+}
+
+.photo img,
+.coverPhoto img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+  object-position:center;
+  transform-origin:center;
+}
+
+.coverOverlay{
+  position:absolute;
+  inset:0;
+  background:#000;
+  pointer-events:none;
+}
+
+.content{
+  position:absolute;
+  left:38%;
+  right:5%;
+  top:8%;
+  bottom:8%;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  text-align:center;
+}
+
+.coverMode .photo{
+  display:none;
+}
+
+.coverMode .coverPhoto{
+  display:block;
+}
+
+.coverMode .content{
+  left:7%;
+  right:7%;
+  top:7%;
+  bottom:7%;
+  color:#fff;
+  text-shadow:0 1px 5px #0009;
+}
+
+.date{
+  font-size:clamp(18px,3vw,34px);
+  font-weight:bold;
+  margin-bottom:8px;
+}
+
+.month{
+  font-size:clamp(25px,5vw,55px);
+  font-weight:bold;
+  margin-bottom:20px;
+}
+
+.ref{
+  font-size:clamp(15px,2.5vw,25px);
+  font-weight:bold;
+  margin-bottom:15px;
+}
+
+.verse{
+  font-size:clamp(13px,2vw,22px);
+  line-height:1.5;
+  margin-bottom:10px;
+}
+
+.tamil,
+.sinhala{
+  font-family:"Noto Sans Tamil","Noto Sans Sinhala",Arial,sans-serif;
+}
+
+.tamil{
+  margin-top:8px;
+}
+
+.sinhala{
+  margin-top:8px;
+}
+
+.controls small{
+  color:#666;
+}
+
+.selected{
+  margin-top:10px;
+  padding:8px;
+  background:#f5f5f5;
+  border-radius:5px;
+  font-size:13px;
+}
+
+/* PRINT */
 @media print{
- body{padding:0;background:#fff}
- .controls{display:none}
- .calendar{width:9in;height:12in;aspect-ratio:auto;box-shadow:none}
+  body{
+    padding:0;
+    background:#fff;
+  }
+
+  .controls,
+  h1{
+    display:none;
+  }
+
+  .preview{
+    margin:0;
+    max-width:none;
+  }
+
+  .calendar{
+    width:9in;
+    height:12in;
+    aspect-ratio:auto;
+    margin:0;
+    box-shadow:none;
+  }
 }
-</style></head><body><div class="controls">
-<h2>365 Bible Calendar 2027</h2><div class="grid"><div>
-<label>Date</label>
-<input id="date" type="date" min="2027-01-01" max="2027-12-31" value="2027-01-01">
-</div><div>
-<label>Bible Reference</label>
-<input id="ref" value="John 3:16">
-</div><div>
-<label>Photo Layout</label>
-<select id="photoMode">
-<option value="left">Left Photo Panel</option>
-<option value="cover">Full Page Cover — 9×12</option>
-</select>
-</div><div>
-<label>Upload Photo</label>
-<input id="photoUpload" type="file" accept="image/*">
-</div><div>
-<label>Photo Fit</label>
-<select id="photoFit">
-<option value="cover">Fill / Crop</option>
-<option value="contain">Show Full Photo</option>
-</select>
-</div><div>
-<label>Photo Position</label>
-<select id="photoPos">
-<option value="center">Center</option>
-<option value="top">Top</option>
-<option value="bottom">Bottom</option>
-<option value="left">Left</option>
-<option value="right">Right</option>
-</select>
-</div><div><label>Brightness</label><div class="bar"><input id="brightness" type="range" min="40" max="160" value="100"><span class="value" id="brightnessV">100%</span></div></div>
-<div><label>Contrast</label><div class="bar"><input id="contrast" type="range" min="50" max="180" value="100"><span class="value" id="contrastV">100%</span></div></div>
-<div><label>Saturation</label><div class="bar"><input id="saturation" type="range" min="0" max="180" value="100"><span class="value" id="saturationV">100%</span></div></div>
-<div><label>Photo Opacity</label><div class="bar"><input id="opacity" type="range" min="20" max="100" value="100"><span class="value" id="opacityV">100%</span></div></div>
-<div><label>Blur</label><div class="bar"><input id="blur" type="range" min="0" max="8" value="0"><span class="value" id="blurV">0px</span></div></div>
-<div><label>Rotation</label><div class="bar"><input id="rotation" type="range" min="-10" max="10" value="0"><span class="value" id="rotationV">0°</span></div></div>
-<div><label>Cover Dark Overlay</label><div class="bar"><input id="overlay" type="range" min="0" max="80" value="20"><span class="value" id="overlayV">20%</span></div></div><div>
-<label>English Verse</label>
-<textarea id="en">For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.</textarea>
-<label>Font Size</label>
-<div class="bar"><input id="ens" type="range" min="12" max="38" value="25"><span class="value" id="ensv">25</span></div>
-</div><div>
-<label>Tamil Verse</label>
-<textarea id="ta">தேவன் தம்முடைய ஒரேபேறான குமாரனை விசுவாசிக்கிறவன் எவனோ அவன் கெட்டுப்போகாமல் நித்தியஜீவனை அடையும்படிக்கு, அவரைத் தந்தருளி, உலகத்தில் அன்புகூர்ந்தார்.</textarea>
-<label>Font Size</label>
-<div class="bar"><input id="tas" type="range" min="10" max="30" value="18"><span class="value" id="tasv">18</span></div>
-</div><div>
-<label>Sinhala Verse</label>
-<textarea id="si">මක්නිසාද දෙවියන්වහන්සේ ලෝකයාට කොපමණ ප්‍රේමකළසේක්ද කිවහොත්, තමන්වහන්සේගේ ඒකජාතක පුත්‍රයා දුන්සේක. එසේ කළේ උන්වහන්සේ කෙරෙහි අදහාගන්නා සියල්ලන්ම විනාශ නොවී සදාකාල ජීවනය ලබන පිණිසය.</textarea>
-<label>Font Size</label>
-<div class="bar"><input id="sis" type="range" min="10" max="30" value="18"><span class="value" id="sisv">18</span></div>
-</div><div>
-<label>English Alignment</label>
-<select id="ena"><option>left</option><option>center</option><option>right</option></select>
-</div><div>
-<label>Tamil Alignment</label>
-<select id="taa"><option>left</option><option>center</option><option>right</option></select>
-</div><div>
-<label>Sinhala Alignment</label>
-<select id="sia"><option>left</option><option>center</option><option>right</option></select>
-</div><div><label>Verse Position</label><div class="bar"><input id="pos" type="range" min="0" max="100" value="0"><span class="value" id="posv">Top</span></div></div><div><label>Language Spacing</label><div class="bar"><input id="space" type="range" min="0" max="25" value="5"><span class="value" id="spacev">5px</span></div></div></div><div class="buttons">
-<button id="prev">Previous</button>
-<button id="next">Next</button>
-<button id="generate" class="green">Generate</button>
-<button id="add" class="secondary">Add Date to PDF</button>
-<button id="clear" class="red">Clear Dates</button>
-<button id="current">Current PDF</button>
-<button id="multi" class="green">Download Selected PDF</button>
-</div><div class="status" id="status"></div>
-<div class="selectedDates" id="selected"></div>
-</div><div class="calendar" id="calendar"><div class="coverPhoto" id="coverPhoto"></div>
-<div class="photo" id="leftPhoto"></div><div class="content"><div class="dateRow">
-<div class="dateText" id="dateText"></div>
-<div class="cross">✝</div>
-</div><div class="verses">
-<div id="verseBox"><div class="section">
-<div id="enText" class="txt en left"></div>
-</div><div class="section">
-<div id="taText" class="txt ta left"></div>
-</div><div class="section">
-<div id="siText" class="txt si left"></div>
-</div></div>
-</div><div class="ref" id="refText"></div></div>
-</div><script>
-const $=id=>document.getElementById(id);
-let photoData="",selectedDates=[];
+</style>
+</head>
 
+<body>
 
-/* PHOTO */
+<h1>365 Bible Calendar 2027</h1>
+
+<div class="controls">
+
+  <div class="row">
+    <label>
+      Date<br>
+      <input type="date" id="date" value="2027-01-01">
+    </label>
+
+    <label>
+      Bible Reference<br>
+      <input id="reference" value="John 3:16">
+    </label>
+
+    <label>
+      Photo Layout<br>
+      <select id="photoMode">
+        <option value="side">Left Photo</option>
+        <option value="cover">Full Page Cover</option>
+      </select>
+    </label>
+
+    <label>
+      Upload Photo<br>
+      <input type="file" id="photo" accept="image/*">
+    </label>
+  </div>
+
+  <div class="row">
+
+    <label>
+      Photo Fit<br>
+      <select id="photoFit">
+        <option value="cover">Cover</option>
+        <option value="contain">Contain</option>
+        <option value="fill">Fill</option>
+      </select>
+    </label>
+
+    <label>
+      Position<br>
+      <select id="photoPos">
+        <option value="center">Center</option>
+        <option value="top">Top</option>
+        <option value="bottom">Bottom</option>
+        <option value="left">Left</option>
+        <option value="right">Right</option>
+      </select>
+    </label>
+
+    <label>
+      Brightness
+      <div class="range">
+        <input type="range" id="brightness" min="0" max="200" value="100">
+        <span id="brightnessVal">100</span>%
+      </div>
+    </label>
+
+    <label>
+      Contrast
+      <div class="range">
+        <input type="range" id="contrast" min="0" max="200" value="100">
+        <span id="contrastVal">100</span>%
+      </div>
+    </label>
+
+    <label>
+      Saturation
+      <div class="range">
+        <input type="range" id="saturation" min="0" max="200" value="100">
+        <span id="saturationVal">100</span>%
+      </div>
+    </label>
+
+  </div>
+
+  <div class="row">
+
+    <label>
+      Opacity
+      <div class="range">
+        <input type="range" id="opacity" min="0" max="100" value="100">
+        <span id="opacityVal">100</span>%
+      </div>
+    </label>
+
+    <label>
+      Blur
+      <div class="range">
+        <input type="range" id="blur" min="0" max="20" value="0">
+        <span id="blurVal">0</span>
+      </div>
+    </label>
+
+    <label>
+      Rotation
+      <div class="range">
+        <input type="range" id="rotation" min="-180" max="180" value="0">
+        <span id="rotationVal">0</span>°
+      </div>
+    </label>
+
+    <label>
+      Cover Overlay
+      <div class="range">
+        <input type="range" id="overlay" min="0" max="100" value="35">
+        <span id="overlayVal">35</span>%
+      </div>
+    </label>
+
+  </div>
+
+  <hr>
+
+  <div class="row">
+
+    <label>
+      English Verse<br>
+      <textarea id="english" rows="3" cols="30">For God so loved the world, that he gave his only begotten Son.</textarea>
+    </label>
+
+    <label>
+      Tamil Verse<br>
+      <textarea id="tamil" rows="3" cols="30">தேவன் உலகத்தில் மிகவும் அன்புகூர்ந்தார்.</textarea>
+    </label>
+
+    <label>
+      Sinhala Verse<br>
+      <textarea id="sinhala" rows="3" cols="30">දෙවියන් වහන්සේ ලෝකයට බොහෝ සේ ප්‍රේම කළ සේක.</textarea>
+    </label>
+
+  </div>
+
+  <div class="row">
+
+    <label>
+      English Size<br>
+      <input type="number" id="englishSize" value="22" min="8" max="80">
+    </label>
+
+    <label>
+      Tamil Size<br>
+      <input type="number" id="tamilSize" value="20" min="8" max="80">
+    </label>
+
+    <label>
+      Sinhala Size<br>
+      <input type="number" id="sinhalaSize" value="20" min="8" max="80">
+    </label>
+
+    <label>
+      Text Align<br>
+      <select id="align">
+        <option value="center">Center</option>
+        <option value="left">Left</option>
+        <option value="right">Right</option>
+      </select>
+    </label>
+
+    <label>
+      Verse Position<br>
+      <select id="versePosition">
+        <option value="center">Center</option>
+        <option value="top">Top</option>
+        <option value="bottom">Bottom</option>
+      </select>
+    </label>
+
+  </div>
+
+  <div class="row">
+
+    <label>
+      Language Spacing<br>
+      <input type="number" id="langSpacing" value="8" min="0" max="50">
+    </label>
+
+  </div>
+
+  <div class="row">
+    <button onclick="previousDate()">Previous</button>
+    <button onclick="nextDate()">Next</button>
+    <button onclick="generate()">Generate</button>
+    <button onclick="addDate()">Add Date to PDF</button>
+    <button onclick="clearDates()">Clear Dates</button>
+    <button onclick="window.print()">Current PDF</button>
+    <button onclick="downloadPDF()">Download Selected PDF</button>
+  </div>
+
+  <div class="selected">
+    <b>Selected dates:</b>
+    <span id="selectedDates">None</span>
+  </div>
+
+  <small>
+    PDF format: 9 × 12 inches, portrait. Selected dates are saved as
+    sequential pages for duplex/front-back printing.
+  </small>
+
+</div>
+
+<div class="preview">
+
+  <div class="calendar" id="calendar">
+
+    <div class="photo" id="leftPhoto"></div>
+
+    <div class="coverPhoto" id="coverPhoto"></div>
+
+    <div class="content" id="content">
+
+      <div class="date" id="dateText"></div>
+
+      <div class="month" id="monthText"></div>
+
+      <div class="ref" id="refText"></div>
+
+      <div class="verse" id="englishText"></div>
+
+      <div class="verse tamil" id="tamilText"></div>
+
+      <div class="verse sinhala" id="sinhalaText"></div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let photoData = "";
+let selectedDates = [];
+
+/* ---------- PHOTO ---------- */
+
+$("photo").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = ev => {
+    photoData = ev.target.result;
+    renderPhoto();
+  };
+
+  reader.readAsDataURL(file);
+});
 
 function renderPhoto(){
 
- if(!photoData){
-  $("leftPhoto").innerHTML="";
-  $("coverPhoto").innerHTML="";
-  return;
- }
+  if(!photoData){
+    $("leftPhoto").innerHTML = "";
+    $("coverPhoto").innerHTML = "";
+    return;
+  }
 
- const fit=$("photoMode").value==="cover"?"cover":$("photoFit").value;
- const filter=`brightness(${$("brightness").value}%) contrast(${$("contrast").value}%) saturate(${$("saturation").value}%) blur(${$("blur").value}px)`;
- const style=`object-fit:${fit};object-position:${$("photoPos").value};filter:${filter};transform:rotate(${$("rotation").value}deg);opacity:${$("opacity").value/100}`;
+  const fit =
+    $("photoMode").value === "cover"
+      ? "cover"
+      : $("photoFit").value;
 
- $("leftPhoto").innerHTML=`<img src="${photoData}" style="${style}">`;
+  const filter =
+    `brightness(${$("brightness").value}%) ` +
+    `contrast(${$("contrast").value}%) ` +
+    `saturate(${$("saturation").value}%) ` +
+    `blur(${$("blur").value}px)`;
 
- $("coverPhoto").innerHTML=
-  `<img src="${photoData}" style="${style}">`+
-  `<div class="coverOverlay" style="opacity:${$("overlay").value/100}"></div>`;
+  const style =
+    `object-fit:${fit};` +
+    `object-position:${$("photoPos").value};` +
+    `filter:${filter};` +
+    `transform:rotate(${$("rotation").value}deg);` +
+    `opacity:${$("opacity").value / 100};`;
+
+  $("leftPhoto").innerHTML =
+    `<img src="${photoData}" style="${style}">`;
+
+  $("coverPhoto").innerHTML =
+    `<img src="${photoData}" style="${style}">` +
+    `<div class="coverOverlay" style="opacity:${$("overlay").value / 100}"></div>`;
 }
 
-$("photoUpload").onchange=e=>{
- const f=e.target.files[0];
- if(!f||!f.type.startsWith("image/"))return alert("Please select an image.");
- const r=new FileReader();
- r.onload=()=>{photoData=r.result;renderPhoto();status()};
- r.readAsDataURL(f);
-};
+/* ---------- DATE ---------- */
 
+function formatDate(date){
 
-/* DISPLAY */
+  return date.toLocaleDateString("en-US",{
+    weekday:"long",
+    year:"numeric",
+    month:"long",
+    day:"numeric"
+  });
+
+}
+
+function getMonth(date){
+
+  return date.toLocaleDateString("en-US",{
+    month:"long"
+  });
+
+}
 
 function generate(){
 
- const d=new Date($("date").value+"T00:00:00");
+  const date = new Date($("date").value + "T00:00:00");
 
- $("dateText").textContent=d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
- $("refText").textContent=$("ref").value;
- $("enText").textContent=$("en").value;
- $("taText").textContent=$("ta").value;
- $("siText").textContent=$("si").value;
+  if(isNaN(date)) return;
 
- [["en","ens","ena"],["ta","tas","taa"],["si","sis","sia"]].forEach(([x,s,a])=>{
-  const t=$(x+"Text");
-  t.className=`txt ${x} ${$(a).value}`;
-  t.style.fontSize=$(s).value+"px";
-  $(s+"v").textContent=$(s).value;
- });
+  $("dateText").textContent = formatDate(date);
 
- document.querySelectorAll(".section").forEach((s,i)=>{
-  s.style.marginTop=i?$("space").value+"px":"0";
- });
+  $("monthText").textContent = getMonth(date);
 
- $("spacev").textContent=$("space").value+"px";
+  $("refText").textContent = $("reference").value;
 
- requestAnimationFrame(position);
+  $("englishText").textContent = $("english").value;
+
+  $("tamilText").textContent = $("tamil").value;
+
+  $("sinhalaText").textContent = $("sinhala").value;
+
+  $("englishText").style.fontSize =
+    $("englishSize").value + "px";
+
+  $("tamilText").style.fontSize =
+    $("tamilSize").value + "px";
+
+  $("sinhalaText").style.fontSize =
+    $("sinhalaSize").value + "px";
+
+  $("content").style.textAlign =
+    $("align").value;
+
+  $("tamilText").style.marginTop =
+    $("langSpacing").value + "px";
+
+  $("sinhalaText").style.marginTop =
+    $("langSpacing").value + "px";
+
+  const pos = $("versePosition").value;
+
+  if(pos === "top"){
+    $("content").style.justifyContent = "flex-start";
+  }
+
+  if(pos === "center"){
+    $("content").style.justifyContent = "center";
+  }
+
+  if(pos === "bottom"){
+    $("content").style.justifyContent = "flex-end";
+  }
+
+  mode();
+  renderPhoto();
 }
 
-
-function position(){
-
- const p=+$("pos").value;
-
- $("posv").textContent=p===0?"Top":p===50?"Center":p===100?"Bottom":p+"%";
-
- document.querySelectorAll(".section").forEach(s=>{
-  const t=s.querySelector(".txt");
-  const free=s.clientHeight-t.offsetHeight;
-  t.style.transform=free>0?`translateY(${free*p/100}px)`:"none";
- });
-}
-
-
-/* MODE */
+/* ---------- PHOTO MODE ---------- */
 
 function mode(){
 
- $("calendar").classList.toggle(
-  "coverMode",
-  $("photoMode").value==="cover"
- );
+  $("calendar").classList.toggle(
+    "coverMode",
+    $("photoMode").value === "cover"
+  );
 
- renderPhoto();
- status();
 }
 
+/* ---------- DATE NAVIGATION ---------- */
 
-function status(){
+function previousDate(){
 
- $("status").textContent=
- `${photoData?"Photo uploaded":"No photo uploaded"} | `+
- `${$("photoMode").value==="cover"?"9×12 Full Page":"Left Photo"} | `+
- `PDF pages: ${selectedDates.length}/10`;
+  const d = new Date($("date").value + "T00:00:00");
+
+  d.setDate(d.getDate() - 1);
+
+  $("date").value =
+    d.toISOString().split("T")[0];
+
+  generate();
 }
 
+function nextDate(){
 
-/* DATE */
+  const d = new Date($("date").value + "T00:00:00");
 
-function move(n){
+  d.setDate(d.getDate() + 1);
 
- const d=new Date($("date").value+"T00:00:00");
- d.setDate(d.getDate()+n);
+  $("date").value =
+    d.toISOString().split("T")[0];
 
- if(d.getFullYear()!==2027)return;
-
- $("date").value=d.toISOString().slice(0,10);
- generate();
+  generate();
 }
 
-
-/* SELECT DATES */
+/* ---------- SELECT DATES ---------- */
 
 function addDate(){
 
- const d=$("date").value;
+  const date = $("date").value;
 
- if(!d)return alert("Select a date first.");
- if(selectedDates.includes(d))return alert("Date already selected.");
- if(selectedDates.length>=10)return alert("Maximum 10 PDF pages.");
+  if(!date) return;
 
- selectedDates.push(d);
- renderDates();
+  if(!selectedDates.includes(date)){
+    selectedDates.push(date);
+    selectedDates.sort();
+  }
+
+  renderDates();
 }
 
+function clearDates(){
+
+  selectedDates = [];
+
+  renderDates();
+}
 
 function renderDates(){
 
- $("selected").innerHTML="";
+  $("selectedDates").textContent =
+    selectedDates.length
+      ? selectedDates.join(", ")
+      : "None";
 
- selectedDates.forEach((d,i)=>{
-
-  const chip=document.createElement("div");
-  chip.className="chip";
-  chip.innerHTML=`${i+1}. ${new Date(d+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})} `;
-
-  const b=document.createElement("button");
-  b.textContent="×";
-  b.onclick=()=>{
-   selectedDates.splice(i,1);
-   renderDates();
-  };
-
-  chip.appendChild(b);
-  $("selected").appendChild(chip);
- });
-
- status();
 }
 
+/* ---------- RANGE VALUES ---------- */
 
-/* PDF */
+[
+  ["brightness","brightnessVal"],
+  ["contrast","contrastVal"],
+  ["saturation","saturationVal"],
+  ["opacity","opacityVal"],
+  ["blur","blurVal"],
+  ["rotation","rotationVal"],
+  ["overlay","overlayVal"]
+].forEach(([a,b]) => {
+
+  $(a).addEventListener("input", () => {
+    $(b).textContent = $(a).value;
+    generate();
+  });
+
+});
+
+/* ---------- LIVE CONTROLS ---------- */
+
+[
+  "reference",
+  "english",
+  "tamil",
+  "sinhala",
+  "englishSize",
+  "tamilSize",
+  "sinhalaSize",
+  "align",
+  "versePosition",
+  "langSpacing",
+  "photoMode",
+  "photoFit",
+  "photoPos"
+].forEach(id => {
+
+  $(id).addEventListener("input", generate);
+  $(id).addEventListener("change", generate);
+
+});
+
+/* ---------- HTML2CANVAS ---------- */
 
 async function capture(){
 
- generate();
- mode();
+  generate();
 
- if(document.fonts)await document.fonts.ready;
- await new Promise(r=>setTimeout(r,300));
+  await new Promise(resolve =>
+    setTimeout(resolve,150)
+  );
 
- return html2canvas($("calendar"),{
-  scale:3,
-  useCORS:true,
-  backgroundColor:null,
-  imageTimeout:0
- });
+  return await html2canvas(
+    $("calendar"),
+    {
+      scale:2,
+      useCORS:true,
+      backgroundColor:null,
+      logging:false
+    }
+  );
+
 }
 
+/* ---------- PDF ---------- */
 
 async function makePDF(dates,name){
 
- if(!dates.length)return alert("No dates selected.");
- if(!photoData)return alert("Please upload a photo first.");
-
- const old=$("date").value;
-
- const pdf=new jspdf.jsPDF({
-  orientation:"portrait",
-  unit:"in",
-  format:[9,12],
-  compress:true
- });
-
- try{
-
-  for(let i=0;i<dates.length;i++){
-
-   $("date").value=dates[i];
-
-   const canvas=await capture();
-
-   if(i)pdf.addPage([9,12],"portrait");
-
-   pdf.addImage(
-    canvas.toDataURL("image/jpeg",.96),
-    "JPEG",
-    0,0,9,12
-   );
+  if(!dates.length){
+    alert("No dates selected.");
+    return;
   }
 
-  pdf.save(name);
+  if(!photoData){
+    alert("Please upload a photo first.");
+    return;
+  }
 
- }finally{
+  const oldDate = $("date").value;
 
-  $("date").value=old;
-  generate();
-  mode();
-  renderDates();
- }
+  const pdf = new jspdf.jsPDF({
+    orientation:"portrait",
+    unit:"in",
+    format:[9,12],
+    compress:true
+  });
+
+  try{
+
+    for(let i=0;i<dates.length;i++){
+
+      $("date").value = dates[i];
+
+      const canvas = await capture();
+
+      if(i){
+        pdf.addPage([9,12],"portrait");
+      }
+
+      pdf.addImage(
+        canvas.toDataURL("image/jpeg",0.96),
+        "JPEG",
+        0,
+        0,
+        9,
+        12
+      );
+
+    }
+
+    pdf.save(name);
+
+  }finally{
+
+    $("date").value = oldDate;
+
+    generate();
+    mode();
+    renderDates();
+
+  }
+
 }
 
+async function downloadPDF(){
 
-/* BUTTONS */
+  if(!selectedDates.length){
 
-$("prev").onclick=()=>move(-1);
-$("next").onclick=()=>move(1);
+    if($("date").value){
+      selectedDates = [$("date").value];
+    }
 
-$("generate").onclick=()=>{
- generate();
- mode();
-};
+  }
 
-$("add").onclick=addDate;
+  renderDates();
 
-$("clear").onclick=()=>{
- selectedDates=[];
- renderDates();
-};
+  await makePDF(
+    selectedDates,
+    "Bible-Calendar-2027-9x12.pdf"
+  );
 
-$("current").onclick=()=>
- makePDF([$("date").value],"Bible-Calendar-9x12.pdf");
+}
 
-$("multi").onclick=()=>{
- if(!selectedDates.length)
-  return alert("Add dates to the PDF first.");
-
- makePDF(
-  selectedDates,
-  `Bible-Calendar-${selectedDates.length}-Pages-9x12.pdf`
- );
-};
-
-
-/* INPUTS */
-
-["date","ref","en","ta","si"].forEach(id=>
- $(id).oninput=generate
-);
-
-["ena","taa","sia"].forEach(id=>
- $(id).onchange=generate
-);
-
-$("pos").oninput=position;
-$("space").oninput=generate;
-
-["ens","tas","sis"].forEach(id=>{
- $(id).oninput=()=>{
-  $(id+"v").textContent=$(id).value;
-  generate();
- };
-});
-
-
-/* PHOTO CONTROLS */
-
-[
- ["brightness","brightnessV","%"],
- ["contrast","contrastV","%"],
- ["saturation","saturationV","%"],
- ["opacity","opacityV","%"],
- ["blur","blurV","px"],
- ["rotation","rotationV","°"],
- ["overlay","overlayV","%"]
-].forEach(([id,v,u])=>{
- $(id).oninput=()=>{
-  $(v).textContent=$(id).value+u;
-  renderPhoto();
- };
-});
-
-$("photoFit").onchange=renderPhoto;
-$("photoPos").onchange=renderPhoto;
-$("photoMode").onchange=mode;
-
-
-/* START */
+/* ---------- INITIAL ---------- */
 
 generate();
-mode();
 renderDates();
 
-</script></body>
+</script>
+
+</body>
 </html>
