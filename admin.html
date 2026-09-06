@@ -23,7 +23,10 @@ body{
 
 .app{max-width:1100px;margin:auto}
 
-h2{text-align:center;margin:0 0 15px}
+h2{
+ text-align:center;
+ margin:0 0 15px
+}
 
 .controls{
  background:#fff;
@@ -115,9 +118,16 @@ button{
  color:#fff
 }
 
-.danger,.deleteBtn{
+.danger{
  background:#b83b3b;
  color:#fff
+}
+
+.deleteBtn{
+ background:#b83b3b;
+ color:#fff;
+ padding:5px 9px;
+ font-size:11px
 }
 
 button:disabled{
@@ -142,7 +152,6 @@ button:disabled{
  display:flex;
  align-items:center;
  justify-content:space-between;
- gap:8px;
  background:#f1f4f7;
  border:1px solid #d9dee5;
  border-radius:6px;
@@ -153,11 +162,6 @@ button:disabled{
  font-size:13px;
  font-weight:bold;
  color:#17365d
-}
-
-.deleteBtn{
- padding:5px 9px;
- font-size:11px
 }
 
 /* CALENDAR */
@@ -184,7 +188,8 @@ button:disabled{
  background:#ddd
 }
 
-.photo img,.fullPhoto{
+.photo img,
+.fullPhoto{
  width:100%;
  height:100%;
  object-fit:cover;
@@ -198,12 +203,16 @@ button:disabled{
  z-index:10
 }
 
-.full-view .fullPhoto{display:block}
+.full-view .fullPhoto{
+ display:block
+}
 
 .full-view .photo,
-.full-view .content{display:none}
+.full-view .content{
+ display:none
+}
 
-/* FULL PHOTO */
+/* FULL PHOTO TEXT */
 
 .coverVerses{
  position:absolute;
@@ -219,7 +228,9 @@ button:disabled{
  text-shadow:0 2px 4px #000,0 4px 12px #0009
 }
 
-.full-view .coverVerses{display:grid}
+.full-view .coverVerses{
+ display:grid
+}
 
 .coverVerse{
  min-height:0;
@@ -227,7 +238,8 @@ button:disabled{
  padding:5px 10px;
  display:flex;
  align-items:center;
- justify-content:center
+ justify-content:center;
+ border:0!important
 }
 
 .coverText{
@@ -400,10 +412,11 @@ button:disabled{
 
 <div class="field" id="dateField">
 <label>Calendar Date</label>
-<input type="date" id="date"
-min="2027-01-01"
-max="2027-12-31"
-value="2027-01-01">
+<input type="date"
+ id="date"
+ min="2027-01-01"
+ max="2027-12-31"
+ value="2027-01-01">
 </div>
 
 <div class="field">
@@ -474,23 +487,23 @@ value="2027-01-01">
 
 <div class="buttons">
 
-<button type="button" class="secondary" id="prevBtn">
+<button type="button" id="prevBtn" class="secondary">
 ← Previous
 </button>
 
-<button type="button" class="secondary" id="nextBtn">
+<button type="button" id="nextBtn" class="secondary">
 Next →
 </button>
 
-<button type="button" class="gold" id="generateBtn">
+<button type="button" id="generateBtn" class="gold">
 Generate
 </button>
 
-<button type="button" class="danger" id="clearBtn">
+<button type="button" id="clearBtn" class="danger">
 Clear All
 </button>
 
-<button type="button" class="gold" id="downloadBtn">
+<button type="button" id="downloadBtn" class="gold">
 Download All PDF
 </button>
 
@@ -565,6 +578,7 @@ Download All PDF
 </div>
 
 <script>
+
 const $=id=>document.getElementById(id);
 const KEY="BibleCalendar2027";
 
@@ -573,8 +587,9 @@ let photoData="";
 let busy=false;
 
 const months=[
-"JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
-"JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"
+ "JANUARY","FEBRUARY","MARCH","APRIL",
+ "MAY","JUNE","JULY","AUGUST",
+ "SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"
 ];
 
 function dateInfo(v){
@@ -583,95 +598,173 @@ function dateInfo(v){
 }
 
 function save(){
- localStorage.setItem(KEY,JSON.stringify({
-  selected,photoData,
-  date:$("date").value,
-  photoView:$("photoView").value,
-  coverFont:$("coverFont").value,
-  english:$("englishInput").value,
-  tamil:$("tamilInput").value,
-  sinhala:$("sinhalaInput").value,
-  englishSize:$("englishSize").value,
-  tamilSize:$("tamilSize").value,
-  sinhalaSize:$("sinhalaSize").value,
-  coverEnglishSize:$("coverEnglishSize").value,
-  coverTamilSize:$("coverTamilSize").value,
-  coverSinhalaSize:$("coverSinhalaSize").value
- }));
+
+ try{
+
+  localStorage.setItem(KEY,JSON.stringify({
+
+   selected,
+   photoData,
+
+   date:$("date").value,
+   photoView:$("photoView").value,
+   coverFont:$("coverFont").value,
+
+   english:$("englishInput").value,
+   tamil:$("tamilInput").value,
+   sinhala:$("sinhalaInput").value,
+
+   englishSize:$("englishSize").value,
+   tamilSize:$("tamilSize").value,
+   sinhalaSize:$("sinhalaSize").value,
+
+   coverEnglishSize:$("coverEnglishSize").value,
+   coverTamilSize:$("coverTamilSize").value,
+   coverSinhalaSize:$("coverSinhalaSize").value
+
+  }));
+
+ }catch(e){
+
+  console.warn("Save failed",e);
+
+ }
 }
 
 function load(){
+
  try{
-  let x=JSON.parse(localStorage.getItem(KEY)||"null");
+
+  let x=JSON.parse(
+   localStorage.getItem(KEY)||"null"
+  );
+
   if(!x)return;
 
-  selected=[...new Set(x.selected||[])].slice(0,10);
+  selected=[
+   ...new Set(
+    Array.isArray(x.selected)?x.selected:[]
+   )
+  ].slice(0,10);
+
   photoData=x.photoData||"";
 
   [
-   "date","photoView","coverFont",
-   "englishSize","tamilSize","sinhalaSize",
-   "coverEnglishSize","coverTamilSize","coverSinhalaSize"
+   "date",
+   "photoView",
+   "coverFont",
+   "englishSize",
+   "tamilSize",
+   "sinhalaSize",
+   "coverEnglishSize",
+   "coverTamilSize",
+   "coverSinhalaSize"
   ].forEach(k=>{
-   if(x[k]!=null)$(k).value=x[k];
+
+   if(x[k]!=null && $(k))
+    $(k).value=x[k];
+
   });
 
-  if(x.english!=null)$("englishInput").value=x.english;
-  if(x.tamil!=null)$("tamilInput").value=x.tamil;
-  if(x.sinhala!=null)$("sinhalaInput").value=x.sinhala;
+  if(x.english!=null)
+   $("englishInput").value=x.english;
+
+  if(x.tamil!=null)
+   $("tamilInput").value=x.tamil;
+
+  if(x.sinhala!=null)
+   $("sinhalaInput").value=x.sinhala;
 
   if(photoData){
+
    $("photoPreview").src=photoData;
    $("fullPhoto").src=photoData;
+
   }
+
  }catch(e){
+
   console.error(e);
+
  }
 }
 
 function render(){
- $("generatedList").innerHTML=selected.map((v,i)=>{
-  let d=new Date(v+"T00:00:00");
-  return`
-  <div class="generatedRow">
-   <span class="generatedDate">
-    ${i+1}. ${d.toLocaleDateString("en-GB")}
-   </span>
-   <button type="button" class="deleteBtn" data-date="${v}">
-    Delete
-   </button>
-  </div>`;
- }).join("");
 
- $("status").textContent=`Generated: ${selected.length}/10`;
+ $("generatedList").innerHTML="";
+
+ selected.forEach((v,i)=>{
+
+  let d=new Date(v+"T00:00:00");
+
+  let row=document.createElement("div");
+  row.className="generatedRow";
+
+  let span=document.createElement("span");
+  span.className="generatedDate";
+
+  span.textContent=
+   `${i+1}. ${d.toLocaleDateString("en-GB")}`;
+
+  let btn=document.createElement("button");
+
+  btn.type="button";
+  btn.className="deleteBtn";
+  btn.textContent="Delete";
+  btn.dataset.date=v;
+
+  row.appendChild(span);
+  row.appendChild(btn);
+
+  $("generatedList").appendChild(row);
+
+ });
+
+ $("status").textContent=
+  `Generated: ${selected.length}/10`;
 }
 
 function deleteDate(v){
+
  selected=selected.filter(x=>x!==v);
+
  save();
  render();
+
 }
 
 function clearAll(){
+
  if(!selected.length){
+
   alert("There are no generated pages.");
   return;
+
  }
 
- if(!confirm("Delete all generated calendar pages?"))return;
+ if(!confirm("Delete all generated calendar pages?"))
+  return;
 
  selected=[];
+
  save();
  render();
+
+ $("status").textContent=
+  "All generated pages cleared.";
 }
 
 function update(){
+
  let v=$("date").value;
 
  if(v){
+
   let x=dateInfo(v);
+
   $("monthText").textContent=x[0];
   $("dayText").textContent=x[1];
+
  }
 
  let en=$("englishInput").value.trim();
@@ -687,61 +780,88 @@ function update(){
  $("coverSinhala").textContent=si;
 
  $("coverEnglish").style.fontFamily=
- `"${$("coverFont").value}",Georgia,serif`;
+  `"${$("coverFont").value}",Georgia,serif`;
 
  $("coverEnglish").style.fontSize=
- $("coverEnglishSize").value+"px";
+  $("coverEnglishSize").value+"px";
 
  $("coverTamil").style.fontSize=
- $("coverTamilSize").value+"px";
+  $("coverTamilSize").value+"px";
 
  $("coverSinhala").style.fontSize=
- $("coverSinhalaSize").value+"px";
+  $("coverSinhalaSize").value+"px";
 
- ["english","tamil","sinhala"].forEach(x=>{
-  $(x).style.fontSize=$(`${x}Size`).value+"px";
-  $(`${x}SizeValue`).textContent=$(`${x}Size`).value+"px";
+ ["english","tamil","sinhala"].forEach(id=>{
+
+  $(id).style.fontSize=
+   $(`${id}Size`).value+"px";
+
+  $(`${id}SizeValue`).textContent=
+   $(`${id}Size`).value+"px";
+
  });
 
- ["coverEnglish","coverTamil","coverSinhala"].forEach(x=>{
-  $(`${x}SizeValue`).textContent=$(`${x}Size`).value+"px";
+ ["coverEnglish","coverTamil","coverSinhala"].forEach(id=>{
+
+  $(`${id}SizeValue`).textContent=
+   $(`${id}Size`).value+"px";
+
  });
 
  let full=$("photoView").value==="full";
 
- $("calendar").classList.toggle("full-view",full);
- $("dateField").style.display=full?"none":"";
+ $("calendar").classList.toggle(
+  "full-view",
+  full
+ );
+
+ $("dateField").style.display=
+  full?"none":"";
+
 }
 
 async function fit(id,range){
+
  let el=$(id);
 
  if(!el)return;
 
  let box=el.closest(
-  id.startsWith("cover")?".coverVerse":".section"
+  id.startsWith("cover")
+   ?".coverVerse"
+   :".section"
  );
 
  if(!box)return;
 
  await document.fonts.ready;
 
- let max=parseFloat($(range).value);
+ let max=parseFloat(
+  $(range).value
+ );
+
  let min=id.startsWith("cover")?8:.5;
 
  function good(n){
+
   el.style.fontSize=n+"px";
+
   void el.offsetHeight;
 
   return(
    el.scrollHeight<=box.clientHeight-6 &&
    el.scrollWidth<=box.clientWidth
   );
+
  }
 
  if(good(max)){
-  $(range+"Value").textContent=max.toFixed(1)+"px";
+
+  $(range+"Value").textContent=
+   max.toFixed(1)+"px";
+
   return;
+
  }
 
  let lo=min;
@@ -749,51 +869,100 @@ async function fit(id,range){
  let best=min;
 
  for(let i=0;i<35;i++){
+
   let mid=(lo+hi)/2;
 
   if(good(mid)){
+
    best=mid;
    lo=mid;
+
   }else{
+
    hi=mid;
+
   }
+
  }
 
- el.style.fontSize=best.toFixed(1)+"px";
- $(range).value=best.toFixed(1);
- $(range+"Value").textContent=best.toFixed(1)+"px";
+ el.style.fontSize=
+  best.toFixed(1)+"px";
+
+ $(range).value=
+  best.toFixed(1);
+
+ $(range+"Value").textContent=
+  best.toFixed(1)+"px";
+
 }
 
 async function updateFit(){
+
  update();
 
- await new Promise(r=>requestAnimationFrame(r));
+ await new Promise(
+  r=>requestAnimationFrame(r)
+ );
 
  if($("photoView").value==="full"){
-  await fit("coverEnglish","coverEnglishSize");
-  await fit("coverTamil","coverTamilSize");
-  await fit("coverSinhala","coverSinhalaSize");
+
+  await fit(
+   "coverEnglish",
+   "coverEnglishSize"
+  );
+
+  await fit(
+   "coverTamil",
+   "coverTamilSize"
+  );
+
+  await fit(
+   "coverSinhala",
+   "coverSinhalaSize"
+  );
+
  }else{
-  await fit("english","englishSize");
-  await fit("tamil","tamilSize");
-  await fit("sinhala","sinhalaSize");
+
+  await fit(
+   "english",
+   "englishSize"
+  );
+
+  await fit(
+   "tamil",
+   "tamilSize"
+  );
+
+  await fit(
+   "sinhala",
+   "sinhalaSize"
+  );
+
  }
 
  save();
 }
 
 async function generate(){
+
  if(busy)return;
 
  if(!photoData){
+
   alert("Please upload a photo first.");
   return;
+
  }
 
  if($("photoView").value==="full"){
+
   await updateFit();
-  $("status").textContent="Full Photo ready.";
+
+  $("status").textContent=
+   "Full Photo ready. Click Download All PDF.";
+
   return;
+
  }
 
  let v=$("date").value;
@@ -801,13 +970,17 @@ async function generate(){
  if(!v)return;
 
  if(selected.includes(v)){
+
   alert("This date is already generated.");
   return;
+
  }
 
  if(selected.length>=10){
+
   alert("Maximum 10 generated pages.");
   return;
+
  }
 
  await updateFit();
@@ -818,60 +991,115 @@ async function generate(){
  render();
 
  $("status").textContent=
- `Generated ${selected.length}/10`;
+  `Generated ${selected.length}/10`;
+
 }
 
 async function move(n){
+
  if(busy)return;
- if($("photoView").value==="full")return;
 
- let d=new Date($("date").value+"T00:00:00");
+ if($("photoView").value==="full")
+  return;
 
- d.setDate(d.getDate()+n);
+ let d=new Date(
+  $("date").value+"T00:00:00"
+ );
 
- if(d.getFullYear()!=2027)return;
+ d.setDate(
+  d.getDate()+n
+ );
+
+ if(d.getFullYear()!=2027)
+  return;
 
  $("date").value=
- d.getFullYear()+"-"+
- String(d.getMonth()+1).padStart(2,"0")+"-"+
- String(d.getDate()).padStart(2,"0");
+  d.getFullYear()+"-"+
+  String(d.getMonth()+1).padStart(2,"0")+"-"+
+  String(d.getDate()).padStart(2,"0");
 
  await updateFit();
+
 }
 
-$("photo").addEventListener("change",e=>{
- let f=e.target.files[0];
+$("photo").addEventListener(
+ "change",
+ e=>{
 
- if(!f)return;
+  let f=e.target.files[0];
 
- let r=new FileReader();
+  if(!f)return;
 
- r.onload=()=>{
-  photoData=r.result;
-  $("photoPreview").src=photoData;
-  $("fullPhoto").src=photoData;
-  save();
- };
+  let r=new FileReader();
 
- r.readAsDataURL(f);
-});
+  r.onload=()=>{
 
-$("generatedList").addEventListener("click",e=>{
- let btn=e.target.closest(".deleteBtn");
+   photoData=r.result;
 
- if(btn){
-  deleteDate(btn.dataset.date);
+   $("photoPreview").src=
+    photoData;
+
+   $("fullPhoto").src=
+    photoData;
+
+   save();
+
+   $("status").textContent=
+    "Photo uploaded.";
+
+  };
+
+  r.readAsDataURL(f);
+
  }
-});
+);
 
-$("prevBtn").addEventListener("click",()=>move(-1));
-$("nextBtn").addEventListener("click",()=>move(1));
-$("generateBtn").addEventListener("click",generate);
-$("clearBtn").addEventListener("click",clearAll);
+$("generatedList").addEventListener(
+ "click",
+ e=>{
 
-$("photoView").addEventListener("change",updateFit);
-$("coverFont").addEventListener("change",updateFit);
-$("date").addEventListener("change",updateFit);
+  let btn=e.target.closest(".deleteBtn");
+
+  if(btn)
+   deleteDate(btn.dataset.date);
+
+ }
+);
+
+$("prevBtn").addEventListener(
+ "click",
+ ()=>move(-1)
+);
+
+$("nextBtn").addEventListener(
+ "click",
+ ()=>move(1)
+);
+
+$("generateBtn").addEventListener(
+ "click",
+ generate
+);
+
+$("clearBtn").addEventListener(
+ "click",
+ clearAll
+);
+
+$("photoView").addEventListener(
+ "change",
+ updateFit
+);
+
+$("coverFont").addEventListener(
+ "change",
+ updateFit
+);
+
+$("date").addEventListener(
+ "change",
+ updateFit
+);
 
 [
  "englishInput",
@@ -884,136 +1112,241 @@ $("date").addEventListener("change",updateFit);
  "coverTamilSize",
  "coverSinhalaSize"
 ].forEach(id=>{
- $(id).addEventListener("input",updateFit);
+
+ $(id).addEventListener(
+  "input",
+  updateFit
+ );
+
 });
 
 async function capturePage(){
+
+ update();
+
+ await new Promise(
+  r=>requestAnimationFrame(r)
+ );
+
  await updateFit();
 
- await new Promise(r=>setTimeout(r,500));
+ await new Promise(
+  r=>setTimeout(r,700)
+ );
 
- let c=await html2canvas($("calendar"),{
-  scale:3,
-  useCORS:true,
-  allowTaint:true,
-  backgroundColor:"#FAF8F2",
-  logging:false
- });
+ let canvas=
+  await html2canvas(
+   $("calendar"),
+   {
+    scale:3,
+    useCORS:true,
+    allowTaint:true,
+    backgroundColor:"#FAF8F2",
+    logging:false,
+    imageTimeout:0
+   }
+  );
 
- return c.toDataURL("image/jpeg",.95);
+ return canvas.toDataURL(
+  "image/jpeg",
+  .95
+ );
+
 }
 
 async function downloadGenerated(){
+
  if(busy)return;
 
  if(!photoData){
+
   alert("Please upload a photo first.");
   return;
+
+ }
+
+ if(
+  !window.jspdf ||
+  !window.html2canvas
+ ){
+
+  alert(
+   "PDF libraries are still loading. Please try again."
+  );
+
+  return;
+
  }
 
  let btn=$("downloadBtn");
 
  busy=true;
+
  btn.disabled=true;
  btn.textContent="Creating PDF...";
 
  let oldDate=$("date").value;
+ let oldView=$("photoView").value;
 
  try{
 
   const {jsPDF}=window.jspdf;
 
-  if($("photoView").value==="full"){
+  /* FULL PHOTO */
 
-   let pdf=new jsPDF({
+  if(oldView==="full"){
+
+   $("status").textContent=
+    "Creating full photo PDF...";
+
+   await updateFit();
+
+   let img=
+    await capturePage();
+
+   let pdf=
+    new jsPDF({
+     orientation:"landscape",
+     unit:"in",
+     format:[9,5.625],
+     compress:true
+    });
+
+   pdf.addImage(
+    img,
+    "JPEG",
+    0,
+    0,
+    9,
+    5.625,
+    undefined,
+    "FAST"
+   );
+
+   pdf.save(
+    "365-Bible-Calendar-Cover.pdf"
+   );
+
+   $("status").textContent=
+    "Full Photo PDF downloaded.";
+
+   return;
+  }
+
+  /* CALENDAR */
+
+  let pages=[
+   ...new Set(selected)
+  ].slice(0,10);
+
+  if(!pages.length){
+
+   alert(
+    "Please generate calendar pages first."
+   );
+
+   return;
+  }
+
+  $("status").textContent=
+   `Creating ${pages.length} page PDF...`;
+
+  let pdf=
+   new jsPDF({
     orientation:"landscape",
     unit:"in",
     format:[9,5.625],
     compress:true
    });
 
-   let img=await capturePage();
-
-   pdf.addImage(
-    img,"JPEG",
-    0,0,9,5.625,
-    undefined,"FAST"
-   );
-
-   pdf.save("365-Bible-Calendar-Cover.pdf");
-
-   $("status").textContent="Cover PDF downloaded.";
-
-   return;
-  }
-
-  if(!selected.length){
-   alert("Please generate calendar pages first.");
-   return;
-  }
-
-  let pages=[...new Set(selected)].slice(0,10);
-
-  let pdf=new jsPDF({
-   orientation:"landscape",
-   unit:"in",
-   format:[9,5.625],
-   compress:true
-  });
-
   for(let i=0;i<pages.length;i++){
 
    $("date").value=pages[i];
 
    $("status").textContent=
-   `Creating page ${i+1} of ${pages.length}...`;
+    `Creating page ${i+1} of ${pages.length}...`;
 
-   let img=await capturePage();
+   let img=
+    await capturePage();
 
    if(i>0){
-    pdf.addPage([9,5.625],"landscape");
+
+    pdf.addPage(
+     [9,5.625],
+     "landscape"
+    );
+
    }
 
    pdf.addImage(
-    img,"JPEG",
-    0,0,9,5.625,
-    undefined,"FAST"
+    img,
+    "JPEG",
+    0,
+    0,
+    9,
+    5.625,
+    undefined,
+    "FAST"
    );
+
   }
 
-  $("date").value=oldDate;
-
-  await updateFit();
-
-  pdf.save("365-Bible-Calendar-2027.pdf");
+  pdf.save(
+   "365-Bible-Calendar-2027.pdf"
+  );
 
   $("status").textContent=
-  `Downloaded ${pages.length} pages in ONE PDF.`;
+   `Downloaded ${pages.length} pages in ONE PDF.`;
 
  }catch(e){
 
   console.error(e);
-  alert("PDF creation failed:\n"+e.message);
+
+  alert(
+   "PDF creation failed:\n"+
+   (e.message||e)
+  );
 
  }finally{
 
   $("date").value=oldDate;
 
+  $("photoView").value=oldView;
+
+  update();
+
+  await new Promise(
+   r=>requestAnimationFrame(r)
+  );
+
   await updateFit();
 
   busy=false;
+
   btn.disabled=false;
-  btn.textContent="Download All PDF";
+
+  btn.textContent=
+   "Download All PDF";
 
   render();
+
  }
+
 }
 
-window.addEventListener("load",async()=>{
- load();
- render();
- await updateFit();
-});
+window.addEventListener(
+ "load",
+ async()=>{
+
+  load();
+
+  render();
+
+  await updateFit();
+
+ }
+);
+
 </script>
 
 </body>
