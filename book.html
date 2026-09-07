@@ -1,1223 +1,1177 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-  name="viewport"
-  content="width=device-width,initial-scale=1"
->
-
-<title>Christian Prayer Book</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827">
+<title>Christian Book Reader</title>
 
 <style>
+*{box-sizing:border-box}
 
-*{
-  box-sizing:border-box;
-}
-
-html{
-  scroll-behavior:smooth;
-}
-
-body{
+html,body{
   margin:0;
-  font-family:
-    Arial,
-    "Noto Sans",
-    sans-serif;
-  background:#f2f2f2;
-  color:#111;
-}
-
-/* =========================
-   HEADER
-========================= */
-
-header{
-  position:sticky;
-  top:0;
-  z-index:100;
-  background:#111;
+  width:100%;
+  height:100%;
+  font-family:Arial,"Noto Sans",sans-serif;
+  background:#111827;
   color:#fff;
-  padding:12px 15px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  flex-wrap:wrap;
-  box-shadow:0 2px 10px #0004;
-}
-
-header h1{
-  margin:0;
-  font-size:19px;
-}
-
-.actions{
-  display:flex;
-  gap:7px;
-  flex-wrap:wrap;
 }
 
 button{
-  border:0;
-  border-radius:7px;
-  padding:10px 14px;
+  font:inherit;
   cursor:pointer;
-  font-size:14px;
-  font-weight:bold;
 }
 
-button:focus-visible{
-  outline:3px solid #fff;
-  outline-offset:2px;
+.app{
+  height:100vh;
+  display:flex;
+  flex-direction:column;
 }
 
-.pdfButton{
+/* HEADER */
+
+header{
+  height:58px;
+  flex-shrink:0;
+  background:#0b1220;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:8px 14px;
+  border-bottom:1px solid #374151;
+  z-index:100;
+}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:0;
+}
+
+.brand-icon{
+  font-size:24px;
+}
+
+.book-name{
+  font-size:16px;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.header-actions{
+  display:flex;
+  gap:5px;
+}
+
+.header-actions button{
+  border:1px solid #4b5563;
+  background:#1f2937;
+  color:#fff;
+  border-radius:6px;
+  padding:7px 10px;
+}
+
+.header-actions button:hover{
+  background:#374151;
+}
+
+/* MAIN */
+
+.main{
+  flex:1;
+  min-height:0;
+  display:flex;
+}
+
+/* THUMBNAILS */
+
+.thumbs{
+  width:210px;
+  flex-shrink:0;
+  background:#111827;
+  border-right:1px solid #374151;
+  overflow-y:auto;
+  padding:10px;
+}
+
+.thumb{
   background:#fff;
   color:#111;
+  margin-bottom:10px;
+  border-radius:5px;
+  padding:5px;
+  cursor:pointer;
+  border:2px solid transparent;
 }
 
-.topButton{
-  background:#d4af37;
-  color:#111;
+.thumb.active{
+  border-color:#60a5fa;
 }
 
-/* =========================
-   MAIN
-========================= */
-
-main{
-  width:min(1000px,94%);
-  margin:20px auto 50px;
+.thumb-number{
+  font-size:10px;
+  color:#555;
+  text-align:center;
+  margin-bottom:4px;
 }
 
-/* =========================
-   BOOK COVER
-========================= */
-
-.bookCover{
+.thumb-page{
+  width:100%;
+  aspect-ratio:210/297;
   background:#fff;
-  min-height:600px;
-  border-radius:15px;
-  padding:35px 25px;
-  margin-bottom:25px;
-  box-shadow:0 3px 18px #0002;
+  color:#111;
+  overflow:hidden;
+  position:relative;
+}
 
+.thumb-page-content{
+  padding:10%;
+  font-size:5px;
+  line-height:1.3;
+}
+
+.thumb-page img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+/* READER */
+
+.reader{
+  flex:1;
+  min-width:0;
+  min-height:0;
+  position:relative;
+  overflow:auto;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding:30px;
+}
+
+.paper-holder{
+  transform-origin:top center;
+  transition:transform .2s ease;
+}
+
+.paper{
+  background:#fff;
+  color:#111;
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 8px 40px #0009;
+  flex-shrink:0;
+}
+
+.paper.a4.portrait{
+  width:794px;
+  height:1123px;
+}
+
+.paper.a4.landscape{
+  width:1123px;
+  height:794px;
+}
+
+.paper.b5.portrait{
+  width:665px;
+  height:941px;
+}
+
+.paper.b5.landscape{
+  width:941px;
+  height:665px;
+}
+
+.paper-inner{
+  position:absolute;
+  inset:0;
+  padding:55px;
+  overflow:hidden;
+}
+
+.bg-layer{
+  position:absolute;
+  inset:0;
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+}
+
+.bg-overlay{
+  position:absolute;
+  inset:0;
+}
+
+.page-content{
+  position:relative;
+  z-index:5;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+}
+
+.border-layer{
+  position:absolute;
+  z-index:8;
+  pointer-events:none;
+}
+
+/* BACKGROUNDS */
+
+.bg-cross{
+  background:
+    linear-gradient(90deg,transparent 46%,#b9a36a 46%,#b9a36a 54%,transparent 54%),
+    linear-gradient(transparent 36%,#b9a36a 36%,#b9a36a 44%,transparent 44%),
+    radial-gradient(circle,#f7f0d0,#d8d0ad);
+}
+
+.bg-bible{
+  background:
+    linear-gradient(155deg,#2d241c 0 45%,transparent 46%),
+    linear-gradient(25deg,#493b2d 0 45%,transparent 46%),
+    #ddd;
+}
+
+.bg-dove{
+  background:
+    radial-gradient(ellipse at 45% 45%,white 0 18%,transparent 19%),
+    radial-gradient(ellipse at 60% 40%,white 0 12%,transparent 13%),
+    linear-gradient(135deg,#dbeafe,#fff);
+}
+
+.bg-prayer{
+  background:
+    radial-gradient(circle at 50% 40%,#fff 0 8%,transparent 9%),
+    radial-gradient(circle at 40% 50%,#cbd5e1 0 15%,transparent 16%),
+    linear-gradient(135deg,#e0e7ff,#f8fafc);
+}
+
+.bg-church{
+  background:
+    linear-gradient(170deg,transparent 0 48%,#475569 49% 100%),
+    linear-gradient(90deg,transparent 47%,#475569 47% 53%,transparent 53%),
+    #e2e8f0;
+}
+
+.bg-cloud{
+  background:
+    radial-gradient(circle at 20% 50%,white 0 15%,transparent 16%),
+    radial-gradient(circle at 40% 40%,white 0 20%,transparent 21%),
+    radial-gradient(circle at 65% 55%,white 0 17%,transparent 18%),
+    linear-gradient(#93c5fd,#f8fafc);
+}
+
+.bg-sunrise{
+  background:
+    radial-gradient(circle at 50% 85%,#fff 0 10%,#fde68a 11% 20%,transparent 21%),
+    linear-gradient(#1e3a8a,#fbbf24,#fff);
+}
+
+.bg-wheat{
+  background:
+    repeating-linear-gradient(75deg,#d6b56c 0 4px,transparent 4px 15px),
+    linear-gradient(#dbeafe,#fef3c7);
+}
+
+.bg-candle{
+  background:
+    radial-gradient(ellipse at 50% 30%,#fff 0 5%,#f59e0b 6% 12%,transparent 13%),
+    linear-gradient(#1f2937,#111827);
+}
+
+.bg-crown{
+  background:
+    linear-gradient(135deg,transparent 40%,#d4af37 41% 45%,transparent 46%),
+    linear-gradient(45deg,transparent 40%,#d4af37 41% 45%,transparent 46%),
+    #f8fafc;
+}
+
+.bg-stars{
+  background:
+    radial-gradient(circle,#fff 0 2px,transparent 3px) 0 0/35px 35px,
+    linear-gradient(#111827,#1e3a8a);
+}
+
+.bg-olive{
+  background:
+    repeating-linear-gradient(45deg,transparent 0 20px,#789262 21px 23px),
+    #edf4e8;
+}
+
+/* COVER */
+
+.cover-photo{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  z-index:1;
+}
+
+.cover-overlay{
+  position:absolute;
+  inset:0;
+  z-index:2;
+}
+
+.cover-content{
+  position:absolute;
+  inset:0;
+  z-index:5;
   display:flex;
   flex-direction:column;
   justify-content:center;
   align-items:center;
   text-align:center;
-
-  position:relative;
-  overflow:hidden;
-}
-
-.bookCover::before{
-  content:"";
-  position:absolute;
-  inset:15px;
-  border:2px solid #111;
-  pointer-events:none;
-}
-
-.bookCover img{
-  max-width:85%;
-  max-height:350px;
-  object-fit:contain;
-  margin-bottom:25px;
-  position:relative;
-  z-index:1;
-}
-
-.bookCover h2{
-  margin:8px 0;
-  font-size:34px;
-  position:relative;
-  z-index:1;
-}
-
-.bookCover .subtitle{
-  margin:8px 0;
-  font-size:20px;
-  color:#555;
-  position:relative;
-  z-index:1;
-}
-
-.bookCover .ministry{
-  margin-top:20px;
-  font-size:17px;
-  font-weight:bold;
-  position:relative;
-  z-index:1;
-}
-
-/* =========================
-   LOADING / ERROR
-========================= */
-
-.message{
-  background:#fff;
-  border-radius:12px;
-  padding:30px;
-  text-align:center;
-  box-shadow:0 3px 15px #0002;
-  margin:20px 0;
-}
-
-.error{
-  color:#a00000;
-}
-
-/* =========================
-   BOOK CONTENT
-========================= */
-
-#bookContent{
-  display:none;
-}
-
-.page{
-  position:relative;
-  width:100%;
-  min-height:1123px;
-  background:#fff;
-  color:#111;
-
-  margin:25px auto;
-  padding:65px 65px 75px;
-
-  border-radius:10px;
-  box-shadow:0 3px 18px #0002;
-
-  overflow:hidden;
-}
-
-.page.outline{
-  border:2px solid #111;
-}
-
-.pageNumber{
-  position:absolute;
-  bottom:25px;
-  left:0;
-  right:0;
-
-  text-align:center;
-  font-size:13px;
-  color:#555;
-}
-
-.pageTitle{
-  text-align:center;
-  font-size:28px;
-  margin:0 0 25px;
-  line-height:1.3;
-}
-
-.pagePhoto{
-  display:block;
-  max-width:100%;
-  max-height:400px;
-
-  margin:0 auto 25px;
-
-  object-fit:contain;
-
-  filter:none;
-}
-
-.pageText{
-  font-size:18px;
-  line-height:1.9;
-  white-space:normal;
-  word-wrap:break-word;
-}
-
-.pageVerse{
-  margin-top:35px;
-  padding:18px 15px;
-
-  border-top:1px solid #111;
-  border-bottom:1px solid #111;
-
-  text-align:center;
-
-  font-size:16px;
-  line-height:1.7;
-  font-style:italic;
-}
-
-/* =========================
-   BACK TO TOP
-========================= */
-
-.backTop{
-  display:block;
-  width:max-content;
-  margin:25px auto;
-  background:#111;
+  padding:60px;
   color:#fff;
 }
 
-/* =========================
-   FOOTER
-========================= */
+.cover-title{
+  font-size:42px;
+  font-weight:800;
+  text-shadow:0 2px 7px #000;
+}
 
-footer{
+.cover-subtitle{
+  margin-top:15px;
+  font-size:20px;
+  text-shadow:0 2px 5px #000;
+}
+
+.cover-author{
+  margin-top:30px;
+  font-size:16px;
+  text-shadow:0 2px 5px #000;
+}
+
+/* BOTTOM CONTROLS */
+
+.controls{
+  height:64px;
+  flex-shrink:0;
+  background:#0b1220;
+  border-top:1px solid #374151;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:8px;
+  z-index:100;
+}
+
+.controls button{
+  border:1px solid #4b5563;
+  background:#1f2937;
+  color:#fff;
+  border-radius:6px;
+  padding:8px 12px;
+}
+
+.controls button:hover{
+  background:#374151;
+}
+
+.page-display{
+  min-width:100px;
   text-align:center;
-  padding:25px 15px;
-  color:#666;
   font-size:13px;
 }
 
-/* =========================
-   MOBILE
-========================= */
+.zoom-display{
+  min-width:55px;
+  text-align:center;
+  font-size:12px;
+}
+
+/* MOBILE */
 
 @media(max-width:700px){
 
   header{
-    position:relative;
+    height:52px;
   }
 
-  header h1{
-    font-size:17px;
+  .book-name{
+    font-size:13px;
   }
 
-  main{
-    width:96%;
+  .thumbs{
+    display:none;
   }
 
-  .bookCover{
-    min-height:500px;
-    padding:30px 20px;
+  .reader{
+    padding:15px;
   }
 
-  .bookCover h2{
-    font-size:27px;
+  .controls{
+    height:58px;
   }
 
-  .bookCover .subtitle{
-    font-size:17px;
-  }
-
-  .bookCover img{
-    max-height:260px;
-  }
-
-  .page{
-    min-height:0;
-    padding:45px 25px 65px;
-    margin:15px auto;
-  }
-
-  .pageTitle{
-    font-size:23px;
-  }
-
-  .pageText{
-    font-size:17px;
-    line-height:1.8;
-  }
-
-  .pagePhoto{
-    max-height:280px;
-  }
-
-  .pageVerse{
-    font-size:15px;
+  .controls button{
+    padding:7px 9px;
   }
 
 }
 
-/* =========================
-   PRINT
-========================= */
+/* FULLSCREEN */
 
-@media print{
-
-  body{
-    background:#fff;
-  }
-
-  header,
-  footer,
-  .backTop,
-  .message{
-    display:none!important;
-  }
-
-  main{
-    width:100%;
-    margin:0;
-  }
-
-  #bookContent{
-    display:block!important;
-  }
-
-  .bookCover,
-  .page{
-    width:210mm;
-    min-height:297mm;
-
-    margin:0;
-
-    border-radius:0;
-    box-shadow:none;
-
-    page-break-after:always;
-
-    background:#fff!important;
-    color:#000!important;
-  }
-
-  .page.outline{
-    border:2px solid #000;
-  }
-
+:fullscreen{
+  background:#111827;
 }
 
 </style>
-
 </head>
 
 <body>
 
+<div class="app">
+
 <header>
 
-  <h1 id="headerTitle">
-    📖 Christian Prayer Book
-  </h1>
+  <div class="brand">
+    <div class="brand-icon">✝</div>
+    <div class="book-name" id="bookName">
+      Christian Book
+    </div>
+  </div>
 
-  <div class="actions">
-
-    <button
-      class="topButton"
-      onclick="scrollToTop()"
-    >
-      ↑ Top
-    </button>
-
-    <button
-      class="pdfButton"
-      onclick="downloadPDF()"
-    >
-      📄 Download PDF
-    </button>
-
+  <div class="header-actions">
+    <button onclick="toggleThumbnails()">☰</button>
+    <button onclick="toggleFullscreen()">⛶</button>
   </div>
 
 </header>
 
 
-<main>
+<div class="main">
 
-  <!-- LOADING -->
+  <aside class="thumbs" id="thumbs"></aside>
 
-  <div
-    id="loading"
-    class="message"
-  >
-    Loading prayer book...
-  </div>
+  <section class="reader" id="reader">
 
+    <div class="paper-holder" id="paperHolder">
 
-  <!-- ERROR -->
+      <div class="paper" id="paper">
 
-  <div
-    id="error"
-    class="message error"
-    style="display:none"
-  >
-    Could not load the prayer book.
-  </div>
+        <div class="paper-inner">
 
+          <div id="bgLayer" class="bg-layer"></div>
+          <div id="bgOverlay" class="bg-overlay"></div>
 
-  <!-- PUBLIC BOOK -->
+          <img id="coverPhoto"
+               class="cover-photo"
+               style="display:none">
 
-  <div id="bookContent">
+          <div id="coverOverlay"
+               class="cover-overlay"
+               style="display:none">
+          </div>
 
-    <!-- COVER -->
+          <div id="coverContent"
+               class="cover-content"
+               style="display:none">
 
-    <section
-      id="bookCover"
-      class="bookCover"
-    >
+            <div id="coverTitle"
+                 class="cover-title"></div>
 
-      <img
-        id="coverImage"
-        style="display:none"
-        alt="Prayer book cover"
-      >
+            <div id="coverSubtitle"
+                 class="cover-subtitle"></div>
 
-      <h2 id="bookTitle">
-        Christian Prayer Book
-      </h2>
+            <div id="coverAuthor"
+                 class="cover-author"></div>
 
-      <div
-        id="bookSubtitle"
-        class="subtitle"
-      >
-        Prayers for Every Day
+          </div>
+
+          <div id="pageContent"
+               class="page-content">
+          </div>
+
+          <div id="borderLayer"
+               class="border-layer">
+          </div>
+
+        </div>
+
       </div>
 
-      <div
-        id="bookMinistry"
-        class="ministry"
-      >
-        Gate of Heaven Ministries
-      </div>
+    </div>
 
-    </section>
+  </section>
+
+</div>
 
 
-    <!-- PAGES -->
+<div class="controls">
 
-    <div id="pages"></div>
+  <button onclick="previousPage()">←</button>
 
-
-    <button
-      class="backTop"
-      onclick="scrollToTop()"
-    >
-      ↑ Back to Top
-    </button>
-
+  <div class="page-display" id="pageDisplay">
+    1 / 1
   </div>
 
-</main>
+  <button onclick="nextPage()">→</button>
 
+  <button onclick="zoomOut()">−</button>
 
-<footer>
-
-  <div id="footerMinistry">
-    Gate of Heaven Ministries
+  <div class="zoom-display" id="zoomDisplay">
+    100%
   </div>
 
-</footer>
+  <button onclick="zoomIn()">＋</button>
+
+  <button onclick="fitPage()">Fit</button>
+
+</div>
+
+</div>
 
 
 <script>
 
-/* =========================================
-   BOOK DATA
-========================================= */
+/* =========================================================
+   DATA
+========================================================= */
 
-let book={
-  title:"Christian Prayer Book",
-  subtitle:"Prayers for Every Day",
-  ministry:"Gate of Heaven Ministries",
-  cover:"",
-  outline:true,
-  pageNumbers:true,
-  pages:[]
-};
+let book = null;
+
+let currentPage = 0;
+
+let zoom = 1;
 
 
-/* =========================================
-   ESCAPE HTML
-========================================= */
-
-function esc(value){
-
-  return String(value || "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
-
-}
-
-
-/* =========================================
-   TEXT WITH LINE BREAKS
-========================================= */
-
-function formatText(value){
-
-  return esc(value)
-    .replace(/\r\n/g,"\n")
-    .replace(/\r/g,"\n")
-    .replace(/\n/g,"<br>");
-
-}
-
-
-/* =========================================
+/* =========================================================
    LOAD BOOK
-========================================= */
+========================================================= */
 
-async function loadBook(){
+function loadBook(){
+
+  const saved =
+    localStorage.getItem("christianBookCreator");
+
+  if(!saved){
+
+    showDemoBook();
+
+    return;
+  }
 
   try{
 
-    const response=
-      await fetch(
-        "/api/book",
-        {
-          method:"GET",
-          cache:"no-store"
+    book = JSON.parse(saved);
+
+    if(!book.pages || !book.pages.length){
+      throw new Error();
+    }
+
+    renderAll();
+
+  }catch(e){
+
+    showDemoBook();
+
+  }
+
+}
+
+
+/* =========================================================
+   DEMO BOOK
+========================================================= */
+
+function showDemoBook(){
+
+  book={
+    title:"Christian Book",
+    author:"",
+    paperSize:"a4",
+    orientation:"portrait",
+    colorMode:"color",
+    coverEnabled:true,
+    cover:{
+      photo:"",
+      title:"Christian Book",
+      subtitle:"Faith • Hope • Love",
+      author:"",
+      overlay:"#000000",
+      overlayOpacity:.35
+    },
+    pages:[
+      {
+        title:"Cover",
+        content:"",
+        background:"cross",
+        bgOpacity:.35,
+        overlay:"#ffffff",
+        overlayOpacity:0,
+        border:{
+          enabled:false,
+          style:"solid",
+          width:2,
+          color:"#111",
+          inset:15
         }
-      );
-
-    if(!response.ok){
-      throw new Error(
-        "Book loading failed"
-      );
-    }
-
-    const data=
-      await response.json();
-
-    if(data && typeof data==="object"){
-
-      book={
-        ...book,
-        ...data
-      };
-
-      if(!Array.isArray(book.pages)){
-        book.pages=[];
+      },
+      {
+        title:"Welcome",
+        content:
+          "<h1>Welcome</h1><p>Welcome to this Christian book.</p>",
+        background:"cloud",
+        bgOpacity:.25,
+        overlay:"#ffffff",
+        overlayOpacity:.5,
+        border:{
+          enabled:true,
+          style:"solid",
+          width:2,
+          color:"#333",
+          inset:15
+        }
       }
+    ]
+  };
 
-    }
+  renderAll();
 
-    renderBook();
+}
 
-  }catch(error){
 
-    console.error(error);
+/* =========================================================
+   RENDER EVERYTHING
+========================================================= */
 
-    document
-      .getElementById("loading")
+function renderAll(){
+
+  document.getElementById("bookName").textContent =
+    book.title || "Christian Book";
+
+  renderThumbnails();
+
+  renderPage();
+
+  fitPage();
+
+}
+
+
+/* =========================================================
+   RENDER PAGE
+========================================================= */
+
+function renderPage(){
+
+  const page =
+    book.pages[currentPage];
+
+  if(!page) return;
+
+  const paper =
+    document.getElementById("paper");
+
+  paper.className =
+    "paper " +
+    (book.paperSize || "a4") +
+    " " +
+    (book.orientation || "portrait");
+
+
+  /* CONTENT */
+
+  const content =
+    document.getElementById("pageContent");
+
+  if(currentPage === 0 && book.coverEnabled){
+
+    content.style.display="none";
+
+    renderCover();
+
+  }else{
+
+    content.style.display="block";
+
+    content.innerHTML =
+      page.content || "";
+
+    document.getElementById("coverContent")
       .style.display="none";
 
-    document
-      .getElementById("error")
-      .style.display="block";
+    document.getElementById("coverPhoto")
+      .style.display="none";
+
+    document.getElementById("coverOverlay")
+      .style.display="none";
 
   }
+
+
+  /* BACKGROUND */
+
+  const bg =
+    document.getElementById("bgLayer");
+
+  const selected =
+    getBackgroundClass(page.background);
+
+  bg.className="bg-layer";
+
+  if(selected){
+    bg.classList.add(selected);
+  }
+
+  bg.style.opacity =
+    page.bgOpacity ?? .35;
+
+
+  const overlay =
+    document.getElementById("bgOverlay");
+
+  overlay.style.background =
+    page.overlay || "#fff";
+
+  overlay.style.opacity =
+    page.overlayOpacity ?? 0;
+
+
+  /* BORDER */
+
+  renderBorder(page);
+
+
+  /* COLOR MODE */
+
+  const paperHolder =
+    document.getElementById("paperHolder");
+
+  paperHolder.style.filter="none";
+
+  if(book.colorMode==="grayscale"){
+    paperHolder.style.filter="grayscale(1)";
+  }
+
+  if(book.colorMode==="bw"){
+    paperHolder.style.filter=
+      "grayscale(1) contrast(2)";
+  }
+
+
+  document.getElementById("pageDisplay")
+    .textContent =
+      (currentPage+1) +
+      " / " +
+      book.pages.length;
 
 }
 
 
-/* =========================================
-   RENDER BOOK
-========================================= */
+function getBackgroundClass(id){
 
-function renderBook(){
+  const map={
+    cross:"bg-cross",
+    bible:"bg-bible",
+    dove:"bg-dove",
+    prayer:"bg-prayer",
+    church:"bg-church",
+    cloud:"bg-cloud",
+    sunrise:"bg-sunrise",
+    wheat:"bg-wheat",
+    candle:"bg-candle",
+    crown:"bg-crown",
+    stars:"bg-stars",
+    olive:"bg-olive"
+  };
 
-  document
-    .getElementById("loading")
-    .style.display="none";
-
-  document
-    .getElementById("error")
-    .style.display="none";
-
-  document
-    .getElementById("bookContent")
-    .style.display="block";
-
-
-  /* TITLE */
-
-  const title=
-    book.title ||
-    "Christian Prayer Book";
-
-  document
-    .getElementById("headerTitle")
-    .textContent=
-      "📖 " + title;
-
-  document
-    .getElementById("bookTitle")
-    .textContent=
-      title;
-
-
-  /* SUBTITLE */
-
-  const subtitle=
-    document
-      .getElementById("bookSubtitle");
-
-  if(book.subtitle){
-
-    subtitle.textContent=
-      book.subtitle;
-
-    subtitle.style.display=
-      "block";
-
-  }else{
-
-    subtitle.style.display=
-      "none";
-
-  }
-
-
-  /* MINISTRY */
-
-  const ministry=
-    book.ministry ||
-    "Gate of Heaven Ministries";
-
-  document
-    .getElementById("bookMinistry")
-    .textContent=
-      ministry;
-
-  document
-    .getElementById("footerMinistry")
-    .textContent=
-      ministry;
-
-
-  /* COVER */
-
-  const cover=
-    document
-      .getElementById("coverImage");
-
-  if(book.cover){
-
-    cover.src=
-      book.cover;
-
-    cover.style.display=
-      "block";
-
-  }else{
-
-    cover.style.display=
-      "none";
-
-  }
-
-
-  renderPages();
+  return map[id] || "bg-cross";
 
 }
 
 
-/* =========================================
-   RENDER PAGES
-========================================= */
+/* =========================================================
+   COVER
+========================================================= */
 
-function renderPages(){
+function renderCover(){
 
-  const container=
-    document.getElementById("pages");
+  const cover =
+    book.cover || {};
+
+  const content =
+    document.getElementById("coverContent");
+
+  content.style.display="flex";
+
+  document.getElementById("coverTitle")
+    .textContent =
+      cover.title ||
+      book.title ||
+      "Christian Book";
+
+  document.getElementById("coverSubtitle")
+    .textContent =
+      cover.subtitle || "";
+
+  document.getElementById("coverAuthor")
+    .textContent =
+      cover.author ||
+      book.author ||
+      "";
+
+
+  const photo =
+    document.getElementById("coverPhoto");
+
+  if(cover.photo){
+
+    photo.src=cover.photo;
+    photo.style.display="block";
+
+  }else{
+
+    photo.style.display="none";
+
+  }
+
+
+  const overlay =
+    document.getElementById("coverOverlay");
+
+  overlay.style.display="block";
+
+  overlay.style.background =
+    cover.overlay || "#000";
+
+  overlay.style.opacity =
+    cover.overlayOpacity ?? .35;
+
+}
+
+
+/* =========================================================
+   BORDER
+========================================================= */
+
+function renderBorder(page){
+
+  const border =
+    document.getElementById("borderLayer");
+
+  const data =
+    page.border;
+
+  if(!data || !data.enabled){
+
+    border.style.display="none";
+
+    return;
+  }
+
+  border.style.display="block";
+
+  border.style.inset =
+    (data.inset || 15) + "px";
+
+  border.style.border =
+    (data.width || 2) +
+    "px " +
+    (data.style || "solid") +
+    " " +
+    (data.color || "#111");
+
+}
+
+
+/* =========================================================
+   THUMBNAILS
+========================================================= */
+
+function renderThumbnails(){
+
+  const container =
+    document.getElementById("thumbs");
 
   container.innerHTML="";
 
+  book.pages.forEach((page,index)=>{
 
-  book.pages.forEach(
-    (page,index)=>{
+    const thumb =
+      document.createElement("div");
 
-      const section=
-        document.createElement("section");
+    thumb.className =
+      "thumb " +
+      (index===currentPage ? "active" : "");
 
-      section.className=
-        "page" +
-        (
-          book.outline!==false
-          ? " outline"
-          : ""
+    thumb.onclick=()=>{
+      currentPage=index;
+      renderThumbnails();
+      renderPage();
+      fitPage();
+    };
+
+
+    const number =
+      document.createElement("div");
+
+    number.className="thumb-number";
+
+    number.textContent =
+      "Page " + (index+1);
+
+
+    const preview =
+      document.createElement("div");
+
+    preview.className="thumb-page";
+
+
+    if(index===0 && book.coverEnabled){
+
+      if(book.cover.photo){
+
+        const img =
+          document.createElement("img");
+
+        img.src=book.cover.photo;
+
+        preview.appendChild(img);
+
+      }else{
+
+        preview.classList.add(
+          getBackgroundClass(
+            page.background
+          )
         );
 
-
-      let html="";
-
-
-      /* OPTIONAL TITLE */
-
-      if(page.title){
-
-        html+=`
-          <h2 class="pageTitle">
-            ${esc(page.title)}
-          </h2>
-        `;
-
       }
 
+    }else{
 
-      /* OPTIONAL PHOTO */
-
-      if(page.photo){
-
-        html+=`
-          <img
-            class="pagePhoto"
-            src="${esc(page.photo)}"
-            alt=""
-          >
-        `;
-
-      }
-
-
-      /* PRAYER TEXT */
-
-      if(page.text){
-
-        html+=`
-          <div class="pageText">
-            ${formatText(page.text)}
-          </div>
-        `;
-
-      }
-
-
-      /* BIBLE VERSE */
-
-      if(page.verse){
-
-        html+=`
-          <div class="pageVerse">
-            ${formatText(page.verse)}
-          </div>
-        `;
-
-      }
-
-
-      /* PAGE NUMBER */
-
-      if(book.pageNumbers!==false){
-
-        html+=`
-          <div class="pageNumber">
-            ${index+1}
-          </div>
-        `;
-
-      }
-
-
-      section.innerHTML=
-        html;
-
-      container.appendChild(
-        section
+      preview.classList.add(
+        getBackgroundClass(
+          page.background
+        )
       );
 
+      const text =
+        document.createElement("div");
+
+      text.className=
+        "thumb-page-content";
+
+      text.innerHTML =
+        page.content || "";
+
+      preview.appendChild(text);
+
     }
-  );
-
-}
 
 
-/* =========================================
-   SCROLL TOP
-========================================= */
+    thumb.appendChild(number);
+    thumb.appendChild(preview);
 
-function scrollToTop(){
+    container.appendChild(thumb);
 
-  window.scrollTo({
-    top:0,
-    behavior:"smooth"
   });
 
 }
 
 
-/* =========================================
-   PDF PASSWORD
-========================================= */
+/* =========================================================
+   NAVIGATION
+========================================================= */
 
-async function downloadPDF(){
+function previousPage(){
 
-  const password=
-    prompt(
-      "Enter PDF download password:"
-    );
+  if(currentPage <= 0) return;
 
-  if(password===null){
+  currentPage--;
+
+  renderThumbnails();
+  renderPage();
+  fitPage();
+
+}
+
+
+function nextPage(){
+
+  if(currentPage >= book.pages.length-1)
     return;
+
+  currentPage++;
+
+  renderThumbnails();
+  renderPage();
+  fitPage();
+
+}
+
+
+/* =========================================================
+   KEYBOARD
+========================================================= */
+
+document.addEventListener("keydown",function(e){
+
+  if(e.key==="ArrowLeft"){
+    previousPage();
   }
 
-  if(!password.trim()){
-
-    alert(
-      "Please enter the PDF password."
-    );
-
-    return;
-
+  if(e.key==="ArrowRight"){
+    nextPage();
   }
 
-
-  try{
-
-    const response=
-      await fetch(
-        "/api/pdf-password",
-        {
-          method:"POST",
-
-          headers:{
-            "Content-Type":
-              "application/json"
-          },
-
-          body:JSON.stringify({
-            password:password
-          })
-
-        }
-      );
+});
 
 
-    if(!response.ok){
+/* =========================================================
+   ZOOM
+========================================================= */
 
-      alert(
-        "Incorrect PDF password."
-      );
+function zoomIn(){
 
-      return;
-
-    }
-
-
-    await createPDF();
-
-  }catch(error){
-
-    console.error(error);
-
-    alert(
-      "Could not verify the PDF password."
+  zoom =
+    Math.min(
+      2,
+      zoom + .1
     );
+
+  applyZoom();
+
+}
+
+
+function zoomOut(){
+
+  zoom =
+    Math.max(
+      .25,
+      zoom - .1
+    );
+
+  applyZoom();
+
+}
+
+
+function applyZoom(){
+
+  document.getElementById("paperHolder")
+    .style.transform =
+      "scale(" + zoom + ")";
+
+  document.getElementById("zoomDisplay")
+    .textContent =
+      Math.round(zoom*100) + "%";
+
+}
+
+
+function fitPage(){
+
+  const reader =
+    document.getElementById("reader");
+
+  const paper =
+    document.getElementById("paper");
+
+  const width =
+    paper.offsetWidth;
+
+  const height =
+    paper.offsetHeight;
+
+  const availableWidth =
+    reader.clientWidth - 40;
+
+  const availableHeight =
+    reader.clientHeight - 40;
+
+  const scale =
+    Math.min(
+      availableWidth / width,
+      availableHeight / height,
+      1
+    );
+
+  zoom =
+    Math.max(
+      .25,
+      scale
+    );
+
+  applyZoom();
+
+}
+
+
+/* =========================================================
+   FULLSCREEN
+========================================================= */
+
+function toggleFullscreen(){
+
+  if(!document.fullscreenElement){
+
+    document.documentElement
+      .requestFullscreen()
+      .catch(()=>{});
+
+  }else{
+
+    document.exitFullscreen();
 
   }
 
 }
 
 
-/* =========================================
-   CREATE BLACK & WHITE PDF
-========================================= */
+/* =========================================================
+   THUMBNAILS TOGGLE
+========================================================= */
 
-async function createPDF(){
+function toggleThumbnails(){
 
-  const cover=
-    document.getElementById(
-      "bookCover"
-    );
-
-  const pages=
-    document.querySelectorAll(
-      "#pages .page"
-    );
-
+  const thumbs =
+    document.getElementById("thumbs");
 
   if(
-    !cover &&
-    !pages.length
+    thumbs.style.display === "none"
   ){
 
-    alert(
-      "There is no book content."
-    );
+    thumbs.style.display="block";
 
-    return;
+  }else{
+
+    thumbs.style.display="none";
 
   }
-
-
-  const {jsPDF}=
-    window.jspdf;
-
-
-  const pdf=
-    new jsPDF(
-      "p",
-      "mm",
-      "a4"
-    );
-
-
-  /* =====================================
-     CREATE PDF PAGE LIST
-  ===================================== */
-
-  const allPages=[
-    cover,
-    ...Array.from(pages)
-  ];
-
-
-  for(
-    let i=0;
-    i<allPages.length;
-    i++
-  ){
-
-    if(i>0){
-
-      pdf.addPage();
-
-    }
-
-
-    const element=
-      allPages[i];
-
-
-    /*
-      Clone the page.
-
-      This ensures PDF export stays
-      independent from the public design.
-    */
-
-    const clone=
-      element.cloneNode(true);
-
-
-    clone.style.position=
-      "absolute";
-
-    clone.style.left=
-      "-99999px";
-
-    clone.style.top=
-      "0";
-
-    clone.style.width=
-      "794px";
-
-    clone.style.minHeight=
-      "1123px";
-
-    clone.style.margin=
-      "0";
-
-    clone.style.borderRadius=
-      "0";
-
-    clone.style.boxShadow=
-      "none";
-
-    clone.style.background=
-      "#fff";
-
-    clone.style.color=
-      "#000";
-
-    clone.style.filter=
-      "grayscale(100%)";
-
-
-    /*
-      Force every element to
-      black and white.
-    */
-
-    clone
-      .querySelectorAll("*")
-      .forEach(el=>{
-
-        el.style.backgroundColor=
-          "#fff";
-
-        el.style.color=
-          "#000";
-
-        el.style.borderColor=
-          "#000";
-
-        el.style.boxShadow=
-          "none";
-
-        el.style.textShadow=
-          "none";
-
-        el.style.filter=
-          "grayscale(100%)";
-
-      });
-
-
-    /*
-      Cover outline
-    */
-
-    if(
-      book.outline!==false
-    ){
-
-      clone.style.border=
-        "2px solid #000";
-
-    }else{
-
-      clone.style.border=
-        "0";
-
-    }
-
-
-    document.body.appendChild(
-      clone
-    );
-
-
-    const canvas=
-      await html2canvas(
-        clone,
-        {
-          scale:2,
-
-          backgroundColor:
-            "#ffffff",
-
-          useCORS:true,
-
-          logging:false
-        }
-      );
-
-
-    document.body.removeChild(
-      clone
-    );
-
-
-    /*
-      Convert pixels to
-      true grayscale.
-    */
-
-    const ctx=
-      canvas.getContext(
-        "2d"
-      );
-
-
-    const imageData=
-      ctx.getImageData(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-
-    for(
-      let p=0;
-      p<imageData.data.length;
-      p+=4
-    ){
-
-      const r=
-        imageData.data[p];
-
-      const g=
-        imageData.data[p+1];
-
-      const b=
-        imageData.data[p+2];
-
-
-      const gray=
-        Math.round(
-          0.299*r+
-          0.587*g+
-          0.114*b
-        );
-
-
-      imageData.data[p]=
-        gray;
-
-      imageData.data[p+1]=
-        gray;
-
-      imageData.data[p+2]=
-        gray;
-
-    }
-
-
-    ctx.putImageData(
-      imageData,
-      0,
-      0
-    );
-
-
-    const image=
-      canvas.toDataURL(
-        "image/jpeg",
-        0.95
-      );
-
-
-    pdf.addImage(
-      image,
-      "JPEG",
-      0,
-      0,
-      210,
-      297
-    );
-
-  }
-
-
-  /* =====================================
-     FILE NAME
-  ===================================== */
-
-  let filename=
-    book.title ||
-    "Christian-Prayer-Book";
-
-
-  filename=
-    filename
-      .replace(
-        /[<>:"/\\|?*]+/g,
-        "-"
-      )
-      .trim();
-
-
-  if(!filename){
-
-    filename=
-      "Christian-Prayer-Book";
-
-  }
-
-
-  pdf.save(
-    filename + ".pdf"
-  );
 
 }
 
 
-/* =========================================
+/* =========================================================
+   RESIZE
+========================================================= */
+
+window.addEventListener(
+  "resize",
+  ()=>{
+    fitPage();
+  }
+);
+
+
+/* =========================================================
    START
-========================================= */
+========================================================= */
 
 loadBook();
 
