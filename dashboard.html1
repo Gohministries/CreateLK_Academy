@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CreateLK Academy</title>
+
 <style>
 *{box-sizing:border-box;margin:0}
 body{font-family:Arial,sans-serif;background:#f5f7fb;color:#172033}
@@ -42,6 +43,7 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .controls{display:flex;gap:10px;margin-bottom:18px}
 .play,.stop{flex:1;border:0;padding:12px;border-radius:10px;font-weight:bold;cursor:pointer}
 .play{background:#1e3a8a;color:#fff}.stop{background:#e5e7eb}
+.language-select{flex:1;border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff;font-weight:bold;color:#172033}
 .dialogue{padding:17px;margin:12px 0;border:1px solid #e5e7eb;border-radius:15px}
 .dialogue.playing{border-color:#2563eb;box-shadow:0 0 0 3px #2563eb18}
 .lang{font-size:11px;font-weight:bold;color:#2563eb;margin-top:12px}
@@ -49,11 +51,17 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .complete{width:100%;margin-top:15px}
 .loading{text-align:center;padding:35px;color:#64748b}
 .error{text-align:center;padding:30px;color:#dc2626}
-@media(max-width:750px){.lessons{grid-template-columns:repeat(2,1fr)}}
+
+@media(max-width:750px){
+ .lessons{grid-template-columns:repeat(2,1fr)}
+}
+
 @media(max-width:520px){
  .lessons{grid-template-columns:1fr}
  .hero h1{font-size:26px}
- .controls{position:sticky;top:0;background:#fff;padding-bottom:8px;z-index:2}
+ .controls{position:sticky;top:0;background:#fff;padding-bottom:8px;z-index:2;flex-wrap:wrap}
+ .language-select{width:100%;flex:none}
+ .play,.stop{min-width:0}
  .premium{width:100%}
 }
 </style>
@@ -85,7 +93,7 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 <div id="premiumStatus" class="status">Checking...</div>
 </div>
 
-<button id="premiumBtn" class="premium" onclick="buyPremium()">
+<button id="premiumBtn" class="premium" onclick="buyPremium">
 GET PREMIUM
 </button>
 </div>
@@ -96,6 +104,7 @@ GET PREMIUM
 <b>Your Progress</b>
 <b id="progressText">0 of 100</b>
 </div>
+
 <div class="progress">
 <div id="fill" class="fill"></div>
 </div>
@@ -110,6 +119,7 @@ GET PREMIUM
 </main>
 
 <div id="modalBg" class="modal-bg">
+
 <div class="modal">
 
 <div class="modal-head">
@@ -137,6 +147,7 @@ let premium=false;
 let completed=[];
 let dialogues=[];
 let playing=false;
+let selectedLanguage="en";
 
 if(!token){
  location.href="/auth/login.html";
@@ -183,554 +194,616 @@ const titles=[
 
 async function loadLessons(){
 
- try{
+try{
 
-  const r=await fetch(
-   `${API}/lessons?course=${COURSE}&language=en`,
-   {headers}
-  );
+const r=await fetch(
+ `${API}/lessons?course=${COURSE}&language=en`,
+ {headers}
+);
 
-  const d=await r.json();
+const d=await r.json();
 
-  if(!r.ok||!d.success)
-   throw Error(d.error||d.message||"Unable to load lessons.");
+if(!r.ok||!d.success)
+ throw Error(d.error||d.message||"Unable to load lessons.");
 
-  premium=!!d.premium;
+premium=!!d.premium;
 
-  $("premiumStatus").innerHTML=
-   premium
-   ?'<span class="active">✓ Premium Active</span>'
-   :"Premium not active";
+$("premiumStatus").innerHTML=
+premium
+?'<span class="active">✓ Premium Active</span>'
+:"Premium not active";
 
-  $("premiumBtn").style.display=
-   premium?"none":"block";
+$("premiumBtn").style.display=
+premium?"none":"block";
 
-  const apiLessons=d.lessons||[];
+const apiLessons=d.lessons||[];
 
-  $("lessons").innerHTML=
-   titles.map((title,i)=>{
+$("lessons").innerHTML=
+titles.map((title,i)=>{
 
-    const n=i+1;
+const n=i+1;
 
-    const api=apiLessons.find(
-     x=>+x.lesson_number===n
-    );
+const api=apiLessons.find(
+ x=>+x.lesson_number===n
+);
 
-    const free=n===1||+api?.is_free===1;
-    const unlocked=free||premium;
-    const done=completed.includes(n);
+const free=n===1||+api?.is_free===1;
+const unlocked=free||premium;
+const done=completed.includes(n);
 
-    return `
-    <article class="lesson">
+return `
+<article class="lesson">
 
-      <div class="num">LESSON ${n}</div>
+<div class="num">LESSON ${n}</div>
 
-      <h3>${esc(api?.title||title)}</h3>
+<h3>${esc(api?.title||title)}</h3>
 
-      <p>${esc(
-       api?.summary||
-       api?.objectives||
-       "Practical English conversation"
-      )}</p>
+<p>${esc(
+ api?.summary||
+ api?.objectives||
+ "Practical English conversation"
+)}</p>
 
-      <div class="bottom">
+<div class="bottom">
 
-        <span class="free">
-          ${done?"✓ COMPLETED":free?"FREE":"PREMIUM"}
-        </span>
+<span class="free">
+${done?"✓ COMPLETED":free?"FREE":"PREMIUM"}
+</span>
 
-        <button
-         class="${unlocked?"open":"lock"}"
-         onclick="${unlocked
-          ?`openLesson(${n})`
-          :"buyPremium()"}">
-          ${unlocked?"Open":"🔒 Locked"}
-        </button>
+<button
+class="${unlocked?"open":"lock"}"
+onclick="${unlocked
+?`openLesson(${n})`
+:"buyPremium()"}">
+${unlocked?"Open":"🔒 Locked"}
+</button>
 
-      </div>
+</div>
 
-    </article>`;
-   }).join("");
+</article>`;
+}).join("");
 
- }catch(e){
+}catch(e){
 
-  console.error(e);
+console.error(e);
 
-  $("lessons").innerHTML=
-   `<div class="error">${esc(e.message||"Unable to load lessons.")}</div>`;
- }
+$("lessons").innerHTML=
+`<div class="error">${esc(e.message||"Unable to load lessons.")}</div>`;
+}
 }
 
 async function openLesson(n){
 
- stopSpeech();
+stopSpeech();
 
- $("modalBg").style.display="block";
- $("modalNum").textContent="LESSON "+n;
- $("modalTitle").textContent="Loading...";
- $("modalBody").innerHTML=
-  '<div class="loading">Loading lesson...</div>';
+$("modalBg").style.display="block";
+$("modalNum").textContent="LESSON "+n;
+$("modalTitle").textContent="Loading...";
+$("modalBody").innerHTML=
+'<div class="loading">Loading lesson...</div>';
 
- try{
+try{
 
-  const [en,si,ta]=await Promise.all([
-   getLesson(n,"en"),
-   getLesson(n,"si"),
-   getLesson(n,"ta")
-  ]);
+const [en,si,ta]=await Promise.all([
+ getLesson(n,"en"),
+ getLesson(n,"si"),
+ getLesson(n,"ta")
+]);
 
-  const l=en.lesson;
+const l=en.lesson;
 
-  if(!l)
-   throw Error("Lesson data not found.");
+if(!l)
+ throw Error("Lesson data not found.");
 
-  $("modalTitle").textContent=l.title;
+$("modalTitle").textContent=l.title;
 
-  dialogues=[];
+dialogues=[];
 
-  const enD=l.dialogues||[];
-  const siD=si.lesson?.dialogues||[];
-  const taD=ta.lesson?.dialogues||[];
+const enD=l.dialogues||[];
+const siD=si.lesson?.dialogues||[];
+const taD=ta.lesson?.dialogues||[];
 
-  for(let i=0;i<enD.length;i++){
+for(let i=0;i<enD.length;i++){
 
-   dialogues.push({
+dialogues.push({
 
-    number:enD[i].dialogue_number,
+number:enD[i].dialogue_number,
 
-    lines:[
-     {
-      language:"English",
-      speaker:enD[i].speaker_a,
-      text:enD[i].text_a
-     },
-     {
-      language:"English",
-      speaker:enD[i].speaker_b,
-      text:enD[i].text_b
-     },
-     {
-      language:"Sinhala",
-      speaker:siD[i]?.speaker_a||"",
-      text:siD[i]?.text_a||""
-     },
-     {
-      language:"Sinhala",
-      speaker:siD[i]?.speaker_b||"",
-      text:siD[i]?.text_b||""
-     },
-     {
-      language:"Tamil",
-      speaker:taD[i]?.speaker_a||"",
-      text:taD[i]?.text_a||""
-     },
-     {
-      language:"Tamil",
-      speaker:taD[i]?.speaker_b||"",
-      text:taD[i]?.text_b||""
-     }
-    ]
-   });
-  }
+lines:[
+{
+language:"English",
+speaker:enD[i].speaker_a,
+text:enD[i].text_a
+},
+{
+language:"English",
+speaker:enD[i].speaker_b,
+text:enD[i].text_b
+},
+{
+language:"Sinhala",
+speaker:siD[i]?.speaker_a||"",
+text:siD[i]?.text_a||""
+},
+{
+language:"Sinhala",
+speaker:siD[i]?.speaker_b||"",
+text:siD[i]?.text_b||""
+},
+{
+language:"Tamil",
+speaker:taD[i]?.speaker_a||"",
+text:taD[i]?.text_a||""
+},
+{
+language:"Tamil",
+speaker:taD[i]?.speaker_b||"",
+text:taD[i]?.text_b||""
+}
+]
 
-  let html="";
+});
+}
 
-  if(l.objectives){
+let html="";
 
-   html+=`
-   <div class="card" style="margin:0 0 15px">
-   ${esc(l.objectives)}
-   </div>`;
-  }
+if(l.objectives){
 
-  html+=`
-  <div class="controls">
-   <button class="play" onclick="playAll()">▶ Play All</button>
-   <button class="stop" onclick="stopSpeech()">■ Stop</button>
-  </div>`;
+html+=`
+<div class="card" style="margin:0 0 15px">
+${esc(l.objectives)}
+</div>`;
+}
 
-  html+=dialogues.map((d,i)=>`
+html+=`
+<div class="controls">
 
-   <div class="dialogue" id="dialogue-${i}">
+<select id="languageSelect"
+class="language-select"
+onchange="changeLanguage()">
 
-    <div class="num">
-     DIALOGUE ${d.number}
-    </div>
+<option value="en">English Only</option>
+<option value="ta">English → Tamil</option>
+<option value="si">English → Sinhala</option>
 
-    ${d.lines.map(x=>x.text?`
+</select>
 
-     <div class="lang">${x.language}</div>
+<button class="play" onclick="playAll()">
+▶ Play All
+</button>
 
-     <div class="text">
-      <b>${esc(x.speaker)}:</b>
-      ${esc(x.text)}
-     </div>
+<button class="stop" onclick="stopSpeech()">
+■ Stop
+</button>
 
-    `:"").join("")}
+</div>`;
 
-   </div>
+html+=dialogues.map((d,i)=>`
 
-  `).join("");
+<div class="dialogue" id="dialogue-${i}">
 
-  html+=`
-   <button class="complete" onclick="completeLesson(${n})">
+<div class="num">
+DIALOGUE ${d.number}
+</div>
 
-    ${completed.includes(n)
-     ?"✓ Lesson Completed"
-     :"Mark Lesson Complete"}
+${renderLines(d)}
 
-   </button>`;
+</div>
 
-  $("modalBody").innerHTML=html;
+`).join("");
 
- }catch(e){
+html+=`
+<button class="complete" onclick="completeLesson(${n})">
 
-  console.error(e);
+${completed.includes(n)
+?"✓ Lesson Completed"
+:"Mark Lesson Complete"}
 
-  $("modalBody").innerHTML=
-   `<div class="error">${esc(
-    e.message||"Unable to load this lesson."
-   )}</div>`;
- }
+</button>`;
+
+$("modalBody").innerHTML=html;
+
+}catch(e){
+
+console.error(e);
+
+$("modalBody").innerHTML=
+`<div class="error">${esc(
+ e.message||"Unable to load this lesson."
+)}</div>`;
+}
+}
+
+function renderLines(d){
+
+return d.lines.map(x=>{
+
+const show=
+selectedLanguage==="en"
+?x.language==="English"
+:selectedLanguage==="ta"
+?x.language==="English"||x.language==="Tamil"
+:x.language==="English"||x.language==="Sinhala";
+
+return show&&x.text?`
+
+<div class="lang">${x.language}</div>
+
+<div class="text">
+<b>${esc(x.speaker)}:</b>
+${esc(x.text)}
+</div>
+
+`:"";
+
+}).join("");
+}
+
+function changeLanguage(){
+
+selectedLanguage=$("languageSelect").value;
+
+stopSpeech();
+
+dialogues.forEach((d,i)=>{
+
+const box=$("dialogue-"+i);
+
+if(box){
+box.innerHTML=`
+<div class="num">
+DIALOGUE ${d.number}
+</div>
+${renderLines(d)}
+`;
+}
+
+});
 }
 
 async function getLesson(n,language){
 
- const r=await fetch(
-  `${API}/lesson?course=${COURSE}&lesson=${n}&language=${language}`,
-  {headers}
- );
+const r=await fetch(
+ `${API}/lesson?course=${COURSE}&lesson=${n}&language=${language}`,
+ {headers}
+);
 
- const text=await r.text();
+const text=await r.text();
 
- let d;
+let d;
 
- try{
-  d=JSON.parse(text);
- }catch{
-  throw Error(`Lesson server error (${r.status})`);
- }
-
- if(!r.ok||!d.success)
-  throw Error(d.error||d.message||"Unable to load lesson.");
-
- return d;
+try{
+ d=JSON.parse(text);
+}catch{
+ throw Error(`Lesson server error (${r.status})`);
 }
 
-/* =========================
-   PAYHERE PREMIUM CHECKOUT
-========================= */
+if(!r.ok||!d.success)
+ throw Error(d.error||d.message||"Unable to load lesson.");
+
+return d;
+}
+
+/* PAYHERE PREMIUM CHECKOUT */
 
 async function buyPremium(){
 
- const btn=$("premiumBtn");
+const btn=$("premiumBtn");
 
- btn.disabled=true;
- btn.textContent="Connecting...";
+btn.disabled=true;
+btn.textContent="Connecting...";
 
- try{
+try{
 
-  const token=localStorage.getItem("createlk_token");
+const token=localStorage.getItem("createlk_token");
 
-  if(!token)
-   throw Error(
-    "Your login session has expired. Please login again."
-   );
+if(!token)
+ throw Error(
+  "Your login session has expired. Please login again."
+ );
 
-  const r=await fetch(
-   `${PAY}/premium-checkout`,
-   {
-    method:"POST",
-    headers:{
-     "Content-Type":"application/json",
-     "Authorization":"Bearer "+token
-    },
-    body:"{}"
-   }
-  );
-
-  const text=await r.text();
-
-  let d;
-
-  try{
-   d=JSON.parse(text);
-  }catch{
-
-   throw Error(
-    "Payment server returned an invalid response ("+
-    r.status+")."
-   );
-  }
-
-  if(!r.ok||!d.success){
-
-   throw Error(
-    d.message||
-    d.error||
-    `Checkout failed (${r.status})`
-   );
-  }
-
-  const fields=d.fields||d.checkout;
-
-  if(!fields)
-   throw Error("Payment details are missing.");
-
-  const form=document.createElement("form");
-
-  form.method="POST";
-  form.action="https://www.payhere.lk/pay/checkout";
-  form.style.display="none";
-
-  Object.entries(fields).forEach(([key,value])=>{
-
-   const input=document.createElement("input");
-
-   input.type="hidden";
-   input.name=key;
-   input.value=value??"";
-
-   form.appendChild(input);
-  });
-
-  document.body.appendChild(form);
-
-  form.submit();
-
- }catch(e){
-
-  console.error(
-   "CreateLK Premium Checkout:",
-   e
-  );
-
-  alert(
-   e.message||
-   "Payment could not be started."
-  );
-
-  btn.disabled=false;
-  btn.textContent="GET PREMIUM";
+const r=await fetch(
+ `${PAY}/premium-checkout`,
+ {
+  method:"POST",
+  headers:{
+   "Content-Type":"application/json",
+   "Authorization":"Bearer "+token
+  },
+  body:"{}"
  }
+);
+
+const text=await r.text();
+
+let d;
+
+try{
+ d=JSON.parse(text);
+}catch{
+
+throw Error(
+ "Payment server returned an invalid response ("+
+ r.status+")."
+);
 }
 
-/* =========================
-   SPEECH
-========================= */
+if(!r.ok||!d.success){
+
+throw Error(
+ d.message||
+ d.error||
+ `Checkout failed (${r.status})`
+);
+}
+
+const fields=d.fields||d.checkout;
+
+if(!fields)
+ throw Error("Payment details are missing.");
+
+const form=document.createElement("form");
+
+form.method="POST";
+form.action="https://www.payhere.lk/pay/checkout";
+form.style.display="none";
+
+Object.entries(fields).forEach(([key,value])=>{
+
+const input=document.createElement("input");
+
+input.type="hidden";
+input.name=key;
+input.value=value??"";
+
+form.appendChild(input);
+});
+
+document.body.appendChild(form);
+
+form.submit();
+
+}catch(e){
+
+console.error(
+ "CreateLK Premium Checkout:",
+ e
+);
+
+alert(
+ e.message||
+ "Payment could not be started."
+);
+
+btn.disabled=false;
+btn.textContent="GET PREMIUM";
+}
+}
+
+/* SPEECH */
 
 const voiceLang={
- English:"en-US",
- Sinhala:"si-LK",
- Tamil:"ta-LK"
+English:"en-US",
+Sinhala:"si-LK",
+Tamil:"ta-LK"
 };
 
 function playAll(){
 
- stopSpeech();
+stopSpeech();
 
- playing=true;
+playing=true;
 
- let index=0;
+let index=0;
 
- function next(){
+function next(){
 
-  if(!playing||index>=dialogues.length){
+if(!playing||index>=dialogues.length){
 
-   playing=false;
-   return;
-  }
+playing=false;
+return;
+}
 
-  const box=$("dialogue-"+index);
+const box=$("dialogue-"+index);
 
-  document.querySelectorAll(".dialogue")
-   .forEach(x=>
-    x.classList.remove("playing")
-   );
+document.querySelectorAll(".dialogue")
+.forEach(x=>
+ x.classList.remove("playing")
+);
 
-  box.classList.add("playing");
+box.classList.add("playing");
 
-  box.scrollIntoView({
-   behavior:"smooth",
-   block:"center"
-  });
+box.scrollIntoView({
+behavior:"smooth",
+block:"center"
+});
 
-  speakLines(
-   dialogues[index].lines,
-   0,
-   ()=>{
-    index++;
-    next();
-   }
-  );
+const allowed=
+selectedLanguage==="en"
+?["English"]
+:selectedLanguage==="ta"
+?["English","Tamil"]
+:["English","Sinhala"];
+
+const lines=
+dialogues[index].lines.filter(
+ x=>allowed.includes(x.language)
+);
+
+speakLines(
+ lines,
+ 0,
+ ()=>{
+  index++;
+  next();
  }
+);
+}
 
- next();
+next();
 }
 
 function speakLines(lines,i,done){
 
- if(!playing||i>=lines.length){
-  done();
-  return;
- }
+if(!playing||i>=lines.length){
+done();
+return;
+}
 
- const line=lines[i];
+const line=lines[i];
 
- if(!line.text){
-  speakLines(lines,i+1,done);
-  return;
- }
+if(!line.text){
+speakLines(lines,i+1,done);
+return;
+}
 
- const u=
-  new SpeechSynthesisUtterance(line.text);
+const u=
+new SpeechSynthesisUtterance(line.text);
 
- u.lang=voiceLang[line.language];
- u.rate=.88;
+u.lang=voiceLang[line.language];
+u.rate=.88;
 
- u.onend=()=>{
-  speakLines(lines,i+1,done);
- };
+u.onend=()=>{
+speakLines(lines,i+1,done);
+};
 
- speechSynthesis.speak(u);
+speechSynthesis.speak(u);
 }
 
 function stopSpeech(){
 
- playing=false;
+playing=false;
 
- speechSynthesis.cancel();
+speechSynthesis.cancel();
 
- document.querySelectorAll(".dialogue")
-  .forEach(x=>
-   x.classList.remove("playing")
-  );
+document.querySelectorAll(".dialogue")
+.forEach(x=>
+ x.classList.remove("playing")
+);
 }
 
-/* =========================
-   PROGRESS
-========================= */
+/* PROGRESS */
 
 async function completeLesson(n){
 
- try{
+try{
 
-  const r=await fetch(
-   `${API}/lesson/complete`,
-   {
-    method:"POST",
-    headers,
-    body:JSON.stringify({
-     course:COURSE,
-     lesson_number:n
-    })
-   }
-  );
-
-  const d=await r.json();
-
-  if(!r.ok||!d.success)
-   throw Error(d.error||d.message);
-
-  if(!completed.includes(n))
-   completed.push(n);
-
-  updateProgress(
-   d.completed_count||
-   completed.length
-  );
-
-  closeLesson();
-
-  loadLessons();
-
- }catch(e){
-
-  alert(
-   e.message||
-   "Unable to complete lesson."
-  );
+const r=await fetch(
+ `${API}/lesson/complete`,
+ {
+  method:"POST",
+  headers,
+  body:JSON.stringify({
+   course:COURSE,
+   lesson_number:n
+  })
  }
+);
+
+const d=await r.json();
+
+if(!r.ok||!d.success)
+ throw Error(d.error||d.message);
+
+if(!completed.includes(n))
+ completed.push(n);
+
+updateProgress(
+ d.completed_count||
+ completed.length
+);
+
+closeLesson();
+
+loadLessons();
+
+}catch(e){
+
+alert(
+ e.message||
+ "Unable to complete lesson."
+);
+}
 }
 
 async function loadProgress(){
 
- try{
+try{
 
-  const r=await fetch(
-   `${API}/progress?course=${COURSE}`,
-   {headers}
-  );
+const r=await fetch(
+ `${API}/progress?course=${COURSE}`,
+ {headers}
+);
 
-  const d=await r.json();
+const d=await r.json();
 
-  if(d.success){
+if(d.success){
 
-   completed=(d.lessons||[])
-    .map(x=>+x.lesson_number);
+completed=(d.lessons||[])
+.map(x=>+x.lesson_number);
 
-   updateProgress(
-    d.completed_count||
-    completed.length
-   );
-  }
+updateProgress(
+ d.completed_count||
+ completed.length
+);
+}
 
- }catch(e){
+}catch(e){
 
-  console.error("Progress:",e);
- }
+console.error("Progress:",e);
+}
 }
 
 function updateProgress(n){
 
- n=Math.min(
-  100,
-  +n||0
- );
+n=Math.min(
+100,
++n||0
+);
 
- $("progressText").textContent=
-  n+" of 100";
+$("progressText").textContent=
+n+" of 100";
 
- $("fill").style.width=
-  n+"%";
+$("fill").style.width=
+n+"%";
 }
 
 function closeLesson(){
 
- stopSpeech();
+stopSpeech();
 
- $("modalBg").style.display="none";
+$("modalBg").style.display="none";
 }
 
 function logout(){
 
- localStorage.removeItem(
-  "createlk_token"
- );
+localStorage.removeItem(
+"createlk_token"
+);
 
- location.href="/auth/login.html";
+location.href="/auth/login.html";
 }
 
 function esc(v){
 
- return String(v??"")
-  .replace(/&/g,"&amp;")
-  .replace(/</g,"&lt;")
-  .replace(/>/g,"&gt;")
-  .replace(/"/g,"&quot;")
-  .replace(/'/g,"&#039;");
+return String(v??"")
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
 }
 
 $("modalBg").onclick=e=>{
 
- if(e.target===$("modalBg"))
-  closeLesson();
+if(e.target===$("modalBg"))
+closeLesson();
 };
 
 async function init(){
 
- await loadProgress();
- await loadLessons();
+await loadProgress();
+await loadLessons();
 }
 
 init();
