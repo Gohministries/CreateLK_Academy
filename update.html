@@ -10,7 +10,9 @@
 
 <style>
 
-*{box-sizing:border-box}
+*{
+box-sizing:border-box
+}
 
 body{
 margin:0;
@@ -66,7 +68,9 @@ flex:1
 width:125px
 }
 
-input,textarea,select{
+input,
+textarea,
+select{
 width:100%;
 padding:10px;
 border:1px solid #cbd5e1;
@@ -105,7 +109,8 @@ overflow:hidden
 .fill{
 height:100%;
 width:0;
-background:#2563eb
+background:#2563eb;
+transition:width .3s ease
 }
 
 .days{
@@ -167,6 +172,11 @@ cursor:pointer;
 font-weight:bold
 }
 
+button:disabled{
+opacity:.6;
+cursor:not-allowed
+}
+
 .actions{
 display:flex;
 gap:7px;
@@ -189,7 +199,8 @@ background:#64748b;
 color:#fff
 }
 
-.prev,.next{
+.prev,
+.next{
 background:#e2e8f0
 }
 
@@ -231,6 +242,18 @@ background:#dbeafe;
 color:#1e40af
 }
 
+.warning{
+background:#fef3c7;
+color:#92400e
+}
+
+.sync{
+margin-top:8px;
+font-size:11px;
+color:#64748b;
+text-align:center
+}
+
 @media(max-width:600px){
 
 .days{
@@ -260,9 +283,7 @@ height:150px
 
 </header>
 
-
 <main>
-
 
 <!-- SEARCH -->
 
@@ -283,7 +304,6 @@ onchange="loadDay(Number(this.value))"
 
 </div>
 
-
 <div class="progress">
 
 <span id="count">0 / 365</span>
@@ -292,6 +312,10 @@ onchange="loadDay(Number(this.value))"
 <div id="fill" class="fill"></div>
 </div>
 
+</div>
+
+<div id="syncStatus" class="sync">
+Local storage ready
 </div>
 
 </div>
@@ -400,6 +424,7 @@ placeholder="தமிழ் வேதாகம வசனம்..."
 <div class="actions">
 
 <button
+id="saveButton"
 class="save"
 onclick="saveVerse()"
 >
@@ -456,23 +481,34 @@ class="status"
 
 <script>
 
-
-/* =========================================
-   CLOUDFLARE WORKER
-========================================= */
+/* =====================================================
+   CLOUDFLARE WORKER API
+===================================================== */
 
 const API =
 "https://bible.createlk.workers.dev";
 
+
+/* =====================================================
+   LOCAL STORAGE
+===================================================== */
+
+const STORAGE_KEY =
+"365_bible_control_verses";
+
+
+/* =====================================================
+   VARIABLES
+===================================================== */
 
 let data=[];
 
 let current=1;
 
 
-/* =========================================
+/* =====================================================
    START
-========================================= */
+===================================================== */
 
 window.addEventListener(
 "load",
@@ -486,16 +522,30 @@ createDays();
 
 createSelect();
 
-await loadAll();
+/*
+   First load LocalStorage.
+   This means the application can immediately
+   display saved data even before Cloudflare responds.
+*/
+
+loadLocalStorage();
+
+updateDays();
 
 loadDay(1);
+
+/*
+   Then synchronize with Cloudflare.
+*/
+
+await loadAll();
 
 }
 
 
-/* =========================================
+/* =====================================================
    CREATE DAY BUTTONS
-========================================= */
+===================================================== */
 
 function createDays(){
 
@@ -526,9 +576,9 @@ container.appendChild(button);
 }
 
 
-/* =========================================
+/* =====================================================
    CREATE SELECT
-========================================= */
+===================================================== */
 
 function createSelect(){
 
@@ -552,16 +602,114 @@ select.appendChild(option);
 }
 
 
-/* =========================================
-   LOAD ALL
-========================================= */
+/* =====================================================
+   LOAD LOCAL STORAGE
+===================================================== */
+
+function loadLocalStorage(){
+
+try{
+
+const saved=
+localStorage.getItem(
+STORAGE_KEY
+);
+
+if(!saved){
+
+data=[];
+
+setSyncStatus(
+"Local storage ready"
+);
+
+return;
+
+}
+
+const parsed=
+JSON.parse(saved);
+
+if(!Array.isArray(parsed)){
+
+throw new Error(
+"Invalid local storage"
+);
+
+}
+
+data=parsed;
+
+setSyncStatus(
+"✓ Loaded from local storage"
+);
+
+}catch(error){
+
+console.error(
+"LocalStorage error:",
+error
+);
+
+data=[];
+
+setSyncStatus(
+"Local storage error"
+);
+
+}
+
+}
+
+
+/* =====================================================
+   SAVE TO LOCAL STORAGE
+===================================================== */
+
+function saveLocalStorage(){
+
+try{
+
+localStorage.setItem(
+STORAGE_KEY,
+JSON.stringify(data)
+);
+
+setSyncStatus(
+"✓ Saved locally"
+);
+
+return true;
+
+}catch(error){
+
+console.error(
+"LocalStorage save error:",
+error
+);
+
+statusMessage(
+"Unable to save to local storage.",
+"error"
+);
+
+return false;
+
+}
+
+}
+
+
+/* =====================================================
+   LOAD ALL FROM CLOUDFLARE
+===================================================== */
 
 async function loadAll(){
 
 try{
 
 statusMessage(
-"Loading Bible verses...",
+"Connecting to Cloudflare...",
 "info"
 );
 
@@ -603,10 +751,82 @@ throw new Error(
 }
 
 
-data=result;
+/*
+   Cloudflare data becomes the main
+   synchronized data.
 
+   If local data contains verses that
+   Cloudflare does not have, keep them too.
+*/
+
+const serverData=result;
+
+const merged={};
+
+
+/*
+   First add local data
+*/
+
+data.forEach(
+verse=>{
+
+if(
+verse &&
+verse.day
+){
+
+merged[
+Number(verse.day)
+]=verse;
+
+}
+
+});
+
+
+/*
+   Then Cloudflare data overwrites
+   matching local records.
+*/
+
+serverData.forEach(
+verse=>{
+
+if(
+verse &&
+verse.day
+){
+
+merged[
+Number(verse.day)
+]=verse;
+
+}
+
+});
+
+
+data=
+Object.values(merged)
+.sort(
+(a,b)=>
+Number(a.day)-Number(b.day)
+);
+
+
+/*
+   Save synchronized result locally.
+*/
+
+saveLocalStorage();
 
 updateDays();
+
+
+setSyncStatus(
+"✓ Cloudflare synchronized"
+);
 
 
 statusMessage(
@@ -615,15 +835,38 @@ statusMessage(
 );
 
 
+/*
+   Reload current day so server data
+   appears immediately.
+*/
+
+loadDay(current);
+
+
 }catch(error){
 
-console.error(error);
+console.error(
+"Cloudflare error:",
+error
+);
+
+
+/*
+   IMPORTANT:
+   Do NOT erase local data if
+   Cloudflare is unavailable.
+*/
+
+updateDays();
+
+setSyncStatus(
+"⚠ Offline — using local storage"
+);
 
 
 statusMessage(
-"Unable to connect: "+
-error.message,
-"error"
+"Cloudflare unavailable. Local data is still available.",
+"warning"
 );
 
 }
@@ -631,13 +874,22 @@ error.message,
 }
 
 
-/* =========================================
+/* =====================================================
    LOAD DAY
-========================================= */
+===================================================== */
 
 function loadDay(day){
 
 current=Number(day);
+
+if(
+current<1
+) current=1;
+
+if(
+current>365
+) current=365;
+
 
 document.getElementById(
 "day"
@@ -699,17 +951,37 @@ button.classList.add(
 
 }
 
+
+/*
+   Scroll active day into view
+*/
+
+if(button){
+
+button.scrollIntoView({
+behavior:"smooth",
+block:"nearest"
+});
+
+}
+
 }
 
 
-/* =========================================
+/* =====================================================
    UPDATE DAYS
-========================================= */
+===================================================== */
 
 function updateDays(){
 
 const count=
-data.length;
+data.filter(
+x=>
+x &&
+x.day &&
+Number(x.day)>=1 &&
+Number(x.day)<=365
+).length;
 
 
 document.getElementById(
@@ -731,10 +1003,13 @@ document.getElementById(
 "d"+i
 );
 
+if(!button) continue;
+
 
 const exists=
 data.some(
-x=>Number(x.day)===i
+x=>
+Number(x.day)===i
 );
 
 
@@ -748,9 +1023,9 @@ exists
 }
 
 
-/* =========================================
-   SAVE
-========================================= */
+/* =====================================================
+   SAVE / UPDATE
+===================================================== */
 
 async function saveVerse(){
 
@@ -778,6 +1053,10 @@ document.getElementById(
 ).value.trim();
 
 
+/*
+   Validate
+*/
+
 if(
 !reference||
 !english||
@@ -795,26 +1074,19 @@ return;
 }
 
 
-statusMessage(
-"Saving Day "+current+"...",
-"info"
+/*
+   Disable button while saving
+*/
+
+const saveButton=
+document.getElementById(
+"saveButton"
 );
 
+saveButton.disabled=true;
 
-try{
 
-const response=
-await fetch(
-API+"/api/verses",
-{
-method:"POST",
-
-headers:{
-"Content-Type":
-"application/json"
-},
-
-body:JSON.stringify({
+const verse={
 
 day:current,
 
@@ -826,63 +1098,240 @@ sinhala:sinhala,
 
 tamil:tamil
 
-})
+};
+
+
+/* =====================================================
+   1. SAVE LOCALLY FIRST
+===================================================== */
+
+const existingIndex=
+data.findIndex(
+x=>Number(x.day)===current
+);
+
+
+if(existingIndex>=0){
+
+data[existingIndex]=verse;
+
+}else{
+
+data.push(verse);
+
+}
+
+
+/*
+   Sort by day
+*/
+
+data.sort(
+(a,b)=>
+Number(a.day)-Number(b.day)
+);
+
+
+/*
+   LocalStorage is saved immediately.
+   This guarantees the data is not lost
+   if Cloudflare fails.
+*/
+
+const localSaved=
+saveLocalStorage();
+
+
+updateDays();
+
+
+if(localSaved){
+
+statusMessage(
+"✓ Day "+current+
+" saved locally. Syncing Cloudflare...",
+"info"
+);
+
+}
+
+
+/* =====================================================
+   2. SAVE TO CLOUDFLARE
+===================================================== */
+
+try{
+
+const response=
+await fetch(
+API+"/api/verses",
+{
+method:"POST",
+
+mode:"cors",
+
+headers:{
+"Content-Type":
+"application/json",
+
+"Accept":
+"application/json"
+},
+
+body:JSON.stringify(
+verse
+)
 
 }
 );
 
 
-const result=
+let result={};
+
+try{
+
+result=
 await response.json();
+
+}catch(e){
+
+result={};
+
+}
 
 
 if(!response.ok){
 
 throw new Error(
 result.error ||
-"Save failed"
+"Cloudflare save failed"
 );
 
 }
+
+
+/*
+   Cloudflare success
+*/
+
+setSyncStatus(
+"✓ Saved locally + Cloudflare"
+);
 
 
 statusMessage(
 "✓ Day "+current+
-" saved successfully.",
+" saved to Cloudflare.",
 "success"
 );
 
 
-await loadAll();
+/* =====================================================
+   AUTO MOVE TO NEXT DAY
+===================================================== */
 
-loadDay(current);
+if(current<365){
+
+const savedDay=current;
+
+setTimeout(
+function(){
+
+loadDay(
+savedDay+1
+);
+
+statusMessage(
+"✓ Day "+savedDay+
+" saved. Now editing Day "+
+(savedDay+1)+".",
+"success"
+);
+
+},
+700
+);
+
+}else{
+
+statusMessage(
+"✓ Day 365 saved successfully. All 365 days completed!",
+"success"
+);
+
+}
 
 
 }catch(error){
 
+console.error(
+"Cloudflare save error:",
+error
+);
+
+
+/*
+   IMPORTANT:
+   LocalStorage already contains
+   the saved verse.
+*/
+
+setSyncStatus(
+"⚠ Saved locally — Cloudflare sync failed"
+);
+
+
 statusMessage(
-error.message,
-"error"
+"✓ Day "+current+
+" saved locally. Cloudflare sync failed.",
+"warning"
+);
+
+
+/*
+   Still move to next day because
+   the local save succeeded.
+*/
+
+if(current<365){
+
+const savedDay=current;
+
+setTimeout(
+function(){
+
+loadDay(
+savedDay+1
+);
+
+},
+700
 );
 
 }
 
+}finally{
+
+saveButton.disabled=false;
+
+}
+
 }
 
 
-/* =========================================
+/* =====================================================
    DELETE
-========================================= */
+===================================================== */
 
 async function deleteVerse(){
 
-const exists=
-data.some(
+const index=
+data.findIndex(
 x=>Number(x.day)===current
 );
 
 
-if(!exists){
+if(index===-1){
 
 statusMessage(
 "Nothing saved for Day "+current+".",
@@ -907,11 +1356,32 @@ return;
 }
 
 
+/*
+   Remove locally first
+*/
+
+data.splice(
+index,
+1
+);
+
+saveLocalStorage();
+
+updateDays();
+
+clearForm();
+
+
 statusMessage(
-"Deleting Day "+current+"...",
+"Day "+current+
+" deleted locally. Syncing Cloudflare...",
 "info"
 );
 
+
+/* =====================================================
+   DELETE FROM CLOUDFLARE
+===================================================== */
 
 try{
 
@@ -919,44 +1389,68 @@ const response=
 await fetch(
 API+"/api/verses/"+current,
 {
-method:"DELETE"
+method:"DELETE",
+mode:"cors",
+headers:{
+"Accept":
+"application/json"
+}
 }
 );
 
 
-const result=
+let result={};
+
+try{
+
+result=
 await response.json();
+
+}catch(e){
+
+result={};
+
+}
 
 
 if(!response.ok){
 
 throw new Error(
 result.error ||
-"Delete failed"
+"Cloudflare delete failed"
 );
 
 }
+
+
+setSyncStatus(
+"✓ Deleted locally + Cloudflare"
+);
 
 
 statusMessage(
 "✓ Day "+current+
-" deleted.",
+" deleted successfully.",
 "success"
 );
 
 
-await loadAll();
-
-clearForm();
-
-loadDay(current);
-
-
 }catch(error){
 
+console.error(
+"Cloudflare delete error:",
+error
+);
+
+
+setSyncStatus(
+"⚠ Deleted locally — Cloudflare delete failed"
+);
+
+
 statusMessage(
-error.message,
-"error"
+"✓ Deleted locally. Cloudflare could not be updated.",
+"warning"
 );
 
 }
@@ -964,9 +1458,9 @@ error.message,
 }
 
 
-/* =========================================
-   CLEAR
-========================================= */
+/* =====================================================
+   CLEAR FORM
+===================================================== */
 
 function clearForm(){
 
@@ -992,9 +1486,9 @@ document.getElementById(
 }
 
 
-/* =========================================
+/* =====================================================
    COPY
-========================================= */
+===================================================== */
 
 async function copyField(id){
 
@@ -1046,9 +1540,9 @@ statusMessage(
 }
 
 
-/* =========================================
+/* =====================================================
    PREVIOUS
-========================================= */
+===================================================== */
 
 function previousDay(){
 
@@ -1063,9 +1557,9 @@ current-1
 }
 
 
-/* =========================================
+/* =====================================================
    NEXT
-========================================= */
+===================================================== */
 
 function nextDay(){
 
@@ -1080,9 +1574,9 @@ current+1
 }
 
 
-/* =========================================
+/* =====================================================
    SEARCH
-========================================= */
+===================================================== */
 
 function searchDays(){
 
@@ -1100,6 +1594,8 @@ const button=
 document.getElementById(
 "d"+i
 );
+
+if(!button) continue;
 
 
 const verse=
@@ -1165,9 +1661,9 @@ match ? "" : "none";
 }
 
 
-/* =========================================
-   STATUS
-========================================= */
+/* =====================================================
+   STATUS MESSAGE
+===================================================== */
 
 function statusMessage(
 text,
@@ -1195,8 +1691,28 @@ box.className=
 "status";
 
 },
-3000
+4000
 );
+
+}
+
+}
+
+
+/* =====================================================
+   SYNC STATUS
+===================================================== */
+
+function setSyncStatus(text){
+
+const box=
+document.getElementById(
+"syncStatus"
+);
+
+if(box){
+
+box.textContent=text;
 
 }
 
