@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>CreateLK | Christian Prayer Book</title>
+
+<!-- PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, "Noto Sans", sans-serif;
+    background: #f3efe7;
+    color: #263238;
+}
+
+header {
+    background: #18324a;
+    color: white;
+    padding: 18px;
+    text-align: center;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+header p {
+    margin: 6px 0 0;
+    opacity: .85;
+}
+
+.container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 20px;
+}
+
+.admin-panel {
+    background: white;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 5px 20px rgba(0,0,0,.08);
+}
+
+.admin-panel h2 {
+    margin-top: 0;
+    color: #18324a;
+}
+
+.field {
+    margin-bottom: 16px;
+}
+
+label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 7px;
+}
+
+input[type="text"],
+textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ccd2d6;
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: inherit;
+}
+
+textarea {
+    min-height: 150px;
+    resize: vertical;
+}
+
+input[type="file"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed #aab3ba;
+    border-radius: 8px;
+    background: #fafafa;
+}
+
+.cover-preview {
+    margin-top: 12px;
+    display: none;
+}
+
+.cover-preview img {
+    max-width: 250px;
+    max-height: 300px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,.15);
+}
+
+.buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+button {
+    border: 0;
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+    outline: 3px solid #d6a84f;
+    outline-offset: 2px;
+}
+
+.btn-primary {
+    background: #18324a;
+    color: white;
+}
+
+.btn-gold {
+    background: #c69a42;
+    color: white;
+}
+
+.btn-light {
+    background: #e9edf0;
+    color: #18324a;
+}
+
+.btn-danger {
+    background: #a83e3e;
+    color: white;
+}
+
+/* BOOK */
+
+.book {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 25px;
+}
+
+.page {
+    width: 210mm;
+    min-height: 297mm;
+    position: relative;
+    overflow: hidden;
+    background:
+        linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.88)),
+        url("https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=1200&q=80");
+    background-size: cover;
+    background-position: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,.16);
+    padding: 22mm 20mm 22mm;
+    page-break-after: always;
+}
+
+.page::before {
+    content: "";
+    position: absolute;
+    inset: 10mm;
+    border: 1px solid rgba(198,154,66,.35);
+    pointer-events: none;
+}
+
+.page-inner {
+    position: relative;
+    z-index: 2;
+}
+
+.cover {
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background:
+        linear-gradient(rgba(20,40,60,.42), rgba(20,40,60,.55)),
+        url("https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=1400&q=85");
+    background-size: cover;
+    background-position: center;
+    color: white;
+}
+
+.cover::before {
+    border-color: rgba(255,255,255,.55);
+}
+
+.cover-content {
+    position: relative;
+    z-index: 3;
+    width: 80%;
+    padding: 35px;
+    background: rgba(20,40,60,.48);
+    border-radius: 16px;
+}
+
+.cross {
+    font-size: 60px;
+    margin-bottom: 20px;
+}
+
+.cover h1 {
+    font-size: 38px;
+    margin: 10px 0;
+    line-height: 1.2;
+}
+
+.cover h2 {
+    font-size: 21px;
+    font-weight: normal;
+    margin: 15px 0;
+}
+
+.cover .ministry {
+    margin-top: 35px;
+    font-size: 16px;
+    letter-spacing: 1px;
+}
+
+.book-title {
+    text-align: center;
+    color: #18324a;
+    margin-top: 10px;
+    margin-bottom: 25px;
+}
+
+.book-title h2 {
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.book-title p {
+    color: #66727a;
+}
+
+.prayer-title {
+    color: #18324a;
+    font-size: 26px;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #c69a42;
+    padding-bottom: 8px;
+}
+
+.prayer-content {
+    font-size: 17px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+}
+
+.bible-verse {
+    margin-top: 25px;
+    padding: 15px;
+    background: rgba(198,154,66,.10);
+    border-left: 4px solid #c69a42;
+    font-style: italic;
+    line-height: 1.6;
+}
+
+.footer {
+    position: absolute;
+    bottom: 12mm;
+    left: 20mm;
+    right: 20mm;
+    text-align: center;
+    color: #7b858b;
+    font-size: 11px;
+}
+
+.page-number {
+    position: absolute;
+    bottom: 7mm;
+    right: 20mm;
+    color: #7b858b;
+    font-size: 10px;
+}
+
+/* PASSWORD MODAL */
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+}
+
+.modal-box {
+    background: white;
+    width: 100%;
+    max-width: 420px;
+    padding: 25px;
+    border-radius: 14px;
+    box-shadow: 0 15px 50px rgba(0,0,0,.3);
+}
+
+.modal-box h2 {
+    margin-top: 0;
+    color: #18324a;
+}
+
+.password-input {
+    width: 100%;
+    padding: 13px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    font-size: 17px;
+    margin: 10px 0;
+}
+
+.error {
+    color: #b3261e;
+    min-height: 22px;
+    font-size: 14px;
+}
+
+@media (max-width: 800px) {
+    .page {
+        width: 100%;
+        min-height: auto;
+        aspect-ratio: 210 / 297;
+    }
+
+    .cover h1 {
+        font-size: 28px;
+    }
+
+    .prayer-content {
+        font-size: 14px;
+    }
+}
+
+@media print {
+    body {
+        background: white;
+    }
+
+    header,
+    .admin-panel {
+        display: none !important;
+    }
+
+    .book {
+        display: block;
+    }
+
+    .page {
+        margin: 0;
+        box-shadow: none;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Christian Prayer Book</h1>
+    <p>CreateLK Admin PDF Viewer</p>
+</header>
+
+<div class="container">
+
+<section class="admin-panel">
+
+    <h2>Prayer Book Administration</h2>
+
+    <div class="field">
+        <label for="bookTitle">Book Title</label>
+        <input
+            type="text"
+            id="bookTitle"
+            value="Christian Prayer Book"
+        >
+    </div>
+
+    <div class="field">
+        <label for="subtitle">Subtitle</label>
+        <input
+            type="text"
+            id="subtitle"
+            value="A Collection of Prayers for the People of Sri Lanka"
+        >
+    </div>
+
+    <div class="field">
+        <label for="ministry">Ministry / Church Name</label>
+        <input
+            type="text"
+            id="ministry"
+            value="Gate of Heaven Ministries"
+        >
+    </div>
+
+    <div class="field">
+        <label for="coverUpload">Upload Cover Photo</label>
+        <input
+            type="file"
+            id="coverUpload"
+            accept="image/*"
+        >
+
+        <div class="cover-preview" id="coverPreview">
+            <img id="coverPreviewImage" alt="Cover preview">
+        </div>
+    </div>
+
+    <div class="field">
+        <label for="prayerTitle">Prayer Title</label>
+        <input
+            type="text"
+            id="prayerTitle"
+            value="A Prayer for Sri Lanka"
+        >
+    </div>
+
+    <div class="field">
+        <label for="prayerText">Prayer Content</label>
+        <textarea id="prayerText">Heavenly Father,
+
+We come before You with humble hearts and ask You to bless our nation Sri Lanka.
+
+Bring peace to every family.
+Strengthen every church.
+Protect our children.
+Comfort those who are suffering.
+Give wisdom to our leaders.
+Help us to love one another and walk according to Your Word.
+
+May Your light shine throughout Sri Lanka and may many people come to know Your love and salvation.
+
+In Jesus' name we pray.
+
+Amen.</textarea>
+    </div>
+
+    <div class="field">
+        <label for="verse">Bible Verse</label>
+        <textarea id="verse">“Blessed is the nation whose God is the LORD.” — Psalm 33:12</textarea>
+    </div>
+
+    <div class="buttons">
+        <button class="btn-primary" onclick="updatePreview()">
+            Update Preview
+        </button>
+
+        <button class="btn-light" onclick="addPrayerPage()">
+            Add Prayer Page
+        </button>
+
+        <button class="btn-danger" onclick="clearPrayerPages()">
+            Clear Prayer Pages
+        </button>
+
+        <button class="btn-gold" onclick="requestDownload()">
+            Download PDF
+        </button>
+    </div>
+
+</section>
+
+<div id="book" class="book">
+
+    <!-- COVER -->
+    <section class="page cover" id="coverPage">
+
+        <div class="cover-content">
+
+            <div class="cross">✝</div>
+
+            <h1 id="previewBookTitle">
+                Christian Prayer Book
+            </h1>
+
+            <h2 id="previewSubtitle">
+                A Collection of Prayers for the People of Sri Lanka
+            </h2>
+
+            <div class="ministry" id="previewMinistry">
+                Gate of Heaven Ministries
+            </div>
+
+        </div>
+
+    </section>
+
+    <!-- FIRST PRAYER -->
+    <section class="page prayer-page">
+
+        <div class="page-inner">
+
+            <div class="book-title">
+                <h2>Prayer</h2>
+                <p>Let us pray together in faith.</p>
+            </div>
+
+            <h1 class="prayer-title" id="previewPrayerTitle">
+                A Prayer for Sri Lanka
+            </h1>
+
+            <div class="prayer-content" id="previewPrayerText"></div>
+
+            <div class="bible-verse" id="previewVerse"></div>
+
+        </div>
+
+        <div class="footer">
+            Christian Prayer Book • Gate of Heaven Ministries
+        </div>
+
+        <div class="page-number">
+            1
+        </div>
+
+    </section>
+
+</div>
+
+</div>
+
+<!-- PASSWORD MODAL -->
+
+<div class="modal" id="passwordModal">
+
+    <div class="modal-box">
+
+        <h2>Download PDF</h2>
+
+        <p>
+            Enter the authorized work code to download this prayer book.
+        </p>
+
+        <input
+            type="password"
+            id="passwordInput"
+            class="password-input"
+            placeholder="Enter work code"
+            autocomplete="off"
+        >
+
+        <div class="error" id="passwordError"></div>
+
+        <div class="buttons">
+
+            <button
+                class="btn-gold"
+                onclick="checkPassword()"
+            >
+                Download
+            </button>
+
+            <button
+                class="btn-light"
+                onclick="closePasswordModal()"
+            >
+                Cancel
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+const WORK_CODE = "createlk#2026#02#09#";
+
+let coverImageData = null;
+let prayerPageCount = 1;
+
+/* -----------------------------
+   INITIAL PREVIEW
+----------------------------- */
+
+updatePreview();
+
+/* -----------------------------
+   COVER UPLOAD
+----------------------------- */
+
+document
+.getElementById("coverUpload")
+.addEventListener("change", function(event) {
+
+    const file = event.target.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+
+        coverImageData = e.target.result;
+
+        const preview =
+            document.getElementById("coverPreview");
+
+        const image =
+            document.getElementById("coverPreviewImage");
+
+        image.src = coverImageData;
+
+        preview.style.display = "block";
+
+        document
+            .getElementById("coverPage")
+            .style.backgroundImage =
+            "linear-gradient(rgba(20,40,60,.42),rgba(20,40,60,.55)),url('" +
+            coverImageData +
+            "')";
+
+    };
+
+    reader.readAsDataURL(file);
+});
+
+/* -----------------------------
+   UPDATE PREVIEW
+----------------------------- */
+
+function updatePreview() {
+
+    document.getElementById("previewBookTitle").textContent =
+        document.getElementById("bookTitle").value ||
+        "Christian Prayer Book";
+
+    document.getElementById("previewSubtitle").textContent =
+        document.getElementById("subtitle").value ||
+        "A Collection of Prayers for the People of Sri Lanka";
+
+    document.getElementById("previewMinistry").textContent =
+        document.getElementById("ministry").value ||
+        "Gate of Heaven Ministries";
+
+    document.getElementById("previewPrayerTitle").textContent =
+        document.getElementById("prayerTitle").value ||
+        "Prayer";
+
+    document.getElementById("previewPrayerText").textContent =
+        document.getElementById("prayerText").value;
+
+    document.getElementById("previewVerse").textContent =
+        document.getElementById("verse").value;
+}
+
+/* -----------------------------
+   ADD PRAYER PAGE
+----------------------------- */
+
+function addPrayerPage() {
+
+    prayerPageCount++;
+
+    const title =
+        prompt(
+            "Enter prayer title:",
+            "Prayer " + prayerPageCount
+        );
+
+    if (!title) {
+        prayerPageCount--;
+        return;
+    }
+
+    const text =
+        prompt(
+            "Enter prayer content:",
+            "Write the prayer here..."
+        );
+
+    if (text === null) {
+        prayerPageCount--;
+        return;
+    }
+
+    const verse =
+        prompt(
+            "Enter Bible verse:",
+            ""
+        );
+
+    const page =
+        document.createElement("section");
+
+    page.className = "page prayer-page";
+
+    page.innerHTML = `
+
+        <div class="page-inner">
+
+            <div class="book-title">
+                <h2>Prayer</h2>
+                <p>Let us pray together in faith.</p>
+            </div>
+
+            <h1 class="prayer-title">
+                ${escapeHTML(title)}
+            </h1>
+
+            <div class="prayer-content">
+                ${escapeHTML(text)}
+            </div>
+
+            ${
+                verse
+                ?
+                `<div class="bible-verse">
+                    ${escapeHTML(verse)}
+                </div>`
+                :
+                ""
+            }
+
+        </div>
+
+        <div class="footer">
+            Christian Prayer Book • ${escapeHTML(
+                document.getElementById("ministry").value
+            )}
+        </div>
+
+        <div class="page-number">
+            ${prayerPageCount}
+        </div>
+    `;
+
+    document
+        .getElementById("book")
+        .appendChild(page);
+
+    renumberPages();
+}
+
+/* -----------------------------
+   REMOVE PRAYER PAGES
+----------------------------- */
+
+function clearPrayerPages() {
+
+    const pages =
+        document.querySelectorAll(".prayer-page");
+
+    pages.forEach((page, index) => {
+
+        if (index > 0) {
+            page.remove();
+        }
+
+    });
+
+    prayerPageCount = 1;
+
+    renumberPages();
+}
+
+/* -----------------------------
+   RENUMBER PAGES
+----------------------------- */
+
+function renumberPages() {
+
+    const pages =
+        document.querySelectorAll(".prayer-page");
+
+    pages.forEach((page, index) => {
+
+        const number =
+            page.querySelector(".page-number");
+
+        if (number) {
+            number.textContent = index + 1;
+        }
+
+    });
+}
+
+/* -----------------------------
+   HTML ESCAPE
+----------------------------- */
+
+function escapeHTML(value) {
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+/* -----------------------------
+   PASSWORD
+----------------------------- */
+
+function requestDownload() {
+
+    updatePreview();
+
+    document
+        .getElementById("passwordModal")
+        .style.display = "flex";
+
+    document
+        .getElementById("passwordInput")
+        .value = "";
+
+    document
+        .getElementById("passwordError")
+        .textContent = "";
+
+    setTimeout(() => {
+
+        document
+            .getElementById("passwordInput")
+            .focus();
+
+    }, 100);
+
+}
+
+function closePasswordModal() {
+
+    document
+        .getElementById("passwordModal")
+        .style.display = "none";
+
+}
+
+document
+.getElementById("passwordInput")
+.addEventListener("keydown", function(event) {
+
+    if (event.key === "Enter") {
+        checkPassword();
+    }
+
+    if (event.key === "Escape") {
+        closePasswordModal();
+    }
+
+});
+
+/* -----------------------------
+   CHECK PASSWORD
+----------------------------- */
+
+function checkPassword() {
+
+    const entered =
+        document
+            .getElementById("passwordInput")
+            .value;
+
+    if (entered !== WORK_CODE) {
+
+        document
+            .getElementById("passwordError")
+            .textContent =
+            "Incorrect work code.";
+
+        return;
+    }
+
+    closePasswordModal();
+
+    generatePDF();
+}
+
+/* -----------------------------
+   GENERATE PDF
+----------------------------- */
+
+async function generatePDF() {
+
+    updatePreview();
+
+    const {
+        jsPDF
+    } = window.jspdf;
+
+    const pages =
+        document.querySelectorAll(".page");
+
+    if (!pages.length) {
+        return;
+    }
+
+    const pdf =
+        new jsPDF({
+            orientation: "portrait",
+            unit: "mm",
+            format: "a4",
+            compress: true
+        });
+
+    for (let i = 0; i < pages.length; i++) {
+
+        const page = pages[i];
+
+        const canvas =
+            await html2canvas(page, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: "#ffffff"
+            });
+
+        const imageData =
+            canvas.toDataURL(
+                "image/jpeg",
+                0.92
+            );
+
+        if (i > 0) {
+            pdf.addPage();
+        }
+
+        pdf.addImage(
+            imageData,
+            "JPEG",
+            0,
+            0,
+            210,
+            297,
+            undefined,
+            "FAST"
+        );
+    }
+
+    const title =
+        document
+            .getElementById("bookTitle")
+            .value
+            .trim()
+            .replace(/[^\w\s-]/g, "")
+            .replace(/\s+/g, "-") ||
+        "Christian-Prayer-Book";
+
+    pdf.save(
+        title + ".pdf"
+    );
+}
+
+</script>
+
+</body>
+</html>
