@@ -1,456 +1,212 @@
-const corsHeaders = {
+const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization"
 };
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
     status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-    },
+    headers: { ...cors, "Content-Type": "application/json" }
   });
-}
 
-// =====================================================
-// AUTH
-// =====================================================
-
-async function authenticate(request, env) {
-  const auth = request.headers.get("Authorization");
-
-  if (!auth || !auth.startsWith("Bearer ")) return null;
+async function auth(request, env) {
+  const h = request.headers.get("Authorization");
+  if (!h?.startsWith("Bearer ")) return null;
 
   try {
-    const response = await env.AUTH.fetch(
+    const r = await env.AUTH.fetch(
       new Request("https://auth.internal/auth/me", {
-        method: "GET",
-        headers: {
-          Authorization: auth,
-        },
+        headers: { Authorization: h }
       })
     );
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-
-    return data.customer || data.user || data;
-  } catch (error) {
-    console.error("Auth error:", error);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.customer || d.user || d;
+  } catch {
     return null;
   }
 }
 
-// =====================================================
-// SUBSCRIPTION
-// =====================================================
-
-async function getSubscription(env, customerId, course) {
+async function subscription(env, customerId) {
   return await env.DB.prepare(`
-    SELECT
-      id,
-      customer_id,
-      grade,
-      status,
-      order_id,
-      payment_id,
-      amount,
-      currency,
-      starts_at,
-      expires_at
+    SELECT id,customer_id,grade,status,order_id,payment_id,
+           amount,currency,starts_at,expires_at
     FROM premium_subscriptions
-    WHERE customer_id = ?
-      AND grade = ?
-      AND status = 'ACTIVE'
-      AND expires_at > datetime('now')
-    ORDER BY id DESC
-    LIMIT 1
-  `)
-    .bind(customerId, course)
-    .first();
+    WHERE customer_id=?
+      AND REPLACE(LOWER(TRIM(grade)),'-',' ')
+          = 'spoken english'
+      AND status='ACTIVE'
+      AND expires_at>datetime('now')
+    ORDER BY id DESC LIMIT 1
+  `).bind(customerId).first();
 }
 
-// =====================================================
-// MAIN
-// =====================================================
+async function findLesson(env, number) {
+  return await env.DB.prepare(`
+    SELECT id,grade,subject,unit,lesson_number,lesson_code,
+           duration,video_url,image_url,is_active,is_free,created_at
+    FROM premium_lessons
+    WHERE LOWER(TRIM(grade))='spoken english'
+      AND LOWER(TRIM(subject))='spoken english'
+      AND lesson_number=? AND is_active=1
+    LIMIT 1
+  `).bind(number).first();
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
-    }
+    if (request.method === "OPTIONS")
+      return new Response(null, { headers: cors });
 
     try {
-
-      // =================================================
-      // HOME
-      // =================================================
-
-      if (url.pathname === "/" && request.method === "GET") {
+      if (url.pathname === "/" && request.method === "GET")
         return json({
           success: true,
           service: "CreateLK Academy API",
           status: "online",
-          version: "2.0.0",
+          version: "2.4"
         });
-      }
-
-      // =================================================
-      // AUTH TEST
-      // =================================================
 
       if (url.pathname === "/auth-test") {
-        const customer = await authenticate(request, env);
-
-        if (!customer) {
-          return json({
-            success: false,
-            authenticated: false,
-          }, 401);
-        }
-
-        return json({
-          success: true,
-          authenticated: true,
-          customer,
-        });
+        const customer = await auth(request, env);
+        return customer
+          ? json({ success: true, authenticated: true, customer })
+          : json({ success: false, authenticated: false }, 401);
       }
 
-      // =================================================
-      // SPOKEN ENGLISH LESSONS
-      //
-      // GET /lessons?course=spoken-english&language=en
-      // =================================================
+      if (url.pathname === "/lessons" && request.method === "GET") {
+        const course = url.searchParams.get("course") || "spoken-english";
+        const language = url.searchParams.get("language") || "en";
 
-      if (
-        url.pathname === "/lessons" &&
-        request.method === "GET"
-      ) {
-        const course =
-          url.searchParams.get("course") || "spoken-english";
+        if (course !== "spoken-english")
+          return json({ success: false, error: "Invalid course." }, 400);
 
-        const language =
-          url.searchParams.get("language") || "en";
-
-        if (course !== "spoken-english") {
-          return json({
-            success: false,
-            error: "Only spoken-english is currently available.",
-          }, 400);
-        }
-
-        const customer = await authenticate(request, env);
-
+        const customer = await auth(request, env);
         let premium = false;
-        let subscription = null;
 
         if (customer) {
-          const customerId =
-            customer.id || customer.customer_id;
-
-          if (customerId) {
-            subscription = await getSubscription(
-              env,
-              customerId,
-              "spoken-english"
-            );
-
-            premium = !!subscription;
-          }
+          const id = customer.id || customer.customer_id;
+          if (id) premium = !!await subscription(env, id);
         }
 
-        const result = await env.DB.prepare(`
-          SELECT
-            p.id,
-            p.grade,
-            p.subject,
-            p.unit,
-            p.lesson_number,
-            p.lesson_code,
-            p.duration,
-            p.video_url,
-            p.image_url,
-            p.is_active,
-            p.is_free,
-            t.language,
-            t.title,
-            t.objectives,
-            t.summary
+        const r = await env.DB.prepare(`
+          SELECT p.id,p.grade,p.subject,p.unit,p.lesson_number,
+                 p.lesson_code,p.duration,p.video_url,p.image_url,
+                 p.is_active,p.is_free,t.language,t.title,
+                 t.objectives,t.summary
           FROM premium_lessons p
           LEFT JOIN premium_lesson_translations t
-            ON t.lesson_id = p.id
-            AND t.language = ?
-          WHERE p.grade = 'spoken-english'
-            AND p.subject = 'Spoken English'
-            AND p.is_active = 1
-          ORDER BY p.lesson_number ASC
-        `)
-          .bind(language)
-          .all();
+            ON t.lesson_id=p.id AND t.language=?
+          WHERE LOWER(TRIM(p.grade))='spoken english'
+            AND LOWER(TRIM(p.subject))='spoken english'
+            AND p.is_active=1
+          ORDER BY p.lesson_number
+        `).bind(language).all();
 
         return json({
           success: true,
-          course: "spoken-english",
+          course,
           language,
           premium,
-          lessons: result.results || [],
+          lessons: r.results || []
         });
       }
 
-      // =================================================
-      // SINGLE SPOKEN ENGLISH LESSON
-      //
-      // GET /lesson?course=spoken-english
-      // &lesson=1&language=en
-      // =================================================
+      if (url.pathname === "/lesson" && request.method === "GET") {
+        const course = url.searchParams.get("course") || "spoken-english";
+        const language = url.searchParams.get("language") || "en";
+        const number = Number(url.searchParams.get("lesson") || 1);
 
-      if (
-        url.pathname === "/lesson" &&
-        request.method === "GET"
-      ) {
-        const course =
-          url.searchParams.get("course") || "spoken-english";
+        if (course !== "spoken-english" ||
+            !Number.isInteger(number) || number < 1 || number > 100)
+          return json({ success: false, error: "Invalid lesson." }, 400);
 
-        const language =
-          url.searchParams.get("language") || "en";
+        const customer = await auth(request, env);
+        if (!customer)
+          return json({ success: false, error: "Unauthorized." }, 401);
 
-        const lessonNumber =
-          Number(url.searchParams.get("lesson") || 1);
+        const customerId = customer.id || customer.customer_id;
+        const lesson = await findLesson(env, number);
 
-        if (course !== "spoken-english") {
-          return json({
-            success: false,
-            error: "Invalid course.",
-          }, 400);
-        }
-
-        if (
-          !Number.isInteger(lessonNumber) ||
-          lessonNumber < 1 ||
-          lessonNumber > 100
-        ) {
-          return json({
-            success: false,
-            error: "Invalid lesson number.",
-          }, 400);
-        }
-
-        const customer = await authenticate(request, env);
-
-        if (!customer) {
-          return json({
-            success: false,
-            error: "Unauthorized.",
-          }, 401);
-        }
-
-        const customerId =
-          customer.id || customer.customer_id;
-
-        // -----------------------------------------------
-        // FIND LESSON
-        // -----------------------------------------------
-
-        const lesson = await env.DB.prepare(`
-          SELECT
-            id,
-            grade,
-            subject,
-            unit,
-            lesson_number,
-            lesson_code,
-            duration,
-            video_url,
-            image_url,
-            is_active,
-            is_free,
-            created_at
-          FROM premium_lessons
-          WHERE grade = 'spoken-english'
-            AND subject = 'Spoken English'
-            AND lesson_number = ?
-            AND is_active = 1
-          LIMIT 1
-        `)
-          .bind(lessonNumber)
-          .first();
-
-        if (!lesson) {
+        if (!lesson)
           return json({
             success: false,
             error: "Lesson not found.",
+            lesson_number: number
           }, 404);
-        }
 
-        // -----------------------------------------------
-        // ACCESS
-        // -----------------------------------------------
+        const free = Number(lesson.is_free) === 1;
+        let sub = null;
 
-        const isFree =
-          Number(lesson.is_free) === 1;
+        if (!free) sub = await subscription(env, customerId);
 
-        let subscription = null;
-        let hasAccess = isFree;
-
-        if (!isFree) {
-          subscription = await getSubscription(
-            env,
-            customerId,
-            "spoken-english"
-          );
-
-          hasAccess = !!subscription;
-        }
-
-        if (!hasAccess) {
+        if (!free && !sub)
           return json({
             success: false,
             premium_required: true,
-            message:
-              "This lesson requires a Premium subscription.",
+            message: "This lesson requires a Premium subscription.",
             lesson: {
               id: lesson.id,
-              lesson_number: lesson.lesson_number,
+              lesson_number: number,
               lesson_code: lesson.lesson_code,
-              free: false,
-            },
+              free: false
+            }
           }, 403);
-        }
 
-        // -----------------------------------------------
-        // TRANSLATION
-        // -----------------------------------------------
-
-        let translation = await env.DB.prepare(`
-          SELECT
-            id,
-            language,
-            title,
-            objectives,
-            content,
-            key_points,
-            summary
+        let t = await env.DB.prepare(`
+          SELECT id,language,title,objectives,content,key_points,summary
           FROM premium_lesson_translations
-          WHERE lesson_id = ?
-            AND language = ?
-          LIMIT 1
-        `)
-          .bind(lesson.id, language)
-          .first();
+          WHERE lesson_id=? AND language=? LIMIT 1
+        `).bind(lesson.id, language).first();
 
-        // English fallback
-        if (!translation && language !== "en") {
-          translation = await env.DB.prepare(`
-            SELECT
-              id,
-              language,
-              title,
-              objectives,
-              content,
-              key_points,
-              summary
+        if (!t && language !== "en")
+          t = await env.DB.prepare(`
+            SELECT id,language,title,objectives,content,key_points,summary
             FROM premium_lesson_translations
-            WHERE lesson_id = ?
-              AND language = 'en'
-            LIMIT 1
-          `)
-            .bind(lesson.id)
-            .first();
-        }
+            WHERE lesson_id=? AND language='en' LIMIT 1
+          `).bind(lesson.id).first();
 
-        // -----------------------------------------------
-        // DIALOGUES
-        // -----------------------------------------------
-
-        let dialogues = [];
-
-        const dialogueResult = await env.DB.prepare(`
-          SELECT
-            id,
-            dialogue_number,
-            speaker_a,
-            text_a,
-            speaker_b,
-            text_b
+        let d = await env.DB.prepare(`
+          SELECT id,dialogue_number,speaker_a,text_a,speaker_b,text_b
           FROM lesson_dialogues
-          WHERE lesson_id = ?
-            AND language = ?
-          ORDER BY dialogue_number ASC
-        `)
-          .bind(lesson.id, language)
-          .all();
+          WHERE lesson_id=? AND language=?
+          ORDER BY dialogue_number
+        `).bind(lesson.id, language).all();
 
-        dialogues = dialogueResult.results || [];
+        d = d.results || [];
 
-        // English fallback for dialogues
-        if (
-          dialogues.length === 0 &&
-          language !== "en"
-        ) {
-          const fallback = await env.DB.prepare(`
-            SELECT
-              id,
-              dialogue_number,
-              speaker_a,
-              text_a,
-              speaker_b,
-              text_b
+        if (!d.length && language !== "en") {
+          const x = await env.DB.prepare(`
+            SELECT id,dialogue_number,speaker_a,text_a,speaker_b,text_b
             FROM lesson_dialogues
-            WHERE lesson_id = ?
-              AND language = 'en'
-            ORDER BY dialogue_number ASC
-          `)
-            .bind(lesson.id)
-            .all();
-
-          dialogues = fallback.results || [];
+            WHERE lesson_id=? AND language='en'
+            ORDER BY dialogue_number
+          `).bind(lesson.id).all();
+          d = x.results || [];
         }
-
-        // -----------------------------------------------
-        // QUESTIONS
-        // -----------------------------------------------
 
         let questions = [];
 
         try {
-          const questionResult = await env.DB.prepare(`
-            SELECT
-              id,
-              question,
-              option_a,
-              option_b,
-              option_c,
-              option_d,
-              correct_answer,
-              explanation
+          const q = await env.DB.prepare(`
+            SELECT id,question,option_a,option_b,option_c,option_d,
+                   correct_answer,explanation
             FROM premium_questions
-            WHERE lesson_id = ?
-              AND language = ?
-            ORDER BY id ASC
-          `)
-            .bind(lesson.id, language)
-            .all();
+            WHERE lesson_id=? AND language=?
+            ORDER BY id
+          `).bind(lesson.id, language).all();
 
-          questions = questionResult.results || [];
-        } catch (error) {
-          console.log("Questions unavailable.");
-        }
-
-        // -----------------------------------------------
-        // RESPONSE
-        // -----------------------------------------------
+          questions = q.results || [];
+        } catch {}
 
         return json({
           success: true,
           access: true,
-          course: "spoken-english",
-          free: isFree,
-
+          course,
+          free,
           lesson: {
             id: lesson.id,
             lesson_number: lesson.lesson_number,
@@ -458,277 +214,158 @@ export default {
             duration: lesson.duration,
             video_url: lesson.video_url,
             image_url: lesson.image_url,
-
-            language:
-              translation?.language || language,
-
-            title:
-              translation?.title || `Lesson ${lesson.lesson_number}`,
-
-            objectives:
-              translation?.objectives || "",
-
-            content:
-              translation?.content || "",
-
-            key_points:
-              translation?.key_points || "",
-
-            summary:
-              translation?.summary || "",
-
-            dialogues,
-            questions,
+            language: t?.language || language,
+            title: t?.title || `Lesson ${number}`,
+            objectives: t?.objectives || "",
+            content: t?.content || "",
+            key_points: t?.key_points || "",
+            summary: t?.summary || "",
+            dialogues: d,
+            questions
           },
-
-          subscription: subscription
-            ? {
-                active: true,
-                starts_at: subscription.starts_at,
-                expires_at: subscription.expires_at,
-              }
-            : null,
+          subscription: sub ? {
+            active: true,
+            starts_at: sub.starts_at,
+            expires_at: sub.expires_at
+          } : null
         });
       }
 
-      // =================================================
-      // PREMIUM STATUS
-      //
-      // GET /premium/status?course=spoken-english
-      // =================================================
+      if (url.pathname === "/premium/status" &&
+          request.method === "GET") {
+        const customer = await auth(request, env);
+        if (!customer)
+          return json({ success: false, error: "Unauthorized." }, 401);
 
-      if (
-        url.pathname === "/premium/status" &&
-        request.method === "GET"
-      ) {
-        const course =
-          url.searchParams.get("course") || "spoken-english";
-
-        if (course !== "spoken-english") {
-          return json({
-            success: false,
-            error: "Invalid course.",
-          }, 400);
-        }
-
-        const customer =
-          await authenticate(request, env);
-
-        if (!customer) {
-          return json({
-            success: false,
-            error: "Unauthorized.",
-          }, 401);
-        }
-
-        const customerId =
-          customer.id || customer.customer_id;
-
-        const subscription =
-          await getSubscription(
-            env,
-            customerId,
-            "spoken-english"
-          );
+        const id = customer.id || customer.customer_id;
+        const sub = await subscription(env, id);
 
         return json({
           success: true,
           course: "spoken-english",
-          premium: !!subscription,
-
-          subscription: subscription
-            ? {
-                id: subscription.id,
-                status: subscription.status,
-                starts_at: subscription.starts_at,
-                expires_at: subscription.expires_at,
-                amount: subscription.amount,
-                currency: subscription.currency,
-              }
-            : null,
+          premium: !!sub,
+          subscription: sub ? {
+            id: sub.id,
+            status: sub.status,
+            starts_at: sub.starts_at,
+            expires_at: sub.expires_at,
+            amount: sub.amount,
+            currency: sub.currency
+          } : null
         });
       }
 
-      // =================================================
-      // PROGRESS
-      //
-      // GET /progress?course=spoken-english
-      // =================================================
+      if (url.pathname === "/progress" &&
+          request.method === "GET") {
+        const course = url.searchParams.get("course") || "spoken-english";
+        const customer = await auth(request, env);
 
-      if (
-        url.pathname === "/progress" &&
-        request.method === "GET"
-      ) {
-        const course =
-          url.searchParams.get("course") || "spoken-english";
+        if (!customer)
+          return json({ success: false, error: "Unauthorized." }, 401);
 
-        const customer =
-          await authenticate(request, env);
+        const id = customer.id || customer.customer_id;
 
-        if (!customer) {
-          return json({
-            success: false,
-            error: "Unauthorized.",
-          }, 401);
-        }
-
-        const customerId =
-          customer.id || customer.customer_id;
-
-        const result = await env.DB.prepare(`
-          SELECT lesson_number, completed_at
+        const r = await env.DB.prepare(`
+          SELECT lesson_number,completed_at
           FROM lesson_progress
-          WHERE customer_id = ?
-            AND course = ?
-          ORDER BY lesson_number ASC
-        `)
-          .bind(customerId, course)
-          .all();
+          WHERE customer_id=? AND course=?
+          ORDER BY lesson_number
+        `).bind(id, course).all();
 
-        const completed =
-          result.results || [];
+        const lessons = r.results || [];
 
         return json({
           success: true,
           course,
-          completed_count: completed.length,
+          completed_count: lessons.length,
           total_lessons: 100,
-          lessons: completed,
+          lessons
         });
       }
 
-      // =================================================
-      // COMPLETE LESSON
-      //
-      // POST /lesson/complete
-      // =================================================
+      if (url.pathname === "/lesson/complete" &&
+          request.method === "POST") {
+        const customer = await auth(request, env);
 
-      if (
-        url.pathname === "/lesson/complete" &&
-        request.method === "POST"
-      ) {
-        const customer =
-          await authenticate(request, env);
+        if (!customer)
+          return json({ success: false, error: "Unauthorized." }, 401);
 
-        if (!customer) {
-          return json({
-            success: false,
-            error: "Unauthorized.",
-          }, 401);
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ success: false, error: "Invalid JSON." }, 400);
         }
 
-        const customerId =
-          customer.id || customer.customer_id;
+        const course = body.course || "spoken-english";
+        const number = Number(body.lesson_number);
+        const id = customer.id || customer.customer_id;
 
-        const body =
-          await request.json();
+        if (course !== "spoken-english" ||
+            !Number.isInteger(number) || number < 1 || number > 100)
+          return json({ success: false, error: "Invalid lesson." }, 400);
 
-        const course =
-          body.course || "spoken-english";
+        const lesson = await findLesson(env, number);
 
-        const lessonNumber =
-          Number(body.lesson_number);
-
-        if (
-          course !== "spoken-english" ||
-          !Number.isInteger(lessonNumber) ||
-          lessonNumber < 1 ||
-          lessonNumber > 100
-        ) {
-          return json({
-            success: false,
-            error: "Invalid lesson.",
-          }, 400);
-        }
+        if (!lesson)
+          return json({ success: false, error: "Lesson does not exist." }, 404);
 
         await env.DB.prepare(`
           INSERT OR IGNORE INTO lesson_progress
-          (customer_id, course, lesson_number)
-          VALUES (?, ?, ?)
-        `)
-          .bind(
-            customerId,
-            course,
-            lessonNumber
-          )
-          .run();
+          (customer_id,course,lesson_number)
+          VALUES (?,?,?)
+        `).bind(id, course, number).run();
 
-        const countResult =
-          await env.DB.prepare(`
-            SELECT COUNT(*) AS count
-            FROM lesson_progress
-            WHERE customer_id = ?
-              AND course = ?
-          `)
-            .bind(customerId, course)
-            .first();
+        const count = await env.DB.prepare(`
+          SELECT COUNT(*) AS count
+          FROM lesson_progress
+          WHERE customer_id=? AND course=?
+        `).bind(id, course).first();
 
-        const completed =
-          Number(countResult?.count || 0);
+        const completed = Number(count?.count || 0);
 
         return json({
           success: true,
           course,
-          lesson_number: lessonNumber,
+          lesson_number: number,
           completed_count: completed,
           total_lessons: 100,
-          certificate_ready:
-            completed >= 100,
+          certificate_ready: completed >= 100
         });
       }
 
-      // =================================================
-      // PREMIUM CHECKOUT
-      // =================================================
+      if (url.pathname === "/premium/checkout" &&
+          request.method === "GET") {
+        const customer = await auth(request, env);
 
-      if (
-        url.pathname === "/premium/checkout" &&
-        request.method === "GET"
-      ) {
-        const customer =
-          await authenticate(request, env);
-
-        if (!customer) {
-          return json({
-            success: false,
-            error: "Unauthorized.",
-          }, 401);
-        }
+        if (!customer)
+          return json({ success: false, error: "Unauthorized." }, 401);
 
         return json({
           success: false,
           configured: false,
-          message:
-            "Premium payment is not configured yet.",
+          message: "Premium payment is not configured yet.",
           course: "spoken-english",
           price: 999,
           currency: "LKR",
-          period_days: 30,
+          period_days: 30
         }, 501);
       }
-
-      // =================================================
-      // 404
-      // =================================================
 
       return json({
         success: false,
         error: "API route not found.",
-        path: url.pathname,
+        path: url.pathname
       }, 404);
 
-    } catch (error) {
-
-      console.error(
-        "Fatal Worker Error:",
-        error
-      );
+    } catch (e) {
+      console.error(e);
 
       return json({
         success: false,
         error: "Internal server error.",
-        details: error.message,
+        details: e?.message || String(e)
       }, 500);
     }
-  },
+  }
 };
