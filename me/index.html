@@ -3,1223 +3,531 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#071a36">
+<meta name="theme-color" content="#111827">
 <title>Personal Vault</title>
-
 <style>
 *{box-sizing:border-box}
-body{
- margin:0;background:#071a36;color:#fff;
- font-family:Arial,sans-serif
-}
+body{margin:0;font:15px Arial;background:#f3f4f6;color:#111827}
+header{background:#111827;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+header h1{margin:0;font-size:20px}
+main{max-width:900px;margin:auto;padding:15px}
+.card{background:#fff;border-radius:15px;padding:18px;margin-bottom:15px;box-shadow:0 2px 12px #0001}
+h2,h3{margin-top:0}
+input,select,textarea,button{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:8px;font:inherit}
+textarea{min-height:100px}
+button{background:#111827;color:white;border:0;font-weight:bold;cursor:pointer}
+button.red{background:#dc2626}
+button.green{background:#059669}
+button.gray{background:#e5e7eb;color:#111827}
+button.small{width:auto;padding:8px 11px}
+.form{display:grid;gap:10px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions{display:flex;gap:7px;flex-wrap:wrap}
+.actions button{width:auto}
 .hidden{display:none!important}
-.center{
- min-height:100vh;display:flex;align-items:center;
- justify-content:center;padding:20px
-}
-.card{
- background:#102a56;border:1px solid #294a7a;
- border-radius:18px;padding:22px;margin:12px 0
-}
-.login{width:100%;max-width:420px}
-h1,h2,h3{margin-top:0}
-input,textarea,select{
- width:100%;padding:13px;margin:6px 0;
- border-radius:9px;border:1px solid #45658f;
- background:#071a36;color:#fff;font-size:15px
-}
-textarea{min-height:100px;resize:vertical}
-button{
- padding:12px 16px;border:0;border-radius:9px;
- background:#d9a441;color:#071a36;
- font-weight:bold;cursor:pointer;margin:5px 0
-}
-button.danger{background:#b83b3b;color:#fff}
-.small{font-size:13px;color:#b9c8dc}
-.message{padding:10px;margin-top:10px;border-radius:8px}
-.success{background:#174d35}
-.error{background:#642c35}
-header{
- padding:15px 20px;background:#0c2348;
- display:flex;justify-content:space-between;
- align-items:center;gap:10px;position:sticky;top:0;z-index:5
-}
-main{max-width:1100px;margin:auto;padding:15px}
-.grid{
- display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
- gap:12px
-}
-.item{
- background:#0c2348;padding:15px;border-radius:12px;
- border:1px solid #294a7a;margin:8px 0
-}
-.stat{
- text-align:center;background:#0c2348;
- padding:15px;border-radius:12px
-}
-.stat b{font-size:25px;display:block}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.row>*{flex:1}
-.photo{
- width:100%;max-height:220px;object-fit:cover;
- border-radius:10px;margin-top:8px
-}
-.top{display:flex;justify-content:space-between;align-items:center}
-@media(max-width:600px){
- header{align-items:flex-start}
- .row{display:block}
-}
+.msg{display:none;margin-top:10px;padding:10px;border-radius:8px}
+.msg.show{display:block;background:#fee2e2;color:#991b1b}
+.msg.ok{display:block;background:#dcfce7;color:#166534}
+.info{padding:11px;background:#eff6ff;color:#1e40af;border-radius:9px;margin-bottom:12px}
+.warn{padding:11px;background:#fff7ed;color:#9a3412;border-radius:9px;margin-bottom:12px}
+.item,.file{border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin:8px 0}
+.item b{font-size:16px}
+.secret{background:#f3f4f6;padding:8px;border-radius:7px;margin:5px 0;word-break:break-word}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{text-align:center;background:#f9fafb;padding:12px;border-radius:10px}
+.stat b{display:block;font-size:22px;margin-top:4px}
+@media(max-width:600px){.row{grid-template-columns:1fr}}
 </style>
 </head>
-
 <body>
 
-<!-- LOGIN -->
-<section id="loginScreen" class="center">
-<div class="login card">
-
-<h1>🔐 Personal Vault</h1>
-<p class="small">Secure access required</p>
-
-<div id="deviceStep">
-<h3>📱 New Device</h3>
-<input id="deviceCode" type="password"
- placeholder="Enter Secret Code" autocomplete="off">
-<button onclick="verifyDevice()" style="width:100%">
-Continue
-</button>
-</div>
-
-<div id="accountStep" class="hidden">
-<h3>🔑 Login</h3>
-<input id="loginUser"
- placeholder="Username" autocomplete="username">
-<input id="loginPass"
- type="password" placeholder="Password"
- autocomplete="current-password">
-<button onclick="login()" style="width:100%">
-Login
-</button>
-</div>
-
-<div id="recoveryStep" class="hidden">
-<h3>🚫 Account Blocked</h3>
-<p class="small">
-Too many failed login attempts.
-</p>
-<input id="recoveryCode"
- type="password"
- placeholder="Secret Recovery Code"
- autocomplete="off">
-<button onclick="recover()" style="width:100%">
-Unlock
-</button>
-</div>
-
-<div id="loginMessage"></div>
-
-</div>
-</section>
-
-
-<!-- VAULT -->
-<div id="vaultApp" class="hidden">
-
 <header>
-<div>
-<strong>🔐 Personal Vault</strong>
-<div class="small">Encrypted Personal Storage</div>
+<h1>🔐 Personal Vault</h1>
+<div class="actions">
+<button id="lock" class="small gray hidden" onclick="lockVault()">Lock</button>
+<button id="logout" class="small red hidden" onclick="logout()">Logout</button>
 </div>
-<button onclick="lockVault()">🔒 Lock</button>
 </header>
 
 <main>
 
-<!-- STATS -->
-<div class="grid">
-<div class="stat">
-<b id="statItems">0</b>
-<span>Vault Items</span>
+<section id="login" class="card">
+<h2>🔑 Login</h2>
+<div class="info">Enter your Vault username and Login Password.</div>
+<div class="form">
+<input id="user" autocomplete="username" placeholder="Username">
+<input id="pass" type="password" autocomplete="current-password" placeholder="Login Password">
+<button onclick="doLogin()">Login</button>
 </div>
+<div id="loginMsg" class="msg"></div>
+</section>
 
-<div class="stat">
-<b id="statPhotos">0</b>
-<span>Photos</span>
+<section id="master" class="card hidden">
+<h2>🔐 Master Password</h2>
+<div class="warn">Your Master Password is never sent to Cloudflare. It protects your encrypted vault.</div>
+<div class="form">
+<input id="masterPass" type="password" autocomplete="off" placeholder="Master Password">
+<button onclick="unlock()">Unlock Vault</button>
 </div>
+<div id="masterMsg" class="msg"></div>
+</section>
 
-<div class="stat">
-<b id="statCategories">0</b>
-<span>Categories</span>
-</div>
-</div>
+<section id="app" class="hidden">
 
-
-<!-- MASTER PASSWORD -->
-<div id="masterCard" class="card">
-
-<h2>🔑 Master Password</h2>
-
-<p class="small">
-Your master password is never sent to the server.
-</p>
-
-<input id="masterPassword"
-type="password"
-placeholder="Master Password">
-
-<button onclick="unlockVault()">
-Unlock Vault
-</button>
-
-<div id="masterMessage"></div>
-
-<hr>
-
-<h3>🆕 First Setup</h3>
-
-<input id="newMasterPassword"
-type="password"
-placeholder="Create Master Password">
-
-<button onclick="createVault()">
-Create Vault
-</button>
-
-</div>
-
-
-<!-- CONTENT -->
-<div id="vaultContent" class="hidden">
-
-<!-- ADD ITEM -->
 <div class="card">
-
-<h2>➕ Add Secure Item</h2>
-
-<select id="itemCategory"></select>
-
-<input id="itemTitle"
-placeholder="Title">
-
-<input id="itemUsername"
-placeholder="Username / Email">
-
-<input id="itemPassword"
-type="password"
-placeholder="Password">
-
-<textarea id="itemBackup"
-placeholder="Backup Codes"></textarea>
-
-<textarea id="itemNotes"
-placeholder="Notes"></textarea>
-
-<button onclick="addItem()">
-Save Secure Item
-</button>
-
-<div id="itemMessage"></div>
-
+<h2>🔐 Vault</h2>
+<div class="info"><b>Two-password protection:</b> Login Password + Master Password</div>
+<div class="stats">
+<div class="stat">Items<b id="itemsCount">0</b></div>
+<div class="stat">Categories<b id="catCount">0</b></div>
+<div class="stat">Files<b id="fileCount">0</b></div>
+</div>
 </div>
 
-
-<!-- SEARCH -->
 <div class="card">
+<h3>➕ Add Item</h3>
+<div class="form">
+<input id="title" placeholder="Title">
+<select id="category"><option value="">Select category</option></select>
+<input id="username" placeholder="Username / Email">
+<input id="password" type="password" placeholder="Password">
+<textarea id="backup" placeholder="Backup Codes"></textarea>
+<textarea id="notes" placeholder="Secure Notes"></textarea>
+<div class="actions">
+<button onclick="saveItem()">Save</button>
+<button class="gray" onclick="clearForm()">Clear</button>
+</div>
+</div>
+<div id="itemMsg" class="msg"></div>
+</div>
 
+<div class="card">
+<h3>📁 Categories</h3>
 <div class="row">
-<input id="search"
-placeholder="🔎 Search..."
-oninput="renderItems()">
-
-<select id="filterCategory"
-onchange="renderItems()">
-<option value="">All Categories</option>
-</select>
+<input id="newCat" placeholder="New category">
+<button onclick="addCat()">Add</button>
+</div>
+<div id="cats"></div>
 </div>
 
-</div>
-
-
-<!-- ITEMS -->
 <div class="card">
-<h2>🔐 Secure Items</h2>
-<div id="items"></div>
+<h3>🔐 Vault Items</h3>
+<div id="list">Loading...</div>
 </div>
 
-
-<!-- PHOTOS -->
 <div class="card">
-
-<h2>🖼️ Encrypted Photos</h2>
-
-<input id="photoFiles"
-type="file"
-multiple
-accept="image/*">
-
-<button onclick="uploadPhotos()">
-Upload Encrypted Photos
-</button>
-
-<div id="photoMessage"></div>
-
-<div id="photos" class="grid"></div>
-
+<h3>🖼️ Encrypted Files</h3>
+<div class="warn">Files are encrypted in your browser before upload. Maximum 60 MB.</div>
+<input id="file" type="file" onchange="upload()">
+<div id="fileMsg" class="msg"></div>
+<div id="files">Loading...</div>
 </div>
 
-</div>
+</section>
 </main>
-</div>
-
 
 <script>
+const API="https://personal.createlk.workers.dev";
+let key=null,meta=null,files=[];
 
-const API="";
+const $=x=>document.getElementById(x);
 
-const $=id=>document.getElementById(id);
-
-let masterKey=null;
-let vaultItems=[];
-let categories=[];
-
-
-/* API */
+function message(id,text,ok=false){
+  $(id).textContent=text;
+  $(id).className="msg show"+(ok?" ok":"");
+}
 
 async function api(path,opt={}){
- const r=await fetch(API+path,{
-   credentials:"same-origin",
-   ...opt
- });
-
- let data={};
- try{data=await r.json()}catch{}
-
- if(!r.ok){
-   const e=new Error(data.error||"Request failed");
-   e.data=data;
-   throw e;
- }
-
- return data;
+  opt.credentials="include";
+  opt.headers={...(opt.headers||{})};
+  const r=await fetch(API+path,opt);
+  let d={};try{d=await r.json()}catch{}
+  if(!r.ok)throw Error(d.error||"Request failed.");
+  return d;
 }
 
+function b64(a){
+  let s="";
+  for(let i=0;i<a.length;i+=32768)s+=String.fromCharCode(...a.subarray(i,i+32768));
+  return btoa(s);
+}
 
-/* LOGIN */
+function ub64(s){
+  const x=atob(s),a=new Uint8Array(x.length);
+  for(let i=0;i<x.length;i++)a[i]=x.charCodeAt(i);
+  return a;
+}
+
+async function derive(p,s){
+  const b=await crypto.subtle.importKey("raw",new TextEncoder().encode(p),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {name:"PBKDF2",salt:s,iterations:600000,hash:"SHA-256"},
+    b,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]
+  );
+}
+
+async function enc(text){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const d=await crypto.subtle.encrypt(
+    {name:"AES-GCM",iv},key,new TextEncoder().encode(text||"")
+  );
+  return JSON.stringify({iv:b64(iv),data:b64(new Uint8Array(d))});
+}
+
+async function dec(v){
+  if(!v)return"";
+  const x=JSON.parse(v);
+  const d=await crypto.subtle.decrypt(
+    {name:"AES-GCM",iv:ub64(x.iv)},key,ub64(x.data)
+  );
+  return new TextDecoder().decode(d);
+}
 
 async function loginStatus(){
-
- try{
-
-  const s=await api("/api/login/status");
-
-  if(s.loggedIn){
-   showVault();
-   return;
-  }
-
-  if(s.blocked){
-   showRecovery();
-   return;
-  }
-
-  if(s.trustedDevice){
-   $("deviceStep").classList.add("hidden");
-   $("accountStep").classList.remove("hidden");
-  }
-
- }catch(e){
-
-  showLoginMessage("Connection error",true);
-
- }
-
+  try{
+    const d=await api("/api/login/status");
+    if(d.logged_in){
+      $("login").classList.add("hidden");
+      $("master").classList.remove("hidden");
+      $("logout").classList.remove("hidden");
+      await loadMeta();
+    }
+  }catch{}
 }
 
-
-async function verifyDevice(){
-
- const code=$("deviceCode").value.trim();
-
- if(!code){
-  showLoginMessage("Enter secret code",true);
-  return;
- }
-
- try{
-
-  await api("/api/device/verify",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({
-    code,
-    deviceName:navigator.userAgent.slice(0,100)
-   })
-  });
-
-  $("deviceStep").classList.add("hidden");
-  $("accountStep").classList.remove("hidden");
-
-  $("deviceCode").value="";
-
-  showLoginMessage("Device verified",false);
-
- }catch{
-
-  showLoginMessage("Invalid secret code",true);
-
- }
-
-}
-
-
-async function login(){
-
- try{
-
-  await api("/api/login",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({
-    username:$("loginUser").value.trim(),
-    password:$("loginPass").value
-   })
-  });
-
-  $("loginPass").value="";
-  showVault();
-
- }catch(e){
-
-  if(e.data?.blocked){
-   showRecovery();
-   return;
-  }
-
-  showLoginMessage(
-   e.data?.error||"Login failed",
-   true
-  );
-
- }
-
-}
-
-
-function showRecovery(){
-
- $("deviceStep").classList.add("hidden");
- $("accountStep").classList.add("hidden");
- $("recoveryStep").classList.remove("hidden");
-
-}
-
-
-async function recover(){
-
- try{
-
-  await api("/api/login/recovery",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({
-    code:$("recoveryCode").value.trim()
-   })
-  });
-
-  $("recoveryStep").classList.add("hidden");
-  $("accountStep").classList.remove("hidden");
-
-  $("recoveryCode").value="";
-
-  showLoginMessage(
-   "Unlocked. Please login.",
-   false
-  );
-
- }catch{
-
-  showLoginMessage(
-   "Invalid recovery code",
-   true
-  );
-
- }
-
-}
-
-
-function showLoginMessage(text,error){
-
- $("loginMessage").className=
-  "message "+(error?"error":"success");
-
- $("loginMessage").textContent=text;
-
-}
-
-
-async function lockVault(){
-
- masterKey=null;
-
- $("vaultContent").classList.add("hidden");
- $("masterCard").classList.remove("hidden");
-
- $("masterPassword").value="";
-
- try{
-  await api("/api/logout",{method:"POST"});
- }catch{}
-
- $("vaultApp").classList.add("hidden");
- $("loginScreen").classList.remove("hidden");
-
- loginStatus();
-
-}
-
-
-/* CRYPTO */
-
-function bytesToB64(bytes){
-
- let s="";
-
- for(const b of bytes)
-  s+=String.fromCharCode(b);
-
- return btoa(s);
-
-}
-
-
-function b64ToBytes(s){
-
- const x=atob(s);
-
- return Uint8Array.from(
-  x,c=>c.charCodeAt(0)
- );
-
-}
-
-
-async function derive(password,salt){
-
- const base=
-  await crypto.subtle.importKey(
-   "raw",
-   new TextEncoder().encode(password),
-   "PBKDF2",
-   false,
-   ["deriveKey","deriveBits"]
-  );
-
- return crypto.subtle.deriveKey(
-  {
-   name:"PBKDF2",
-   salt:b64ToBytes(salt),
-   iterations:600000,
-   hash:"SHA-256"
-  },
-  base,
-  {
-   name:"AES-GCM",
-   length:256
-  },
-  false,
-  ["encrypt","decrypt"]
- );
-
-}
-
-
-async function encryptText(text){
-
- const iv=crypto.getRandomValues(
-  new Uint8Array(12)
- );
-
- const data=await crypto.subtle.encrypt(
-  {name:"AES-GCM",iv},
-  masterKey,
-  new TextEncoder().encode(text)
- );
-
- const result=new Uint8Array(
-  iv.length+data.byteLength
- );
-
- result.set(iv);
- result.set(
-  new Uint8Array(data),
-  iv.length
- );
-
- return bytesToB64(result);
-
-}
-
-
-async function decryptText(value){
-
- const data=b64ToBytes(value);
-
- const iv=data.slice(0,12);
- const encrypted=data.slice(12);
-
- const result=
-  await crypto.subtle.decrypt(
-   {name:"AES-GCM",iv},
-   masterKey,
-   encrypted
-  );
-
- return new TextDecoder().decode(result);
-
-}
-
-
-/* MASTER VAULT */
-
-async function unlockVault(){
-
- const password=$("masterPassword").value;
-
- if(!password){
-  $("masterMessage").textContent=
-   "Enter master password";
-  return;
- }
-
- try{
-
-  const meta=await api("/api/vault/meta");
-
-  if(!meta.salt||!meta.verifier){
-   $("masterMessage").textContent=
-    "Create a vault first.";
-   return;
-  }
-
-  const key=await derive(password,meta.salt);
-
-  const test=await crypto.subtle.decrypt(
-   {
-    name:"AES-GCM",
-    iv:new Uint8Array(12)
-   },
-   key,
-   new Uint8Array()
-  ).catch(()=>null);
-
-  /*
-   Verifier is encrypted text created during setup.
-  */
+async function doLogin(){
+  const username=$("user").value.trim(),password=$("pass").value;
+  if(!username||!password)return message("loginMsg","Enter username and password.");
 
   try{
-   const check=await decryptWithKey(
-    meta.verifier,
-    key
-   );
-
-   if(check!=="VAULT_OK")
-    throw 1;
-
-  }catch{
-   throw new Error("Wrong password");
-  }
-
-  masterKey=key;
-
-  $("masterPassword").value="";
-  $("masterMessage").textContent="";
-
-  $("masterCard").classList.add("hidden");
-  $("vaultContent").classList.remove("hidden");
-
-  await loadAll();
-
- }catch{
-
-  $("masterMessage").className=
-   "message error";
-
-  $("masterMessage").textContent=
-   "Wrong master password.";
-
- }
-
-}
-
-
-async function decryptWithKey(value,key){
-
- const data=b64ToBytes(value);
-
- const iv=data.slice(0,12);
-
- const encrypted=data.slice(12);
-
- const result=
-  await crypto.subtle.decrypt(
-   {name:"AES-GCM",iv},
-   key,
-   encrypted
-  );
-
- return new TextDecoder().decode(result);
-
-}
-
-
-async function encryptWithKey(text,key){
-
- const iv=crypto.getRandomValues(
-  new Uint8Array(12)
- );
-
- const encrypted=
-  await crypto.subtle.encrypt(
-   {name:"AES-GCM",iv},
-   key,
-   new TextEncoder().encode(text)
-  );
-
- const result=new Uint8Array(
-  12+encrypted.byteLength
- );
-
- result.set(iv);
- result.set(
-  new Uint8Array(encrypted),
-  12
- );
-
- return bytesToB64(result);
-
-}
-
-
-async function createVault(){
-
- const password=$("newMasterPassword").value;
-
- if(password.length<8){
-  $("masterMessage").textContent=
-   "Use at least 8 characters.";
-  return;
- }
-
- try{
-
-  const salt=bytesToB64(
-   crypto.getRandomValues(
-    new Uint8Array(16)
-   )
-  );
-
-  const key=await derive(password,salt);
-
-  const verifier=
-   await encryptWithKey("VAULT_OK",key);
-
-  await api("/api/vault/verifier",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({
-    salt,
-    verifier
-   })
-  });
-
-  masterKey=key;
-
-  $("newMasterPassword").value="";
-  $("masterCard").classList.add("hidden");
-  $("vaultContent").classList.remove("hidden");
-
-  await loadAll();
-
- }catch{
-
-  $("masterMessage").textContent=
-   "Could not create vault.";
-
- }
-
-}
-
-
-/* ITEMS */
-
-async function addItem(){
-
- if(!masterKey)return;
-
- const item={
-  category:$("itemCategory").value,
-  title:$("itemTitle").value.trim(),
-  username:$("itemUsername").value.trim(),
-  password:$("itemPassword").value,
-  backup:$("itemBackup").value,
-  notes:$("itemNotes").value
- };
-
- if(!item.title){
-  $("itemMessage").textContent=
-   "Enter a title.";
-  return;
- }
-
- try{
-
-  await api("/api/items",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({
-    category:item.category,
-    title:await encryptText(item.title),
-    username:await encryptText(item.username),
-    encrypted_password:
-     await encryptText(item.password),
-    encrypted_backup_codes:
-     await encryptText(item.backup),
-    encrypted_notes:
-     await encryptText(item.notes)
-   })
-  });
-
-  $("itemTitle").value="";
-  $("itemUsername").value="";
-  $("itemPassword").value="";
-  $("itemBackup").value="";
-  $("itemNotes").value="";
-
-  $("itemMessage").className=
-   "message success";
-
-  $("itemMessage").textContent=
-   "Saved securely.";
-
-  await loadItems();
-  await loadStats();
-
- }catch(e){
-
-  $("itemMessage").className=
-   "message error";
-
-  $("itemMessage").textContent=
-   e.message;
-
- }
-
-}
-
-
-async function loadItems(){
-
- vaultItems=await api("/api/items");
-
- renderItems();
-
-}
-
-
-async function renderItems(){
-
- const box=$("items");
-
- box.innerHTML="";
-
- const q=$("search").value.toLowerCase();
- const cat=$("filterCategory").value;
-
- for(const x of vaultItems){
-
-  if(cat&&x.category!==cat)continue;
-
-  let title="";
-
-  try{
-   title=await decryptText(x.title);
-  }catch{
-   title="Encrypted item";
-  }
-
-  if(q&&!title.toLowerCase().includes(q))
-   continue;
-
-  const div=document.createElement("div");
-
-  div.className="item";
-
-  div.innerHTML=`
-   <div class="top">
-    <strong>🔐 ${escapeHtml(title)}</strong>
-    <button class="danger"
-     onclick="deleteItem(${x.id})">
-     Delete
-    </button>
-   </div>
-   <div class="small">
-    ${escapeHtml(x.category||"")}
-   </div>
-   <button onclick="viewItem(${x.id})">
-    View
-   </button>
-   <div id="view${x.id}"></div>
-  `;
-
-  box.appendChild(div);
-
- }
-
- if(!box.children.length)
-  box.innerHTML=
-   '<p class="small">No items found.</p>';
-
-}
-
-
-async function viewItem(id){
-
- const x=vaultItems.find(i=>i.id==id);
-
- if(!x)return;
-
- const box=$("view"+id);
-
- if(box.innerHTML){
-  box.innerHTML="";
-  return;
- }
-
- try{
-
-  const user=await decryptText(x.username);
-  const pass=await decryptText(x.encrypted_password);
-  const backup=await decryptText(x.encrypted_backup_codes);
-  const notes=await decryptText(x.encrypted_notes);
-
-  box.innerHTML=`
-   <div class="card">
-    <b>Username</b>
-    <input value="${escapeAttr(user)}" readonly>
-
-    <b>Password</b>
-    <input value="${escapeAttr(pass)}" readonly>
-
-    <b>Backup Codes</b>
-    <textarea readonly>${escapeHtml(backup)}</textarea>
-
-    <b>Notes</b>
-    <textarea readonly>${escapeHtml(notes)}</textarea>
-   </div>
-  `;
-
- }catch{
-
-  box.innerHTML=
-   '<p class="small">Unable to decrypt.</p>';
-
- }
-
-}
-
-
-async function deleteItem(id){
-
- if(!confirm("Delete this secure item?"))
-  return;
-
- await api("/api/items/"+id,{
-  method:"DELETE"
- });
-
- await loadItems();
- await loadStats();
-
-}
-
-
-/* CATEGORIES */
-
-async function loadCategories(){
-
- categories=await api("/api/categories");
-
- const select=$("itemCategory");
- const filter=$("filterCategory");
-
- select.innerHTML="";
- filter.innerHTML=
-  '<option value="">All Categories</option>';
-
- categories.forEach(c=>{
-
-  select.innerHTML+=
-   `<option value="${escapeAttr(c.name)}">
-    ${escapeHtml(c.name)}
-   </option>`;
-
-  filter.innerHTML+=
-   `<option value="${escapeAttr(c.name)}">
-    ${escapeHtml(c.name)}
-   </option>`;
-
- });
-
-}
-
-
-/* STATS */
-
-async function loadStats(){
-
- const s=await api("/api/stats");
-
- $("statItems").textContent=s.items;
- $("statPhotos").textContent=s.photos;
- $("statCategories").textContent=s.categories;
-
-}
-
-
-/* PHOTOS */
-
-async function uploadPhotos(){
-
- const files=$("photoFiles").files;
-
- if(!files.length){
-  $("photoMessage").textContent=
-   "Select photos first.";
-  return;
- }
-
- for(const file of files){
-
-  try{
-
-   const encrypted=
-    await encryptFile(file);
-
-   await api("/api/photos",{
-    method:"POST",
-    headers:{
-     "Content-Type":"application/octet-stream",
-     "X-File-Name":
-      encodeURIComponent(file.name),
-     "X-File-Type":file.type
-    },
-    body:encrypted
-   });
+    const r=await fetch(API+"/api/login",{
+      method:"POST",
+      credentials:"include",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username,password})
+    });
+
+    let d={};try{d=await r.json()}catch{}
+    if(!r.ok)throw Error(d.error||"Login failed.");
+
+    const s=await fetch(API+"/api/login/status",{
+      credentials:"include",
+      cache:"no-store"
+    }).then(r=>r.json());
+
+    if(!s.logged_in)
+      throw Error("Session cookie was not accepted by the browser.");
+
+    $("pass").value="";
+    $("login").classList.add("hidden");
+    $("master").classList.remove("hidden");
+    $("logout").classList.remove("hidden");
+    await loadMeta();
 
   }catch(e){
+    message("loginMsg",e.message);
+  }
+}
 
-   $("photoMessage").textContent=
-    "Upload failed: "+e.message;
+async function loadMeta(){
+  try{
+    meta=await api("/api/vault/meta");
+  }catch(e){
+    meta=null;
+    message("masterMsg",e.message);
+  }
+}
 
+async function unlock(){
+  const p=$("masterPass").value;
+  if(!p)return message("masterMsg","Enter your Master Password.");
+
+  try{
+    if(!meta)await loadMeta();
+    if(!meta)throw Error("Unable to load vault information.");
+
+    if(meta.initialized===false){
+      const salt=crypto.getRandomValues(new Uint8Array(16));
+      key=await derive(p,salt);
+      const verifier=await enc("VAULT-CHECK");
+
+      await api("/api/vault/meta",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({salt:b64(salt),verifier})
+      });
+
+    }else{
+      key=await derive(p,ub64(meta.salt));
+      try{
+        if(await dec(meta.verifier)!=="VAULT-CHECK")
+          throw 0;
+      }catch{
+        key=null;
+        throw Error("Incorrect master password.");
+      }
+    }
+
+    $("masterPass").value="";
+    $("master").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    $("lock").classList.remove("hidden");
+
+    await loadAll();
+
+  }catch(e){
+    key=null;
+    message("masterMsg",e.message);
+  }
+}
+
+function lockVault(){
+  key=null;
+  meta=null;
+  $("app").classList.add("hidden");
+  $("master").classList.remove("hidden");
+  $("lock").classList.add("hidden");
+  $("masterPass").value="";
+  loadMeta();
+}
+
+async function logout(){
+  key=null;
+  meta=null;
+  try{await api("/api/logout",{method:"POST"})}catch{}
+  location.reload();
+}
+
+async function categories(){
+  const d=await api("/api/categories");
+  const a=Array.isArray(d)?d:d.categories||[];
+  $("category").innerHTML='<option value="">Select category</option>';
+  $("cats").innerHTML="";
+  a.forEach(c=>{
+    const n=c.name||c;
+    $("category").insertAdjacentHTML("beforeend",`<option>${esc(n)}</option>`);
+    $("cats").insertAdjacentHTML("beforeend",`<div>📁 ${esc(n)}</div>`);
+  });
+  $("catCount").textContent=a.length;
+}
+
+async function addCat(){
+  const name=$("newCat").value.trim();
+  if(!name)return;
+  try{
+    await api("/api/categories",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name})
+    });
+    $("newCat").value="";
+    await categories();
+  }catch(e){alert(e.message)}
+}
+
+async function saveItem(){
+  if(!key)return message("itemMsg","Vault is locked.");
+
+  const title=$("title").value.trim();
+  if(!title)return message("itemMsg","Enter a title.");
+
+  try{
+    await api("/api/items",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        category:$("category").value||"General",
+        title,
+        username:await enc($("username").value),
+        encrypted_password:await enc($("password").value),
+        encrypted_backup_codes:await enc($("backup").value),
+        encrypted_notes:await enc($("notes").value)
+      })
+    });
+
+    clearForm();
+    message("itemMsg","Item saved.",true);
+    await loadItems();
+
+  }catch(e){message("itemMsg",e.message)}
+}
+
+function clearForm(){
+  ["title","username","password","backup","notes"].forEach(x=>$(x).value="");
+  $("category").value="";
+}
+
+async function loadItems(){
+  const d=await api("/api/items");
+  const a=Array.isArray(d)?d:d.items||[];
+  $("itemsCount").textContent=a.length;
+
+  if(!a.length){
+    $("list").innerHTML="<p>No items yet.</p>";
+    return;
   }
 
- }
+  $("list").innerHTML="";
 
- $("photoFiles").value="";
+  for(const x of a){
+    let u="",p="",b="",n="";
+    try{u=await dec(x.username)}catch{u="Unable to decrypt"}
+    try{p=await dec(x.encrypted_password)}catch{p="Unable to decrypt"}
+    try{b=await dec(x.encrypted_backup_codes)}catch{b="Unable to decrypt"}
+    try{n=await dec(x.encrypted_notes)}catch{n="Unable to decrypt"}
 
- await loadPhotos();
- await loadStats();
-
- $("photoMessage").textContent=
-  "Photos encrypted and uploaded.";
-
+    $("list").insertAdjacentHTML("beforeend",`
+      <div class="item">
+        <b>${esc(x.title)}</b>
+        <small> • ${esc(x.category||"General")}</small>
+        <div class="secret"><b>Username:</b><br>${esc(u)}</div>
+        <div class="secret"><b>Password:</b><br>
+          <span id="pw${x.id}">••••••••</span>
+        </div>
+        <div class="secret"><b>Backup:</b><br>${esc(b)}</div>
+        <div class="secret"><b>Notes:</b><br>${esc(n)}</div>
+        <div class="actions">
+          <button class="small gray" onclick="togglePw(${x.id},${JSON.stringify(p)})">👁 Password</button>
+          <button class="small red" onclick="deleteItem(${x.id})">Delete</button>
+        </div>
+      </div>
+    `);
+  }
 }
 
-
-async function encryptFile(file){
-
- const data=new Uint8Array(
-  await file.arrayBuffer()
- );
-
- const iv=crypto.getRandomValues(
-  new Uint8Array(12)
- );
-
- const encrypted=
-  await crypto.subtle.encrypt(
-   {name:"AES-GCM",iv},
-   masterKey,
-   data
-  );
-
- const result=new Uint8Array(
-  12+encrypted.byteLength
- );
-
- result.set(iv);
- result.set(
-  new Uint8Array(encrypted),
-  12
- );
-
- return result;
-
+function togglePw(id,p){
+  const e=$("pw"+id);
+  e.textContent=e.textContent==="••••••••"?p:"••••••••";
 }
 
-
-async function loadPhotos(){
-
- const photos=await api("/api/photos");
-
- const box=$("photos");
-
- box.innerHTML="";
-
- for(const p of photos){
-
-  const div=document.createElement("div");
-
-  div.className="item";
-
-  div.innerHTML=`
-   <strong>🖼️
-    ${escapeHtml(p.filename)}
-   </strong>
-   <div class="small">
-    ${(p.file_size/1024/1024).toFixed(2)} MB
-   </div>
-   <button onclick="viewPhoto(${p.id},this)">
-    View
-   </button>
-   <button class="danger"
-    onclick="deletePhoto(${p.id})">
-    Delete
-   </button>
-   <div id="photo${p.id}"></div>
-  `;
-
-  box.appendChild(div);
-
- }
-
+async function deleteItem(id){
+  if(!confirm("Delete this item?"))return;
+  try{
+    await api("/api/items/"+id,{method:"DELETE"});
+    await loadItems();
+  }catch(e){alert(e.message)}
 }
 
+async function upload(){
+  if(!key)return message("fileMsg","Vault is locked.");
 
-async function viewPhoto(id,button){
+  const f=$("file").files[0];
+  if(!f)return;
 
- const box=$("photo"+id);
+  if(f.size>60*1024*1024){
+    $("file").value="";
+    return message("fileMsg","Maximum file size is 60 MB.");
+  }
 
- if(box.innerHTML){
-  box.innerHTML="";
-  return;
- }
+  try{
+    message("fileMsg","Encrypting and uploading...",true);
 
- try{
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const data=await crypto.subtle.encrypt(
+      {name:"AES-GCM",iv},
+      key,
+      await f.arrayBuffer()
+    );
 
-  const r=await fetch(
-   API+"/api/photos/"+id+"/download",
-   {credentials:"same-origin"}
-  );
+    const body=new Uint8Array(12+data.byteLength);
+    body.set(iv);
+    body.set(new Uint8Array(data),12);
 
-  if(!r.ok)throw new Error();
+    const r=await fetch(API+"/api/photos",{
+      method:"POST",
+      credentials:"include",
+      headers:{
+        "X-Filename":f.name,
+        "X-File-Type":f.type||"application/octet-stream"
+      },
+      body
+    });
 
-  const encrypted=
-   new Uint8Array(await r.arrayBuffer());
+    let d={};try{d=await r.json()}catch{}
+    if(!r.ok)throw Error(d.error||"Upload failed.");
 
-  const iv=encrypted.slice(0,12);
-  const data=encrypted.slice(12);
+    $("file").value="";
+    message("fileMsg","Uploaded successfully.",true);
+    await loadFiles();
 
-  const decrypted=
-   await crypto.subtle.decrypt(
-    {name:"AES-GCM",iv},
-    masterKey,
-    data
-   );
-
-  const type=
-   r.headers.get("X-File-Type")||
-   "image/jpeg";
-
-  const blob=new Blob(
-   [decrypted],
-   {type}
-  );
-
-  const url=URL.createObjectURL(blob);
-
-  box.innerHTML=`
-   <img class="photo" src="${url}">
-  `;
-
- }catch{
-
-  box.innerHTML=
-   '<p class="small">Unable to decrypt photo.</p>';
-
- }
-
+  }catch(e){message("fileMsg",e.message)}
 }
 
+async function loadFiles(){
+  const d=await api("/api/photos");
+  files=Array.isArray(d)?d:d.photos||d.files||[];
+  $("fileCount").textContent=files.length;
 
-async function deletePhoto(id){
+  if(!files.length){
+    $("files").innerHTML="<p>No files yet.</p>";
+    return;
+  }
 
- if(!confirm("Delete this encrypted photo?"))
-  return;
-
- await api("/api/photos/"+id,{
-  method:"DELETE"
- });
-
- await loadPhotos();
- await loadStats();
-
+  $("files").innerHTML=files.map(f=>`
+    <div class="file">
+      📄 <b>${esc(f.filename||"File")}</b>
+      <div class="actions">
+        <button class="small green" onclick="downloadFile(${f.id})">Download</button>
+        <button class="small red" onclick="deleteFile(${f.id})">Delete</button>
+      </div>
+    </div>
+  `).join("");
 }
 
+async function downloadFile(id){
+  try{
+    const r=await fetch(API+"/api/photos/"+id+"/download",{
+      credentials:"include"
+    });
+    if(!r.ok)throw Error("Download failed.");
 
-/* LOAD */
+    const x=new Uint8Array(await r.arrayBuffer());
+    const plain=await crypto.subtle.decrypt(
+      {name:"AES-GCM",iv:x.slice(0,12)},
+      key,
+      x.slice(12)
+    );
+
+    const f=files.find(x=>+x.id===+id);
+    const url=URL.createObjectURL(
+      new Blob([plain],{type:f?.file_type||"application/octet-stream"})
+    );
+
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=f?.filename||"download";
+    a.click();
+    URL.revokeObjectURL(url);
+
+  }catch(e){alert("Unable to decrypt file: "+e.message)}
+}
+
+async function deleteFile(id){
+  if(!confirm("Delete this file?"))return;
+  try{
+    await api("/api/photos/"+id,{method:"DELETE"});
+    await loadFiles();
+  }catch(e){alert(e.message)}
+}
 
 async function loadAll(){
-
- await loadCategories();
- await loadItems();
- await loadPhotos();
- await loadStats();
-
+  await Promise.all([
+    categories(),
+    loadItems(),
+    loadFiles()
+  ]);
 }
 
-
-function showVault(){
-
- $("loginScreen").classList.add("hidden");
- $("vaultApp").classList.remove("hidden");
-
+function esc(x){
+  return String(x??"")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
 }
-
-
-function escapeHtml(x){
-
- return String(x??"")
-  .replace(/&/g,"&amp;")
-  .replace(/</g,"&lt;")
-  .replace(/>/g,"&gt;")
-  .replace(/"/g,"&quot;")
-  .replace(/'/g,"&#039;");
-
-}
-
-
-function escapeAttr(x){
- return escapeHtml(x);
-}
-
-
-/* START */
 
 loginStatus();
-
 </script>
-
 </body>
 </html>
