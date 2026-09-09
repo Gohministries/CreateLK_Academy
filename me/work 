@@ -1,469 +1,673 @@
-const TTL=86400,MAX=60*1024*1024;
+const ORIGIN = "https://createlk.com";
+const TTL = 86400;
 
-export default{
- async fetch(r,e){
-  try{
-   const u=new URL(r.url),p=u.pathname;
-
-   if(p==="/api/login/status")return status(r,e);
-   if(p==="/api/login"&&r.method==="POST")return login(r,e);
-   if(p==="/api/logout"&&r.method==="POST")return logout();
-
-   if(!p.startsWith("/api/"))
-    return e.ASSETS.fetch(r);
-
-   if(!await auth(r,e))
-    return J({error:"Unauthorized."},401);
-
-   if(p==="/api/vault/meta")
-    return r.method==="GET"?meta(e):saveMeta(r,e);
-
-   if(p==="/api/categories")
-    return r.method==="GET"?categories(e):addCategory(r,e);
-
-   if(p==="/api/stats")
-    return stats(e);
-
-   if(p==="/api/items")
-    return r.method==="GET"?items(e):addItem(r,e);
-
-   let m=p.match(/^\/api\/items\/(\d+)$/);
-   if(m){
-    const id=+m[1];
-    if(r.method==="PUT")return editItem(r,e,id);
-    if(r.method==="DELETE")return delItem(e,id);
-   }
-
-   if(p==="/api/photos")
-    return r.method==="GET"?photos(e):upload(r,e);
-
-   m=p.match(/^\/api\/photos\/(\d+)\/download$/);
-   if(m&&r.method==="GET")return download(e,+m[1]);
-
-   m=p.match(/^\/api\/photos\/(\d+)$/);
-   if(m&&r.method==="DELETE")return delPhoto(e,+m[1]);
-
-   return J({error:"API route not found."},404);
-  }catch(x){
-   return J({error:x.message||"Server error."},500);
-  }
- }
+const corsHeaders = {
+  "Access-Control-Allow-Origin": ORIGIN,
+  "Access-Control-Allow-Credentials": "true",
+  "Access-Control-Allow-Headers": "Content-Type, X-Filename, X-File-Type",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Vary": "Origin"
 };
 
-async function login(r,e){
- let s=await e.DB.prepare(
-  "SELECT * FROM login_security WHERE id=1"
- ).first();
-
- if(!s){
-  await e.DB.prepare(
-   "INSERT OR IGNORE INTO login_security(id) VALUES(1)"
-  ).run();
-  s={failed_attempts:0,blocked:0};
- }
-
- if(s.blocked)
-  return J({error:"Login blocked after 3 failed attempts."},429);
-
- const b=await r.json();
-
- if(
-  String(b.username)!==String(e.VAULT_USER)||
-  String(b.password)!==String(e.VAULT_PASSWORD)
- ){
-  const n=Number(s.failed_attempts)+1;
-
-  if(n>=3){
-   await e.DB.prepare(
-    "UPDATE login_security SET failed_attempts=3,blocked=1 WHERE id=1"
-   ).run();
-
-   return J({
-    error:"Login blocked after 3 failed attempts."
-   },429);
-  }
-
-  await e.DB.prepare(
-   "UPDATE login_security SET failed_attempts=? WHERE id=1"
-  ).bind(n).run();
-
-  return J({
-   error:"Invalid username or password."
-  },401);
- }
-
- await e.DB.prepare(
-  "UPDATE login_security SET failed_attempts=0,blocked=0 WHERE id=1"
- ).run();
-
- const payload=b64(
-  new TextEncoder().encode(
-   JSON.stringify({
-    exp:Date.now()+TTL*1000,
-    n:crypto.randomUUID()
-   })
-  )
- );
-
- const sig=await sign(payload,e.SESSION_SECRET);
-
- return J(
-  {authenticated:true},
-  200,
-  {
-   "Set-Cookie":
-   `session=${payload}.${sig}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${TTL}`
-  }
- );
+function C() {
+  return { ...corsHeaders };
 }
 
-async function status(r,e){
- return J({
-  authenticated:await auth(r,e)
- });
+function J(data, status = 200, extra = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...C(),
+      "Content-Type": "application/json; charset=utf-8",
+      ...extra
+    }
+  });
 }
 
-async function logout(){
- return J(
-  {success:true},
-  200,
-  {
-   "Set-Cookie":
-   "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"
-  }
- );
+async function sha256(text) {
+  const b = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text)
+  );
+  return [...new Uint8Array(b)]
+    .map(x => x.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-async function auth(r,e){
- const c=r.headers.get("Cookie")||"";
+function b64u(bytes) {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
 
- const t=c.split(";")
-  .map(x=>x.trim())
-  .find(x=>x.startsWith("session="))
-  ?.slice(8);
+function ub64u(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
 
- if(!t)return false;
-
- try{
-  const [a,s]=t.split(".");
-  const p=JSON.parse(
-   new TextDecoder().decode(fb64(a))
+async function hmac(data, secret) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
   );
 
-  return p.exp>Date.now() &&
-   s===await sign(a,e.SESSION_SECRET);
- }catch{
-  return false;
- }
+  return new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(data)
+    )
+  );
 }
 
-async function sign(v,s){
- const k=await crypto.subtle.importKey(
-  "raw",
-  new TextEncoder().encode(s),
-  {name:"HMAC",hash:"SHA-256"},
-  false,
-  ["sign"]
- );
+async function makeSession(user, secret) {
+  const payload = b64u(
+    new TextEncoder().encode(
+      JSON.stringify({
+        u: user,
+        exp: Math.floor(Date.now() / 1000) + TTL
+      })
+    )
+  );
 
- return b64(
-  new Uint8Array(
-   await crypto.subtle.sign(
-    "HMAC",
-    k,
-    new TextEncoder().encode(v)
-   )
-  )
- );
+  const sig = b64u(await hmac(payload, secret));
+
+  return `${payload}.${sig}`;
 }
 
-async function meta(e){
- const x=await e.DB.prepare(
-  "SELECT salt,verifier FROM vault_meta WHERE id=1"
- ).first();
+async function checkSession(request, env) {
+  const cookie = request.headers.get("Cookie") || "";
+  const m = cookie.match(/(?:^|;\s*)session=([^;]+)/);
 
- return J(
-  x?{exists:true,...x}:{exists:false}
- );
-}
+  if (!m) return false;
 
-async function saveMeta(r,e){
- const b=await r.json();
+  const parts = m[1].split(".");
+  if (parts.length !== 2) return false;
 
- if(!b.salt||!b.verifier)
-  return J({
-   error:"Invalid vault metadata."
-  },400);
+  const [payload, sig] = parts;
 
- const old=await e.DB.prepare(
-  "SELECT id FROM vault_meta WHERE id=1"
- ).first();
+  try {
+    const expected = await hmac(payload, env.SESSION_SECRET);
 
- if(old)
-  return J({
-   error:"Vault already initialized."
-  },409);
+    const a = ub64u(sig);
+    if (a.length !== expected.length) return false;
 
- await e.DB.prepare(
-  "INSERT INTO vault_meta(id,salt,verifier) VALUES(1,?,?)"
- ).bind(
-  b.salt,
-  b.verifier
- ).run();
+    let ok = true;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== expected[i]) ok = false;
+    }
 
- return J({success:true});
-}
+    if (!ok) return false;
 
-async function categories(e){
- const x=await e.DB.prepare(
-  "SELECT id,name FROM categories ORDER BY id"
- ).all();
+    const data = JSON.parse(
+      new TextDecoder().decode(ub64u(payload))
+    );
 
- return J({
-  categories:x.results
- });
-}
+    if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) {
+      return false;
+    }
 
-async function addCategory(r,e){
- const b=await r.json();
- const name=String(b.name||"").trim();
-
- if(!name)
-  return J({error:"Category name is required."},400);
-
- try{
-  await e.DB.prepare(
-   "INSERT INTO categories(name) VALUES(?)"
-  ).bind(name).run();
- }catch{
-  return J({error:"Category already exists."},409);
- }
-
- return J({success:true});
-}
-
-async function stats(e){
- const a=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM vault_items"
- ).first();
-
- const b=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM files"
- ).first();
-
- const c=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM categories"
- ).first();
-
- const d=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM vault_items WHERE created_at>=datetime('now','-7 days')"
- ).first();
-
- return J({
-  total_items:Number(a.n),
-  total_files:Number(b.n),
-  total_categories:Number(c.n),
-  recent_items:Number(d.n)
- });
-}
-
-async function items(e){
- const x=await e.DB.prepare(
-  `SELECT id,category,title,username,
-   encrypted_password,encrypted_backup_codes,
-   encrypted_notes,created_at,updated_at
-   FROM vault_items
-   ORDER BY updated_at DESC,id DESC`
- ).all();
-
- return J({
-  items:x.results
- });
-}
-
-async function addItem(r,e){
- const b=await r.json();
-
- if(!b.category||!b.title)
-  return J({
-   error:"Category and title are required."
-  },400);
-
- await e.DB.prepare(
-  `INSERT INTO vault_items
-   (category,title,username,encrypted_password,
-    encrypted_backup_codes,encrypted_notes)
-   VALUES(?,?,?,?,?,?)`
- ).bind(
-  b.category,
-  b.title,
-  b.username||"",
-  b.encrypted_password||"",
-  b.encrypted_backup_codes||"",
-  b.encrypted_notes||""
- ).run();
-
- return J({success:true});
-}
-
-async function editItem(r,e,id){
- const b=await r.json();
-
- if(!b.category||!b.title)
-  return J({
-   error:"Category and title are required."
-  },400);
-
- await e.DB.prepare(
-  `UPDATE vault_items SET
-   category=?,title=?,username=?,
-   encrypted_password=?,
-   encrypted_backup_codes=?,
-   encrypted_notes=?,
-   updated_at=CURRENT_TIMESTAMP
-   WHERE id=?`
- ).bind(
-  b.category,
-  b.title,
-  b.username||"",
-  b.encrypted_password||"",
-  b.encrypted_backup_codes||"",
-  b.encrypted_notes||"",
-  id
- ).run();
-
- return J({success:true});
-}
-
-async function delItem(e,id){
- await e.DB.prepare(
-  "DELETE FROM vault_items WHERE id=?"
- ).bind(id).run();
-
- return J({success:true});
-}
-
-async function photos(e){
- const x=await e.DB.prepare(
-  `SELECT id,filename,file_type,file_size,created_at
-   FROM files ORDER BY id DESC`
- ).all();
-
- return J({
-  files:x.results
- });
-}
-
-async function upload(r,e){
- const f=await r.formData();
- const file=f.get("file");
-
- if(!(file instanceof File))
-  return J({error:"File required."},400);
-
- if(file.size>MAX+12)
-  return J({
-   error:"Maximum file size is 60 MB."
-  },413);
-
- const key="vault/"+crypto.randomUUID();
-
- await e.PHOTOS.put(
-  key,
-  file.stream(),
-  {
-   httpMetadata:{
-    contentType:"application/octet-stream"
-   }
+    return data.u === env.VAULT_USER;
+  } catch {
+    return false;
   }
- );
-
- try{
-  await e.DB.prepare(
-   `INSERT INTO files
-    (filename,r2_key,file_type,file_size)
-    VALUES(?,?,?,?)`
-  ).bind(
-   String(f.get("filename")||"file").slice(0,200),
-   key,
-   String(f.get("file_type")||""),
-   Number(f.get("file_size"))||0
-  ).run();
- }catch(x){
-  await e.PHOTOS.delete(key);
-  throw x;
- }
-
- return J({success:true});
 }
 
-async function download(e,id){
- const x=await e.DB.prepare(
-  "SELECT r2_key FROM files WHERE id=?"
- ).bind(id).first();
+async function requireAuth(request, env) {
+  return await checkSession(request, env);
+}
 
- if(!x)
-  return J({error:"File not found."},404);
+function cookie(value, maxAge) {
+  return `session=${value}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}`;
+}
 
- const o=await e.PHOTOS.get(x.r2_key);
+async function login(request, env) {
+  const sec =
+    await env.DB.prepare(
+      "SELECT failed_attempts, blocked FROM login_security WHERE id=1"
+    ).first();
 
- if(!o)
+  if (sec?.blocked) {
+    return J(
+      { error: "Login blocked after 3 failed attempts." },
+      403
+    );
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return J({ error: "Invalid request." }, 400);
+  }
+
+  const username = String(body.username || "");
+  const password = String(body.password || "");
+
+  if (
+    username !== env.VAULT_USER ||
+    password !== env.VAULT_PASSWORD
+  ) {
+    const attempts = (sec?.failed_attempts || 0) + 1;
+    const blocked = attempts >= 3 ? 1 : 0;
+
+    await env.DB.prepare(`
+      INSERT INTO login_security(id,failed_attempts,blocked)
+      VALUES(1,?,?)
+      ON CONFLICT(id) DO UPDATE SET
+        failed_attempts=excluded.failed_attempts,
+        blocked=excluded.blocked
+    `).bind(attempts, blocked).run();
+
+    if (blocked) {
+      return J(
+        { error: "Login blocked after 3 failed attempts." },
+        403
+      );
+    }
+
+    return J(
+      {
+        error: "Invalid username or password.",
+        attempts_left: 3 - attempts
+      },
+      401
+    );
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO login_security(id,failed_attempts,blocked)
+    VALUES(1,0,0)
+    ON CONFLICT(id) DO UPDATE SET
+      failed_attempts=0,
+      blocked=0
+  `).run();
+
+  const session = await makeSession(
+    env.VAULT_USER,
+    env.SESSION_SECRET
+  );
+
+  return J(
+    { ok: true },
+    200,
+    {
+      "Set-Cookie": cookie(session, TTL)
+    }
+  );
+}
+
+async function logout() {
+  return J(
+    { ok: true },
+    200,
+    {
+      "Set-Cookie": cookie("", 0)
+    }
+  );
+}
+
+async function vaultMeta(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  if (request.method === "GET") {
+    const row = await env.DB
+      .prepare("SELECT salt, verifier FROM vault_meta WHERE id=1")
+      .first();
+
+    return J({
+      initialized: !!row,
+      salt: row?.salt || null,
+      verifier: row?.verifier || null
+    });
+  }
+
+  if (request.method === "POST") {
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return J({ error: "Invalid request." }, 400);
+    }
+
+    if (!body.salt || !body.verifier) {
+      return J({ error: "Missing vault data." }, 400);
+    }
+
+    const existing = await env.DB
+      .prepare("SELECT id FROM vault_meta WHERE id=1")
+      .first();
+
+    if (existing) {
+      return J({ error: "Vault is already initialized." }, 409);
+    }
+
+    await env.DB.prepare(`
+      INSERT INTO vault_meta(id,salt,verifier)
+      VALUES(1,?,?)
+    `).bind(
+      body.salt,
+      body.verifier
+    ).run();
+
+    return J({ ok: true });
+  }
+
+  return J({ error: "Method not allowed." }, 405);
+}
+
+async function categories(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  if (request.method === "GET") {
+    const { results } = await env.DB
+      .prepare(
+        "SELECT id,name,created_at FROM categories ORDER BY name COLLATE NOCASE"
+      )
+      .all();
+
+    return J({ categories: results });
+  }
+
+  if (request.method === "POST") {
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return J({ error: "Invalid request." }, 400);
+    }
+
+    const name = String(body.name || "").trim();
+
+    if (!name) {
+      return J({ error: "Category name required." }, 400);
+    }
+
+    try {
+      const r = await env.DB.prepare(`
+        INSERT INTO categories(name)
+        VALUES(?)
+        RETURNING id,name,created_at
+      `).bind(name).first();
+
+      return J(r);
+    } catch {
+      return J({ error: "Category already exists." }, 409);
+    }
+  }
+
+  return J({ error: "Method not allowed." }, 405);
+}
+
+async function stats(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  const items = await env.DB
+    .prepare("SELECT COUNT(*) AS n FROM vault_items")
+    .first();
+
+  const files = await env.DB
+    .prepare("SELECT COUNT(*) AS n FROM files")
+    .first();
+
+  const size = await env.DB
+    .prepare("SELECT COALESCE(SUM(file_size),0) AS n FROM files")
+    .first();
+
   return J({
-   error:"Stored file not found."
-  },404);
+    items: items?.n || 0,
+    files: files?.n || 0,
+    file_size: size?.n || 0
+  });
+}
 
- return new Response(o.body,{
-  headers:{
-   "Content-Type":"application/octet-stream",
-   "Cache-Control":"no-store"
+async function items(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
   }
- });
-}
 
-async function delPhoto(e,id){
- const x=await e.DB.prepare(
-  "SELECT r2_key FROM files WHERE id=?"
- ).bind(id).first();
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare(`
+      SELECT
+        id,
+        category,
+        title,
+        username,
+        encrypted_password,
+        encrypted_backup_codes,
+        encrypted_notes,
+        created_at,
+        updated_at
+      FROM vault_items
+      ORDER BY updated_at DESC, id DESC
+    `).all();
 
- if(!x)
-  return J({error:"File not found."},404);
-
- await e.PHOTOS.delete(x.r2_key);
-
- await e.DB.prepare(
-  "DELETE FROM files WHERE id=?"
- ).bind(id).run();
-
- return J({success:true});
-}
-
-function J(x,s=200,h={}){
- return new Response(
-  JSON.stringify(x),
-  {
-   status:s,
-   headers:{
-    "Content-Type":"application/json",
-    "Cache-Control":"no-store",
-    ...h
-   }
+    return J({ items: results });
   }
- );
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return J({ error: "Invalid request." }, 400);
+  }
+
+  if (request.method === "POST") {
+    if (!body.category || !body.title) {
+      return J({ error: "Category and title are required." }, 400);
+    }
+
+    const r = await env.DB.prepare(`
+      INSERT INTO vault_items(
+        category,
+        title,
+        username,
+        encrypted_password,
+        encrypted_backup_codes,
+        encrypted_notes
+      )
+      VALUES(?,?,?,?,?,?)
+      RETURNING *
+    `).bind(
+      body.category,
+      body.title,
+      body.username || "",
+      body.encrypted_password || "",
+      body.encrypted_backup_codes || "",
+      body.encrypted_notes || ""
+    ).first();
+
+    return J(r);
+  }
+
+  return J({ error: "Method not allowed." }, 405);
 }
 
-function b64(a){
- return btoa(
-  String.fromCharCode(...a)
- ).replace(/\+/g,"-")
-  .replace(/\//g,"_")
-  .replace(/=+$/,"");
+async function itemById(request, env, id) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  if (!/^\d+$/.test(id)) {
+    return J({ error: "Invalid ID." }, 400);
+  }
+
+  if (request.method === "DELETE") {
+    await env.DB
+      .prepare("DELETE FROM vault_items WHERE id=?")
+      .bind(Number(id))
+      .run();
+
+    return J({ ok: true });
+  }
+
+  if (request.method === "PUT") {
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return J({ error: "Invalid request." }, 400);
+    }
+
+    const r = await env.DB.prepare(`
+      UPDATE vault_items
+      SET
+        category=?,
+        title=?,
+        username=?,
+        encrypted_password=?,
+        encrypted_backup_codes=?,
+        encrypted_notes=?,
+        updated_at=CURRENT_TIMESTAMP
+      WHERE id=?
+      RETURNING *
+    `).bind(
+      body.category,
+      body.title,
+      body.username || "",
+      body.encrypted_password || "",
+      body.encrypted_backup_codes || "",
+      body.encrypted_notes || "",
+      Number(id)
+    ).first();
+
+    if (!r) return J({ error: "Item not found." }, 404);
+
+    return J(r);
+  }
+
+  return J({ error: "Method not allowed." }, 405);
 }
 
-function fb64(s){
- s=s.replace(/-/g,"+").replace(/_/g,"/");
- while(s.length%4)s+="=";
- return Uint8Array.from(
-  atob(s),
-  c=>c.charCodeAt(0)
- );
+async function photos(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare(`
+      SELECT id,filename,file_type,file_size,created_at
+      FROM files
+      ORDER BY created_at DESC, id DESC
+    `).all();
+
+    return J({ files: results });
+  }
+
+  if (request.method === "POST") {
+    const filename =
+      request.headers.get("X-Filename") || "encrypted-file";
+
+    const type =
+      request.headers.get("X-File-Type") ||
+      "application/octet-stream";
+
+    const size =
+      Number(request.headers.get("Content-Length")) || 0;
+
+    const key =
+      crypto.randomUUID() + "-" +
+      filename.replace(/[^\w.\- ]/g, "_");
+
+    await env.PHOTOS.put(key, request.body, {
+      httpMetadata: {
+        contentType: "application/octet-stream"
+      }
+    });
+
+    const r = await env.DB.prepare(`
+      INSERT INTO files(
+        filename,
+        r2_key,
+        file_type,
+        file_size
+      )
+      VALUES(?,?,?,?)
+      RETURNING id,filename,file_type,file_size,created_at
+    `).bind(
+      filename,
+      key,
+      type,
+      size
+    ).first();
+
+    return J(r);
+  }
+
+  return J({ error: "Method not allowed." }, 405);
 }
+
+async function photoDownload(request, env, id) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  if (!/^\d+$/.test(id)) {
+    return J({ error: "Invalid ID." }, 400);
+  }
+
+  const row = await env.DB.prepare(
+    "SELECT filename,r2_key FROM files WHERE id=?"
+  ).bind(Number(id)).first();
+
+  if (!row) {
+    return J({ error: "File not found." }, 404);
+  }
+
+  const object = await env.PHOTOS.get(row.r2_key);
+
+  if (!object) {
+    return J({ error: "File not found in storage." }, 404);
+  }
+
+  return new Response(object.body, {
+    headers: {
+      ...C(),
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition":
+        `attachment; filename="${row.filename.replace(/"/g, "")}"`
+    }
+  });
+}
+
+async function photoDelete(request, env, id) {
+  if (!(await requireAuth(request, env))) {
+    return J({ error: "Unauthorized." }, 401);
+  }
+
+  if (!/^\d+$/.test(id)) {
+    return J({ error: "Invalid ID." }, 400);
+  }
+
+  const row = await env.DB.prepare(
+    "SELECT r2_key FROM files WHERE id=?"
+  ).bind(Number(id)).first();
+
+  if (!row) {
+    return J({ error: "File not found." }, 404);
+  }
+
+  await env.PHOTOS.delete(row.r2_key);
+
+  await env.DB.prepare(
+    "DELETE FROM files WHERE id=?"
+  ).bind(Number(id)).run();
+
+  return J({ ok: true });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: C()
+      });
+    }
+
+    try {
+      if (path === "/api/login/status") {
+        return J({
+          logged_in: await checkSession(request, env)
+        });
+      }
+
+      if (path === "/api/login" && request.method === "POST") {
+        return await login(request, env);
+      }
+
+      if (path === "/api/logout" && request.method === "POST") {
+        return await logout();
+      }
+
+      if (path === "/api/vault/meta") {
+        return await vaultMeta(request, env);
+      }
+
+      if (path === "/api/categories") {
+        return await categories(request, env);
+      }
+
+      if (path === "/api/stats") {
+        return await stats(request, env);
+      }
+
+      if (path === "/api/items") {
+        return await items(request, env);
+      }
+
+      const itemMatch =
+        path.match(/^\/api\/items\/(\d+)$/);
+
+      if (itemMatch) {
+        return await itemById(
+          request,
+          env,
+          itemMatch[1]
+        );
+      }
+
+      if (path === "/api/photos") {
+        return await photos(request, env);
+      }
+
+      const downloadMatch =
+        path.match(/^\/api\/photos\/(\d+)\/download$/);
+
+      if (downloadMatch) {
+        return await photoDownload(
+          request,
+          env,
+          downloadMatch[1]
+        );
+      }
+
+      const photoMatch =
+        path.match(/^\/api\/photos\/(\d+)$/);
+
+      if (photoMatch) {
+        return await photoDelete(
+          request,
+          env,
+          photoMatch[1]
+        );
+      }
+
+      return new Response("Personal Vault API", {
+        status: 404,
+        headers: C()
+      });
+
+    } catch (e) {
+      return J(
+        {
+          error: "Server error.",
+          detail: String(e?.message || e)
+        },
+        500
+      );
+    }
+  }
+};
