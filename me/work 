@@ -1,914 +1,469 @@
-const SESSION = 86400;
-const DEVICE = 2592000;
-const MAX_FILE = 60 * 1024 * 1024;
+const TTL=86400,MAX=60*1024*1024;
 
-const json = (data, status = 200, extra = {}) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      ...extra
-    }
-  });
+export default{
+ async fetch(r,e){
+  try{
+   const u=new URL(r.url),p=u.pathname;
 
-async function hash(text) {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text)
-  );
+   if(p==="/api/login/status")return status(r,e);
+   if(p==="/api/login"&&r.method==="POST")return login(r,e);
+   if(p==="/api/logout"&&r.method==="POST")return logout();
 
-  return [...new Uint8Array(digest)]
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+   if(!p.startsWith("/api/"))
+    return e.ASSETS.fetch(r);
 
-function randomToken() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return [...bytes]
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+   if(!await auth(r,e))
+    return J({error:"Unauthorized."},401);
 
-async function sign(text, secret) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+   if(p==="/api/vault/meta")
+    return r.method==="GET"?meta(e):saveMeta(r,e);
 
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(text)
-  );
+   if(p==="/api/categories")
+    return r.method==="GET"?categories(e):addCategory(r,e);
 
-  return [...new Uint8Array(sig)]
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+   if(p==="/api/stats")
+    return stats(e);
 
-async function makeSession(env) {
-  const token = randomToken();
-  const exp = Math.floor(Date.now() / 1000) + SESSION;
-  const data = `${token}.${exp}`;
-  const signature = await sign(data, env.SESSION_SECRET);
-  return `${data}.${signature}`;
-}
+   if(p==="/api/items")
+    return r.method==="GET"?items(e):addItem(r,e);
 
-function getCookie(request, name) {
-  const cookies = request.headers.get("Cookie") || "";
+   let m=p.match(/^\/api\/items\/(\d+)$/);
+   if(m){
+    const id=+m[1];
+    if(r.method==="PUT")return editItem(r,e,id);
+    if(r.method==="DELETE")return delItem(e,id);
+   }
 
-  for (const part of cookies.split(";")) {
-    const [key, ...value] = part.trim().split("=");
+   if(p==="/api/photos")
+    return r.method==="GET"?photos(e):upload(r,e);
 
-    if (key === name) return value.join("=");
+   m=p.match(/^\/api\/photos\/(\d+)\/download$/);
+   if(m&&r.method==="GET")return download(e,+m[1]);
+
+   m=p.match(/^\/api\/photos\/(\d+)$/);
+   if(m&&r.method==="DELETE")return delPhoto(e,+m[1]);
+
+   return J({error:"API route not found."},404);
+  }catch(x){
+   return J({error:x.message||"Server error."},500);
   }
-
-  return null;
-}
-
-function sessionCookie(value) {
-  return `SESSION=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION}`;
-}
-
-function deviceCookie(value) {
-  return `DEVICE=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${DEVICE}`;
-}
-
-function clearCookie(name) {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
-}
-
-async function verifySession(request, env) {
-  const cookie = getCookie(request, "SESSION");
-
-  if (!cookie) return false;
-
-  const parts = cookie.split(".");
-
-  if (parts.length !== 3) return false;
-
-  const [token, exp, signature] = parts;
-
-  if (Number(exp) < Math.floor(Date.now() / 1000)) {
-    return false;
-  }
-
-  const expected = await sign(
-    `${token}.${exp}`,
-    env.SESSION_SECRET
-  );
-
-  return signature === expected;
-}
-
-async function trustedDevice(request, env) {
-  const token = getCookie(request, "DEVICE");
-
-  if (!token) return false;
-
-  const tokenHash = await hash(token);
-
-  const row = await env.DB
-    .prepare(
-      `SELECT id
-       FROM trusted_devices
-       WHERE device_token_hash = ?`
-    )
-    .bind(tokenHash)
-    .first();
-
-  if (!row) return false;
-
-  await env.DB
-    .prepare(
-      `UPDATE trusted_devices
-       SET last_used_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    )
-    .bind(row.id)
-    .run();
-
-  return true;
-}
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const method = request.method;
-
-    if (method === "OPTIONS") {
-      return new Response(null, { status: 204 });
-    }
-
-    /* LOGIN STATUS */
-
-    if (
-      method === "GET" &&
-      path === "/api/login/status"
-    ) {
-      try {
-        const loggedIn =
-          await verifySession(request, env);
-
-        const trustedDevice =
-          await trustedDeviceCheck(request, env);
-
-        const security =
-          await env.DB
-            .prepare(
-              `SELECT failed_attempts, blocked
-               FROM login_security
-               WHERE id = 1`
-            )
-            .first();
-
-        return json({
-          loggedIn,
-          blocked: !!security?.blocked,
-          trustedDevice
-        });
-      } catch (e) {
-        return json({
-          error: e.message
-        }, 500);
-      }
-    }
-
-    /* DEVICE CHECK */
-
-    if (
-      method === "POST" &&
-      path === "/api/device/verify"
-    ) {
-      try {
-        const body = await request.json();
-
-        const code = String(body.code || "").trim();
-
-        const deviceName =
-          String(
-            body.deviceName || "Unknown Device"
-          ).slice(0, 200);
-
-        if (!code) {
-          return json({
-            error: "Enter Secret Code."
-          }, 400);
-        }
-
-        if (code !== env.VAULT_DEVICE_CODE) {
-          return json({
-            error: "Invalid Secret Code."
-          }, 401);
-        }
-
-        const token = randomToken();
-        const tokenHash = await hash(token);
-
-        await env.DB
-          .prepare(
-            `INSERT INTO trusted_devices
-             (device_token_hash, device_name)
-             VALUES (?, ?)`
-          )
-          .bind(tokenHash, deviceName)
-          .run();
-
-        return json(
-          {
-            success: true,
-            message: "Device trusted."
-          },
-          200,
-          {
-            "Set-Cookie": deviceCookie(token)
-          }
-        );
-      } catch (e) {
-        return json({
-          error: "Device verification failed.",
-          detail: e.message
-        }, 500);
-      }
-    }
-
-    /* LOGIN */
-
-    if (
-      method === "POST" &&
-      path === "/api/login"
-    ) {
-      try {
-        const trusted =
-          await trustedDeviceCheck(request, env);
-
-        if (!trusted) {
-          return json({
-            error: "Device not trusted."
-          }, 403);
-        }
-
-        const security =
-          await env.DB
-            .prepare(
-              `SELECT failed_attempts, blocked
-               FROM login_security
-               WHERE id = 1`
-            )
-            .first();
-
-        if (security?.blocked) {
-          return json({
-            error: "Account blocked.",
-            blocked: true
-          }, 403);
-        }
-
-        const body = await request.json();
-
-        const username = String(body.username || "");
-        const password = String(body.password || "");
-
-        if (
-          username !== env.VAULT_USER ||
-          password !== env.VAULT_PASSWORD
-        ) {
-          const attempts =
-            Number(security?.failed_attempts || 0) + 1;
-
-          if (attempts >= 3) {
-            await env.DB
-              .prepare(
-                `UPDATE login_security
-                 SET failed_attempts = ?,
-                     blocked = 1
-                 WHERE id = 1`
-              )
-              .bind(attempts)
-              .run();
-
-            return json({
-              error: "Account blocked.",
-              blocked: true
-            }, 403);
-          }
-
-          await env.DB
-            .prepare(
-              `UPDATE login_security
-               SET failed_attempts = ?
-               WHERE id = 1`
-            )
-            .bind(attempts)
-            .run();
-
-          return json({
-            error: "Invalid username or password.",
-            attemptsLeft: 3 - attempts
-          }, 401);
-        }
-
-        await env.DB
-          .prepare(
-            `UPDATE login_security
-             SET failed_attempts = 0,
-                 blocked = 0
-             WHERE id = 1`
-          )
-          .run();
-
-        const session = await makeSession(env);
-
-        return json(
-          { success: true },
-          200,
-          {
-            "Set-Cookie": sessionCookie(session)
-          }
-        );
-      } catch (e) {
-        return json({
-          error: "Login failed.",
-          detail: e.message
-        }, 500);
-      }
-    }
-
-    /* RECOVERY */
-
-    if (
-      method === "POST" &&
-      path === "/api/login/recovery"
-    ) {
-      try {
-        const body = await request.json();
-
-        const code = String(body.code || "").trim();
-
-        if (code !== env.VAULT_RECOVERY_CODE) {
-          return json({
-            error: "Invalid Recovery Code."
-          }, 401);
-        }
-
-        await env.DB
-          .prepare(
-            `UPDATE login_security
-             SET failed_attempts = 0,
-                 blocked = 0
-             WHERE id = 1`
-          )
-          .run();
-
-        return json({
-          success: true,
-          message: "Account unlocked."
-        });
-      } catch (e) {
-        return json({
-          error: "Recovery failed.",
-          detail: e.message
-        }, 500);
-      }
-    }
-
-    /* LOGOUT */
-
-    if (
-      method === "POST" &&
-      path === "/api/logout"
-    ) {
-      return json(
-        { success: true },
-        200,
-        {
-          "Set-Cookie": clearCookie("SESSION")
-        }
-      );
-    }
-
-    /* AUTH */
-
-    if (path.startsWith("/api/")) {
-      const loggedIn =
-        await verifySession(request, env);
-
-      if (!loggedIn) {
-        return json({
-          error: "Authentication required."
-        }, 401);
-      }
-    }
-
-    /* VAULT META */
-
-    if (
-      method === "GET" &&
-      path === "/api/vault/meta"
-    ) {
-      const row =
-        await env.DB
-          .prepare(
-            `SELECT salt, verifier
-             FROM vault_meta
-             WHERE id = 1`
-          )
-          .first();
-
-      return json(row || null);
-    }
-
-    if (
-      method === "POST" &&
-      path === "/api/vault/meta"
-    ) {
-      const body = await request.json();
-
-      if (!body.salt || !body.verifier) {
-        return json({
-          error: "Invalid vault metadata."
-        }, 400);
-      }
-
-      await env.DB
-        .prepare(
-          `INSERT INTO vault_meta
-           (id, salt, verifier)
-           VALUES (1, ?, ?)
-           ON CONFLICT(id)
-           DO UPDATE SET
-             salt = excluded.salt,
-             verifier = excluded.verifier`
-        )
-        .bind(body.salt, body.verifier)
-        .run();
-
-      return json({
-        success: true
-      });
-    }
-
-    /* VERIFIER */
-
-    if (
-      method === "GET" &&
-      path === "/api/vault/verifier"
-    ) {
-      const row =
-        await env.DB
-          .prepare(
-            `SELECT verifier
-             FROM vault_meta
-             WHERE id = 1`
-          )
-          .first();
-
-      return json(row || {});
-    }
-
-    /* CATEGORIES */
-
-    if (
-      method === "GET" &&
-      path === "/api/categories"
-    ) {
-      const result =
-        await env.DB
-          .prepare(
-            `SELECT id, name
-             FROM categories
-             ORDER BY name`
-          )
-          .all();
-
-      return json(result.results || []);
-    }
-
-    /* STATS */
-
-    if (
-      method === "GET" &&
-      path === "/api/stats"
-    ) {
-      const items =
-        await env.DB
-          .prepare(
-            `SELECT COUNT(*) AS c
-             FROM vault_items`
-          )
-          .first();
-
-      const photos =
-        await env.DB
-          .prepare(
-            `SELECT COUNT(*) AS c
-             FROM files`
-          )
-          .first();
-
-      const categories =
-        await env.DB
-          .prepare(
-            `SELECT COUNT(*) AS c
-             FROM categories`
-          )
-          .first();
-
-      return json({
-        items: Number(items?.c || 0),
-        photos: Number(photos?.c || 0),
-        categories: Number(categories?.c || 0)
-      });
-    }
-
-    /* ITEMS */
-
-    if (
-      method === "GET" &&
-      path === "/api/items"
-    ) {
-      const result =
-        await env.DB
-          .prepare(
-            `SELECT
-               id,
-               category,
-               title,
-               username,
-               encrypted_password,
-               encrypted_backup_codes,
-               encrypted_notes,
-               created_at,
-               updated_at
-             FROM vault_items
-             ORDER BY id DESC`
-          )
-          .all();
-
-      return json(result.results || []);
-    }
-
-    if (
-      method === "POST" &&
-      path === "/api/items"
-    ) {
-      const body = await request.json();
-
-      if (!body.category || !body.title) {
-        return json({
-          error: "Category and title are required."
-        }, 400);
-      }
-
-      const result =
-        await env.DB
-          .prepare(
-            `INSERT INTO vault_items
-             (
-               category,
-               title,
-               username,
-               encrypted_password,
-               encrypted_backup_codes,
-               encrypted_notes
-             )
-             VALUES (?, ?, ?, ?, ?, ?)`
-          )
-          .bind(
-            body.category,
-            body.title,
-            body.username || "",
-            body.encrypted_password || "",
-            body.encrypted_backup_codes || "",
-            body.encrypted_notes || ""
-          )
-          .run();
-
-      const id = result.meta.last_row_id;
-
-      await env.DB
-        .prepare(
-          `INSERT INTO audit_logs
-           (action, item_type, item_id)
-           VALUES ('CREATE', 'item', ?)`
-        )
-        .bind(id)
-        .run();
-
-      return json({
-        success: true,
-        id
-      });
-    }
-
-    const itemMatch =
-      path.match(/^\/api\/items\/(\d+)$/);
-
-    if (itemMatch) {
-      const id = Number(itemMatch[1]);
-
-      if (method === "PUT") {
-        const body = await request.json();
-
-        await env.DB
-          .prepare(
-            `UPDATE vault_items
-             SET
-               category = ?,
-               title = ?,
-               username = ?,
-               encrypted_password = ?,
-               encrypted_backup_codes = ?,
-               encrypted_notes = ?,
-               updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`
-          )
-          .bind(
-            body.category,
-            body.title,
-            body.username || "",
-            body.encrypted_password || "",
-            body.encrypted_backup_codes || "",
-            body.encrypted_notes || "",
-            id
-          )
-          .run();
-
-        return json({
-          success: true
-        });
-      }
-
-      if (method === "DELETE") {
-        await env.DB
-          .prepare(
-            `DELETE FROM vault_items
-             WHERE id = ?`
-          )
-          .bind(id)
-          .run();
-
-        await env.DB
-          .prepare(
-            `INSERT INTO audit_logs
-             (action, item_type, item_id)
-             VALUES ('DELETE', 'item', ?)`
-          )
-          .bind(id)
-          .run();
-
-        return json({
-          success: true
-        });
-      }
-    }
-
-    /* PHOTOS */
-
-    if (
-      method === "GET" &&
-      path === "/api/photos"
-    ) {
-      const result =
-        await env.DB
-          .prepare(
-            `SELECT
-               id,
-               filename,
-               file_type,
-               file_size,
-               created_at
-             FROM files
-             ORDER BY id DESC`
-          )
-          .all();
-
-      return json(result.results || []);
-    }
-
-    if (
-      method === "POST" &&
-      path === "/api/photos"
-    ) {
-      const contentLength =
-        Number(
-          request.headers.get("Content-Length") || 0
-        );
-
-      if (contentLength > MAX_FILE) {
-        return json({
-          error: "File is too large."
-        }, 413);
-      }
-
-      const data =
-        await request.arrayBuffer();
-
-      if (data.byteLength > MAX_FILE) {
-        return json({
-          error: "File is too large."
-        }, 413);
-      }
-
-      const encodedName =
-        request.headers.get("X-File-Name") || "photo";
-
-      let filename = "photo";
-
-      try {
-        filename =
-          decodeURIComponent(encodedName);
-      } catch {}
-
-      filename =
-        filename.slice(0, 255);
-
-      const fileType =
-        request.headers.get("X-File-Type") ||
-        "application/octet-stream";
-
-      const key =
-        `${Date.now()}-${randomToken()}`;
-
-      await env.PHOTOS.put(
-        key,
-        data,
-        {
-          httpMetadata: {
-            contentType:
-              "application/octet-stream"
-          }
-        }
-      );
-
-      const result =
-        await env.DB
-          .prepare(
-            `INSERT INTO files
-             (
-               filename,
-               r2_key,
-               file_type,
-               file_size
-             )
-             VALUES (?, ?, ?, ?)`
-          )
-          .bind(
-            filename,
-            key,
-            fileType,
-            data.byteLength
-          )
-          .run();
-
-      return json({
-        success: true,
-        id: result.meta.last_row_id
-      });
-    }
-
-    /* PHOTO DOWNLOAD */
-
-    const downloadMatch =
-      path.match(
-        /^\/api\/photos\/(\d+)\/download$/
-      );
-
-    if (
-      method === "GET" &&
-      downloadMatch
-    ) {
-      const id =
-        Number(downloadMatch[1]);
-
-      const row =
-        await env.DB
-          .prepare(
-            `SELECT r2_key
-             FROM files
-             WHERE id = ?`
-          )
-          .bind(id)
-          .first();
-
-      if (!row) {
-        return new Response(
-          "Not found",
-          { status: 404 }
-        );
-      }
-
-      const object =
-        await env.PHOTOS.get(row.r2_key);
-
-      if (!object) {
-        return new Response(
-          "File not found",
-          { status: 404 }
-        );
-      }
-
-      return new Response(object.body, {
-        headers: {
-          "Content-Type":
-            "application/octet-stream",
-          "Cache-Control":
-            "private, no-store"
-        }
-      });
-    }
-
-    /* PHOTO DELETE */
-
-    const photoMatch =
-      path.match(
-        /^\/api\/photos\/(\d+)$/
-      );
-
-    if (photoMatch) {
-      const id =
-        Number(photoMatch[1]);
-
-      if (method === "DELETE") {
-        const row =
-          await env.DB
-            .prepare(
-              `SELECT r2_key
-               FROM files
-               WHERE id = ?`
-            )
-            .bind(id)
-            .first();
-
-        if (row) {
-          await env.PHOTOS.delete(
-            row.r2_key
-          );
-        }
-
-        await env.DB
-          .prepare(
-            `DELETE FROM files
-             WHERE id = ?`
-          )
-          .bind(id)
-          .run();
-
-        return json({
-          success: true
-        });
-      }
-    }
-
-    /* HTML */
-
-    if (
-      method === "GET" &&
-      !path.startsWith("/api/")
-    ) {
-      return env.ASSETS.fetch(request);
-    }
-
-    return json({
-      error: "Not found"
-    }, 404);
-  }
+ }
 };
 
-async function trustedDeviceCheck(request, env) {
-  const token =
-    getCookie(request, "DEVICE");
+async function login(r,e){
+ let s=await e.DB.prepare(
+  "SELECT * FROM login_security WHERE id=1"
+ ).first();
 
-  if (!token) return false;
+ if(!s){
+  await e.DB.prepare(
+   "INSERT OR IGNORE INTO login_security(id) VALUES(1)"
+  ).run();
+  s={failed_attempts:0,blocked:0};
+ }
 
-  const tokenHash =
-    await hash(token);
+ if(s.blocked)
+  return J({error:"Login blocked after 3 failed attempts."},429);
 
-  const row =
-    await env.DB
-      .prepare(
-        `SELECT id
-         FROM trusted_devices
-         WHERE device_token_hash = ?`
-      )
-      .bind(tokenHash)
-      .first();
+ const b=await r.json();
 
-  if (!row) return false;
+ if(
+  String(b.username)!==String(e.VAULT_USER)||
+  String(b.password)!==String(e.VAULT_PASSWORD)
+ ){
+  const n=Number(s.failed_attempts)+1;
 
-  await env.DB
-    .prepare(
-      `UPDATE trusted_devices
-       SET last_used_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    )
-    .bind(row.id)
-    .run();
+  if(n>=3){
+   await e.DB.prepare(
+    "UPDATE login_security SET failed_attempts=3,blocked=1 WHERE id=1"
+   ).run();
 
-  return true;
+   return J({
+    error:"Login blocked after 3 failed attempts."
+   },429);
+  }
+
+  await e.DB.prepare(
+   "UPDATE login_security SET failed_attempts=? WHERE id=1"
+  ).bind(n).run();
+
+  return J({
+   error:"Invalid username or password."
+  },401);
+ }
+
+ await e.DB.prepare(
+  "UPDATE login_security SET failed_attempts=0,blocked=0 WHERE id=1"
+ ).run();
+
+ const payload=b64(
+  new TextEncoder().encode(
+   JSON.stringify({
+    exp:Date.now()+TTL*1000,
+    n:crypto.randomUUID()
+   })
+  )
+ );
+
+ const sig=await sign(payload,e.SESSION_SECRET);
+
+ return J(
+  {authenticated:true},
+  200,
+  {
+   "Set-Cookie":
+   `session=${payload}.${sig}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${TTL}`
+  }
+ );
+}
+
+async function status(r,e){
+ return J({
+  authenticated:await auth(r,e)
+ });
+}
+
+async function logout(){
+ return J(
+  {success:true},
+  200,
+  {
+   "Set-Cookie":
+   "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"
+  }
+ );
+}
+
+async function auth(r,e){
+ const c=r.headers.get("Cookie")||"";
+
+ const t=c.split(";")
+  .map(x=>x.trim())
+  .find(x=>x.startsWith("session="))
+  ?.slice(8);
+
+ if(!t)return false;
+
+ try{
+  const [a,s]=t.split(".");
+  const p=JSON.parse(
+   new TextDecoder().decode(fb64(a))
+  );
+
+  return p.exp>Date.now() &&
+   s===await sign(a,e.SESSION_SECRET);
+ }catch{
+  return false;
+ }
+}
+
+async function sign(v,s){
+ const k=await crypto.subtle.importKey(
+  "raw",
+  new TextEncoder().encode(s),
+  {name:"HMAC",hash:"SHA-256"},
+  false,
+  ["sign"]
+ );
+
+ return b64(
+  new Uint8Array(
+   await crypto.subtle.sign(
+    "HMAC",
+    k,
+    new TextEncoder().encode(v)
+   )
+  )
+ );
+}
+
+async function meta(e){
+ const x=await e.DB.prepare(
+  "SELECT salt,verifier FROM vault_meta WHERE id=1"
+ ).first();
+
+ return J(
+  x?{exists:true,...x}:{exists:false}
+ );
+}
+
+async function saveMeta(r,e){
+ const b=await r.json();
+
+ if(!b.salt||!b.verifier)
+  return J({
+   error:"Invalid vault metadata."
+  },400);
+
+ const old=await e.DB.prepare(
+  "SELECT id FROM vault_meta WHERE id=1"
+ ).first();
+
+ if(old)
+  return J({
+   error:"Vault already initialized."
+  },409);
+
+ await e.DB.prepare(
+  "INSERT INTO vault_meta(id,salt,verifier) VALUES(1,?,?)"
+ ).bind(
+  b.salt,
+  b.verifier
+ ).run();
+
+ return J({success:true});
+}
+
+async function categories(e){
+ const x=await e.DB.prepare(
+  "SELECT id,name FROM categories ORDER BY id"
+ ).all();
+
+ return J({
+  categories:x.results
+ });
+}
+
+async function addCategory(r,e){
+ const b=await r.json();
+ const name=String(b.name||"").trim();
+
+ if(!name)
+  return J({error:"Category name is required."},400);
+
+ try{
+  await e.DB.prepare(
+   "INSERT INTO categories(name) VALUES(?)"
+  ).bind(name).run();
+ }catch{
+  return J({error:"Category already exists."},409);
+ }
+
+ return J({success:true});
+}
+
+async function stats(e){
+ const a=await e.DB.prepare(
+  "SELECT COUNT(*) n FROM vault_items"
+ ).first();
+
+ const b=await e.DB.prepare(
+  "SELECT COUNT(*) n FROM files"
+ ).first();
+
+ const c=await e.DB.prepare(
+  "SELECT COUNT(*) n FROM categories"
+ ).first();
+
+ const d=await e.DB.prepare(
+  "SELECT COUNT(*) n FROM vault_items WHERE created_at>=datetime('now','-7 days')"
+ ).first();
+
+ return J({
+  total_items:Number(a.n),
+  total_files:Number(b.n),
+  total_categories:Number(c.n),
+  recent_items:Number(d.n)
+ });
+}
+
+async function items(e){
+ const x=await e.DB.prepare(
+  `SELECT id,category,title,username,
+   encrypted_password,encrypted_backup_codes,
+   encrypted_notes,created_at,updated_at
+   FROM vault_items
+   ORDER BY updated_at DESC,id DESC`
+ ).all();
+
+ return J({
+  items:x.results
+ });
+}
+
+async function addItem(r,e){
+ const b=await r.json();
+
+ if(!b.category||!b.title)
+  return J({
+   error:"Category and title are required."
+  },400);
+
+ await e.DB.prepare(
+  `INSERT INTO vault_items
+   (category,title,username,encrypted_password,
+    encrypted_backup_codes,encrypted_notes)
+   VALUES(?,?,?,?,?,?)`
+ ).bind(
+  b.category,
+  b.title,
+  b.username||"",
+  b.encrypted_password||"",
+  b.encrypted_backup_codes||"",
+  b.encrypted_notes||""
+ ).run();
+
+ return J({success:true});
+}
+
+async function editItem(r,e,id){
+ const b=await r.json();
+
+ if(!b.category||!b.title)
+  return J({
+   error:"Category and title are required."
+  },400);
+
+ await e.DB.prepare(
+  `UPDATE vault_items SET
+   category=?,title=?,username=?,
+   encrypted_password=?,
+   encrypted_backup_codes=?,
+   encrypted_notes=?,
+   updated_at=CURRENT_TIMESTAMP
+   WHERE id=?`
+ ).bind(
+  b.category,
+  b.title,
+  b.username||"",
+  b.encrypted_password||"",
+  b.encrypted_backup_codes||"",
+  b.encrypted_notes||"",
+  id
+ ).run();
+
+ return J({success:true});
+}
+
+async function delItem(e,id){
+ await e.DB.prepare(
+  "DELETE FROM vault_items WHERE id=?"
+ ).bind(id).run();
+
+ return J({success:true});
+}
+
+async function photos(e){
+ const x=await e.DB.prepare(
+  `SELECT id,filename,file_type,file_size,created_at
+   FROM files ORDER BY id DESC`
+ ).all();
+
+ return J({
+  files:x.results
+ });
+}
+
+async function upload(r,e){
+ const f=await r.formData();
+ const file=f.get("file");
+
+ if(!(file instanceof File))
+  return J({error:"File required."},400);
+
+ if(file.size>MAX+12)
+  return J({
+   error:"Maximum file size is 60 MB."
+  },413);
+
+ const key="vault/"+crypto.randomUUID();
+
+ await e.PHOTOS.put(
+  key,
+  file.stream(),
+  {
+   httpMetadata:{
+    contentType:"application/octet-stream"
+   }
+  }
+ );
+
+ try{
+  await e.DB.prepare(
+   `INSERT INTO files
+    (filename,r2_key,file_type,file_size)
+    VALUES(?,?,?,?)`
+  ).bind(
+   String(f.get("filename")||"file").slice(0,200),
+   key,
+   String(f.get("file_type")||""),
+   Number(f.get("file_size"))||0
+  ).run();
+ }catch(x){
+  await e.PHOTOS.delete(key);
+  throw x;
+ }
+
+ return J({success:true});
+}
+
+async function download(e,id){
+ const x=await e.DB.prepare(
+  "SELECT r2_key FROM files WHERE id=?"
+ ).bind(id).first();
+
+ if(!x)
+  return J({error:"File not found."},404);
+
+ const o=await e.PHOTOS.get(x.r2_key);
+
+ if(!o)
+  return J({
+   error:"Stored file not found."
+  },404);
+
+ return new Response(o.body,{
+  headers:{
+   "Content-Type":"application/octet-stream",
+   "Cache-Control":"no-store"
+  }
+ });
+}
+
+async function delPhoto(e,id){
+ const x=await e.DB.prepare(
+  "SELECT r2_key FROM files WHERE id=?"
+ ).bind(id).first();
+
+ if(!x)
+  return J({error:"File not found."},404);
+
+ await e.PHOTOS.delete(x.r2_key);
+
+ await e.DB.prepare(
+  "DELETE FROM files WHERE id=?"
+ ).bind(id).run();
+
+ return J({success:true});
+}
+
+function J(x,s=200,h={}){
+ return new Response(
+  JSON.stringify(x),
+  {
+   status:s,
+   headers:{
+    "Content-Type":"application/json",
+    "Cache-Control":"no-store",
+    ...h
+   }
+  }
+ );
+}
+
+function b64(a){
+ return btoa(
+  String.fromCharCode(...a)
+ ).replace(/\+/g,"-")
+  .replace(/\//g,"_")
+  .replace(/=+$/,"");
+}
+
+function fb64(s){
+ s=s.replace(/-/g,"+").replace(/_/g,"/");
+ while(s.length%4)s+="=";
+ return Uint8Array.from(
+  atob(s),
+  c=>c.charCodeAt(0)
+ );
 }
