@@ -1,320 +1,347 @@
-const CORS="https://createlk.com",COOKIE="cf_session";
-const P={
- admin:["*"],
- treasurer:["view","entry","approve","report"],
- finance_officer:["view","entry","report"],
- approver:["view","approve","report"],
- auditor:["view","report","audit"],
- viewer:["view","report"]
-};
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GOH Church Finance</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;font:14px Arial;color:#172033}
+header{background:#18243b;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+main{max-width:1000px;margin:auto;padding:15px 12px 75px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;display:flex;z-index:5}
+nav button{flex:1;border:0;background:none;padding:10px 3px;font-size:11px}
+nav button.active{color:#2463d4;font-weight:bold}
+section{display:none}.show{display:block}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.box{background:#fff;padding:15px;border-radius:14px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+.num{font-size:20px;font-weight:bold;margin-top:5px}
+.green{color:#159447}.red{color:#d33}.blue{color:#2463d4}.orange{color:#c78300}
+input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;padding:10px;border:1px solid #d8dde7;border-radius:8px;margin-bottom:9px}
+textarea{min-height:65px}
+button{border:0;border-radius:8px;padding:10px 13px;cursor:pointer}
+.primary{background:#2463d4;color:#fff}.danger{background:#d33;color:#fff}
+.gray{background:#e9edf4}.ok{background:#159447;color:#fff}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:8px}.full{grid-column:1/-1}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #eee}
+.wrap{overflow:auto}.badge{padding:4px 7px;border-radius:12px;font-size:11px;background:#eee}
+.badge.PENDING{background:#fff0c7;color:#946900}.badge.APPROVED{background:#dcf7e6;color:#18723c}
+.badge.REJECTED{background:#ffe0e0;color:#a22}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login{width:100%;max-width:380px;background:#fff;padding:25px;border-radius:16px;box-shadow:0 5px 25px #0002}
+.login button{width:100%}
+h2{margin-top:4px}@media(max-width:650px){.grid{grid-template-columns:1fr 1fr}.form{grid-template-columns:1fr}th,td{white-space:nowrap}}
+</style>
+</head>
+<body>
 
-const H=r=>({
- "Content-Type":"application/json",
- "Access-Control-Allow-Origin":CORS,
- "Access-Control-Allow-Credentials":"true"
-});
-const J=(r,x,s=200)=>new Response(JSON.stringify(x),{status:s,headers:H(r)});
-const E=(r,x,s=400)=>J(r,{ok:false,error:x},s);
+<div id="login">
+<div class="login">
+<h2>🙏 GOH Ministries</h2>
+<p>Church Finance Management</p>
+<input id="un" placeholder="Username">
+<input id="pw" type="password" placeholder="Password">
+<button class="primary" onclick="login()">Login</button>
+<p id="msg" class="red"></p>
+</div>
+</div>
 
-async function hash(x){
- let b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(x));
- return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+<div id="app" style="display:none">
+<header>
+<b>GOH Church Finance</b>
+<span id="who"></span>
+<button class="gray" onclick="logout()">Logout</button>
+</header>
+
+<main>
+
+<section id="home" class="show">
+<h2>Dashboard</h2>
+<div class="grid">
+<div class="box">Income<div id="inc" class="num green">LKR 0</div></div>
+<div class="box">Expenses<div id="exp" class="num red">LKR 0</div></div>
+<div class="box">Balance<div id="bal" class="num blue">LKR 0</div></div>
+<div class="box">Pending<div id="pen" class="num orange">0</div></div>
+</div>
+<div class="box">
+<button class="primary" onclick="go('income')">＋ Income</button>
+<button class="danger" onclick="go('expense')">＋ Expense</button>
+<button class="gray" onclick="go('approval')">Approvals</button>
+</div>
+</section>
+
+<section id="income">
+<h2>Income</h2>
+<div class="box">
+<form onsubmit="save('income',event)">
+<div class="form">
+<select id="ifund" required></select>
+<select id="icat" required></select>
+<input id="iamt" type="number" step=".01" placeholder="Amount LKR" required>
+<input id="donor" placeholder="Donor / Member">
+<select id="imethod"><option value="">Payment Method</option><option>Cash</option><option>Bank</option><option>Online</option><option>Cheque</option></select>
+<input id="iref" placeholder="Receipt / Reference">
+<textarea id="inote" class="full" placeholder="Note"></textarea>
+<button class="primary full">Save Income</button>
+</div>
+</form>
+</div>
+<div class="box"><div class="wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Person</th><th>Amount</th><th>Status</th></tr></thead><tbody id="it"></tbody></table></div></div>
+</section>
+
+<section id="expense">
+<h2>Expenses</h2>
+<div class="box">
+<form onsubmit="save('expense',event)">
+<div class="form">
+<select id="efund" required></select>
+<select id="ecat" required></select>
+<input id="eamt" type="number" step=".01" placeholder="Amount LKR" required>
+<input id="payee" placeholder="Payee">
+<select id="emethod"><option value="">Payment Method</option><option>Cash</option><option>Bank</option><option>Online</option><option>Cheque</option></select>
+<input id="eref" placeholder="Bill / Reference">
+<textarea id="enote" class="full" placeholder="Note"></textarea>
+<button class="danger full">Save Expense</button>
+</div>
+</form>
+</div>
+<div class="box"><div class="wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Person</th><th>Amount</th><th>Status</th></tr></thead><tbody id="et"></tbody></table></div></div>
+</section>
+
+<section id="approval">
+<h2>Approvals</h2>
+<div class="box"><div class="wrap"><table><thead><tr><th>Type</th><th>Person</th><th>Amount</th><th>Action</th></tr></thead><tbody id="at"></tbody></table></div></div>
+</section>
+
+<section id="funds">
+<h2>Funds</h2>
+<div class="box"><div class="wrap"><table><thead><tr><th>Fund</th><th>Opening</th><th>Income</th><th>Expense</th><th>Balance</th></tr></thead><tbody id="ft"></tbody></table></div></div>
+</section>
+
+<section id="reports">
+<h2>Reports</h2>
+<div class="box form">
+<select id="yr"></select>
+<select id="mo">
+<option value="0">Full Year</option>
+<option value="1">January</option><option value="2">February</option>
+<option value="3">March</option><option value="4">April</option>
+<option value="5">May</option><option value="6">June</option>
+<option value="7">July</option><option value="8">August</option>
+<option value="9">September</option><option value="10">October</option>
+<option value="11">November</option><option value="12">December</option>
+</select>
+<button class="primary full" onclick="report()">Generate Report</button>
+</div>
+<div id="rp"></div>
+</section>
+
+<section id="users">
+<h2>Users & Roles</h2>
+<div class="box">
+<form onsubmit="newUser(event)" class="form">
+<input id="name" placeholder="Name" required>
+<input id="username" placeholder="Username" required>
+<input id="password" type="password" placeholder="Password" required>
+<select id="role">
+<option>viewer</option><option>finance_officer</option>
+<option>treasurer</option><option>approver</option>
+<option>auditor</option><option>admin</option>
+</select>
+<button class="primary full">Create User</button>
+</form>
+</div>
+<div class="box"><div class="wrap"><table><thead><tr><th>Name</th><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody id="ut"></tbody></table></div></div>
+</section>
+
+</main>
+
+<nav>
+<button onclick="go('home')">🏠<br>Home</button>
+<button onclick="go('income')">💰<br>Income</button>
+<button onclick="go('expense')">💳<br>Expenses</button>
+<button onclick="go('approval')">✓<br>Approve</button>
+<button onclick="go('reports')">📊<br>Reports</button>
+<button onclick="more()">☰<br>More</button>
+</nav>
+</div>
+
+<script>
+const API="https://church.createlk.workers.dev";
+let U=null,F=[];
+
+const $=x=>document.getElementById(x);
+const money=x=>"LKR "+Number(x||0).toLocaleString("en-LK",{minimumFractionDigits:2});
+const esc=x=>String(x??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+async function api(p,o={}){
+ let r=await fetch(API+p,{credentials:"include",...o,headers:{"Content-Type":"application/json",...(o.headers||{})}});
+ let x=await r.json().catch(()=>({}));
+ if(!r.ok)throw Error(x.error||"Request failed");
+ return x;
 }
-function id(){
- let a=new Uint8Array(32);crypto.getRandomValues(a);
- return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
-}
-function ck(r){
- let m=(r.headers.get("Cookie")||"").match(/cf_session=([^;]+)/);
- return m?.[1];
-}
-function can(u,p){
- return u&&(u.role=="admin"||(P[u.role]||[]).includes(p));
-}
-async function json(r){try{return await r.json()}catch{return{}}}
 
-async function me(r,e){
- let s=ck(r);if(!s)return null;
- return await e.DB.prepare(`
- SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
- WHERE s.id=? AND u.active=1 AND s.expires_at>datetime('now')
- `).bind(s).first();
+async function login(){
+ try{
+  let x=await api("/api/login",{method:"POST",body:JSON.stringify({username:$("un").value,password:$("pw").value})});
+  U=x.user;show();
+ }catch(e){$("msg").textContent=e.message}
 }
 
-async function init(e){
- await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS sessions(
- id TEXT PRIMARY KEY,user_id INTEGER,expires_at TEXT
- )`).run();
-
- let u=await e.DB.prepare(
- `SELECT id FROM users WHERE username=?`
- ).bind(e.ADMIN_USERNAME).first();
-
- if(!u)await e.DB.prepare(`
- INSERT INTO users(name,username,password_hash,role,active)
- VALUES(?,?,?,?,1)
- `).bind(
- "Administrator",
- e.ADMIN_USERNAME,
- await hash(e.ADMIN_PASSWORD),
- "admin"
- ).run();
+async function show(){
+ $("login").style.display="none";
+ $("app").style.display="block";
+ $("who").textContent=U.name+" • "+U.role;
+ if(U.role!="admin")$("users").innerHTML="<h2>Access denied</h2>";
+ await load();
 }
 
-export default{
- async fetch(r,e){
+async function load(){
+ await dash();await cats();await funds();await lists();await approvals();
+ let y=new Date().getFullYear();
+ $("yr").innerHTML=[0,1,2,3,4,5].map(i=>`<option>${y-i}</option>`).join("");
+ if(U.role=="admin")await users();
+}
 
-  if(r.method=="OPTIONS")
-   return new Response(null,{status:204,headers:{
-    ...H(r),
-    "Access-Control-Allow-Headers":"Content-Type",
-    "Access-Control-Allow-Methods":"GET,POST,PATCH,OPTIONS"
-   }});
+async function dash(){
+ let x=await api("/api/dashboard");
+ $("inc").textContent=money(x.income);
+ $("exp").textContent=money(x.expenses);
+ $("bal").textContent=money(x.balance);
+ $("pen").textContent=x.pending;
+}
 
-  try{
-   await init(e);
-   let u=await me(r,e),p=new URL(r.url).pathname,
-       q=new URL(r.url),b=await json(r);
+async function cats(){
+ let a=await api("/api/categories?type=income");
+ let b=await api("/api/categories?type=expense");
+ $("icat").innerHTML=a.categories.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
+ $("ecat").innerHTML=b.categories.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
+}
 
-   if(p=="/api/login"&&r.method=="POST"){
-    let x=await e.DB.prepare(
-     `SELECT * FROM users WHERE username=?`
-    ).bind(b.username).first();
+async function funds(){
+ let x=await api("/api/funds");F=x.funds;
+ ["ifund","efund"].forEach(id=>$(
+  id).innerHTML=F.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join(""));
+ $("ft").innerHTML=F.map(f=>`
+ <tr><td>${esc(f.name)}</td>
+ <td>${money(f.opening_balance_cents/100)}</td>
+ <td>${money(f.i/100)}</td><td>${money(f.e/100)}</td>
+ <td><b>${money(f.balance/100)}</b></td></tr>`).join("");
+}
 
-    if(!x||!x.active||
-       await hash(b.password)!=x.password_hash)
-     return E(r,"Invalid login",401);
+async function lists(){
+ let i=await api("/api/income"),e=await api("/api/expenses");
+ $("it").innerHTML=i.income.map(x=>row(x,"income")).join("");
+ $("et").innerHTML=e.expenses.map(x=>row(x,"expense")).join("");
+}
 
-    let s=id();
-    await e.DB.prepare(`
-     INSERT INTO sessions VALUES(?,?,datetime('now','+7 days'))
-    `).bind(s,x.id).run();
+function row(x,t){
+ return `<tr><td>${new Date(x.created_at.replace(" ","T")+"Z").toLocaleDateString()}</td>
+ <td>${esc(x.category)}</td><td>${esc(x.donor||x.payee||"-")}</td>
+ <td>${money(x.amount_cents/100)}</td><td><span class="badge ${x.status}">${x.status}</span></td></tr>`;
+}
 
-    return J(r,{ok:true,user:{
-     id:x.id,name:x.name,username:x.username,role:x.role
-    }},200,{
-     ...H(r),
-     "Set-Cookie":`${COOKIE}=${s}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=604800`
-    });
-   }
+async function save(t,e){
+ e.preventDefault();
+ let b=t=="income"?{
+  fund_id:+$("ifund").value,category_id:+$("icat").value,
+  amount:+$("iamt").value,donor:$("donor").value,
+  payment_method:$("imethod").value,reference:$("iref").value,note:$("inote").value
+ }:{
+  fund_id:+$("efund").value,category_id:+$("ecat").value,
+  amount:+$("eamt").value,payee:$("payee").value,
+  payment_method:$("emethod").value,reference:$("eref").value,note:$("enote").value
+ };
+ try{
+  await api("/api/"+(t=="income"?"income":"expenses"),{method:"POST",body:JSON.stringify(b)});
+  e.target.reset();alert("Saved for approval");await lists();await dash();
+ }catch(x){alert(x.message)}
+}
 
-   if(p=="/api/logout"){
-    if(u)await e.DB.prepare(
-     `DELETE FROM sessions WHERE id=?`
-    ).bind(ck(r)).run();
-    return J(r,{ok:true});
-   }
+async function approvals(){
+ let x=await api("/api/approvals");
+ $("at").innerHTML=x.approvals.map(a=>`
+ <tr><td>${a.type}</td><td>${esc(a.person||"-")}</td>
+ <td>${money(a.amount_cents/100)}</td><td>
+ <button class="ok" onclick="approve('${a.type}',${a.id},'APPROVED')">✓</button>
+ <button class="danger" onclick="approve('${a.type}',${a.id},'REJECTED')">✕</button>
+ </td></tr>`).join("")||`<tr><td colspan="4">No pending approvals</td></tr>`;
+}
 
-   if(p=="/api/me")
-    return J(r,{ok:true,user:u?{
-     id:u.id,name:u.name,username:u.username,role:u.role
-    }:null});
+async function approve(t,id,s){
+ try{
+  await api(`/api/approve/${t}/${id}`,{method:"POST",body:JSON.stringify({status:s})});
+  await approvals();await dash();
+ }catch(e){alert(e.message)}
+}
 
-   if(!u)return E(r,"Login required",401);
+async function users(){
+ let x=await api("/api/users");
+ $("ut").innerHTML=x.users.map(u=>`
+ <tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${u.role}</td>
+ <td>${u.active?"Active":"Disabled"}</td>
+ <td>${u.username==U.username?"Master":
+ `<button class="gray" onclick="toggle(${u.id},${u.active})">${u.active?"Disable":"Enable"}</button>`}</td></tr>`).join("");
+}
 
-   if(p=="/api/dashboard"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let a=await e.DB.prepare(
-     `SELECT COALESCE(SUM(amount_cents),0)n FROM income WHERE status='APPROVED'`
-    ).first(),z=await e.DB.prepare(
-     `SELECT COALESCE(SUM(amount_cents),0)n FROM expenses WHERE status='APPROVED'`
-    ).first(),o=await e.DB.prepare(
-     `SELECT COALESCE(SUM(opening_balance_cents),0)n FROM funds`
-    ).first(),n=await e.DB.prepare(
-     `SELECT COUNT(*)n FROM income WHERE status='PENDING'`
-    ).first();
-    return J(r,{ok:true,
-     income:+a.n,expenses:+z.n,
-     balance:+o.n+ +a.n- +z.n,
-     pending:+n.n
-    });
-   }
+async function newUser(e){
+ e.preventDefault();
+ try{
+  await api("/api/users",{method:"POST",body:JSON.stringify({
+   name:$("name").value,username:$("username").value,
+   password:$("password").value,role:$("role").value
+  })});
+  e.target.reset();await users();alert("User created");
+ }catch(x){alert(x.message)}
+}
 
-   if(p=="/api/funds"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     SELECT f.*,
-     COALESCE((SELECT SUM(amount_cents) FROM income
-     WHERE fund_id=f.id AND status='APPROVED'),0) i,
-     COALESCE((SELECT SUM(amount_cents) FROM expenses
-     WHERE fund_id=f.id AND status='APPROVED'),0)e
-     FROM funds f WHERE active=1
-    `).all();
-    return J(r,{ok:true,funds:x.results.map(x=>({
-     ...x,balance:x.opening_balance_cents+x.i-x.e
-    }))});
-   }
+async function toggle(id,a){
+ try{
+  await api("/api/users/"+id,{method:"PATCH",body:JSON.stringify({active:!a})});
+  users();
+ }catch(e){alert(e.message)}
+}
 
-   if(p=="/api/categories"){
-    let x=await e.DB.prepare(
-     `SELECT id,name FROM categories WHERE type=? AND active=1`
-    ).bind(q.searchParams.get("type")).all();
-    return J(r,{ok:true,categories:x.results});
-   }
+async function report(){
+ try{
+  let x=await api(`/api/report?year=${$("yr").value}&month=${$("mo").value}`);
+  $("rp").innerHTML=`<div class="box">
+  <h2>GOH Ministries</h2><b>Church Finance Report</b>
+  <p>${esc(x.period)}</p>
+  <hr>
+  Opening: <b>${money(x.opening/100)}</b><br>
+  Income: <b class="green">${money(x.income/100)}</b><br>
+  Expenses: <b class="red">${money(x.expenses/100)}</b>
+  <hr>Closing Balance:
+  <div class="num blue">${money(x.closing/100)}</div><br>
+  <button class="primary" onclick="print()">🖨 Save PDF</button>
+  </div>`;
+ }catch(e){alert(e.message)}
+}
 
-   if(p=="/api/income"&&r.method=="GET"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     SELECT i.*,f.name fund,c.name category
-     FROM income i JOIN funds f ON f.id=i.fund_id
-     JOIN categories c ON c.id=i.category_id
-     ORDER BY i.id DESC LIMIT 200
-    `).all();
-    return J(r,{ok:true,income:x.results});
-   }
+function go(id){
+ document.querySelectorAll("main section").forEach(x=>x.classList.remove("show"));
+ $(id).classList.add("show");
+}
 
-   if(p=="/api/income"&&r.method=="POST"){
-    if(!can(u,"entry"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     INSERT INTO income
-     (fund_id,category_id,amount_cents,donor,payment_method,reference,note,status,created_by)
-     VALUES(?,?,?,?,?,?,?,'PENDING',?)
-    `).bind(
-     b.fund_id,b.category_id,
-     Math.round(+b.amount*100),
-     b.donor,b.payment_method,b.reference,b.note,u.id
-    ).run();
-    return J(r,{ok:true,id:x.meta.last_row_id});
-   }
+function more(){
+ let x=prompt("1 Funds\n2 Users\n3 Reports");
+ if(x=="1")go("funds");
+ if(x=="2"&&U.role=="admin")go("users");
+ if(x=="3")go("reports");
+}
 
-   if(p=="/api/expenses"&&r.method=="GET"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     SELECT e.*,f.name fund,c.name category
-     FROM expenses e JOIN funds f ON f.id=e.fund_id
-     JOIN categories c ON c.id=e.category_id
-     ORDER BY e.id DESC LIMIT 200
-    `).all();
-    return J(r,{ok:true,expenses:x.results});
-   }
+async function logout(){
+ await api("/api/logout",{method:"POST"});
+ location.reload();
+}
 
-   if(p=="/api/expenses"&&r.method=="POST"){
-    if(!can(u,"entry"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     INSERT INTO expenses
-     (fund_id,category_id,amount_cents,payee,payment_method,reference,note,status,created_by)
-     VALUES(?,?,?,?,?,?,?,'PENDING',?)
-    `).bind(
-     b.fund_id,b.category_id,
-     Math.round(+b.amount*100),
-     b.payee,b.payment_method,b.reference,b.note,u.id
-    ).run();
-    return J(r,{ok:true,id:x.meta.last_row_id});
-   }
-
-   if(p=="/api/approvals"){
-    if(!can(u,"approve"))return E(r,"Denied",403);
-    let i=await e.DB.prepare(
-     `SELECT id,'income'type,amount_cents,donor person,created_at
-      FROM income WHERE status='PENDING'`
-    ).all(),x=await e.DB.prepare(
-     `SELECT id,'expense'type,amount_cents,payee person,created_at
-      FROM expenses WHERE status='PENDING'`
-    ).all();
-    return J(r,{ok:true,approvals:[...i.results,...x.results]});
-   }
-
-   let m=p.match(/^\/api\/approve\/(income|expense)\/(\d+)$/);
-   if(m&&r.method=="POST"){
-    if(!can(u,"approve"))return E(r,"Denied",403);
-    let t=m[1]=="income"?"income":"expenses";
-    await e.DB.prepare(`
-     UPDATE ${t} SET status=?,approved_by=?,approved_at=datetime('now')
-     WHERE id=? AND status='PENDING'
-    `).bind(
-     b.status=="APPROVED"?"APPROVED":"REJECTED",
-     u.id,+m[2]
-    ).run();
-    return J(r,{ok:true});
-   }
-
-   if(p=="/api/users"){
-    if(u.role!="admin")return E(r,"Denied",403);
-    if(r.method=="GET"){
-     let x=await e.DB.prepare(
-      `SELECT id,name,username,role,active FROM users`
-     ).all();
-     return J(r,{ok:true,users:x.results});
-    }
-    if(r.method=="POST"){
-     let x=await e.DB.prepare(`
-      INSERT INTO users(name,username,password_hash,role,active)
-      VALUES(?,?,?,?,1)
-     `).bind(
-      b.name,b.username,await hash(b.password),b.role
-     ).run();
-     return J(r,{ok:true,id:x.meta.last_row_id});
-    }
-   }
-
-   let um=p.match(/^\/api\/users\/(\d+)$/);
-   if(um&&r.method=="PATCH"){
-    if(u.role!="admin")return E(r,"Denied",403);
-    let x=await e.DB.prepare(
-     `SELECT username FROM users WHERE id=?`
-    ).bind(+um[1]).first();
-
-    if(x?.username==e.ADMIN_USERNAME)
-     return E(r,"Master admin cannot be disabled",403);
-
-    await e.DB.prepare(`
-     UPDATE users SET name=COALESCE(?,name),
-     role=COALESCE(?,role),active=COALESCE(?,active)
-     WHERE id=?
-    `).bind(
-     b.name,b.role,b.active==null?null:b.active?1:0,+um[1]
-    ).run();
-
-    return J(r,{ok:true});
-   }
-
-   if(p=="/api/report"){
-    if(!can(u,"report"))return E(r,"Denied",403);
-
-    let y=+q.searchParams.get("year")||
-          new Date().getFullYear(),
-        mo=+q.searchParams.get("month")||0,
-        s=mo?`${y}-${String(mo).padStart(2,"0")}-01`:`${y}-01-01`,
-        e2=mo?
-          new Date(Date.UTC(y,mo,1)).toISOString().slice(0,10):
-          `${y+1}-01-01`;
-
-    let i=await e.DB.prepare(`
-     SELECT COALESCE(SUM(amount_cents),0)n FROM income
-     WHERE status='APPROVED' AND created_at>=? AND created_at<?
-    `).bind(s,e2).first();
-
-    let x=await e.DB.prepare(`
-     SELECT COALESCE(SUM(amount_cents),0)n FROM expenses
-     WHERE status='APPROVED' AND created_at>=? AND created_at<?
-    `).bind(s,e2).first();
-
-    let o=await e.DB.prepare(`
-     SELECT COALESCE(SUM(opening_balance_cents),0)n FROM funds
-    `).first();
-
-    return J(r,{ok:true,
-     period:s+" to "+e2,
-     opening:+o.n,
-     income:+i.n,
-     expenses:+x.n,
-     closing:+o.n+ +i.n- +x.n
-    });
-   }
-
-   if(p=="/api/audit"){
-    if(!can(u,"audit"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(
-     `SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200`
-    ).all();
-    return J(r,{ok:true,logs:x.results});
-   }
-
-   return E(r,"Not found",404);
-
-  }catch(x){
-   return E(r,x.message||"Server error",500);
-  }
- }
-};
+(async()=>{
+ try{
+  let x=await api("/api/me");
+  if(x.user){U=x.user;show()}
+ }catch{}
+})();
+</script>
+</body>
+</html>
