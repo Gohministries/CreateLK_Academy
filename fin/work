@@ -1,4 +1,5 @@
-const CORS="https://createlk.com",COOKIE="cf_session";
+const COOKIE="cf_session";
+
 const P={
  admin:["*"],
  treasurer:["view","entry","approve","report"],
@@ -8,294 +9,792 @@ const P={
  viewer:["view","report"]
 };
 
-const H=r=>({
- "Content-Type":"application/json",
- "Access-Control-Allow-Origin":CORS,
- "Access-Control-Allow-Credentials":"true"
-});
-const J=(r,x,s=200)=>new Response(JSON.stringify(x),{status:s,headers:H(r)});
-const E=(r,x,s=400)=>J(r,{ok:false,error:x},s);
+function origin(r){
+ const o=r.headers.get("Origin")||"";
+ return o==="https://createlk.com"||o==="https://www.createlk.com"
+   ?o:"https://createlk.com";
+}
+
+function H(r){
+ return{
+  "Content-Type":"application/json",
+  "Access-Control-Allow-Origin":origin(r),
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Headers":"Content-Type",
+  "Access-Control-Allow-Methods":"GET,POST,PATCH,OPTIONS"
+ };
+}
+
+function J(r,x,s=200,extra={}){
+ return new Response(JSON.stringify(x),{
+  status:s,
+  headers:{...H(r),...extra}
+ });
+}
+
+function E(r,x,s=400){
+ return J(r,{ok:false,error:x},s);
+}
 
 async function hash(x){
- let b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(x));
- return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+ const b=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(x||"")
+ );
+ return [...new Uint8Array(b)]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
 }
+
 function id(){
- let a=new Uint8Array(32);crypto.getRandomValues(a);
- return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+ const a=new Uint8Array(32);
+ crypto.getRandomValues(a);
+ return [...a]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
 }
+
 function ck(r){
- let m=(r.headers.get("Cookie")||"").match(/cf_session=([^;]+)/);
- return m?.[1];
+ const c=r.headers.get("Cookie")||"";
+ const m=c.match(
+  /(?:^|;\s*)cf_session=([^;]+)/
+ );
+ return m?decodeURIComponent(m[1]):null;
 }
+
 function can(u,p){
- return u&&(u.role=="admin"||(P[u.role]||[]).includes(p));
+ return u&&(
+  u.role==="admin"||
+  (P[u.role]||[]).includes(p)
+ );
 }
-async function json(r){try{return await r.json()}catch{return{}}}
+
+async function json(r){
+ try{return await r.json()}
+ catch{return{}}
+}
 
 async function me(r,e){
- let s=ck(r);if(!s)return null;
+ const s=ck(r);
+ if(!s)return null;
+
  return await e.DB.prepare(`
- SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
- WHERE s.id=? AND u.active=1 AND s.expires_at>datetime('now')
+  SELECT
+   u.id,
+   u.name,
+   u.username,
+   u.role,
+   u.active
+  FROM sessions s
+  JOIN users u ON u.id=s.user_id
+  WHERE s.id=?
+    AND s.expires_at>datetime('now')
+    AND u.active=1
+  LIMIT 1
  `).bind(s).first();
 }
 
 async function init(e){
+
  await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS sessions(
- id TEXT PRIMARY KEY,user_id INTEGER,expires_at TEXT
- )`).run();
+  CREATE TABLE IF NOT EXISTS sessions(
+   id TEXT PRIMARY KEY,
+   user_id INTEGER NOT NULL,
+   expires_at TEXT NOT NULL
+  )
+ `).run();
 
- let u=await e.DB.prepare(
- `SELECT id FROM users WHERE username=?`
- ).bind(e.ADMIN_USERNAME).first();
+ const u=await e.DB.prepare(`
+  SELECT id
+  FROM users
+  WHERE username=?
+  LIMIT 1
+ `).bind(e.ADMIN_USERNAME).first();
 
- if(!u)await e.DB.prepare(`
- INSERT INTO users(name,username,password_hash,role,active)
- VALUES(?,?,?,?,1)
- `).bind(
- "Administrator",
- e.ADMIN_USERNAME,
- await hash(e.ADMIN_PASSWORD),
- "admin"
- ).run();
+ if(!u){
+  await e.DB.prepare(`
+   INSERT INTO users
+   (name,username,password_hash,role,active)
+   VALUES(?,?,?,?,1)
+  `).bind(
+   "Administrator",
+   e.ADMIN_USERNAME,
+   await hash(e.ADMIN_PASSWORD),
+   "admin"
+  ).run();
+ }
+}
+
+async function audit(e,u,action,table,record,details=""){
+ try{
+  await e.DB.prepare(`
+   INSERT INTO audit_logs
+   (user_id,action,table_name,record_id,details)
+   VALUES(?,?,?,?,?)
+  `).bind(
+   u?.id||null,
+   action,
+   table||null,
+   record||null,
+   details
+  ).run();
+ }catch{}
 }
 
 export default{
+
  async fetch(r,e){
 
-  if(r.method=="OPTIONS")
-   return new Response(null,{status:204,headers:{
-    ...H(r),
-    "Access-Control-Allow-Headers":"Content-Type",
-    "Access-Control-Allow-Methods":"GET,POST,PATCH,OPTIONS"
-   }});
+  if(r.method==="OPTIONS"){
+   return new Response(null,{
+    status:204,
+    headers:H(r)
+   });
+  }
 
   try{
+
    await init(e);
-   let u=await me(r,e),p=new URL(r.url).pathname,
-       q=new URL(r.url),b=await json(r);
 
-   if(p=="/api/login"&&r.method=="POST"){
-    let x=await e.DB.prepare(
-     `SELECT * FROM users WHERE username=?`
-    ).bind(b.username).first();
+   const url=new URL(r.url);
+   const p=url.pathname;
+   const q=url.searchParams;
+   const b=await json(r);
+   const u=await me(r,e);
 
-    if(!x||!x.active||
-       await hash(b.password)!=x.password_hash)
-     return E(r,"Invalid login",401);
+   /* LOGIN */
 
-    let s=id();
+   if(p==="/api/login"&&r.method==="POST"){
+
+    const x=await e.DB.prepare(`
+     SELECT *
+     FROM users
+     WHERE username=?
+     LIMIT 1
+    `).bind(String(b.username||"").trim()).first();
+
+    if(
+     !x||
+     !x.active||
+     await hash(b.password)!==x.password_hash
+    ){
+     return E(r,"Invalid username or password",401);
+    }
+
+    const s=id();
+
     await e.DB.prepare(`
-     INSERT INTO sessions VALUES(?,?,datetime('now','+7 days'))
+     INSERT INTO sessions
+     (id,user_id,expires_at)
+     VALUES(?,?,datetime('now','+7 days'))
     `).bind(s,x.id).run();
 
-    return J(r,{ok:true,user:{
-     id:x.id,name:x.name,username:x.username,role:x.role
-    }},200,{
-     ...H(r),
-     "Set-Cookie":`${COOKIE}=${s}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=604800`
+    await audit(
+     e,
+     x,
+     "LOGIN",
+     "sessions",
+     x.id,
+     "User login"
+    );
+
+    return J(
+     r,
+     {
+      ok:true,
+      user:{
+       id:x.id,
+       name:x.name,
+       username:x.username,
+       role:x.role
+      }
+     },
+     200,
+     {
+      "Set-Cookie":
+       `${COOKIE}=${encodeURIComponent(s)}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=None`
+     }
+    );
+   }
+
+   /* LOGOUT */
+
+   if(p==="/api/logout"&&r.method==="POST"){
+
+    const s=ck(r);
+
+    if(s){
+     await e.DB.prepare(`
+      DELETE FROM sessions
+      WHERE id=?
+     `).bind(s).run();
+    }
+
+    return J(
+     r,
+     {ok:true},
+     200,
+     {
+      "Set-Cookie":
+       `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None`
+     }
+    );
+   }
+
+   /* CURRENT USER */
+
+   if(p==="/api/me"&&r.method==="GET"){
+
+    if(!u)
+     return E(r,"Login required",401);
+
+    return J(r,{
+     ok:true,
+     user:{
+      id:u.id,
+      name:u.name,
+      username:u.username,
+      role:u.role
+     }
     });
    }
 
-   if(p=="/api/logout"){
-    if(u)await e.DB.prepare(
-     `DELETE FROM sessions WHERE id=?`
-    ).bind(ck(r)).run();
-    return J(r,{ok:true});
-   }
+   /* EVERYTHING BELOW REQUIRES LOGIN */
 
-   if(p=="/api/me")
-    return J(r,{ok:true,user:u?{
-     id:u.id,name:u.name,username:u.username,role:u.role
-    }:null});
+   if(!u)
+    return E(r,"Login required",401);
 
-   if(!u)return E(r,"Login required",401);
+   /* DASHBOARD */
 
-   if(p=="/api/dashboard"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let a=await e.DB.prepare(
-     `SELECT COALESCE(SUM(amount_cents),0)n FROM income WHERE status='APPROVED'`
-    ).first(),z=await e.DB.prepare(
-     `SELECT COALESCE(SUM(amount_cents),0)n FROM expenses WHERE status='APPROVED'`
-    ).first(),o=await e.DB.prepare(
-     `SELECT COALESCE(SUM(opening_balance_cents),0)n FROM funds`
-    ).first(),n=await e.DB.prepare(
-     `SELECT COUNT(*)n FROM income WHERE status='PENDING'`
-    ).first();
-    return J(r,{ok:true,
-     income:+a.n,expenses:+z.n,
+   if(p==="/api/dashboard"){
+
+    if(!can(u,"view"))
+     return E(r,"Denied",403);
+
+    const a=await e.DB.prepare(`
+     SELECT COALESCE(SUM(amount_cents),0)n
+     FROM income
+     WHERE status='APPROVED'
+    `).first();
+
+    const z=await e.DB.prepare(`
+     SELECT COALESCE(SUM(amount_cents),0)n
+     FROM expenses
+     WHERE status='APPROVED'
+    `).first();
+
+    const o=await e.DB.prepare(`
+     SELECT COALESCE(SUM(opening_balance_cents),0)n
+     FROM funds
+     WHERE active=1
+    `).first();
+
+    const n=await e.DB.prepare(`
+     SELECT
+      (SELECT COUNT(*) FROM income WHERE status='PENDING')+
+      (SELECT COUNT(*) FROM expenses WHERE status='PENDING') n
+    `).first();
+
+    return J(r,{
+     ok:true,
+     income:+a.n,
+     expenses:+z.n,
      balance:+o.n+ +a.n- +z.n,
      pending:+n.n
     });
    }
 
-   if(p=="/api/funds"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     SELECT f.*,
-     COALESCE((SELECT SUM(amount_cents) FROM income
-     WHERE fund_id=f.id AND status='APPROVED'),0) i,
-     COALESCE((SELECT SUM(amount_cents) FROM expenses
-     WHERE fund_id=f.id AND status='APPROVED'),0)e
-     FROM funds f WHERE active=1
+   /* FUNDS */
+
+   if(p==="/api/funds"&&r.method==="GET"){
+
+    if(!can(u,"view"))
+     return E(r,"Denied",403);
+
+    const x=await e.DB.prepare(`
+     SELECT
+      f.id,
+      f.name,
+      f.opening_balance_cents,
+
+      COALESCE((
+       SELECT SUM(i.amount_cents)
+       FROM income i
+       WHERE i.fund_id=f.id
+       AND i.status='APPROVED'
+      ),0) AS i,
+
+      COALESCE((
+       SELECT SUM(ex.amount_cents)
+       FROM expenses ex
+       WHERE ex.fund_id=f.id
+       AND ex.status='APPROVED'
+      ),0) AS e
+
+     FROM funds f
+     WHERE f.active=1
+     ORDER BY f.id
     `).all();
-    return J(r,{ok:true,funds:x.results.map(x=>({
-     ...x,balance:x.opening_balance_cents+x.i-x.e
-    }))});
+
+    const funds=(x.results||[]).map(f=>({
+     ...f,
+     balance:
+      Number(f.opening_balance_cents||0)+
+      Number(f.i||0)-
+      Number(f.e||0)
+    }));
+
+    return J(r,{
+     ok:true,
+     funds
+    });
    }
 
-   if(p=="/api/categories"){
-    let x=await e.DB.prepare(
-     `SELECT id,name FROM categories WHERE type=? AND active=1`
-    ).bind(q.searchParams.get("type")).all();
-    return J(r,{ok:true,categories:x.results});
+   /* CATEGORIES */
+
+   if(p==="/api/categories"&&r.method==="GET"){
+
+    if(!can(u,"view"))
+     return E(r,"Denied",403);
+
+    const type=q.get("type");
+
+    if(!["income","expense"].includes(type))
+     return E(r,"Invalid category type",400);
+
+    const x=await e.DB.prepare(`
+     SELECT id,name
+     FROM categories
+     WHERE type=?
+       AND active=1
+     ORDER BY id
+    `).bind(type).all();
+
+    return J(r,{
+     ok:true,
+     categories:x.results||[]
+    });
    }
 
-   if(p=="/api/income"&&r.method=="GET"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     SELECT i.*,f.name fund,c.name category
-     FROM income i JOIN funds f ON f.id=i.fund_id
+   /* INCOME LIST */
+
+   if(p==="/api/income"&&r.method==="GET"){
+
+    if(!can(u,"view"))
+     return E(r,"Denied",403);
+
+    const x=await e.DB.prepare(`
+     SELECT
+      i.*,
+      f.name fund,
+      c.name category
+     FROM income i
+     JOIN funds f ON f.id=i.fund_id
      JOIN categories c ON c.id=i.category_id
-     ORDER BY i.id DESC LIMIT 200
+     ORDER BY i.id DESC
+     LIMIT 200
     `).all();
-    return J(r,{ok:true,income:x.results});
+
+    return J(r,{
+     ok:true,
+     income:x.results||[]
+    });
    }
 
-   if(p=="/api/income"&&r.method=="POST"){
-    if(!can(u,"entry"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
+   /* ADD INCOME */
+
+   if(p==="/api/income"&&r.method==="POST"){
+
+    if(!can(u,"entry"))
+     return E(r,"Denied",403);
+
+    const amount=Math.round(Number(b.amount)*100);
+
+    if(!b.fund_id||!b.category_id||amount<=0)
+     return E(r,"Fund, category and valid amount are required",400);
+
+    const x=await e.DB.prepare(`
      INSERT INTO income
-     (fund_id,category_id,amount_cents,donor,payment_method,reference,note,status,created_by)
+     (
+      fund_id,
+      category_id,
+      amount_cents,
+      donor,
+      payment_method,
+      reference,
+      note,
+      status,
+      created_by
+     )
      VALUES(?,?,?,?,?,?,?,'PENDING',?)
     `).bind(
-     b.fund_id,b.category_id,
-     Math.round(+b.amount*100),
-     b.donor,b.payment_method,b.reference,b.note,u.id
+     Number(b.fund_id),
+     Number(b.category_id),
+     amount,
+     b.donor||"",
+     b.payment_method||"",
+     b.reference||"",
+     b.note||"",
+     u.id
     ).run();
-    return J(r,{ok:true,id:x.meta.last_row_id});
+
+    await audit(
+     e,u,
+     "CREATE",
+     "income",
+     x.meta.last_row_id,
+     "Income created"
+    );
+
+    return J(r,{
+     ok:true,
+     id:x.meta.last_row_id
+    });
    }
 
-   if(p=="/api/expenses"&&r.method=="GET"){
-    if(!can(u,"view"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
-     SELECT e.*,f.name fund,c.name category
-     FROM expenses e JOIN funds f ON f.id=e.fund_id
+   /* EXPENSE LIST */
+
+   if(p==="/api/expenses"&&r.method==="GET"){
+
+    if(!can(u,"view"))
+     return E(r,"Denied",403);
+
+    const x=await e.DB.prepare(`
+     SELECT
+      e.*,
+      f.name fund,
+      c.name category
+     FROM expenses e
+     JOIN funds f ON f.id=e.fund_id
      JOIN categories c ON c.id=e.category_id
-     ORDER BY e.id DESC LIMIT 200
+     ORDER BY e.id DESC
+     LIMIT 200
     `).all();
-    return J(r,{ok:true,expenses:x.results});
+
+    return J(r,{
+     ok:true,
+     expenses:x.results||[]
+    });
    }
 
-   if(p=="/api/expenses"&&r.method=="POST"){
-    if(!can(u,"entry"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(`
+   /* ADD EXPENSE */
+
+   if(p==="/api/expenses"&&r.method==="POST"){
+
+    if(!can(u,"entry"))
+     return E(r,"Denied",403);
+
+    const amount=Math.round(Number(b.amount)*100);
+
+    if(!b.fund_id||!b.category_id||amount<=0)
+     return E(r,"Fund, category and valid amount are required",400);
+
+    const x=await e.DB.prepare(`
      INSERT INTO expenses
-     (fund_id,category_id,amount_cents,payee,payment_method,reference,note,status,created_by)
+     (
+      fund_id,
+      category_id,
+      amount_cents,
+      payee,
+      payment_method,
+      reference,
+      note,
+      status,
+      created_by
+     )
      VALUES(?,?,?,?,?,?,?,'PENDING',?)
     `).bind(
-     b.fund_id,b.category_id,
-     Math.round(+b.amount*100),
-     b.payee,b.payment_method,b.reference,b.note,u.id
+     Number(b.fund_id),
+     Number(b.category_id),
+     amount,
+     b.payee||"",
+     b.payment_method||"",
+     b.reference||"",
+     b.note||"",
+     u.id
     ).run();
-    return J(r,{ok:true,id:x.meta.last_row_id});
+
+    await audit(
+     e,u,
+     "CREATE",
+     "expenses",
+     x.meta.last_row_id,
+     "Expense created"
+    );
+
+    return J(r,{
+     ok:true,
+     id:x.meta.last_row_id
+    });
    }
 
-   if(p=="/api/approvals"){
-    if(!can(u,"approve"))return E(r,"Denied",403);
-    let i=await e.DB.prepare(
-     `SELECT id,'income'type,amount_cents,donor person,created_at
-      FROM income WHERE status='PENDING'`
-    ).all(),x=await e.DB.prepare(
-     `SELECT id,'expense'type,amount_cents,payee person,created_at
-      FROM expenses WHERE status='PENDING'`
-    ).all();
-    return J(r,{ok:true,approvals:[...i.results,...x.results]});
+   /* APPROVALS */
+
+   if(p==="/api/approvals"&&r.method==="GET"){
+
+    if(!can(u,"approve"))
+     return E(r,"Denied",403);
+
+    const i=await e.DB.prepare(`
+     SELECT
+      id,
+      'income' type,
+      amount_cents,
+      donor person,
+      created_at
+     FROM income
+     WHERE status='PENDING'
+     ORDER BY id DESC
+    `).all();
+
+    const x=await e.DB.prepare(`
+     SELECT
+      id,
+      'expense' type,
+      amount_cents,
+      payee person,
+      created_at
+     FROM expenses
+     WHERE status='PENDING'
+     ORDER BY id DESC
+    `).all();
+
+    return J(r,{
+     ok:true,
+     approvals:[
+      ...(i.results||[]),
+      ...(x.results||[])
+     ]
+    });
    }
 
-   let m=p.match(/^\/api\/approve\/(income|expense)\/(\d+)$/);
-   if(m&&r.method=="POST"){
-    if(!can(u,"approve"))return E(r,"Denied",403);
-    let t=m[1]=="income"?"income":"expenses";
-    await e.DB.prepare(`
-     UPDATE ${t} SET status=?,approved_by=?,approved_at=datetime('now')
-     WHERE id=? AND status='PENDING'
+   /* APPROVE / REJECT */
+
+   const am=p.match(
+    /^\/api\/approve\/(income|expense)\/(\d+)$/
+   );
+
+   if(am&&r.method==="POST"){
+
+    if(!can(u,"approve"))
+     return E(r,"Denied",403);
+
+    const table=
+     am[1]==="income"
+      ?"income"
+      :"expenses";
+
+    const status=
+     b.status==="APPROVED"
+      ?"APPROVED"
+      :"REJECTED";
+
+    const x=await e.DB.prepare(`
+     UPDATE ${table}
+     SET
+      status=?,
+      approved_by=?,
+      approved_at=datetime('now')
+     WHERE id=?
+       AND status='PENDING'
     `).bind(
-     b.status=="APPROVED"?"APPROVED":"REJECTED",
-     u.id,+m[2]
+     status,
+     u.id,
+     Number(am[2])
     ).run();
-    return J(r,{ok:true});
+
+    await audit(
+     e,u,
+     status==="APPROVED"?"APPROVE":"REJECT",
+     table,
+     Number(am[2]),
+     status
+    );
+
+    return J(r,{
+     ok:true,
+     changed:x.meta.changes||0
+    });
    }
 
-   if(p=="/api/users"){
-    if(u.role!="admin")return E(r,"Denied",403);
-    if(r.method=="GET"){
-     let x=await e.DB.prepare(
-      `SELECT id,name,username,role,active FROM users`
-     ).all();
-     return J(r,{ok:true,users:x.results});
+   /* USERS */
+
+   if(p==="/api/users"){
+
+    if(u.role!=="admin")
+     return E(r,"Denied",403);
+
+    if(r.method==="GET"){
+
+     const x=await e.DB.prepare(`
+      SELECT
+       id,name,username,role,active
+      FROM users
+      ORDER BY id
+     `).all();
+
+     return J(r,{
+      ok:true,
+      users:x.results||[]
+     });
     }
-    if(r.method=="POST"){
-     let x=await e.DB.prepare(`
-      INSERT INTO users(name,username,password_hash,role,active)
+
+    if(r.method==="POST"){
+
+     const roles=[
+      "viewer",
+      "finance_officer",
+      "treasurer",
+      "approver",
+      "auditor"
+     ];
+
+     if(!roles.includes(b.role))
+      return E(r,"Invalid role",400);
+
+     if(!b.name||!b.username||!b.password)
+      return E(r,"Name, username and password are required",400);
+
+     const x=await e.DB.prepare(`
+      INSERT INTO users
+      (name,username,password_hash,role,active)
       VALUES(?,?,?,?,1)
      `).bind(
-      b.name,b.username,await hash(b.password),b.role
+      b.name.trim(),
+      b.username.trim(),
+      await hash(b.password),
+      b.role
      ).run();
-     return J(r,{ok:true,id:x.meta.last_row_id});
+
+     await audit(
+      e,u,
+      "CREATE",
+      "users",
+      x.meta.last_row_id,
+      "User created"
+     );
+
+     return J(r,{
+      ok:true,
+      id:x.meta.last_row_id
+     });
     }
    }
 
-   let um=p.match(/^\/api\/users\/(\d+)$/);
-   if(um&&r.method=="PATCH"){
-    if(u.role!="admin")return E(r,"Denied",403);
-    let x=await e.DB.prepare(
-     `SELECT username FROM users WHERE id=?`
-    ).bind(+um[1]).first();
+   /* USER UPDATE */
 
-    if(x?.username==e.ADMIN_USERNAME)
-     return E(r,"Master admin cannot be disabled",403);
+   const um=p.match(
+    /^\/api\/users\/(\d+)$/
+   );
+
+   if(um&&r.method==="PATCH"){
+
+    if(u.role!=="admin")
+     return E(r,"Denied",403);
+
+    const uid=Number(um[1]);
+
+    const x=await e.DB.prepare(`
+     SELECT id,username,role
+     FROM users
+     WHERE id=?
+    `).bind(uid).first();
+
+    if(!x)
+     return E(r,"User not found",404);
+
+    if(x.username===e.ADMIN_USERNAME)
+     return E(r,"Master admin cannot be modified",403);
+
+    const allowed=[
+     "viewer",
+     "finance_officer",
+     "treasurer",
+     "approver",
+     "auditor"
+    ];
+
+    if(
+     b.role!==undefined&&
+     !allowed.includes(b.role)
+    )
+     return E(r,"Invalid role",400);
 
     await e.DB.prepare(`
-     UPDATE users SET name=COALESCE(?,name),
-     role=COALESCE(?,role),active=COALESCE(?,active)
+     UPDATE users
+     SET
+      name=COALESCE(?,name),
+      role=COALESCE(?,role),
+      active=COALESCE(?,active)
      WHERE id=?
     `).bind(
-     b.name,b.role,b.active==null?null:b.active?1:0,+um[1]
+     b.name||null,
+     b.role||null,
+     b.active===undefined
+      ?null
+      :(b.active?1:0),
+     uid
     ).run();
+
+    await audit(
+     e,u,
+     "UPDATE",
+     "users",
+     uid,
+     "User updated"
+    );
 
     return J(r,{ok:true});
    }
 
-   if(p=="/api/report"){
-    if(!can(u,"report"))return E(r,"Denied",403);
+   /* REPORT */
 
-    let y=+q.searchParams.get("year")||
-          new Date().getFullYear(),
-        mo=+q.searchParams.get("month")||0,
-        s=mo?`${y}-${String(mo).padStart(2,"0")}-01`:`${y}-01-01`,
-        e2=mo?
-          new Date(Date.UTC(y,mo,1)).toISOString().slice(0,10):
-          `${y+1}-01-01`;
+   if(p==="/api/report"&&r.method==="GET"){
 
-    let i=await e.DB.prepare(`
-     SELECT COALESCE(SUM(amount_cents),0)n FROM income
-     WHERE status='APPROVED' AND created_at>=? AND created_at<?
-    `).bind(s,e2).first();
+    if(!can(u,"report"))
+     return E(r,"Denied",403);
 
-    let x=await e.DB.prepare(`
-     SELECT COALESCE(SUM(amount_cents),0)n FROM expenses
-     WHERE status='APPROVED' AND created_at>=? AND created_at<?
-    `).bind(s,e2).first();
+    const y=
+     Number(q.get("year"))||
+     new Date().getFullYear();
 
-    let o=await e.DB.prepare(`
-     SELECT COALESCE(SUM(opening_balance_cents),0)n FROM funds
+    const mo=Number(q.get("month"))||0;
+
+    const start=mo
+     ?`${y}-${String(mo).padStart(2,"0")}-01`
+     :`${y}-01-01`;
+
+    const end=mo
+     ?new Date(Date.UTC(y,mo,1))
+       .toISOString()
+       .slice(0,10)
+     :`${y+1}-01-01`;
+
+    const i=await e.DB.prepare(`
+     SELECT COALESCE(SUM(amount_cents),0)n
+     FROM income
+     WHERE status='APPROVED'
+       AND created_at>=?
+       AND created_at<?
+    `).bind(start,end).first();
+
+    const x=await e.DB.prepare(`
+     SELECT COALESCE(SUM(amount_cents),0)n
+     FROM expenses
+     WHERE status='APPROVED'
+       AND created_at>=?
+       AND created_at<?
+    `).bind(start,end).first();
+
+    const o=await e.DB.prepare(`
+     SELECT COALESCE(SUM(opening_balance_cents),0)n
+     FROM funds
+     WHERE active=1
     `).first();
 
-    return J(r,{ok:true,
-     period:s+" to "+e2,
+    return J(r,{
+     ok:true,
+     period:start+" to "+end,
      opening:+o.n,
      income:+i.n,
      expenses:+x.n,
@@ -303,18 +802,41 @@ export default{
     });
    }
 
-   if(p=="/api/audit"){
-    if(!can(u,"audit"))return E(r,"Denied",403);
-    let x=await e.DB.prepare(
-     `SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200`
-    ).all();
-    return J(r,{ok:true,logs:x.results});
+   /* AUDIT */
+
+   if(p==="/api/audit"&&r.method==="GET"){
+
+    if(!can(u,"audit"))
+     return E(r,"Denied",403);
+
+    const x=await e.DB.prepare(`
+     SELECT
+      a.*,
+      u.name user_name
+     FROM audit_logs a
+     LEFT JOIN users u
+       ON u.id=a.user_id
+     ORDER BY a.id DESC
+     LIMIT 200
+    `).all();
+
+    return J(r,{
+     ok:true,
+     logs:x.results||[]
+    });
    }
 
    return E(r,"Not found",404);
 
   }catch(x){
-   return E(r,x.message||"Server error",500);
+
+   console.error(x);
+
+   return E(
+    r,
+    x?.message||"Server error",
+    500
+   );
   }
  }
 };
