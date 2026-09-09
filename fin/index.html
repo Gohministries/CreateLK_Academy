@@ -1,0 +1,320 @@
+const CORS="https://createlk.com",COOKIE="cf_session";
+const P={
+ admin:["*"],
+ treasurer:["view","entry","approve","report"],
+ finance_officer:["view","entry","report"],
+ approver:["view","approve","report"],
+ auditor:["view","report","audit"],
+ viewer:["view","report"]
+};
+
+const H=r=>({
+ "Content-Type":"application/json",
+ "Access-Control-Allow-Origin":CORS,
+ "Access-Control-Allow-Credentials":"true"
+});
+const J=(r,x,s=200)=>new Response(JSON.stringify(x),{status:s,headers:H(r)});
+const E=(r,x,s=400)=>J(r,{ok:false,error:x},s);
+
+async function hash(x){
+ let b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(x));
+ return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function id(){
+ let a=new Uint8Array(32);crypto.getRandomValues(a);
+ return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function ck(r){
+ let m=(r.headers.get("Cookie")||"").match(/cf_session=([^;]+)/);
+ return m?.[1];
+}
+function can(u,p){
+ return u&&(u.role=="admin"||(P[u.role]||[]).includes(p));
+}
+async function json(r){try{return await r.json()}catch{return{}}}
+
+async function me(r,e){
+ let s=ck(r);if(!s)return null;
+ return await e.DB.prepare(`
+ SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
+ WHERE s.id=? AND u.active=1 AND s.expires_at>datetime('now')
+ `).bind(s).first();
+}
+
+async function init(e){
+ await e.DB.prepare(`
+ CREATE TABLE IF NOT EXISTS sessions(
+ id TEXT PRIMARY KEY,user_id INTEGER,expires_at TEXT
+ )`).run();
+
+ let u=await e.DB.prepare(
+ `SELECT id FROM users WHERE username=?`
+ ).bind(e.ADMIN_USERNAME).first();
+
+ if(!u)await e.DB.prepare(`
+ INSERT INTO users(name,username,password_hash,role,active)
+ VALUES(?,?,?,?,1)
+ `).bind(
+ "Administrator",
+ e.ADMIN_USERNAME,
+ await hash(e.ADMIN_PASSWORD),
+ "admin"
+ ).run();
+}
+
+export default{
+ async fetch(r,e){
+
+  if(r.method=="OPTIONS")
+   return new Response(null,{status:204,headers:{
+    ...H(r),
+    "Access-Control-Allow-Headers":"Content-Type",
+    "Access-Control-Allow-Methods":"GET,POST,PATCH,OPTIONS"
+   }});
+
+  try{
+   await init(e);
+   let u=await me(r,e),p=new URL(r.url).pathname,
+       q=new URL(r.url),b=await json(r);
+
+   if(p=="/api/login"&&r.method=="POST"){
+    let x=await e.DB.prepare(
+     `SELECT * FROM users WHERE username=?`
+    ).bind(b.username).first();
+
+    if(!x||!x.active||
+       await hash(b.password)!=x.password_hash)
+     return E(r,"Invalid login",401);
+
+    let s=id();
+    await e.DB.prepare(`
+     INSERT INTO sessions VALUES(?,?,datetime('now','+7 days'))
+    `).bind(s,x.id).run();
+
+    return J(r,{ok:true,user:{
+     id:x.id,name:x.name,username:x.username,role:x.role
+    }},200,{
+     ...H(r),
+     "Set-Cookie":`${COOKIE}=${s}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=604800`
+    });
+   }
+
+   if(p=="/api/logout"){
+    if(u)await e.DB.prepare(
+     `DELETE FROM sessions WHERE id=?`
+    ).bind(ck(r)).run();
+    return J(r,{ok:true});
+   }
+
+   if(p=="/api/me")
+    return J(r,{ok:true,user:u?{
+     id:u.id,name:u.name,username:u.username,role:u.role
+    }:null});
+
+   if(!u)return E(r,"Login required",401);
+
+   if(p=="/api/dashboard"){
+    if(!can(u,"view"))return E(r,"Denied",403);
+    let a=await e.DB.prepare(
+     `SELECT COALESCE(SUM(amount_cents),0)n FROM income WHERE status='APPROVED'`
+    ).first(),z=await e.DB.prepare(
+     `SELECT COALESCE(SUM(amount_cents),0)n FROM expenses WHERE status='APPROVED'`
+    ).first(),o=await e.DB.prepare(
+     `SELECT COALESCE(SUM(opening_balance_cents),0)n FROM funds`
+    ).first(),n=await e.DB.prepare(
+     `SELECT COUNT(*)n FROM income WHERE status='PENDING'`
+    ).first();
+    return J(r,{ok:true,
+     income:+a.n,expenses:+z.n,
+     balance:+o.n+ +a.n- +z.n,
+     pending:+n.n
+    });
+   }
+
+   if(p=="/api/funds"){
+    if(!can(u,"view"))return E(r,"Denied",403);
+    let x=await e.DB.prepare(`
+     SELECT f.*,
+     COALESCE((SELECT SUM(amount_cents) FROM income
+     WHERE fund_id=f.id AND status='APPROVED'),0) i,
+     COALESCE((SELECT SUM(amount_cents) FROM expenses
+     WHERE fund_id=f.id AND status='APPROVED'),0)e
+     FROM funds f WHERE active=1
+    `).all();
+    return J(r,{ok:true,funds:x.results.map(x=>({
+     ...x,balance:x.opening_balance_cents+x.i-x.e
+    }))});
+   }
+
+   if(p=="/api/categories"){
+    let x=await e.DB.prepare(
+     `SELECT id,name FROM categories WHERE type=? AND active=1`
+    ).bind(q.searchParams.get("type")).all();
+    return J(r,{ok:true,categories:x.results});
+   }
+
+   if(p=="/api/income"&&r.method=="GET"){
+    if(!can(u,"view"))return E(r,"Denied",403);
+    let x=await e.DB.prepare(`
+     SELECT i.*,f.name fund,c.name category
+     FROM income i JOIN funds f ON f.id=i.fund_id
+     JOIN categories c ON c.id=i.category_id
+     ORDER BY i.id DESC LIMIT 200
+    `).all();
+    return J(r,{ok:true,income:x.results});
+   }
+
+   if(p=="/api/income"&&r.method=="POST"){
+    if(!can(u,"entry"))return E(r,"Denied",403);
+    let x=await e.DB.prepare(`
+     INSERT INTO income
+     (fund_id,category_id,amount_cents,donor,payment_method,reference,note,status,created_by)
+     VALUES(?,?,?,?,?,?,?,'PENDING',?)
+    `).bind(
+     b.fund_id,b.category_id,
+     Math.round(+b.amount*100),
+     b.donor,b.payment_method,b.reference,b.note,u.id
+    ).run();
+    return J(r,{ok:true,id:x.meta.last_row_id});
+   }
+
+   if(p=="/api/expenses"&&r.method=="GET"){
+    if(!can(u,"view"))return E(r,"Denied",403);
+    let x=await e.DB.prepare(`
+     SELECT e.*,f.name fund,c.name category
+     FROM expenses e JOIN funds f ON f.id=e.fund_id
+     JOIN categories c ON c.id=e.category_id
+     ORDER BY e.id DESC LIMIT 200
+    `).all();
+    return J(r,{ok:true,expenses:x.results});
+   }
+
+   if(p=="/api/expenses"&&r.method=="POST"){
+    if(!can(u,"entry"))return E(r,"Denied",403);
+    let x=await e.DB.prepare(`
+     INSERT INTO expenses
+     (fund_id,category_id,amount_cents,payee,payment_method,reference,note,status,created_by)
+     VALUES(?,?,?,?,?,?,?,'PENDING',?)
+    `).bind(
+     b.fund_id,b.category_id,
+     Math.round(+b.amount*100),
+     b.payee,b.payment_method,b.reference,b.note,u.id
+    ).run();
+    return J(r,{ok:true,id:x.meta.last_row_id});
+   }
+
+   if(p=="/api/approvals"){
+    if(!can(u,"approve"))return E(r,"Denied",403);
+    let i=await e.DB.prepare(
+     `SELECT id,'income'type,amount_cents,donor person,created_at
+      FROM income WHERE status='PENDING'`
+    ).all(),x=await e.DB.prepare(
+     `SELECT id,'expense'type,amount_cents,payee person,created_at
+      FROM expenses WHERE status='PENDING'`
+    ).all();
+    return J(r,{ok:true,approvals:[...i.results,...x.results]});
+   }
+
+   let m=p.match(/^\/api\/approve\/(income|expense)\/(\d+)$/);
+   if(m&&r.method=="POST"){
+    if(!can(u,"approve"))return E(r,"Denied",403);
+    let t=m[1]=="income"?"income":"expenses";
+    await e.DB.prepare(`
+     UPDATE ${t} SET status=?,approved_by=?,approved_at=datetime('now')
+     WHERE id=? AND status='PENDING'
+    `).bind(
+     b.status=="APPROVED"?"APPROVED":"REJECTED",
+     u.id,+m[2]
+    ).run();
+    return J(r,{ok:true});
+   }
+
+   if(p=="/api/users"){
+    if(u.role!="admin")return E(r,"Denied",403);
+    if(r.method=="GET"){
+     let x=await e.DB.prepare(
+      `SELECT id,name,username,role,active FROM users`
+     ).all();
+     return J(r,{ok:true,users:x.results});
+    }
+    if(r.method=="POST"){
+     let x=await e.DB.prepare(`
+      INSERT INTO users(name,username,password_hash,role,active)
+      VALUES(?,?,?,?,1)
+     `).bind(
+      b.name,b.username,await hash(b.password),b.role
+     ).run();
+     return J(r,{ok:true,id:x.meta.last_row_id});
+    }
+   }
+
+   let um=p.match(/^\/api\/users\/(\d+)$/);
+   if(um&&r.method=="PATCH"){
+    if(u.role!="admin")return E(r,"Denied",403);
+    let x=await e.DB.prepare(
+     `SELECT username FROM users WHERE id=?`
+    ).bind(+um[1]).first();
+
+    if(x?.username==e.ADMIN_USERNAME)
+     return E(r,"Master admin cannot be disabled",403);
+
+    await e.DB.prepare(`
+     UPDATE users SET name=COALESCE(?,name),
+     role=COALESCE(?,role),active=COALESCE(?,active)
+     WHERE id=?
+    `).bind(
+     b.name,b.role,b.active==null?null:b.active?1:0,+um[1]
+    ).run();
+
+    return J(r,{ok:true});
+   }
+
+   if(p=="/api/report"){
+    if(!can(u,"report"))return E(r,"Denied",403);
+
+    let y=+q.searchParams.get("year")||
+          new Date().getFullYear(),
+        mo=+q.searchParams.get("month")||0,
+        s=mo?`${y}-${String(mo).padStart(2,"0")}-01`:`${y}-01-01`,
+        e2=mo?
+          new Date(Date.UTC(y,mo,1)).toISOString().slice(0,10):
+          `${y+1}-01-01`;
+
+    let i=await e.DB.prepare(`
+     SELECT COALESCE(SUM(amount_cents),0)n FROM income
+     WHERE status='APPROVED' AND created_at>=? AND created_at<?
+    `).bind(s,e2).first();
+
+    let x=await e.DB.prepare(`
+     SELECT COALESCE(SUM(amount_cents),0)n FROM expenses
+     WHERE status='APPROVED' AND created_at>=? AND created_at<?
+    `).bind(s,e2).first();
+
+    let o=await e.DB.prepare(`
+     SELECT COALESCE(SUM(opening_balance_cents),0)n FROM funds
+    `).first();
+
+    return J(r,{ok:true,
+     period:s+" to "+e2,
+     opening:+o.n,
+     income:+i.n,
+     expenses:+x.n,
+     closing:+o.n+ +i.n- +x.n
+    });
+   }
+
+   if(p=="/api/audit"){
+    if(!can(u,"audit"))return E(r,"Denied",403);
+    let x=await e.DB.prepare(
+     `SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200`
+    ).all();
+    return J(r,{ok:true,logs:x.results});
+   }
+
+   return E(r,"Not found",404);
+
+  }catch(x){
+   return E(r,x.message||"Server error",500);
+  }
+ }
+};
