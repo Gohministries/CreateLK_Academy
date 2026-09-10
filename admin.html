@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>365 Bible Calendar 2027</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Cinzel:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{padding:24px;background:radial-gradient(circle at top,#fff,#eef1f5 45%,#e3e7ec);font-family:Montserrat,Arial,sans-serif;color:#172033}
+.app{max-width:1100px;margin:auto}
+h2{text-align:center;margin:0 0 20px;font:600 25px Cinzel,serif;letter-spacing:1.5px;color:#17365d}
+
+.controls{background:#fffffff5;padding:20px;border-radius:16px;margin-bottom:22px;border:1px solid #e0e3e7;box-shadow:0 8px 28px #1f2b3d14}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}
+.field{display:flex;flex-direction:column;gap:7px}
+label{font-size:12px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:#596579}
+input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d5dbe2;border-radius:9px;background:#fff;font:14px Montserrat,Arial,sans-serif;color:#172033;outline:0}
+input:focus,select:focus,textarea:focus{border-color:#b58a3c;box-shadow:0 0 0 3px #b58a3c1f}
+textarea{min-height:78px;resize:vertical;line-height:1.5}
+
+.adjustment{margin-top:18px;padding:16px;background:linear-gradient(135deg,#faf9f5,#f4f5f7);border:1px solid #e1e2df;border-radius:11px}
+.adjustment h3{margin:0 0 12px;font:600 14px Cinzel,serif;letter-spacing:.6px;color:#17365d}
+.range{display:grid;grid-template-columns:1fr 65px;gap:10px;align-items:center;margin:9px 0}
+.range input{padding:0;accent-color:#b58a3c}
+.range span{text-align:right;font-size:12px;font-weight:600;color:#687386}
+
+.buttons{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}
+button{border:0;border-radius:8px;padding:10px 15px;cursor:pointer;font:700 12px Montserrat,Arial,sans-serif;transition:.15s}
+button:hover:not(:disabled){transform:translateY(-1px)}
+.secondary{background:#edf0f4;color:#263348;border:1px solid #dce1e7}
+.gold{background:linear-gradient(135deg,#a9792d,#c29a50);color:#fff;box-shadow:0 3px 8px #966e2d2e}
+.danger,.deleteBtn{background:#ad4141;color:#fff}
+.editBtn{background:#17365d;color:#fff}
+.deleteBtn,.editBtn{padding:6px 10px;font-size:10px;border-radius:6px}
+button:disabled{opacity:.45;cursor:not-allowed;transform:none!important}
+
+.status{margin-top:13px;font-size:12px;font-weight:600;color:#5d6878;min-height:17px}
+.generated{display:flex;flex-direction:column;gap:7px;margin-top:10px;max-height:320px;overflow:auto}
+.generatedRow{display:flex;align-items:center;justify-content:space-between;background:#fafbfc;border:1px solid #e0e4e9;border-radius:8px;padding:8px 10px}
+.generatedInfo,.generatedActions{display:flex;align-items:center;gap:9px}
+.generatedDate{font-size:12px;font-weight:700;color:#17365d}
+.generatedIndex{font-size:10px;color:#8a93a0}
+
+.calendar{position:relative;width:100%;aspect-ratio:16/10;background:#f6f0e2;border:1px solid #b69551;outline:5px solid #eee8db;overflow:hidden;margin:0 auto 20px;box-shadow:0 15px 38px #2b231421,0 3px 10px #2b23120f;isolation:isolate}
+.calendar:before,.calendar:after{content:"";position:absolute;pointer-events:none;z-index:10}
+.calendar:before{inset:2.2%;border:1px solid #8b6c2f9e}
+.calendar:after{inset:3.15%;border:1px solid #8b6c2f3d}
+
+.header{position:relative;z-index:3;height:25%;display:flex;align-items:center;justify-content:center;text-align:center;padding:2% 6%}
+.headerLine{display:flex;align-items:center;justify-content:center;gap:17px;white-space:nowrap;line-height:1}
+.month,.dateNumber{font:600 clamp(28px,4.2vw,48px) Cinzel,Georgia,serif;line-height:1;letter-spacing:2px;height:1em;min-height:1em;display:flex;align-items:center;justify-content:center;margin:0;white-space:nowrap}
+.month{color:#17365d}
+.dateNumber{color:#8b3a3a}
+
+.cross{position:absolute;top:14%;right:7%;font:500 clamp(27px,4vw,46px) Cinzel,Georgia,serif;line-height:1;color:#b48b36;width:1em;height:1em;display:flex;align-items:center;justify-content:center;z-index:5;text-shadow:0 1px 1px #fffB,0 2px 4px #6446141f}
+
+.verses{position:relative;z-index:3;height:75%;display:flex;flex-direction:column;padding:0 7% 5%;min-height:0}
+.section{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px 7%;overflow:hidden}
+.section+.section{border-top:1px solid #826e462e}
+.text{width:100%;overflow:hidden;overflow-wrap:anywhere;white-space:normal;text-align:center;margin:0}
+#english{font:600 25px/1.25 "Playfair Display",Georgia,serif;color:#17365d}
+#tamil{font:600 18px/1.48 "Noto Sans Tamil",sans-serif;color:#8b3a3a}
+#sinhala{font:600 18px/1.48 "Noto Sans Sinhala",sans-serif;color:#35634a}
+
+.month-january{background:linear-gradient(135deg,#e5d8ba,#faf7ef 48%,#d2bd8b)}
+.month-february{background:linear-gradient(135deg,#e6cbcd,#fcf4f2 48%,#d5b0b5)}
+.month-march{background:linear-gradient(135deg,#d2e0ce,#f6f9f3 48%,#b4c9af)}
+.month-april{background:linear-gradient(135deg,#dcd2e7,#faf7fc 48%,#c0b0d2)}
+.month-may{background:linear-gradient(135deg,#e8d4a7,#fcf8eb 48%,#cdb16d)}
+.month-june{background:linear-gradient(135deg,#cce1e7,#f5fafc 48%,#a5c8d2)}
+.month-july{background:linear-gradient(135deg,#e3d4b5,#fcf8ef 48%,#c8b079)}
+.month-august{background:linear-gradient(135deg,#d2dfcd,#f6f9f3 48%,#aec4a5)}
+.month-september{background:linear-gradient(135deg,#e2d6c0,#fcf9f1 48%,#c5b18b)}
+.month-october{background:linear-gradient(135deg,#e8ceb0,#fdf4e6 48%,#ce9b68)}
+.month-november{background:linear-gradient(135deg,#d6dbe3,#f7f8fa 48%,#b2bbc8)}
+.month-december{background:linear-gradient(135deg,#d7dce6,#f8f9fb 48%,#afb9c8)}
+
+@media(max-width:700px){
+body{padding:10px}
+h2{font-size:20px;margin-bottom:14px}
+.controls{padding:14px;border-radius:12px}
+.grid{grid-template-columns:1fr;gap:12px}
+.header{padding:2% 2% 0}
+.headerLine{gap:9px}
+.month,.dateNumber{font-size:clamp(24px,7vw,36px);letter-spacing:1px}
+.cross{top:12%;right:6%;font-size:clamp(24px,7vw,36px)}
+.section{padding:5px 4%}
+#english{line-height:1.2}
+#tamil,#sinhala{line-height:1.4}
+.buttons{gap:7px}
+button{padding:9px 11px;font-size:11px}
+.generatedRow{padding:7px}
+}
+
+@media print{
+@page{size:9in 5.625in landscape;margin:0}
+html,body{width:9in;height:5.625in;margin:0;padding:0}
+.controls,h2{display:none!important}
+.calendar{width:9in;height:5.625in;margin:0;outline:none;box-shadow:none}
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+<h2>365 Bible Calendar 2027</h2>
+
+<div class="controls">
+<div class="grid">
+
+<div class="field">
+<label>Calendar Date</label>
+<input type="date" id="date" min="2027-01-01" max="2027-12-31" value="2027-01-01">
+</div>
+
+<div class="field">
+<label>English Font</label>
+<select id="englishFont">
+<option>Playfair Display</option>
+<option>Cinzel</option>
+<option>Montserrat</option>
+<option>Georgia</option>
+<option>Arial</option>
+</select>
+</div>
+
+<div class="field">
+<label>English Bible Verse</label>
+<textarea id="englishInput">Your word is a lamp for my feet, a light on my path.</textarea>
+</div>
+
+<div class="field">
+<label>Tamil Bible Verse</label>
+<textarea id="tamilInput">உமது வார்த்தை என் கால்களுக்கு விளக்கும், என் பாதைக்கு வெளிச்சமுமாயிருக்கிறது.</textarea>
+</div>
+
+<div class="field">
+<label>Sinhala Bible Verse</label>
+<textarea id="sinhalaInput">ඔබගේ වචනය මාගේ පාදවලට පහනක්ද, මාගේ මාර්ගයට ආලෝකයක්ද වේ.</textarea>
+</div>
+
+</div>
+
+<div class="adjustment">
+<h3>Calendar Text Size</h3>
+
+<div class="range">
+<input type="range" id="englishSize" min="8" max="45" step=".1" value="25">
+<span id="englishSizeValue">25px</span>
+</div>
+
+<div class="range">
+<input type="range" id="tamilSize" min="8" max="38" step=".1" value="18">
+<span id="tamilSizeValue">18px</span>
+</div>
+
+<div class="range">
+<input type="range" id="sinhalaSize" min="8" max="38" step=".1" value="18">
+<span id="sinhalaSizeValue">18px</span>
+</div>
+</div>
+
+<div class="buttons">
+<button class="secondary" id="prevBtn">← Previous</button>
+<button class="secondary" id="nextBtn">Next →</button>
+<button class="gold" id="generateBtn">Generate</button>
+<button class="danger" id="clearBtn">Clear All</button>
+<button class="gold" id="downloadBtn">Download All PDF</button>
+</div>
+
+<div class="status" id="status"></div>
+<div class="generated" id="generatedList"></div>
+</div>
+
+<div class="calendar month-january" id="calendar">
+
+<div class="header">
+<div class="headerLine">
+<div class="month" id="monthText">JANUARY</div>
+<div class="dateNumber" id="dateText">1</div>
+</div>
+<div class="cross">✝</div>
+</div>
+
+<div class="verses">
+
+<section class="section">
+<div class="text" id="english">Your word is a lamp for my feet, a light on my path.</div>
+</section>
+
+<section class="section">
+<div class="text" id="tamil">உமது வார்த்தை என் கால்களுக்கு விளக்கும், என் பாதைக்கு வெளிச்சமுமாயிருக்கிறது.</div>
+</section>
+
+<section class="section">
+<div class="text" id="sinhala">ඔබගේ වචනය මාගේ පාදවලට පහනක්ද, මාගේ මාර්ගයට ආලෝකයක්ද වේ.</div>
+</section>
+
+</div>
+</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const KEY="BibleCalendar2027_Settings_v3",DB="BibleCalendar2027_DB",STORE="pages";
+
+const months=["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+const classes=months.map(x=>"month-"+x.toLowerCase());
+
+let db,pages=[],busy=false;
+
+function openDB(){
+return new Promise((res,rej)=>{
+const r=indexedDB.open(DB,1);
+r.onupgradeneeded=e=>{
+if(!e.target.result.objectStoreNames.contains(STORE))
+e.target.result.createObjectStore(STORE,{keyPath:"date"});
+};
+r.onsuccess=e=>{db=e.target.result;res()};
+r.onerror=()=>rej(r.error);
+});
+}
+
+function store(mode){return db.transaction(STORE,mode).objectStore(STORE)}
+
+function getAll(){
+return new Promise((res,rej)=>{
+const r=store("readonly").getAll();
+r.onsuccess=()=>res(r.result||[]);
+r.onerror=()=>rej(r.error);
+});
+}
+
+function put(x){
+return new Promise((res,rej)=>{
+const t=db.transaction(STORE,"readwrite");
+t.objectStore(STORE).put(x);
+t.oncomplete=res;
+t.onerror=()=>rej(t.error);
+});
+}
+
+function del(d){
+return new Promise((res,rej)=>{
+const t=db.transaction(STORE,"readwrite");
+t.objectStore(STORE).delete(d);
+t.oncomplete=res;
+t.onerror=()=>rej(t.error);
+});
+}
+
+function clearDB(){
+return new Promise((res,rej)=>{
+const t=db.transaction(STORE,"readwrite");
+t.objectStore(STORE).clear();
+t.oncomplete=res;
+t.onerror=()=>rej(t.error);
+});
+}
+
+function settings(){
+return{
+date:date.value,font:englishFont.value,en:englishInput.value,
+ta:tamilInput.value,si:sinhalaInput.value,
+es:englishSize.value,ts:tamilSize.value,ss:sinhalaSize.value
+};
+}
+
+function saveSettings(){
+try{localStorage.setItem(KEY,JSON.stringify(settings()))}catch(e){}
+}
+
+function loadSettings(){
+try{
+const x=JSON.parse(localStorage.getItem(KEY)||"null");
+if(!x)return;
+if(x.date)date.value=x.date;
+if(x.font)englishFont.value=x.font;
+if(x.en!=null)englishInput.value=x.en;
+if(x.ta!=null)tamilInput.value=x.ta;
+if(x.si!=null)sinhalaInput.value=x.si;
+if(x.es!=null)englishSize.value=x.es;
+if(x.ts!=null)tamilSize.value=x.ts;
+if(x.ss!=null)sinhalaSize.value=x.ss;
+}catch(e){}
+}
+
+function update(){
+const d=new Date(date.value+"T00:00:00"),m=d.getMonth();
+
+monthText.textContent=months[m];
+dateText.textContent=d.getDate();
+calendar.classList.remove(...classes);
+calendar.classList.add(classes[m]);
+
+english.textContent=englishInput.value;
+tamil.textContent=tamilInput.value;
+sinhala.textContent=sinhalaInput.value;
+
+english.style.fontSize=englishSize.value+"px";
+tamil.style.fontSize=tamilSize.value+"px";
+sinhala.style.fontSize=sinhalaSize.value+"px";
+english.style.fontFamily=`"${englishFont.value}",Georgia,serif`;
+
+englishSizeValue.textContent=englishSize.value+"px";
+tamilSizeValue.textContent=tamilSize.value+"px";
+sinhalaSizeValue.textContent=sinhalaSize.value+"px";
+
+fitAll();
+}
+
+function fit(el,min=8){
+let s=parseFloat(getComputedStyle(el).fontSize),n=150;
+while((el.scrollHeight>el.clientHeight+1||el.scrollWidth>el.clientWidth+1)&&s>min&&n--){
+s-=.2;
+el.style.fontSize=s.toFixed(1)+"px";
+}
+}
+
+function fitAll(){
+setTimeout(()=>{
+fit(english);
+fit(tamil);
+fit(sinhala);
+},20);
+}
+
+function find(d){return pages.find(x=>x.date===d)}
+
+function loadPage(p){
+if(!p)return;
+
+date.value=p.date;
+englishInput.value=p.english||"";
+tamilInput.value=p.tamil||"";
+sinhalaInput.value=p.sinhala||"";
+englishFont.value=p.font||"Playfair Display";
+englishSize.value=p.englishSize||25;
+tamilSize.value=p.tamilSize||18;
+sinhalaSize.value=p.sinhalaSize||18;
+
+update();
+saveSettings();
+buttonText();
+}
+
+function buttonText(){
+generateBtn.textContent=find(date.value)?"Update Page":"Generate";
+}
+
+function render(){
+pages.sort((a,b)=>a.date.localeCompare(b.date));
+
+generatedList.innerHTML=pages.map((p,i)=>{
+const d=new Date(p.date+"T00:00:00");
+const n=d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+
+return`
+<div class="generatedRow">
+<div class="generatedInfo">
+<span class="generatedIndex">${i+1}.</span>
+<span class="generatedDate">${n}</span>
+</div>
+<div class="generatedActions">
+<button class="editBtn" data-edit="${p.date}">Edit</button>
+<button class="deleteBtn" data-delete="${p.date}">Delete</button>
+</div>
+</div>`;
+}).join("");
+
+status.textContent=`Generated Pages: ${pages.length}/365`;
+}
+
+async function generate(){
+if(busy)return;
+
+busy=true;
+generateBtn.disabled=true;
+
+try{
+update();
+saveSettings();
+
+await document.fonts.ready;
+await new Promise(r=>setTimeout(r,250));
+
+fitAll();
+status.textContent="Generating...";
+
+const canvas=await html2canvas(calendar,{
+scale:3,
+useCORS:true,
+allowTaint:true,
+backgroundColor:null,
+logging:false
+});
+
+const page={
+date:date.value,
+english:englishInput.value,
+tamil:tamilInput.value,
+sinhala:sinhalaInput.value,
+font:englishFont.value,
+englishSize:englishSize.value,
+tamilSize:tamilSize.value,
+sinhalaSize:sinhalaSize.value,
+image:canvas.toDataURL("image/jpeg",.95)
+};
+
+await put(page);
+
+const i=pages.findIndex(x=>x.date===page.date);
+i>=0?pages[i]=page:pages.push(page);
+
+render();
+buttonText();
+status.textContent="Saved: "+page.date;
+
+}catch(e){
+console.error(e);
+status.textContent="Error: "+e.message;
+}
+
+generateBtn.disabled=false;
+busy=false;
+}
+
+async function changeDate(n){
+const d=new Date(date.value+"T00:00:00");
+d.setDate(d.getDate()+n);
+
+if(d.getFullYear()!=2027){
+status.textContent="Only dates in 2027 are available.";
+return;
+}
+
+date.value=d.toISOString().slice(0,10);
+
+const p=find(date.value);
+p?loadPage(p):(update(),buttonText(),saveSettings());
+}
+
+async function removePage(d){
+if(!confirm("Delete this generated page?"))return;
+
+await del(d);
+pages=pages.filter(x=>x.date!==d);
+
+render();
+buttonText();
+status.textContent="Page deleted.";
+}
+
+generatedList.onclick=e=>{
+if(e.target.dataset.edit){
+const p=find(e.target.dataset.edit);
+if(p){
+loadPage(p);
+scrollTo({top:0,behavior:"smooth"});
+}
+}
+
+if(e.target.dataset.delete)
+removePage(e.target.dataset.delete);
+};
+
+date.onchange=()=>{
+const p=find(date.value);
+p?loadPage(p):(update(),buttonText(),saveSettings());
+};
+
+[
+englishInput,tamilInput,sinhalaInput,englishFont,
+englishSize,tamilSize,sinhalaSize
+].forEach(x=>{
+x.oninput=()=>{
+update();
+saveSettings();
+};
+});
+
+prevBtn.onclick=()=>changeDate(-1);
+nextBtn.onclick=()=>changeDate(1);
+generateBtn.onclick=generate;
+
+clearBtn.onclick=async()=>{
+if(!confirm("Delete all generated pages?"))return;
+
+await clearDB();
+pages=[];
+render();
+
+date.value="2027-01-01";
+englishInput.value="Your word is a lamp for my feet, a light on my path.";
+tamilInput.value="உமது வார்த்தை என் கால்களுக்கு விளக்கும், என் பாதைக்கு வெளிச்சமுமாயிருக்கிறது.";
+sinhalaInput.value="ඔබගේ වචනය මාගේ පාදවලට පහනක්ද, මාගේ මාර්ගයට ආලෝකයක්ද වේ.";
+englishFont.value="Playfair Display";
+englishSize.value=25;
+tamilSize.value=18;
+sinhalaSize.value=18;
+
+update();
+buttonText();
+saveSettings();
+status.textContent="All pages cleared.";
+};
+
+downloadBtn.onclick=async()=>{
+if(!pages.length){
+status.textContent="No generated pages.";
+return;
+}
+
+downloadBtn.disabled=true;
+
+try{
+const {jsPDF}=window.jspdf;
+
+const pdf=new jsPDF({
+orientation:"landscape",
+unit:"in",
+format:[9,5.625],
+compress:true
+});
+
+pages.sort((a,b)=>a.date.localeCompare(b.date));
+
+for(let i=0;i<pages.length;i++){
+if(i)pdf.addPage([9,5.625],"landscape");
+
+pdf.addImage(
+pages[i].image,
+"JPEG",
+0,0,9,5.625,
+undefined,
+"FAST"
+);
+
+status.textContent=`PDF: ${i+1}/${pages.length}`;
+await new Promise(r=>setTimeout(r,5));
+}
+
+pdf.save("365-Bible-Calendar-2027.pdf");
+status.textContent="PDF downloaded successfully.";
+
+}catch(e){
+status.textContent="PDF error: "+e.message;
+}
+
+downloadBtn.disabled=false;
+};
+
+(async()=>{
+try{
+loadSettings();
+await openDB();
+pages=await getAll();
+render();
+
+const p=find(date.value);
+
+if(p)loadPage(p);
+else{
+update();
+buttonText();
+status.textContent="Ready: "+date.value;
+}
+
+}catch(e){
+console.error(e);
+status.textContent="Database error: "+e.message;
+}
+})();
+</script>
+</body>
+</html>
