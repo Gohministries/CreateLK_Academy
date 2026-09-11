@@ -176,6 +176,7 @@ input:focus{
         alt="CreateLK Academy">
     </div>
 
+
     <!-- LOGIN -->
 
     <div id="loginView">
@@ -250,14 +251,15 @@ input:focus{
         <form id="registerForm">
 
             <div class="input-group">
-                <label for="registerName">
-                    Full Name
+                <label for="registerFirstName">
+                    First Name
                 </label>
 
                 <input
                 type="text"
-                id="registerName"
-                placeholder="Enter your full name"
+                id="registerFirstName"
+                autocomplete="given-name"
+                placeholder="Enter your first name"
                 required>
             </div>
 
@@ -277,14 +279,16 @@ input:focus{
             <div class="input-group">
                 <label for="registerPhone">
                     Phone Number
+                    <span style="font-weight:400;color:#94a3b8;">
+                        (Optional)
+                    </span>
                 </label>
 
                 <input
                 type="tel"
                 id="registerPhone"
                 autocomplete="tel"
-                placeholder="Enter your phone number"
-                required>
+                placeholder="Enter your phone number">
             </div>
 
             <div class="input-group">
@@ -297,6 +301,7 @@ input:focus{
                 id="registerPassword"
                 autocomplete="new-password"
                 placeholder="Create a password"
+                minlength="6"
                 required>
             </div>
 
@@ -332,7 +337,7 @@ const API =
 "https://createlk-auth-api.createlk.workers.dev";
 
 
-/* Preserve the original destination */
+/* Preserve original destination */
 
 const params =
 new URLSearchParams(
@@ -343,6 +348,8 @@ const redirect =
 params.get("redirect") ||
 "/Aca/dashboard.html";
 
+
+/* VIEW SWITCHING */
 
 function showLogin(){
 
@@ -369,6 +376,8 @@ function showRegister(){
 
 }
 
+
+/* NOTICE */
 
 function notice(id,message,type){
 
@@ -409,9 +418,7 @@ document.getElementById(
 
 
         button.disabled = true;
-
-        button.textContent =
-        "Signing in...";
+        button.textContent = "Signing in...";
 
 
         try{
@@ -463,11 +470,6 @@ document.getElementById(
             }
 
 
-            /*
-              IMPORTANT:
-              Save token before redirect.
-            */
-
             localStorage.setItem(
                 "createlk_token",
                 data.token
@@ -485,29 +487,6 @@ document.getElementById(
 
             }
 
-
-            /*
-              Confirm token was saved.
-            */
-
-            const savedToken =
-            localStorage.getItem(
-                "createlk_token"
-            );
-
-
-            if(savedToken !== data.token){
-
-                throw new Error(
-                    "Login session could not be saved."
-                );
-            }
-
-
-            /*
-              Redirect to the exact
-              requested page.
-            */
 
             window.location.replace(
                 redirect
@@ -529,9 +508,7 @@ document.getElementById(
             );
 
             button.disabled = false;
-
-            button.textContent =
-            "Login";
+            button.textContent = "Login";
         }
 
     }
@@ -553,9 +530,9 @@ document.getElementById(
             "registerButton"
         );
 
-        const name =
+        const firstName =
         document.getElementById(
-            "registerName"
+            "registerFirstName"
         ).value.trim();
 
         const email =
@@ -574,13 +551,68 @@ document.getElementById(
         ).value;
 
 
-        button.disabled = true;
+        if(!firstName){
 
-        button.textContent =
-        "Creating Account...";
+            notice(
+                "registerNotice",
+                "First name is required.",
+                "error"
+            );
+
+            return;
+        }
+
+
+        if(!email){
+
+            notice(
+                "registerNotice",
+                "Email address is required.",
+                "error"
+            );
+
+            return;
+        }
+
+
+        if(!password){
+
+            notice(
+                "registerNotice",
+                "Password is required.",
+                "error"
+            );
+
+            return;
+        }
+
+
+        button.disabled = true;
+        button.textContent = "Creating Account...";
 
 
         try{
+
+            /*
+             * IMPORTANT:
+             * Send firstName instead of name.
+             *
+             * Phone is optional.
+             */
+
+            const payload = {
+                firstName:firstName,
+                email:email,
+                password:password
+            };
+
+
+            if(phone){
+
+                payload.phone = phone;
+
+            }
+
 
             const response =
             await fetch(
@@ -596,12 +628,9 @@ document.getElementById(
                         "application/json"
                     },
 
-                    body:JSON.stringify({
-                        name:name,
-                        email:email,
-                        phone:phone,
-                        password:password
-                    })
+                    body:JSON.stringify(
+                        payload
+                    )
                 }
             );
 
@@ -620,11 +649,14 @@ document.getElementById(
 
 
             /*
-              If registration returns a token,
-              log the student in immediately.
-            */
+             * If registration returns a token,
+             * log the student in immediately.
+             */
 
-            if(data.success && data.token){
+            if(
+                data.success &&
+                data.token
+            ){
 
                 localStorage.setItem(
                     "createlk_token",
@@ -653,10 +685,9 @@ document.getElementById(
 
 
             /*
-              If registration succeeds but
-              does not return a token,
-              switch to Login.
-            */
+             * Registration succeeded without
+             * an automatic login.
+             */
 
             notice(
                 "registerNotice",
@@ -664,9 +695,16 @@ document.getElementById(
                 "success"
             );
 
+
             setTimeout(
                 function(){
+
                     showLogin();
+
+                    document.getElementById(
+                        "loginEmail"
+                    ).value = email;
+
                 },
                 1000
             );
@@ -687,9 +725,7 @@ document.getElementById(
             );
 
             button.disabled = false;
-
-            button.textContent =
-            "Create Account";
+            button.textContent = "Create Account";
         }
 
     }
