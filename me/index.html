@@ -1,90 +1,93 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#111827">
 <title>Personal Vault</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f4f6;color:#111827;font:15px Arial}header{background:#111827;color:#fff;padding:12px 15px;display:flex;justify-content:space-between;align-items:center}main{max-width:850px;margin:auto;padding:10px}.card{background:#fff;padding:14px;border-radius:12px;margin-bottom:10px;box-shadow:0 2px 7px #0001}h2,h3{margin:0 0 10px}input,textarea,select{width:100%;padding:11px;margin:4px 0 9px;border:1px solid #d1d5db;border-radius:8px;font-size:15px}textarea{min-height:70px}button{border:0;border-radius:8px;padding:10px 14px;min-height:42px;background:#111827;color:#fff;font-size:14px;font-weight:600}.hidden{display:none!important}.msg{color:#dc2626;margin-top:7px}.small{font-size:12px;color:#6b7280}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.stat{background:#f8fafc;padding:10px;text-align:center;border-radius:8px}.stat b{display:block;font-size:20px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.danger{background:#dc2626}.item,.file{border:1px solid #e5e7eb;border-radius:9px;padding:10px;margin:7px 0}.viewbar{display:flex;justify-content:space-between;align-items:center}.viewbuttons{display:flex;gap:5px}.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}.files.list{display:block}.file{padding:0;overflow:hidden;background:#fff}.preview{height:105px;background:#f3f4f6;display:flex;align-items:center;justify-content:center}.preview img,.preview video{width:100%;height:100%;object-fit:cover}.icon{font-size:34px}.fileinfo{padding:9px}.filename{font-weight:bold;font-size:13px;word-break:break-word}.files.list .file{display:flex;padding:7px}.files.list .preview{width:65px;height:65px;flex:none;border-radius:6px}.files.list .fileinfo{flex:1;padding:3px 9px}.progress{height:5px;background:#ddd;border-radius:5px;margin-top:7px;overflow:hidden}.progress i{display:block;height:100%;width:0;background:#111827;transition:width .2s}.drive-status{background:#eff6ff;color:#1d4ed8;padding:9px;border-radius:8px;margin:7px 0}.session-loading{text-align:center;padding:25px;color:#6b7280}.spinner{width:26px;height:26px;margin:auto;border:3px solid #e5e7eb;border-top-color:#111827;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:500px){header b{font-size:16px}.files{grid-template-columns:repeat(2,1fr)}.actions button{padding:9px 11px}}
+*{box-sizing:border-box}body{margin:0;background:#f3f4f6;font:14px Arial;color:#111827}
+header{background:#111827;color:white;padding:12px;display:flex;justify-content:space-between}
+main{max-width:800px;margin:auto;padding:10px}.card{background:white;padding:12px;margin:8px 0;border-radius:10px}
+input,textarea,select,button{width:100%;padding:10px;margin:4px 0;border-radius:7px}
+input,textarea,select{border:1px solid #ddd}textarea{min-height:65px}
+button{border:0;background:#111827;color:white;font-weight:bold;cursor:pointer}
+.hidden{display:none!important}.msg{color:#dc2626}.small{font-size:12px;color:#6b7280}
+.row{display:flex;gap:6px}.row>*{flex:1}.item,.file{border:1px solid #ddd;padding:9px;margin:6px 0;border-radius:8px}
+.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:7px}
+.preview{height:100px;background:#eee;display:flex;align-items:center;justify-content:center}
+.preview img,.preview video{width:100%;height:100%;object-fit:cover}.danger{background:#dc2626}
+.progress{height:6px;background:#ddd;margin:6px 0}.progress i{display:block;height:100%;width:0;background:#111827}
 </style>
 </head>
 
 <body>
 <header>
 <b>🔐 Personal Vault</b>
-<div><button id="lock" class="hidden">Lock</button> <button id="logout" class="hidden">Logout</button></div>
+<div class="row">
+<button id="lock" class="hidden">Lock</button>
+<button id="logout" class="hidden">Logout</button>
+</div>
 </header>
 
 <main>
-<div id="sessionLoading" class="card session-loading"><div class="spinner"></div>Checking secure session...</div>
+<div id="loading" class="card">Checking session...</div>
 
 <div id="login" class="card hidden">
-<h2>🔐 Login</h2>
-<input id="user" placeholder="Username" autocomplete="username">
-<input id="pass" type="password" placeholder="Login Password" autocomplete="current-password">
-<button id="loginBtn">Login</button><div id="loginMsg" class="msg"></div>
+<h3>Login</h3>
+<input id="user" placeholder="Username">
+<input id="pass" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+<div id="loginMsg" class="msg"></div>
 </div>
 
 <div id="master" class="card hidden">
-<h2>🔑 Master Password</h2>
-<div class="small">Used only in this browser.</div>
-<input id="masterPass" type="password" placeholder="Master Password" autocomplete="off">
-<button id="unlockBtn">Unlock Vault</button><div id="masterMsg" class="msg"></div>
+<h3>🔑 Master Password</h3>
+<input id="masterPass" type="password" placeholder="Master Password">
+<button onclick="unlock()">Unlock</button>
+<div id="masterMsg" class="msg"></div>
 </div>
 
 <div id="app" class="hidden">
 
 <div class="card">
-<h2>🔐 Vault</h2>
-<div class="stats">
-<div class="stat"><b id="itemCount">0</b>Items</div>
-<div class="stat"><b id="catCount">0</b>Categories</div>
-<div class="stat"><b id="fileCount">0</b>Files</div>
-</div>
+<b>Vault</b>
+<div id="stats" class="small"></div>
 </div>
 
 <div class="card">
-<h3>➕ Add Item</h3>
-<select id="category"></select>
+<h3>Add Item</h3>
+<select id="cat"></select>
 <input id="title" placeholder="Title">
-<input id="username" placeholder="Username">
-<input id="password" type="password" placeholder="Password" autocomplete="new-password">
+<input id="uname" placeholder="Username">
+<input id="pwd" type="password" placeholder="Password">
 <textarea id="backup" placeholder="Backup Codes"></textarea>
 <textarea id="notes" placeholder="Notes"></textarea>
-<button id="saveItem">Save Item</button>
+<button onclick="addItem()">Save</button>
 <div id="itemMsg" class="msg"></div>
 </div>
 
 <div class="card">
-<h3>📁 Categories</h3>
-<input id="newCategory" placeholder="New category">
-<button id="addCategory">Add Category</button>
-<div id="categories"></div>
+<h3>Categories</h3>
+<div class="row">
+<input id="newCat" placeholder="New category">
+<button onclick="addCat()">Add</button>
+</div>
+<div id="cats"></div>
 </div>
 
 <div class="card">
-<h3>🔐 Vault Items</h3>
+<h3>🔐 Items</h3>
 <div id="items"></div>
 </div>
 
 <div class="card">
-<div class="viewbar">
-<h3>🖼️ Files</h3>
-<div class="viewbuttons"><button id="grid">Grid</button><button id="list">List</button></div>
-</div>
-
-<div class="small">Encrypted before Personal Vault upload • Maximum 60 MB</div>
-
-<div class="drive-status">☁️ Google Drive: original files are saved in <strong>Personal Vault → selected category</strong>.</div>
-
-<label class="small">Photo Category</label>
-<select id="fileCategory"></select>
-<input id="file" type="file">
-
-<div id="progress" class="progress hidden"><i id="progressBar"></i></div>
-<div id="fileMsg" class="msg"></div>
+<h3>🖼️ Photos / Videos</h3>
+<select id="fileCat"></select>
+<input id="file" type="file" accept="image/*,video/*">
+<div class="small">Encrypted locally • Maximum 60 MB</div>
+<div class="progress"><i id="bar"></i></div>
+<div id="uploadMsg" class="msg"></div>
 <div id="files" class="files"></div>
 </div>
 
@@ -92,278 +95,330 @@
 </main>
 
 <script>
-const API="https://personal.createlk.workers.dev",DB="personal-vault-key";
-const GOOGLE_CLIENT_ID="582157960266-e15mcm3vfl5ni38smv7h96cob9tng6p3.apps.googleusercontent.com";
-const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
-let key=null,meta=null,files=[],driveToken=null;
-const $=id=>document.getElementById(id),say=(id,t)=>$(id).textContent=t,progressBar=$("progressBar");
+const API="https://personal.createlk.workers.dev";
+const CID="582157960266-e15mcm3vfl5ni38smv7h96cob9tng6p3.apps.googleusercontent.com";
+const DB="personal-vault-key";
+let key=null,meta=null,token=null;
 
-function b64(a){let s="";for(let i=0;i<a.length;i+=32768)s+=String.fromCharCode(...a.subarray(i,i+32768));return btoa(s)}
-function un64(s){let x=atob(s),a=new Uint8Array(x.length);for(let i=0;i<x.length;i++)a[i]=x.charCodeAt(i);return a}
-function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+const $=x=>document.getElementById(x);
+const msg=(x,t)=>$(x).textContent=t;
 
+function b64(a){
+ let s="";
+ for(let i=0;i<a.length;i+=32768)s+=String.fromCharCode(...a.subarray(i,i+32768));
+ return btoa(s);
+}
+function u64(s){
+ let x=atob(s),a=new Uint8Array(x.length);
+ for(let i=0;i<x.length;i++)a[i]=x.charCodeAt(i);
+ return a;
+}
+function esc(s){
+ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+}
 async function api(p,o={}){
-o.credentials="include";o.headers={...(o.headers||{})};
-let r=await fetch(API+p,o),d={};try{d=await r.json()}catch{}
-if(!r.ok)throw Error(d.error||"Request failed");return d
-}
-
-async function googleToken(){
-for(let i=0;i<100&&!window.google?.accounts?.oauth2;i++)await new Promise(r=>setTimeout(r,100));
-if(!window.google?.accounts?.oauth2)throw Error("Google sign-in service did not load.");
-if(driveToken)return driveToken;
-return new Promise((ok,no)=>{
-let c=google.accounts.oauth2.initTokenClient({
-client_id:GOOGLE_CLIENT_ID,scope:DRIVE_SCOPE,
-callback:r=>{if(r.error)return no(Error(r.error_description||r.error));driveToken=r.access_token;ok(r.access_token)}
-});c.requestAccessToken({prompt:"consent"})
-})
-}
-
-async function driveFolder(name,parent){
-let t=await googleToken(),q=`name='${name.replace(/'/g,"\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-q+=parent?` and '${parent}' in parents`:` and 'root' in parents`;
-let r=await fetch("https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&spaces=drive&fields=files(id)",{headers:{Authorization:"Bearer "+t}});
-if(!r.ok)throw Error("Could not access Google Drive.");
-let x=await r.json();
-if(x.files?.length)return x.files[0].id;
-let b={name,mimeType:"application/vnd.google-apps.folder"};if(parent)b.parents=[parent];
-r=await fetch("https://www.googleapis.com/drive/v3/files",{method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json"},body:JSON.stringify(b)});
-if(!r.ok)throw Error("Could not create Drive folder.");
-return(await r.json()).id
-}
-
-async function uploadDrive(f,category){
-let t=await googleToken(),root=await driveFolder("Personal Vault"),folder=await driveFolder(category,root),type=f.type||"application/octet-stream";
-let r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",{
-method:"POST",
-headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","X-Upload-Content-Type":type,"X-Upload-Content-Length":String(f.size)},
-body:JSON.stringify({name:f.name,mimeType:type,parents:[folder]})
-});
-if(!r.ok)throw Error("Google Drive upload failed.");
-let url=r.headers.get("Location");if(!url)throw Error("Drive upload URL missing.");
-r=await fetch(url,{method:"PUT",headers:{"Content-Type":type},body:f});
-if(!r.ok)throw Error("Google Drive upload failed.");
-return r.json()
+ o.credentials="include";
+ const r=await fetch(API+p,o);
+ let d={};try{d=await r.json()}catch{}
+ if(!r.ok)throw Error(d.error||"Request failed");
+ return d;
 }
 
 async function derive(p,s){
-let b=await crypto.subtle.importKey("raw",new TextEncoder().encode(p),"PBKDF2",false,["deriveKey"]);
-return crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:600000,hash:"SHA-256"},b,{name:"AES-GCM",length:256},true,["encrypt","decrypt"])
+ let b=await crypto.subtle.importKey("raw",new TextEncoder().encode(p),"PBKDF2",false,["deriveKey"]);
+ return crypto.subtle.deriveKey(
+  {name:"PBKDF2",salt:s,iterations:600000,hash:"SHA-256"},
+  b,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]
+ );
 }
-
 async function enc(t){
-let iv=crypto.getRandomValues(new Uint8Array(12));
-let d=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(t||""));
-return JSON.stringify({iv:b64(iv),data:b64(new Uint8Array(d))})
+ let iv=crypto.getRandomValues(new Uint8Array(12));
+ let d=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(t||""));
+ return JSON.stringify({iv:b64(iv),data:b64(new Uint8Array(d))});
 }
-
 async function dec(v){
-if(!v)return"";
-let x=JSON.parse(v),d=await crypto.subtle.decrypt({name:"AES-GCM",iv:un64(x.iv)},key,un64(x.data));
-return new TextDecoder().decode(d)
+ let x=JSON.parse(v);
+ let d=await crypto.subtle.decrypt({name:"AES-GCM",iv:u64(x.iv)},key,u64(x.data));
+ return new TextDecoder().decode(d);
 }
 
-function keyDB(){
-return new Promise((ok,no)=>{
-let r=indexedDB.open(DB,1);
-r.onupgradeneeded=()=>r.result.createObjectStore("k");
-r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)
-})
+function db(){
+ return new Promise((ok,no)=>{
+  let r=indexedDB.open(DB,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore("k");
+  r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);
+ });
 }
-
 async function saveKey(){
-let d=await keyDB(),raw=await crypto.subtle.exportKey("raw",key);
-d.transaction("k","readwrite").objectStore("k").put(b64(new Uint8Array(raw)),"key")
+ let d=await db(),r=await crypto.subtle.exportKey("raw",key);
+ d.transaction("k","readwrite").objectStore("k").put(b64(new Uint8Array(r)),"key");
 }
-
 async function getKey(){
-try{
-let d=await keyDB(),v=await new Promise(ok=>{
-let r=d.transaction("k").objectStore("k").get("key");
-r.onsuccess=()=>ok(r.result);r.onerror=()=>ok(null)
-});
-return v?crypto.subtle.importKey("raw",un64(v),{name:"AES-GCM"},true,["encrypt","decrypt"]):null
-}catch{return null}
+ try{
+  let d=await db(),v=await new Promise(ok=>{
+   let r=d.transaction("k").objectStore("k").get("key");
+   r.onsuccess=()=>ok(r.result);r.onerror=()=>ok(null);
+  });
+  return v?crypto.subtle.importKey("raw",u64(v),{name:"AES-GCM"},true,["encrypt","decrypt"]):null;
+ }catch{return null}
 }
-
 async function clearKey(){
-try{let d=await keyDB();d.transaction("k","readwrite").objectStore("k").delete("key")}catch{}
+ try{(await db()).transaction("k","readwrite").objectStore("k").delete("key")}catch{}
 }
 
-async function status(){
-try{
-let s=await api("/api/login/status");
-if(!s.logged_in){$("login").classList.remove("hidden");return}
-$("logout").classList.remove("hidden");
-meta=await api("/api/vault/meta");
-key=await getKey();
-if(key)try{if(await dec(meta.verifier)==="VAULT-CHECK"){openApp();return}}catch{}
-key=null;$("master").classList.remove("hidden")
-}catch(e){console.error(e);$("login").classList.remove("hidden");say("loginMsg","Unable to check session.")}
-finally{$("sessionLoading").classList.add("hidden")}
+async function login(){
+ msg("loginMsg","");
+ try{
+  let r=await fetch(API+"/api/login",{
+   method:"POST",credentials:"include",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({username:$("user").value,password:$("pass").value})
+  });
+  if(!r.ok)throw Error((await r.json()).error||"Login failed");
+  location.reload();
+ }catch(e){msg("loginMsg",e.message)}
 }
 
-$("loginBtn").onclick=async()=>{
-say("loginMsg","");
-try{
-let r=await fetch(API+"/api/login",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("user").value.trim(),password:$("pass").value})}),d={};
-try{d=await r.json()}catch{}
-if(!r.ok)throw Error(d.error||"Login failed.");
-let s=await api("/api/login/status");if(!s.logged_in)throw Error("Session cookie was not accepted.");
-$("login").classList.add("hidden");$("master").classList.remove("hidden");$("logout").classList.remove("hidden");
-meta=await api("/api/vault/meta");$("pass").value=""
-}catch(e){say("loginMsg",e.message)}
+async function unlock(){
+ msg("masterMsg","");
+ try{
+  let p=$("masterPass").value;
+  if(!p)throw Error("Enter master password");
+
+  if(!meta.initialized){
+   let salt=crypto.getRandomValues(new Uint8Array(16));
+   key=await derive(p,salt);
+   let verifier=await enc("VAULT-CHECK");
+   await api("/api/vault/meta",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({salt:b64(salt),verifier})
+   });
+   meta={initialized:true,salt:b64(salt),verifier};
+  }else{
+   key=await derive(p,u64(meta.salt));
+   if(await dec(meta.verifier)!=="VAULT-CHECK")throw Error("Wrong password");
+  }
+
+  await saveKey();$("masterPass").value="";openApp();
+ }catch(e){key=null;msg("masterMsg",e.message)}
 }
 
-$("unlockBtn").onclick=async()=>{
-say("masterMsg","");
-try{
-let p=$("masterPass").value;if(!p)throw Error("Enter Master Password.");
-if(!meta.initialized){
-let salt=crypto.getRandomValues(new Uint8Array(16));key=await derive(p,salt);
-let verifier=await enc("VAULT-CHECK");
-await api("/api/vault/meta",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({salt:b64(salt),verifier})});
-meta={initialized:true,salt:b64(salt),verifier}
-}else{
-key=await derive(p,un64(meta.salt));
-if(await dec(meta.verifier)!=="VAULT-CHECK")throw Error("Incorrect master password.")
-}
-await saveKey();$("masterPass").value="";openApp()
-}catch(e){key=null;say("masterMsg",e.message)}
+async function check(){
+ try{
+  let s=await api("/api/login/status");
+  if(!s.logged_in){$("login").classList.remove("hidden");return}
+
+  $("logout").classList.remove("hidden");
+  meta=await api("/api/vault/meta");
+  key=await getKey();
+
+  if(key){
+   try{if(await dec(meta.verifier)==="VAULT-CHECK"){openApp();return}}catch{}
+  }
+
+  key=null;$("master").classList.remove("hidden");
+ }catch(e){$("login").classList.remove("hidden")}
+ finally{$("loading").classList.add("hidden")}
 }
 
 function openApp(){
-$("master").classList.add("hidden");$("app").classList.remove("hidden");$("lock").classList.remove("hidden");load()
+ $("master").classList.add("hidden");
+ $("app").classList.remove("hidden");
+ $("lock").classList.remove("hidden");
+ load();
 }
 
 $("lock").onclick=async()=>{
-key=null;await clearKey();$("app").classList.add("hidden");$("master").classList.remove("hidden");$("lock").classList.add("hidden")
-}
+ key=null;await clearKey();
+ $("app").classList.add("hidden");
+ $("master").classList.remove("hidden");
+ $("lock").classList.add("hidden");
+};
 
 $("logout").onclick=async()=>{
-key=null;await clearKey();try{await api("/api/logout",{method:"POST"})}catch{}location.reload()
-}
+ key=null;await clearKey();
+ try{await api("/api/logout",{method:"POST"})}catch{}
+ location.reload();
+};
 
 async function cats(){
-let c=(await api("/api/categories")).categories||[];
-$("catCount").textContent=c.length;
-let o=c.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join("")||`<option value="General">General</option>`;
-$("category").innerHTML=o;$("fileCategory").innerHTML=o;
-$("categories").innerHTML=c.map(x=>`<div class="small">📁 ${esc(x.name)}</div>`).join("")
+ let a=(await api("/api/categories")).categories||[];
+ let o=a.map(x=>`<option>${esc(x.name)}</option>`).join("")||"<option>General</option>";
+ $("cat").innerHTML=o;$("fileCat").innerHTML=o;
+ $("cats").innerHTML=a.map(x=>`📁 ${esc(x.name)}`).join("<br>");
+ $("stats").textContent=`Categories: ${a.length}`;
 }
 
-$("addCategory").onclick=async()=>{
-let n=$("newCategory").value.trim();if(!n)return;
-try{
-await api("/api/categories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})});
-$("newCategory").value="";await cats()
-}catch(e){alert(e.message)}
+async function addCat(){
+ let n=$("newCat").value.trim();
+ if(!n)return;
+ try{
+  await api("/api/categories",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({name:n})
+  });
+  $("newCat").value="";cats();
+ }catch(e){alert(e.message)}
 }
 
 async function items(){
-let a=(await api("/api/items")).items||[];$("itemCount").textContent=a.length;$("items").innerHTML="";
-for(let x of a){
-let u="",p="",b="",n="";
-try{u=await dec(x.username);p=await dec(x.encrypted_password);b=await dec(x.encrypted_backup_codes);n=await dec(x.encrypted_notes)}catch{}
-let d=document.createElement("div");d.className="item";
-d.innerHTML=`<b>${esc(x.title)}</b><div class="small">📁 ${esc(x.category)}</div><div class="actions"><button>Show</button><button class="danger">Delete</button></div><div class="secret hidden"><p><b>Username</b><br>${esc(u)}</p><p><b>Password</b><br>${esc(p)}</p><p><b>Backup Codes</b><br>${esc(b).replace(/\n/g,"<br>")}</p><p><b>Notes</b><br>${esc(n).replace(/\n/g,"<br>")}</p></div>`;
-let show=d.querySelector("button");show.onclick=function(){let s=d.querySelector(".secret");s.classList.toggle("hidden");this.textContent=s.classList.contains("hidden")?"Show":"Hide"};
-d.querySelector(".danger").onclick=async()=>{if(!confirm("Delete this item?"))return;try{await api("/api/items/"+x.id,{method:"DELETE"});await items()}catch(e){alert(e.message)}};
-$("items").append(d)
-}
+ let a=(await api("/api/items")).items||[];
+ $("items").innerHTML="";
+
+ for(let x of a){
+  let u="",p="",b="",n="";
+  try{
+   u=await dec(x.username);p=await dec(x.encrypted_password);
+   b=await dec(x.encrypted_backup_codes);n=await dec(x.encrypted_notes);
+  }catch{}
+
+  let d=document.createElement("div");
+  d.className="item";
+  d.innerHTML=`
+   <b>${esc(x.title)}</b><div class="small">${esc(x.category)}</div>
+   <button>Show</button><button class="danger">Delete</button>
+   <div class="secret hidden">
+   Username: ${esc(u)}<br>Password: ${esc(p)}<br>
+   Backup: ${esc(b)}<br>Notes: ${esc(n)}
+   </div>`;
+
+  d.children[2].onclick=()=>{
+   d.querySelector(".secret").classList.toggle("hidden");
+  };
+  d.children[3].onclick=async()=>{
+   if(confirm("Delete item?")){
+    await api("/api/items/"+x.id,{method:"DELETE"});items();
+   }
+  };
+  $("items").append(d);
+ }
+ $("stats").textContent+=" • Items: "+a.length;
 }
 
-$("saveItem").onclick=async()=>{
-say("itemMsg","");
-try{
-if(!$("title").value.trim())throw Error("Enter a title.");
-await api("/api/items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-category:$("category").value||"General",title:$("title").value,
-username:await enc($("username").value),
-encrypted_password:await enc($("password").value),
-encrypted_backup_codes:await enc($("backup").value),
-encrypted_notes:await enc($("notes").value)
-})});
-["title","username","password","backup","notes"].forEach(x=>$(x).value="");
-say("itemMsg","Item saved.");await items()
-}catch(e){say("itemMsg",e.message)}
+async function addItem(){
+ try{
+  if(!$("title").value.trim())throw Error("Enter title");
+  await api("/api/items",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    category:$("cat").value,title:$("title").value,
+    username:await enc($("uname").value),
+    encrypted_password:await enc($("pwd").value),
+    encrypted_backup_codes:await enc($("backup").value),
+    encrypted_notes:await enc($("notes").value)
+   })
+  });
+  ["title","uname","pwd","backup","notes"].forEach(x=>$(x).value="");
+  msg("itemMsg","Saved");items();
+ }catch(e){msg("itemMsg",e.message)}
 }
 
-async function fileData(f){
-let r=await fetch(API+"/api/photos/"+f.id+"/download",{credentials:"include",cache:"no-store"});
-if(!r.ok)throw Error("File unavailable.");
-let a=new Uint8Array(await r.arrayBuffer());
-return crypto.subtle.decrypt({name:"AES-GCM",iv:a.slice(0,12)},key,a.slice(12))
+async function upload(file){
+ if(!key)return msg("uploadMsg","Unlock vault first");
+ if(file.size>60*1024*1024)return msg("uploadMsg","Maximum 60 MB");
+
+ $("bar").style.width="10%";
+ try{
+  let iv=crypto.getRandomValues(new Uint8Array(12));
+  let d=new Uint8Array(await crypto.subtle.encrypt(
+   {name:"AES-GCM",iv},key,await file.arrayBuffer()
+  ));
+  let body=new Uint8Array(12+d.length);
+  body.set(iv);body.set(d,12);
+
+  $("bar").style.width="50%";
+
+  let r=await fetch(API+"/api/photos",{
+   method:"POST",credentials:"include",
+   headers:{
+    "Content-Type":"application/octet-stream",
+    "X-Filename":encodeURIComponent(file.name),
+    "X-File-Type":file.type||"application/octet-stream",
+    "X-File-Size":file.size,
+    "X-Category":encodeURIComponent($("fileCat").value||"General")
+   },
+   body
+  });
+
+  let x={};try{x=await r.json()}catch{}
+  if(!r.ok)throw Error(x.error||"Upload failed");
+
+  $("bar").style.width="100%";
+  msg("uploadMsg","✓ Encrypted file saved");
+  $("file").value="";
+  files();
+ }catch(e){msg("uploadMsg",e.message)}
+ setTimeout(()=>$("bar").style.width="0",1000);
 }
 
-async function fileURL(f){
-return URL.createObjectURL(new Blob([await fileData(f)],{type:f.file_type||"application/octet-stream"}))
-}
-
-async function loadFiles(){
-try{
-files=(await api("/api/photos")).files||[];$("fileCount").textContent=files.length;$("files").innerHTML="";
-files.forEach(f=>{
-let d=document.createElement("div");d.className="file";
-d.innerHTML=`<div class="preview"><span class="icon">📄</span></div><div class="fileinfo"><div class="filename">${esc(f.filename)}</div><div class="small">${Math.round((f.file_size||0)/1024)} KB</div><div class="actions"><button>View</button><button>Download</button><button class="danger">Delete</button></div></div>`;
-let pv=d.querySelector(".preview");
-if(f.file_type?.startsWith("image/"))fileURL(f).then(u=>pv.innerHTML=`<img src="${u}">`).catch(()=>{});
-if(f.file_type?.startsWith("video/"))fileURL(f).then(u=>pv.innerHTML=`<video src="${u}" muted playsinline preload="metadata"></video>`).catch(()=>{});
-let bs=d.querySelectorAll("button");bs[0].onclick=()=>view(f);bs[1].onclick=()=>download(f);
-bs[2].onclick=async()=>{if(!confirm("Delete this file?"))return;try{await api("/api/photos/"+f.id,{method:"DELETE"});await loadFiles()}catch(e){say("fileMsg",e.message)}};
-$("files").append(d)
-})
-}catch(e){say("fileMsg",e.message)}
-}
-
-async function view(f){
-let w=window.open("","_blank");if(!w)return alert("Please allow pop-ups.");
-try{
-let u=await fileURL(f);
-if(f.file_type?.startsWith("image/"))w.document.body.innerHTML=`<img src="${u}" style="max-width:100%;max-height:100vh;display:block;margin:auto">`;
-else if(f.file_type?.startsWith("video/"))w.document.body.innerHTML=`<video src="${u}" controls autoplay style="width:100%;height:100vh"></video>`;
-else w.document.body.innerHTML=`<a href="${u}" download="${esc(f.filename)}">Download ${esc(f.filename)}</a>`
-}catch(e){w.document.body.textContent=e.message}
-}
-
-async function download(f){
-try{
-say("fileMsg","Preparing download...");
-let u=await fileURL(f),a=document.createElement("a");a.href=u;a.download=f.filename;document.body.append(a);a.click();
-setTimeout(()=>{a.remove();URL.revokeObjectURL(u)},5000);say("fileMsg","Download started.")
-}catch(e){say("fileMsg",e.message)}
-}
-
-$("file").onchange=async()=>{
-let f=$("file").files[0];if(!f)return;
-if(f.size>60*1024*1024){$("file").value="";return say("fileMsg","Maximum 60 MB.")}
-let category=$("fileCategory").value||"General";
-$("progress").classList.remove("hidden");progressBar.style.width="0%";
-try{
-say("fileMsg","Uploading to Google Drive...");
-await uploadDrive(f,category);
-progressBar.style.width="40%";
-say("fileMsg","Encrypting...");
-let iv=crypto.getRandomValues(new Uint8Array(12));
-let d=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,await f.arrayBuffer()));
-let a=new Uint8Array(12+d.length);a.set(iv);a.set(d,12);
-progressBar.style.width="70%";
-say("fileMsg","Saving encrypted copy...");
-let r=await fetch(API+"/api/photos",{method:"POST",credentials:"include",headers:{"Content-Type":"application/octet-stream","X-Filename":encodeURIComponent(f.name),"X-File-Type":f.type||"application/octet-stream"},body:a});
-if(!r.ok){let x={};try{x=await r.json()}catch{}throw Error(x.error||"Vault upload failed.")}
-progressBar.style.width="100%";$("file").value="";
-say("fileMsg","✓ Saved to Drive → "+category+" and Personal Vault.");
-await loadFiles()
-}catch(e){console.error(e);say("fileMsg",e.message)}
-finally{setTimeout(()=>{$("progress").classList.add("hidden");progressBar.style.width="0%"},700)}
+$("file").onchange=e=>{
+ let f=e.target.files[0];
+ if(f)upload(f);
 };
 
-function mode(m){$("files").classList.toggle("list",m==="list");localStorage.fileView=m}
-$("grid").onclick=()=>mode("grid");$("list").onclick=()=>mode("list");mode(localStorage.fileView||"grid");
+async function fileBlob(f){
+ let r=await fetch(API+"/api/photos/"+f.id+"/download",{credentials:"include"});
+ if(!r.ok)throw Error("File unavailable");
+ let a=new Uint8Array(await r.arrayBuffer());
+ let d=await crypto.subtle.decrypt(
+  {name:"AES-GCM",iv:a.slice(0,12)},key,a.slice(12)
+ );
+ return new Blob([d],{type:f.file_type||"application/octet-stream"});
+}
 
-async function load(){await cats();await items();await loadFiles()}
-status();
+async function files(){
+ try{
+  let a=(await api("/api/photos")).files||[];
+  $("files").innerHTML="";
+
+  for(let f of a){
+   let d=document.createElement("div");
+   d.className="file";
+   d.innerHTML=`
+    <div class="preview">📄</div>
+    <div>${esc(f.filename)}</div>
+    <button>Open</button><button>Download</button>
+    <button class="danger">Delete</button>`;
+
+   let pv=d.querySelector(".preview");
+
+   if(f.file_type?.startsWith("image/")){
+    fileBlob(f).then(b=>pv.innerHTML=`<img src="${URL.createObjectURL(b)}">`);
+   }else if(f.file_type?.startsWith("video/")){
+    fileBlob(f).then(b=>pv.innerHTML=`<video controls src="${URL.createObjectURL(b)}"></video>`);
+   }
+
+   d.children[1].onclick=async()=>{
+    let u=URL.createObjectURL(await fileBlob(f));
+    window.open(u,"_blank");
+   };
+
+   d.children[2].onclick=async()=>{
+    let u=URL.createObjectURL(await fileBlob(f));
+    let a=document.createElement("a");
+    a.href=u;a.download=f.filename;a.click();
+    setTimeout(()=>URL.revokeObjectURL(u),3000);
+   };
+
+   d.children[3].onclick=async()=>{
+    if(confirm("Delete file?")){
+     await api("/api/photos/"+f.id,{method:"DELETE"});
+     files();
+    }
+   };
+
+   $("files").append(d);
+  }
+ }catch(e){msg("uploadMsg",e.message)}
+}
+
+async function load(){
+ await cats();
+ await items();
+ await files();
+}
+
+check();
 </script>
 </body>
 </html>
