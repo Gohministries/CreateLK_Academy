@@ -53,22 +53,6 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .loading{text-align:center;padding:35px;color:#64748b}
 .error{text-align:center;padding:30px;color:#dc2626}
 
-/* PAYMENT OPTIONS */
-.payment-bg{display:none;position:fixed;inset:0;background:#0009;z-index:20;align-items:center;justify-content:center;padding:15px}
-.payment-modal{background:#fff;width:100%;max-width:420px;border-radius:18px;overflow:hidden}
-.payment-head{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:20px;position:relative}
-.payment-head h2{margin:6px 0}
-.payment-head p{font-size:13px;opacity:.9}
-.payment-close{position:absolute;right:12px;top:10px;background:#ffffff20;color:#fff;border:0;font-size:22px;border-radius:8px;padding:4px 10px;cursor:pointer}
-.payment-body{padding:18px}
-.payment-option{width:100%;display:flex;align-items:center;gap:12px;padding:15px;margin-bottom:10px;background:#fff;border:1px solid #e5e7eb;border-radius:13px;text-align:left;cursor:pointer}
-.payment-option:hover{border-color:#2563eb}
-.payment-icon{font-size:22px}
-.payment-info{flex:1}
-.payment-info strong{display:block}
-.payment-info span{display:block;font-size:12px;color:#64748b;margin-top:4px}
-.payment-arrow{font-size:22px;color:#94a3b8}
-
 @media(max-width:750px){
  .lessons{grid-template-columns:repeat(2,1fr)}
 }
@@ -122,7 +106,7 @@ location.replace("/Aca/login.html");
 <div id="premiumStatus" class="status">Checking...</div>
 </div>
 
-<button id="premiumBtn" class="premium" onclick="showPaymentOptions()">
+<button id="premiumBtn" class="premium" onclick="buyPremium()">
 GET PREMIUM
 </button>
 </div>
@@ -164,59 +148,8 @@ GET PREMIUM
 </div>
 </div>
 
-<!-- PAYMENT OPTIONS -->
-
-<div id="paymentBg" class="payment-bg">
-
-<div class="payment-modal">
-
-<div class="payment-head">
-
-<button class="payment-close" onclick="closePaymentOptions()">×</button>
-
-<small>PREMIUM MEMBERSHIP</small>
-
-<h2>Choose Payment Method</h2>
-
-<p>LKR 999 • 30 Days Premium Access</p>
-
-</div>
-
-<div class="payment-body">
-
-<button class="payment-option" onclick="onlinePayment()">
-
-<div class="payment-icon">💳</div>
-
-<div class="payment-info">
-<strong>Online Payment</strong>
-<span>Pay securely using PayHere</span>
-</div>
-
-<div class="payment-arrow">›</div>
-
-</button>
-
-<button class="payment-option" onclick="manualPayment()">
-
-<div class="payment-icon">🏦</div>
-
-<div class="payment-info">
-<strong>Manual Payment</strong>
-<span>View bank details and payment instructions</span>
-</div>
-
-<div class="payment-arrow">›</div>
-
-</button>
-
-</div>
-
-</div>
-
-</div>
-
 <script>
+
 const API="https://createlk-academy-api.createlk.workers.dev";
 const PAY="https://createlk-payhere.createlk.workers.dev";
 const COURSE="spoken-english";
@@ -232,6 +165,7 @@ if(!token){
 
 let premium=false;
 let completed=[];
+let currentDay=null;
 let dialogues=[];
 let playing=false;
 let selectedLanguage="en";
@@ -275,13 +209,16 @@ const titles=[
 "Speaking English Confidently"
 ];
 
+
+/* LESSONS */
+
 async function loadLessons(){
 
 try{
 
 const r=await fetch(
  `${API}/lessons?course=${COURSE}&language=en`,
- {headers}
+ {headers,cache:"no-store"}
 );
 
 const d=await r.json();
@@ -311,8 +248,18 @@ const api=apiLessons.find(
 );
 
 const free=n===1||+api?.is_free===1;
-const unlocked=free||premium;
+
+/*
+ Completed lessons remain reviewable.
+ Current/future access is still
+ validated by the Worker.
+*/
 const done=completed.includes(n);
+
+const unlocked=
+done||
+n===currentDay&&
+(free||premium);
 
 return `
 <article class="lesson">
@@ -337,13 +284,16 @@ ${done?"✓ COMPLETED":free?"FREE":"PREMIUM"}
 class="${unlocked?"open":"lock"}"
 onclick="${unlocked
 ?`openLesson(${n})`
-:"showPaymentOptions()"}">
+:"buyPremium()"}">
+
 ${unlocked?"Open":"🔒 Locked"}
+
 </button>
 
 </div>
 
 </article>`;
+
 }).join("");
 
 }catch(e){
@@ -351,11 +301,40 @@ ${unlocked?"Open":"🔒 Locked"}
 console.error(e);
 
 $("lessons").innerHTML=
-`<div class="error">${esc(e.message||"Unable to load lessons.")}</div>`;
-}
+`<div class="error">${esc(
+e.message||
+"Unable to load lessons."
+)}</div>`;
+
 }
 
+}
+
+
+/* OPEN LESSON */
+
 async function openLesson(n){
+
+/*
+ Completed lessons can be reviewed.
+
+ For a new lesson, only currentDay
+ is allowed by the frontend.
+
+ The Worker remains the real authority.
+*/
+
+if(!completed.includes(n)&&
+currentDay!==null&&
+n!==currentDay){
+
+alert(
+`Day ${currentDay} must be completed first.`
+);
+
+return;
+
+}
 
 stopSpeech();
 
@@ -436,6 +415,7 @@ html+=`
 <div class="card" style="margin:0 0 15px">
 ${esc(l.objectives)}
 </div>`;
+
 }
 
 html+=`
@@ -476,7 +456,9 @@ ${renderLines(d)}
 `).join("");
 
 html+=`
-<button class="complete" onclick="completeLesson(${n})">
+<button
+class="complete"
+onclick="completeLesson(${n})">
 
 ${completed.includes(n)
 ?"✓ Lesson Completed"
@@ -492,10 +474,13 @@ console.error(e);
 
 $("modalBody").innerHTML=
 `<div class="error">${esc(
- e.message||"Unable to load this lesson."
+e.message||"Unable to load this lesson."
 )}</div>`;
+
 }
+
 }
+
 
 function renderLines(d){
 
@@ -510,7 +495,7 @@ selectedLanguage==="en"
 
 return show&&x.text?`
 
-<div class="lang">${x.language}</div>
+<div class="lang">${esc(x.language)}</div>
 
 <div class="text">
 <b>${esc(x.speaker)}:</b>
@@ -520,11 +505,14 @@ ${esc(x.text)}
 `:"";
 
 }).join("");
+
 }
+
 
 function changeLanguage(){
 
-selectedLanguage=$("languageSelect").value;
+selectedLanguage=
+$("languageSelect").value;
 
 stopSpeech();
 
@@ -533,22 +521,26 @@ dialogues.forEach((d,i)=>{
 const box=$("dialogue-"+i);
 
 if(box){
+
 box.innerHTML=`
 <div class="num">
 DIALOGUE ${d.number}
 </div>
 ${renderLines(d)}
 `;
+
 }
 
 });
+
 }
+
 
 async function getLesson(n,language){
 
 const r=await fetch(
  `${API}/lesson?course=${COURSE}&lesson=${n}&language=${language}`,
- {headers}
+ {headers,cache:"no-store"}
 );
 
 const text=await r.text();
@@ -556,40 +548,28 @@ const text=await r.text();
 let d;
 
 try{
- d=JSON.parse(text);
+
+d=JSON.parse(text);
+
 }catch{
- throw Error(`Lesson server error (${r.status})`);
+
+throw Error(
+`Lesson server error (${r.status})`
+);
+
 }
 
 if(!r.ok||!d.success)
- throw Error(d.error||d.message||"Unable to load lesson.");
+ throw Error(
+ d.error||
+ d.message||
+ "Unable to load lesson."
+ );
 
 return d;
+
 }
 
-/* PAYMENT OPTIONS */
-
-function showPaymentOptions(){
-$("paymentBg").style.display="flex";
-}
-
-function closePaymentOptions(){
-$("paymentBg").style.display="none";
-}
-
-function onlinePayment(){
-closePaymentOptions();
-buyPremium();
-}
-
-function manualPayment(){
-location.href="/Aca/bank.html";
-}
-
-$("paymentBg").onclick=e=>{
-if(e.target===$("paymentBg"))
-closePaymentOptions();
-};
 
 /* PAYHERE PREMIUM CHECKOUT */
 
@@ -602,7 +582,8 @@ btn.textContent="Connecting...";
 
 try{
 
-const currentToken=localStorage.getItem("createlk_token");
+const currentToken=
+localStorage.getItem("createlk_token");
 
 if(!currentToken)
  throw Error(
@@ -626,13 +607,16 @@ const text=await r.text();
 let d;
 
 try{
- d=JSON.parse(text);
+
+d=JSON.parse(text);
+
 }catch{
 
 throw Error(
  "Payment server returned an invalid response ("+
  r.status+")."
 );
+
 }
 
 if(!r.ok||!d.success){
@@ -642,6 +626,7 @@ throw Error(
  d.error||
  `Checkout failed (${r.status})`
 );
+
 }
 
 const fields=d.fields||d.checkout;
@@ -664,6 +649,7 @@ input.name=key;
 input.value=value??"";
 
 form.appendChild(input);
+
 });
 
 document.body.appendChild(form);
@@ -684,8 +670,11 @@ alert(
 
 btn.disabled=false;
 btn.textContent="GET PREMIUM";
+
 }
+
 }
+
 
 /* SPEECH */
 
@@ -718,6 +707,7 @@ if($("playBtn")){
 }
 
 return;
+
 }
 
 const box=$("dialogue-"+index);
@@ -727,12 +717,16 @@ document.querySelectorAll(".dialogue")
  x.classList.remove("playing")
 );
 
+if(box){
+
 box.classList.add("playing");
 
 box.scrollIntoView({
 behavior:"smooth",
 block:"center"
 });
+
+}
 
 const allowed=
 selectedLanguage==="en"
@@ -754,37 +748,62 @@ speakLines(
   next();
  }
 );
+
 }
 
 next();
+
 }
+
 
 function speakLines(lines,i,done){
 
 if(!playing||i>=lines.length){
+
 done();
+
 return;
+
 }
 
 const line=lines[i];
 
 if(!line.text){
-speakLines(lines,i+1,done);
+
+speakLines(
+lines,
+i+1,
+done
+);
+
 return;
+
 }
 
 const u=
-new SpeechSynthesisUtterance(line.text);
+new SpeechSynthesisUtterance(
+line.text
+);
 
-u.lang=voiceLang[line.language];
+u.lang=
+voiceLang[line.language];
+
 u.rate=.88;
 
 u.onend=()=>{
-speakLines(lines,i+1,done);
+
+speakLines(
+lines,
+i+1,
+done
+);
+
 };
 
 speechSynthesis.speak(u);
+
 }
+
 
 function stopSpeech(){
 
@@ -800,9 +819,11 @@ document.querySelectorAll(".dialogue")
 if($("playBtn")){
  $("playBtn").textContent="▶️ Play All";
 }
+
 }
 
-/* PROGRESS */
+
+/* PROGRESS API */
 
 async function completeLesson(n){
 
@@ -820,65 +841,228 @@ const r=await fetch(
  }
 );
 
-const d=await r.json();
+const text=await r.text();
 
-if(!r.ok||!d.success)
- throw Error(d.error||d.message);
+let d;
 
-if(!completed.includes(n))
- completed.push(n);
+try{
+
+d=JSON.parse(text);
+
+}catch{
+
+throw Error(
+`Completion server error (${r.status})`
+);
+
+}
+
+if(!r.ok||!d.success){
+
+throw Error(
+d.error||
+d.message||
+"Unable to complete lesson."
+);
+
+}
+
+
+/*
+ Worker is authoritative.
+
+ Expected response:
+
+ completed_days: [1,2,3]
+ completed_count: 3
+ current_day: 4
+*/
+
+if(Array.isArray(d.completed_days)){
+
+completed=
+d.completed_days
+.map(x=>+x)
+.filter(
+ x=>
+ Number.isInteger(x)&&
+ x>=1&&
+ x<=100
+);
+
+completed=
+[...new Set(completed)]
+.sort((a,b)=>a-b);
+
+}
+
+
+if(
+Number.isInteger(Number(d.current_day))
+){
+
+currentDay=
+Number(d.current_day);
+
+}
+
+
+/*
+ Update progress using server data.
+*/
 
 updateProgress(
- d.completed_count||
- completed.length
+Number(d.completed_count)||
+completed.length
 );
+
 
 closeLesson();
 
-loadLessons();
+
+/*
+ Refresh cards and progress.
+*/
+
+await loadProgress();
+
+await loadLessons();
 
 }catch(e){
 
-alert(
- e.message||
- "Unable to complete lesson."
+console.error(
+"Complete lesson:",
+e
 );
+
+alert(
+e.message||
+"Unable to complete lesson."
+);
+
 }
+
 }
+
 
 async function loadProgress(){
 
 try{
 
 const r=await fetch(
- `${API}/progress?course=${COURSE}`,
- {headers}
+ `${API}/progress?course=${encodeURIComponent(COURSE)}`,
+ {
+  headers,
+  cache:"no-store"
+ }
 );
 
-const d=await r.json();
+const text=await r.text();
 
-if(d.success){
+let d;
 
-completed=(d.lessons||[])
-.map(x=>+x.lesson_number);
+try{
+
+d=JSON.parse(text);
+
+}catch{
+
+throw Error(
+`Progress server error (${r.status})`
+);
+
+}
+
+if(!r.ok||!d.success){
+
+throw Error(
+d.error||
+d.message||
+"Unable to load progress."
+);
+
+}
+
+
+/*
+ New Worker response:
+
+ completed_days
+ completed_count
+ current_day
+*/
+
+if(Array.isArray(d.completed_days)){
+
+completed=
+d.completed_days
+.map(x=>+x)
+.filter(
+ x=>
+ Number.isInteger(x)&&
+ x>=1&&
+ x<=100
+);
+
+completed=
+[...new Set(completed)]
+.sort((a,b)=>a-b);
+
+}else{
+
+completed=[];
+
+}
+
+
+/*
+ Store current day from Worker.
+*/
+
+if(
+Number.isInteger(Number(d.current_day))
+){
+
+currentDay=
+Number(d.current_day);
+
+}else{
+
+currentDay=null;
+
+}
+
+
+/*
+ Update progress.
+*/
 
 updateProgress(
- d.completed_count||
- completed.length
+Number(d.completed_count)||
+completed.length
 );
-}
+
 
 }catch(e){
 
-console.error("Progress:",e);
+console.error(
+"Progress:",
+e
+);
+
 }
+
 }
+
 
 function updateProgress(n){
 
 n=Math.min(
 100,
+Math.max(
+0,
 +n||0
+)
 );
 
 $("progressText").textContent=
@@ -886,25 +1070,41 @@ n+" of 100";
 
 $("fill").style.width=
 n+"%";
+
 }
+
+
+/* CLOSE LESSON */
 
 function closeLesson(){
 
 stopSpeech();
 
 $("modalBg").style.display="none";
+
 }
 
-/* Logout: return to main index.html */
+
+/* LOGOUT */
 
 function logout(){
 
-localStorage.removeItem("createlk_token");
-localStorage.removeItem("createlk_customer");
+localStorage.removeItem(
+"createlk_token"
+);
+
+localStorage.removeItem(
+"createlk_customer"
+);
+
 sessionStorage.clear();
 
 location.replace("/index.html");
+
 }
+
+
+/* ESCAPE HTML */
 
 function esc(v){
 
@@ -914,21 +1114,30 @@ return String(v??"")
 .replace(/>/g,"&gt;")
 .replace(/"/g,"&quot;")
 .replace(/'/g,"&#039;");
+
 }
+
 
 $("modalBg").onclick=e=>{
 
 if(e.target===$("modalBg"))
 closeLesson();
+
 };
+
+
+/* INITIALIZE */
 
 async function init(){
 
 await loadProgress();
+
 await loadLessons();
+
 }
 
 init();
+
 </script>
 
 </body>
