@@ -374,9 +374,7 @@ Valid for 30 days after approval
 <div class="account">
 
 <div class="item">
-
 <small>ACCOUNT NUMBER</small>
-
 <b>292200280023178</b>
 
 <button
@@ -385,13 +383,10 @@ class="copy"
 onclick="copyText('292200280023178')">
 📋 Copy
 </button>
-
 </div>
 
 <div class="item">
-
 <small>BANK</small>
-
 <b>People's Bank</b>
 
 <button
@@ -400,13 +395,10 @@ class="copy"
 onclick="copyText(&quot;People's Bank&quot;)">
 📋 Copy
 </button>
-
 </div>
 
 <div class="item">
-
 <small>BRANCH</small>
-
 <b>Udapussellawa</b>
 
 <button
@@ -415,13 +407,10 @@ class="copy"
 onclick="copyText('Udapussellawa')">
 📋 Copy
 </button>
-
 </div>
 
 <div class="item">
-
 <small>ACCOUNT HOLDER</small>
-
 <b>Thinarathnam Sathiyanadan</b>
 
 <button
@@ -430,7 +419,6 @@ class="copy"
 onclick="copyText('Thinarathnam Sathiyanadan')">
 📋 Copy
 </button>
-
 </div>
 
 </div>
@@ -482,7 +470,6 @@ After approval, Premium will be activated for 30 days.
 <div class="loginInfo">
 🔐 Your account information is taken automatically from your login.
 </div>
-
 
 <form id="paymentForm">
 
@@ -583,30 +570,17 @@ aria-label="WhatsApp">
 
 <script>
 
-/* =========================
-   CONFIGURATION
-========================= */
-
 const PAYMENT_API =
 "https://createlk-premium-payments.createlk.workers.dev";
 
-/*
-  Visible price:
-  LKR 999
+const CUSTOMER_KEY =
+"createlk_customer";
 
-  Amount sent to Worker:
-  1500
-*/
+const TOKEN_KEY =
+"createlk_token";
 
-const DISPLAY_PRICE = "999";
-const WORKER_AMOUNT = "1500";
-
-const STUDENT_KEY =
-"createlk_student";
-
-const LOGIN_KEY =
-"createlk_logged_in";
-
+const PAYMENT_AMOUNT =
+"999";
 
 const form =
 document.getElementById("paymentForm");
@@ -618,9 +592,7 @@ const button =
 document.getElementById("submitButton");
 
 
-/* =========================
-   MESSAGE
-========================= */
+/* MESSAGE */
 
 function showMessage(text,type){
 
@@ -636,63 +608,18 @@ message.style.display =
 }
 
 
-/* =========================
-   GET STUDENT
-========================= */
+/* CUSTOMER */
 
-function getStudent(){
-
-let student = null;
+function getCustomer(){
 
 try{
 
 const raw =
 localStorage.getItem(
-STUDENT_KEY
+CUSTOMER_KEY
 );
 
-if(raw){
-student =
-JSON.parse(raw);
-}
-
-}catch(e){
-
-console.error(
-"Local storage error:",
-e
-);
-
-}
-
-
-if(!student){
-
-try{
-
-const raw =
-sessionStorage.getItem(
-STUDENT_KEY
-);
-
-if(raw){
-student =
-JSON.parse(raw);
-}
-
-}catch(e){
-
-console.error(
-"Session storage error:",
-e
-);
-
-}
-
-}
-
-
-if(!student){
+if(!raw){
 
 showMessage(
 "⚠️ Your login information was not found. Please login again.",
@@ -703,70 +630,13 @@ return null;
 
 }
 
+const customer =
+JSON.parse(raw);
 
-/* =========================
-   STUDENT ID
-========================= */
-
-const id =
-Number(
-student.id ||
-student.student_id ||
-student.studentId ||
-0
-);
-
-
-/* =========================
-   EMAIL
-========================= */
-
-const email =
-String(
-student.email ||
-""
-)
-.trim()
-.toLowerCase();
-
-
-/* =========================
-   NAME
-========================= */
-
-const first =
-student.first_name ||
-"";
-
-const last =
-student.last_name ||
-"";
-
-const name =
-(
-first + " " + last
-).trim()
-||
-student.name
-||
-"";
-
-
-/* =========================
-   PHONE
-========================= */
-
-const phone =
-String(
-student.phone ||
-""
-).trim();
-
-
-if(!id && !email){
+if(!customer){
 
 showMessage(
-"⚠️ Your student account information is incomplete. Please login again.",
+"⚠️ Your login information was not found. Please login again.",
 "error"
 );
 
@@ -774,47 +644,83 @@ return null;
 
 }
 
+const first =
+customer.first_name ||
+customer.firstName ||
+"";
+
+const last =
+customer.last_name ||
+customer.lastName ||
+"";
+
+const name =
+customer.name ||
+(first + " " + last).trim();
 
 return{
-id:id,
-email:email,
+
+id:
+customer.id ||
+customer.student_id ||
+customer.studentId ||
+"",
+
+email:
+customer.email ||
+"",
+
 name:name,
-phone:phone
+
+phone:
+customer.phone ||
+customer.phone_number ||
+""
+
 };
+
+}catch(error){
+
+console.error(error);
+
+showMessage(
+"⚠️ Unable to read your account information. Please login again.",
+"error"
+);
+
+return null;
+
+}
 
 }
 
 
-/* =========================
-   LOAD ACCOUNT
-========================= */
+/* LOAD CUSTOMER */
 
-const student =
-getStudent();
+const customer =
+getCustomer();
 
-if(student){
+if(customer){
 
 document.getElementById(
 "studentName"
 ).value =
-student.name;
+customer.name;
 
 document.getElementById(
 "phone"
 ).value =
-student.phone;
+customer.phone;
 
 document.getElementById(
 "amount"
 ).value =
-"LKR " + DISPLAY_PRICE;
+"LKR " + PAYMENT_AMOUNT;
 
 }
 
 
-/* =========================
-   COPY
-========================= */
+/* COPY */
 
 async function copyText(text){
 
@@ -837,9 +743,7 @@ alert(
 }
 
 
-/* =========================
-   SUBMIT
-========================= */
+/* SUBMIT */
 
 form.addEventListener(
 "submit",
@@ -847,23 +751,33 @@ async function(e){
 
 e.preventDefault();
 
-const currentStudent =
-getStudent();
+const customer =
+getCustomer();
 
-if(!currentStudent){
+if(!customer){
+return;
+}
+
+const token =
+localStorage.getItem(
+TOKEN_KEY
+);
+
+if(!token){
+
+showMessage(
+"⚠️ Your login session has expired. Please login again.",
+"error"
+);
 
 return;
 
 }
 
-
-if(
-!currentStudent.name ||
-!currentStudent.phone
-){
+if(!customer.name){
 
 showMessage(
-"⚠️ Your account information is incomplete. Please login again.",
+"⚠️ Your account name is missing. Please login again.",
 "error"
 );
 
@@ -917,40 +831,17 @@ return;
 }
 
 
-/* =========================
-   FILE TYPE
-========================= */
-
 const allowedTypes = [
 "image/jpeg",
 "image/png",
 "application/pdf"
 ];
 
-const allowedExtensions = [
-".jpg",
-".jpeg",
-".png",
-".pdf"
-];
-
-const fileName =
-file.name.toLowerCase();
-
-const validType =
-allowedTypes.includes(
-file.type
-);
-
-const validExtension =
-allowedExtensions.some(
-ext => fileName.endsWith(ext)
-);
-
 
 if(
-!validType ||
-!validExtension
+!allowedTypes.includes(
+file.type
+)
 ){
 
 showMessage(
@@ -963,60 +854,40 @@ return;
 }
 
 
-/* =========================
-   FORM DATA
-========================= */
+/* FORM DATA */
 
 const formData =
 new FormData();
 
 
-if(currentStudent.id){
+if(customer.id){
 
 formData.append(
 "student_id",
-String(
-currentStudent.id
-)
+String(customer.id)
 );
 
 }
-
-
-if(currentStudent.email){
 
 formData.append(
 "email",
-currentStudent.email
+customer.email
 );
-
-}
-
 
 formData.append(
 "student_name",
-currentStudent.name
+customer.name
 );
 
 formData.append(
 "phone",
-currentStudent.phone
+customer.phone
 );
-
-
-/*
-  IMPORTANT:
-
-  Student sees LKR 999.
-
-  Worker receives 1500.
-*/
 
 formData.append(
 "amount",
-WORKER_AMOUNT
+PAYMENT_AMOUNT
 );
-
 
 formData.append(
 "slip",
@@ -1024,16 +895,13 @@ file
 );
 
 
-/* =========================
-   SUBMIT BUTTON
-========================= */
+/* SUBMIT */
 
 button.disabled =
 true;
 
 button.textContent =
 "⏳ Submitting...";
-
 
 showMessage(
 "Submitting your payment for verification...",
@@ -1052,7 +920,10 @@ method:"POST",
 body:formData,
 headers:{
 "Accept":
-"application/json"
+"application/json",
+
+"Authorization":
+"Bearer " + token
 }
 }
 );
@@ -1060,7 +931,6 @@ headers:{
 
 const raw =
 await response.text();
-
 
 console.log(
 "PAYMENT RESPONSE:",
@@ -1087,34 +957,9 @@ throw new Error(
 
 if(!response.ok){
 
-/*
-  Hide confusing Worker
-  amount messages from user.
-*/
-
-const serverError =
-String(
+throw new Error(
 data.error ||
 data.message ||
-""
-);
-
-
-if(
-serverError.toLowerCase().includes(
-"payment amount"
-)
-){
-
-throw new Error(
-"Payment submission could not be completed. Please contact support."
-);
-
-}
-
-
-throw new Error(
-serverError ||
 "Payment submission failed."
 );
 
@@ -1133,21 +978,20 @@ button.textContent =
 
 form.reset();
 
-
 document.getElementById(
 "studentName"
 ).value =
-currentStudent.name;
+customer.name;
 
 document.getElementById(
 "phone"
 ).value =
-currentStudent.phone;
+customer.phone;
 
 document.getElementById(
 "amount"
 ).value =
-"LKR " + DISPLAY_PRICE;
+"LKR " + PAYMENT_AMOUNT;
 
 return;
 
@@ -1190,4 +1034,3 @@ button.textContent =
 
 </body>
 </html>
-
