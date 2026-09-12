@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK Academy - Admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial;background:#f4f7fb;color:#172033}
+header{background:#0757d5;color:white;padding:18px 25px;font-size:21px;font-weight:bold}
+main{max-width:1100px;margin:25px auto;padding:15px}
+.card{background:white;padding:20px;border-radius:12px;box-shadow:0 3px 15px #0001;margin-bottom:18px}
+input,select,button{padding:11px;border:1px solid #ddd;border-radius:7px}
+input{width:100%}button{cursor:pointer;background:#0757d5;color:white;border:0}
+.login{max-width:400px;margin:80px auto}.hidden{display:none}
+table{width:100%;border-collapse:collapse}th,td{padding:12px;border-bottom:1px solid #eee;text-align:left}
+.badge{padding:5px 9px;border-radius:20px;background:#eee}
+.actions button{margin:2px}.approve{background:#16803c}.reject{background:#c62828}
+#msg{margin-top:10px}
+img{max-width:100%;max-height:500px}
+</style>
+</head>
+<body>
+
+<header>CreateLK Academy — Admin</header>
+
+<div id="login" class="login card">
+  <h2>Admin Login</h2>
+  <input id="password" type="password" placeholder="Admin password">
+  <br><br>
+  <button onclick="login()">Login</button>
+  <div id="msg"></div>
+</div>
+
+<main id="app" class="hidden">
+  <div class="card">
+    <h2>Payment Verification</h2>
+    <button onclick="loadPayments()">Refresh</button>
+    <button onclick="logout()">Logout</button>
+    <br><br>
+    <input id="search" placeholder="Search student, email or ID..." oninput="render()">
+    <br><br>
+    <select id="filter" onchange="render()">
+      <option value="">All</option>
+      <option value="pending">Pending</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Email</th>
+          <th>Amount</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const API="https://createlk-premium-payments.createlk.workers.dev";
+let payments=[];
+
+async function login(){
+  const password=document.getElementById("password").value;
+  const r=await fetch(API+"/api/admin/login",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({password})
+  });
+
+  const d=await r.json();
+
+  if(!r.ok){
+    document.getElementById("msg").textContent=d.error||"Wrong password";
+    return;
+  }
+
+  sessionStorage.setItem("admin_token",d.token);
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  loadPayments();
+}
+
+async function loadPayments(){
+  const r=await fetch(API+"/api/admin/payments",{
+    headers:{Authorization:"Bearer "+sessionStorage.getItem("admin_token")}
+  });
+
+  if(r.status===401){
+    logout();
+    return;
+  }
+
+  const d=await r.json();
+  payments=d.payments||[];
+  render();
+}
+
+function render(){
+  const q=document.getElementById("search").value.toLowerCase();
+  const f=document.getElementById("filter").value;
+
+  const list=payments.filter(p=>{
+    const text=JSON.stringify(p).toLowerCase();
+    return (!q||text.includes(q))&&(!f||p.status===f);
+  });
+
+  document.getElementById("rows").innerHTML=list.map(p=>`
+    <tr>
+      <td>${esc(p.student_name||p.name||p.student_id||"-")}</td>
+      <td>${esc(p.email||"-")}</td>
+      <td>LKR ${esc(p.amount||"-")}</td>
+      <td>${p.created_at?new Date(p.created_at).toLocaleString():"-"}</td>
+      <td><span class="badge">${esc(p.status||"-")}</span></td>
+      <td class="actions">
+        <button onclick="viewSlip('${esc(p.slip_url||p.slipUrl||p.file_url||p.fileUrl||p.slip||"")}')">Slip</button>
+        ${p.status==="pending"?`
+        <button class="approve" onclick="action('${p.id}','approve')">Approve</button>
+        <button class="reject" onclick="action('${p.id}','reject')">Reject</button>`:""}
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function action(id,type){
+  if(!confirm(type==="approve"?"Approve this payment?":"Reject this payment?"))return;
+
+  const r=await fetch(API+"/api/admin/payment/"+type,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      Authorization:"Bearer "+sessionStorage.getItem("admin_token")
+    },
+    body:JSON.stringify({payment_id:id})
+  });
+
+  const d=await r.json();
+  if(!r.ok)return alert(d.error||"Action failed");
+
+  loadPayments();
+}
+
+function viewSlip(url){
+  if(!url)return alert("No payment slip found.");
+  window.open(url,"_blank");
+}
+
+function logout(){
+  sessionStorage.removeItem("admin_token");
+  location.reload();
+}
+
+function esc(v){
+  return String(v??"").replace(/[&<>"']/g,m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",
+    '"':"&quot;","'":"&#039;"
+  }[m]));
+}
+</script>
+
+</body>
+</html>
