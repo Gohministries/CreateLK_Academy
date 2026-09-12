@@ -503,9 +503,14 @@ const STORAGE_KEY =
 "365_bible_control_verses";
 
 
+/* =====================================================
+   LAST SESSION
+===================================================== */
+
 /*
-   NEW:
-   Remember the last day being edited
+   This key remembers the last day opened.
+   It remains saved even after browser refresh
+   or closing and reopening the page.
 */
 
 const CURRENT_DAY_KEY =
@@ -543,40 +548,57 @@ updateDays();
 
 
 /*
-   NEW:
-   Restore the last selected day
-   instead of always opening Day 1
+   Restore the last session BEFORE loading
+   Cloudflare data.
 */
 
-let savedDay =
-Number(
+let savedDay=1;
+
+try{
+
+const storedDay=
 localStorage.getItem(
 CURRENT_DAY_KEY
-)
 );
 
+if(storedDay!==null){
 
-/*
-   Validate saved day
-*/
+const parsedDay=
+Number(storedDay);
 
 if(
-!Number.isInteger(savedDay) ||
-savedDay<1 ||
-savedDay>365
+Number.isInteger(parsedDay) &&
+parsedDay>=1 &&
+parsedDay<=365
 ){
 
-savedDay=1;
+savedDay=parsedDay;
+
+}
+
+}
+
+}catch(error){
+
+console.error(
+"Last session restore error:",
+error
+);
 
 }
 
 
 /*
-   Open saved day
+   Open the last session day.
 */
 
 loadDay(savedDay);
 
+
+/*
+   Load Cloudflare data without changing
+   the selected day.
+*/
 
 await loadAll();
 
@@ -741,6 +763,75 @@ return false;
 
 
 /* =====================================================
+   SAVE LAST SESSION
+===================================================== */
+
+function saveLastSession(){
+
+try{
+
+localStorage.setItem(
+CURRENT_DAY_KEY,
+String(current)
+);
+
+return true;
+
+}catch(error){
+
+console.error(
+"Unable to save last session:",
+error
+);
+
+return false;
+
+}
+
+}
+
+
+/* =====================================================
+   LOAD LAST SESSION
+===================================================== */
+
+function getLastSessionDay(){
+
+try{
+
+const saved=
+localStorage.getItem(
+CURRENT_DAY_KEY
+);
+
+const day=
+Number(saved);
+
+if(
+Number.isInteger(day) &&
+day>=1 &&
+day<=365
+){
+
+return day;
+
+}
+
+}catch(error){
+
+console.error(
+"Unable to load last session:",
+error
+);
+
+}
+
+return 1;
+
+}
+
+
+/* =====================================================
    LOAD FROM CLOUDFLARE
 ===================================================== */
 
@@ -789,6 +880,13 @@ throw new Error(
 );
 
 }
+
+
+/*
+   Remember the day before synchronization.
+*/
+
+const sessionDay=current;
 
 
 /*
@@ -865,12 +963,11 @@ statusMessage(
 
 
 /*
-   Important:
-   Keep the currently selected day.
-   Do NOT force Day 1.
+   Restore exactly the day that was open
+   before Cloudflare synchronization.
 */
 
-loadDay(current);
+loadDay(sessionDay);
 
 
 }catch(error){
@@ -897,6 +994,15 @@ statusMessage(
 "warning"
 );
 
+
+/*
+   Keep the last session day.
+*/
+
+loadDay(
+getLastSessionDay()
+);
+
 }
 
 }
@@ -911,36 +1017,32 @@ function loadDay(day){
 current=Number(day);
 
 
-if(current<1){
+if(!Number.isInteger(current)){
+
 current=1;
+
+}
+
+if(current<1){
+
+current=1;
+
 }
 
 if(current>365){
+
 current=365;
+
 }
 
 
 /*
-   NEW:
-   Remember the current day immediately.
-   This means refresh will return to this day.
+   LAST SESSION SAVE
+   Save immediately every time the user
+   changes to another day.
 */
 
-try{
-
-localStorage.setItem(
-CURRENT_DAY_KEY,
-String(current)
-);
-
-}catch(error){
-
-console.error(
-"Unable to remember current day:",
-error
-);
-
-}
+saveLastSession();
 
 
 document.getElementById(
@@ -1120,6 +1222,14 @@ document.getElementById(
 );
 
 saveButton.disabled=true;
+
+
+/*
+   Make absolutely sure the current day
+   is remembered before saving.
+*/
+
+saveLastSession();
 
 
 /*
@@ -1401,6 +1511,13 @@ saveLocalStorage();
 updateDays();
 
 clearForm();
+
+
+/*
+   Keep this day as the last session.
+*/
+
+saveLastSession();
 
 
 statusMessage(
@@ -1761,6 +1878,34 @@ box.textContent=text;
 }
 
 }
+
+
+/* =====================================================
+   SAVE LAST SESSION WHEN PAGE IS
+   BEING HIDDEN / CLOSED
+===================================================== */
+
+document.addEventListener(
+"visibilitychange",
+function(){
+
+if(document.visibilityState==="hidden"){
+
+saveLastSession();
+
+}
+
+});
+
+
+window.addEventListener(
+"beforeunload",
+function(){
+
+saveLastSession();
+
+});
+
 
 </script>
 
