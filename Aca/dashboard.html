@@ -20,44 +20,12 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:16p
 .card{background:#fff;padding:20px;border-radius:18px;margin-top:18px;box-shadow:0 5px 20px #0001}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .premium{background:#f59e0b;color:#fff;padding:11px 16px;border:0;border-radius:10px;font-weight:bold;cursor:pointer}
-.premium:disabled{opacity:.6;cursor:default}
+.premium:disabled{opacity:.6;cursor:wait}
 .status{color:#64748b;font-size:14px;margin-top:5px}
 .active{color:#16a34a;font-weight:bold}
 .price{font-size:18px;color:#111827;margin-top:5px}
-
-.certificate{
-background:#eff6ff;
-border:1px solid #bfdbfe;
-}
-
-.certificate-title{
-font-size:17px;
-font-weight:800;
-}
-
-.certificate-status{
-font-size:13px;
-margin-top:6px;
-font-weight:bold;
-}
-
-.certificate-btn{
-background:#2563eb;
-color:#fff;
-padding:11px 16px;
-border:0;
-border-radius:10px;
-font-weight:bold;
-cursor:pointer;
-white-space:nowrap;
-}
-
-.certificate-btn:disabled{
-background:#94a3b8;
-cursor:not-allowed;
-opacity:.7;
-}
-
+.progress{height:10px;background:#e5e7eb;border-radius:20px;margin-top:12px;overflow:hidden}
+.fill{height:100%;width:0;background:#2563eb;transition:.3s}
 .section{margin:30px 0 15px}
 .lessons{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
 .lesson{background:#fff;padding:18px;border-radius:17px;border:1px solid #e5e7eb}
@@ -95,7 +63,7 @@ opacity:.7;
  .controls{position:sticky;top:0;background:#fff;padding-bottom:8px;z-index:2;flex-wrap:wrap}
  .language-select{width:100%;flex:none}
  .play,.stop{min-width:0}
- .premium,.certificate-btn{width:100%}
+ .premium{width:100%}
 }
 </style>
 </head>
@@ -103,6 +71,7 @@ opacity:.7;
 <body>
 
 <script>
+/* Prevent Dashboard flash before login redirect */
 (function(){
 const token=localStorage.getItem("createlk_token");
 
@@ -129,143 +98,82 @@ location.replace("/Aca/login.html");
 <span class="badge">100 Lessons • 1,000 Practical Dialogues</span>
 </section>
 
-
 <section class="card">
-
 <div class="row">
-
 <div>
 <b>👑 Premium Membership</b>
-
-<div class="price">
-LKR 999
-<span class="status">• 30 Days</span>
+<div class="price">LKR 999 <span class="status">• 30 Days</span></div>
+<div id="premiumStatus" class="status">Checking...</div>
 </div>
 
-<div id="premiumStatus" class="status">
-Checking...
-</div>
-</div>
-
-<button
-id="premiumBtn"
-class="premium"
-onclick="buyPremium()">
+<button id="premiumBtn" class="premium" onclick="buyPremium()">
 GET PREMIUM
 </button>
-
 </div>
-
 </section>
 
 
-<!-- CERTIFICATE -->
+<!-- CERTIFICATE BUTTON ONLY -->
 
-<section class="card certificate">
-
+<section class="card">
 <div class="row">
 
 <div>
-
-<div class="certificate-title">
-🎓 Get Your Certificate
-</div>
+<b>🎓 Get Your Certificate</b>
 
 <div class="status">
 Complete all 100 lessons and pass the final test to receive your certificate.
 </div>
-
-<div
-id="certificateStatus"
-class="certificate-status">
-🔒 Premium membership required
-</div>
-
 </div>
 
 <button
-id="certificateBtn"
-class="certificate-btn"
-onclick="openCertificate()"
-disabled>
+class="premium"
+onclick="location.href='/Aca/certificate.html'">
 GET YOUR CERTIFICATE
 </button>
 
 </div>
-
 </section>
 
 
-<h2 class="section">
-100 Spoken English Lessons
-</h2>
+<h2 class="section">100 Spoken English Lessons</h2>
 
-<div id="lessons" class="lessons">
+<div id="lessons">
 <div class="loading">Loading...</div>
 </div>
 
 </main>
-
 
 <div id="modalBg" class="modal-bg">
 
 <div class="modal">
 
 <div class="modal-head">
-
-<button
-class="close"
-onclick="closeLesson()">
-×
-</button>
-
-<small id="modalNum">
-LESSON
-</small>
-
-<h2 id="modalTitle">
-Loading...
-</h2>
-
+<button class="close" onclick="closeLesson()">×</button>
+<small id="modalNum">LESSON</small>
+<h2 id="modalTitle">Loading...</h2>
 </div>
 
 <div id="modalBody" class="modal-body">
-
-<div class="loading">
-Loading lesson...
-</div>
-
+<div class="loading">Loading lesson...</div>
 </div>
 
 </div>
 </div>
-
 
 <script>
 
-const API=
-"https://createlk-academy-api.createlk.workers.dev";
+const API="https://createlk-academy-api.createlk.workers.dev";
+const PAY="https://createlk-payhere.createlk.workers.dev";
+const COURSE="spoken-english";
+const PREMIUM_PRICE=999;
 
-const PAY=
-"https://createlk-payhere.createlk.workers.dev";
-
-const COURSE=
-"spoken-english";
-
-const PREMIUM_PRICE=
-999;
-
-const token=
-localStorage.getItem("createlk_token");
+const token=localStorage.getItem("createlk_token");
 
 if(!token){
-
 location.replace("/Aca/login.html");
-
 throw new Error("Login required");
-
 }
-
 
 let premium=false;
 let completed=[];
@@ -273,559 +181,239 @@ let dialogues=[];
 let playing=false;
 let selectedLanguage="en";
 
-
 const headers={
 "Content-Type":"application/json",
 "Authorization":"Bearer "+token
 };
 
-
-const $=
-id=>document.getElementById(id);
-
+const $=id=>document.getElementById(id);
 
 const titles=[
-
-"Introducing Yourself",
-"Greetings and Small Talk",
-"Talking About Your Family",
-"Talking About Your Home",
-"Daily Routine",
-"Morning Activities",
-"Talking About Your Job",
-"Talking About School",
-"Talking About Friends",
-"Asking for Personal Information",
-"Meeting Someone New",
-"Making a Phone Call",
-"Sending a Message",
-"Talking About the Time",
-"Talking About the Date",
-"Making Plans",
-"Weekend Plans",
-"Invitations",
-"Accepting an Invitation",
-"Refusing Politely",
-"At the Restaurant",
-"Ordering Food",
-"Asking About a Menu",
-"Paying the Bill",
-"At a Café",
-"Buying Groceries",
-"At a Supermarket",
-"Shopping for Clothes",
-"Asking the Price",
-"Returning an Item",
-"At the Bus Stop",
-"Taking a Bus",
-"Taking a Taxi",
-"Asking for Directions",
-"Finding a Place",
-"At the Train Station",
-"Buying a Ticket",
-"At the Airport",
-"Checking Into a Hotel",
-"Hotel Problems",
-"Talking About Weather",
-"Talking About Hobbies",
-"Sports and Games",
-"Music",
-"Movies and TV",
-"Reading Books",
-"Weekend Activities",
-"Holidays",
-"Birthday Conversations",
-"Celebrations",
-"At the Doctor",
-"Describing Symptoms",
-"At the Pharmacy",
-"Healthy Habits",
-"Exercise and Fitness",
-"Asking for Help",
-"Offering Help",
-"Giving Advice",
-"Asking for Permission",
-"Saying Sorry",
-"Thanking Someone",
-"Compliments",
-"Agreeing and Disagreeing",
-"Expressing Opinions",
-"Making Suggestions",
-"Making Decisions",
-"Solving a Problem",
-"Making a Complaint",
-"Apologizing Professionally",
-"Workplace Conversations",
-"Job Interviews",
-"Talking With a Customer",
-"Talking With a Manager",
-"Making an Appointment",
-"Office Phone Calls",
-"Meetings",
-"Giving Instructions",
-"Asking Questions at Work",
-"Discussing a Project",
-"Talking About Money",
-"Banking",
-"Using an ATM",
-"Online Shopping",
-"Using the Internet",
-"Social Media Conversations",
-"Learning English",
-"Practicing English",
-"Common English Mistakes",
-"Understanding Fast English",
-"Everyday Expressions",
-"Making Conversation",
-"Keeping a Conversation Going",
-"Speaking Politely",
-"Speaking Confidently",
-"Natural English",
-"Travel Conversations",
-"Emergency Conversations",
-"Real-Life Situations",
-"Advanced Everyday Conversations",
+"Introducing Yourself","Greetings and Small Talk","Talking About Your Family",
+"Talking About Your Home","Daily Routine","Morning Activities",
+"Talking About Your Job","Talking About School","Talking About Friends",
+"Asking for Personal Information","Meeting Someone New","Making a Phone Call",
+"Sending a Message","Talking About the Time","Talking About the Date",
+"Making Plans","Weekend Plans","Invitations","Accepting an Invitation",
+"Refusing Politely","At the Restaurant","Ordering Food","Asking About a Menu",
+"Paying the Bill","At a Café","Buying Groceries","At a Supermarket",
+"Shopping for Clothes","Asking the Price","Returning an Item","At the Bus Stop",
+"Taking a Bus","Taking a Taxi","Asking for Directions","Finding a Place",
+"At the Train Station","Buying a Ticket","At the Airport","Checking Into a Hotel",
+"Hotel Problems","Talking About Weather","Talking About Hobbies","Sports and Games",
+"Music","Movies and TV","Reading Books","Weekend Activities","Holidays",
+"Birthday Conversations","Celebrations","At the Doctor","Describing Symptoms",
+"At the Pharmacy","Healthy Habits","Exercise and Fitness","Asking for Help",
+"Offering Help","Giving Advice","Asking for Permission","Saying Sorry",
+"Thanking Someone","Compliments","Agreeing and Disagreeing","Expressing Opinions",
+"Making Suggestions","Making Decisions","Solving a Problem","Making a Complaint",
+"Apologizing Professionally","Workplace Conversations","Job Interviews",
+"Talking With a Customer","Talking With a Manager","Making an Appointment",
+"Office Phone Calls","Meetings","Giving Instructions","Asking Questions at Work",
+"Discussing a Project","Talking About Money","Banking","Using an ATM",
+"Online Shopping","Using the Internet","Social Media Conversations",
+"Learning English","Practicing English","Common English Mistakes",
+"Understanding Fast English","Everyday Expressions","Making Conversation",
+"Keeping a Conversation Going","Speaking Politely","Speaking Confidently",
+"Natural English","Travel Conversations","Emergency Conversations",
+"Real-Life Situations","Advanced Everyday Conversations",
 "Speaking English Confidently"
-
 ];
-
-
-/* =========================
-   CERTIFICATE
-========================= */
-
-function updateCertificate(){
-
-const status=
-$("certificateStatus");
-
-const button=
-$("certificateBtn");
-
-if(!status||!button)return;
-
-
-if(!premium){
-
-status.textContent=
-"🔒 Premium membership required";
-
-status.style.color=
-"#dc2626";
-
-button.disabled=true;
-
-return;
-
-}
-
-
-if(completed.length<100){
-
-const remaining=
-100-completed.length;
-
-status.textContent=
-"📚 Complete all 100 lessons first ("+
-completed.length+
-"/100)";
-
-status.style.color=
-"#d97706";
-
-button.disabled=true;
-
-return;
-
-}
-
-
-status.textContent=
-"✓ Premium active • All 100 lessons completed";
-
-status.style.color=
-"#16a34a";
-
-button.disabled=false;
-
-}
-
-
-function openCertificate(){
-
-if(!premium){
-
-alert(
-"Premium membership is required to get your certificate."
-);
-
-return;
-
-}
-
-
-if(completed.length<100){
-
-alert(
-"Please complete all 100 lessons before taking the final test."
-);
-
-return;
-
-}
-
-
-location.href=
-"/Aca/certificate.html";
-
-}
-
-
-/* =========================
-   LOAD LESSONS
-========================= */
 
 async function loadLessons(){
 
 try{
 
-const r=
-await fetch(
+const r=await fetch(
 `${API}/lessons?course=${COURSE}&language=en`,
 {headers}
 );
 
 if(r.status===401){
-
 logout();
-
 return;
-
 }
 
+const d=await r.json();
 
-const d=
-await r.json();
+if(!r.ok||!d.success)
+throw Error(d.error||d.message||"Unable to load lessons.");
 
-
-if(!r.ok||!d.success){
-
-throw Error(
-d.error||
-d.message||
-"Unable to load lessons."
-);
-
-}
-
-
-premium=
-!!d.premium;
-
+premium=!!d.premium;
 
 $("premiumStatus").innerHTML=
 premium
 ?'<span class="active">✓ Premium Active</span>'
 :"Premium not active";
 
-
 $("premiumBtn").style.display=
-premium
-?"none"
-:"block";
+premium?"none":"block";
 
-
-updateCertificate();
-
-
-const apiLessons=
-d.lessons||[];
-
+const apiLessons=d.lessons||[];
 
 $("lessons").innerHTML=
 titles.map((title,i)=>{
 
 const n=i+1;
 
-const api=
-apiLessons.find(
+const api=apiLessons.find(
 x=>+x.lesson_number===n
 );
 
-
-const free=
-n===1||
-+api?.is_free===1;
-
-
-const unlocked=
-free||
-premium;
-
-
-const done=
-completed.includes(n);
-
+const free=n===1||+api?.is_free===1;
+const unlocked=free||premium;
+const done=completed.includes(n);
 
 return `
-
 <article class="lesson">
 
-<div class="num">
-LESSON ${n}
-</div>
+<div class="num">LESSON ${n}</div>
 
-<h3>
-${esc(api?.title||title)}
-</h3>
+<h3>${esc(api?.title||title)}</h3>
 
-<p>
-${esc(
+<p>${esc(
 api?.summary||
 api?.objectives||
 "Practical English conversation"
-)}
-</p>
+)}</p>
 
 <div class="bottom">
 
 <span class="free">
-
-${
-done
-?"✓ COMPLETED"
-:free
-?"FREE"
-:"PREMIUM"
-}
-
+${done?"✓ COMPLETED":free?"FREE":"PREMIUM"}
 </span>
 
 <button
 class="${unlocked?"open":"lock"}"
-onclick="${
-unlocked
+onclick="${unlocked
 ?`openLesson(${n})`
-:"buyPremium()"
-}">
-
-${
-unlocked
-?"Open"
-:"🔒 Locked"
-}
-
+:"buyPremium()"}">
+${unlocked?"Open":"🔒 Locked"}
 </button>
 
 </div>
 
-</article>
-
-`;
-
+</article>`;
 }).join("");
-
 
 }catch(e){
 
 console.error(e);
 
 $("lessons").innerHTML=
-`<div class="error">
-${esc(
-e.message||
-"Unable to load lessons."
-)}
-</div>`;
-
+`<div class="error">${esc(e.message||"Unable to load lessons.")}</div>`;
 }
-
 }
-
-
-/* =========================
-   OPEN LESSON
-========================= */
 
 async function openLesson(n){
 
 stopSpeech();
 
-$("modalBg").style.display=
-"block";
-
-$("modalNum").textContent=
-"LESSON "+n;
-
-$("modalTitle").textContent=
-"Loading...";
-
+$("modalBg").style.display="block";
+$("modalNum").textContent="LESSON "+n;
+$("modalTitle").textContent="Loading...";
 $("modalBody").innerHTML=
 '<div class="loading">Loading lesson...</div>';
 
-
 try{
 
-const [en,si,ta]=
-await Promise.all([
-
+const [en,si,ta]=await Promise.all([
 getLesson(n,"en"),
 getLesson(n,"si"),
 getLesson(n,"ta")
-
 ]);
-
 
 const l=en.lesson;
 
+if(!l)
+throw Error("Lesson data not found.");
 
-if(!l){
-
-throw Error(
-"Lesson data not found."
-);
-
-}
-
-
-$("modalTitle").textContent=
-l.title;
-
+$("modalTitle").textContent=l.title;
 
 dialogues=[];
 
-
-const enD=
-l.dialogues||[];
-
-const siD=
-si.lesson?.dialogues||[];
-
-const taD=
-ta.lesson?.dialogues||[];
-
+const enD=l.dialogues||[];
+const siD=si.lesson?.dialogues||[];
+const taD=ta.lesson?.dialogues||[];
 
 for(let i=0;i<enD.length;i++){
 
 dialogues.push({
 
-number:
-enD[i].dialogue_number,
+number:enD[i].dialogue_number,
 
 lines:[
-
 {
 language:"English",
 speaker:enD[i].speaker_a,
 text:enD[i].text_a
 },
-
 {
 language:"English",
 speaker:enD[i].speaker_b,
 text:enD[i].text_b
 },
-
 {
 language:"Sinhala",
 speaker:siD[i]?.speaker_a||"",
 text:siD[i]?.text_a||""
 },
-
 {
 language:"Sinhala",
 speaker:siD[i]?.speaker_b||"",
 text:siD[i]?.text_b||""
 },
-
 {
 language:"Tamil",
 speaker:taD[i]?.speaker_a||"",
 text:taD[i]?.text_a||""
 },
-
 {
 language:"Tamil",
 speaker:taD[i]?.speaker_b||"",
 text:taD[i]?.text_b||""
 }
-
 ]
 
 });
-
 }
 
-
 let html="";
-
 
 if(l.objectives){
 
 html+=`
-
-<div class="card"
-style="margin:0 0 15px">
-
+<div class="card" style="margin:0 0 15px">
 ${esc(l.objectives)}
-
-</div>
-
-`;
-
+</div>`;
 }
 
-
 html+=`
-
 <div class="controls">
 
-<select
-id="languageSelect"
+<select id="languageSelect"
 class="language-select"
 onchange="changeLanguage()">
 
-<option value="en">
-English Only
-</option>
-
-<option value="ta">
-English → Tamil
-</option>
-
-<option value="si">
-English → Sinhala
-</option>
+<option value="en">English Only</option>
+<option value="ta">English → Tamil</option>
+<option value="si">English → Sinhala</option>
 
 </select>
 
-<button
-id="playBtn"
-class="play"
-onclick="playAll()">
-
+<button id="playBtn" class="play" onclick="playAll()">
 ▶️ Play All
-
 </button>
 
-<button
-class="stop"
-onclick="stopSpeech()">
-
+<button class="stop" onclick="stopSpeech()">
 ⏹️ Stop
-
 </button>
 
-</div>
-
-`;
-
+</div>`;
 
 html+=dialogues.map((d,i)=>`
 
-<div
-class="dialogue"
-id="dialogue-${i}">
+<div class="dialogue" id="dialogue-${i}">
 
 <div class="num">
 DIALOGUE ${d.number}
@@ -837,97 +425,27 @@ ${renderLines(d)}
 
 `).join("");
 
-
 html+=`
+<button class="complete" onclick="completeLesson(${n})">
 
-<button
-class="complete"
-onclick="completeLesson(${n})">
-
-${
-completed.includes(n)
+${completed.includes(n)
 ?"✓ Lesson Completed"
-:"Mark Lesson Complete"
-}
+:"Mark Lesson Complete"}
 
-</button>
+</button>`;
 
-`;
-
-
-$("modalBody").innerHTML=
-html;
-
+$("modalBody").innerHTML=html;
 
 }catch(e){
 
 console.error(e);
 
 $("modalBody").innerHTML=
-`<div class="error">
-${esc(
-e.message||
-"Unable to load this lesson."
-)}
-</div>`;
-
+`<div class="error">${esc(
+e.message||"Unable to load this lesson."
+)}</div>`;
 }
-
 }
-
-
-/* =========================
-   GET LESSON
-========================= */
-
-async function getLesson(n,language){
-
-const r=
-await fetch(
-`${API}/lesson?course=${COURSE}&lesson=${n}&language=${language}`,
-{headers}
-);
-
-
-const text=
-await r.text();
-
-
-let d;
-
-
-try{
-
-d=JSON.parse(text);
-
-}catch{
-
-throw Error(
-`Lesson server error (${r.status})`
-);
-
-}
-
-
-if(!r.ok||!d.success){
-
-throw Error(
-d.error||
-d.message||
-"Unable to load lesson."
-);
-
-}
-
-
-return d;
-
-}
-
-
-/* =========================
-   RENDER TRANSLATION
-========================= */
 
 function renderLines(d){
 
@@ -937,136 +455,112 @@ const show=
 selectedLanguage==="en"
 ?x.language==="English"
 :selectedLanguage==="ta"
-?x.language==="English"||
-x.language==="Tamil"
-:x.language==="English"||
-x.language==="Sinhala";
+?x.language==="English"||x.language==="Tamil"
+:x.language==="English"||x.language==="Sinhala";
 
+return show&&x.text?`
 
-return show&&x.text
-?`
-
-<div class="lang">
-${x.language}
-</div>
+<div class="lang">${x.language}</div>
 
 <div class="text">
 <b>${esc(x.speaker)}:</b>
 ${esc(x.text)}
 </div>
 
-`
-:"";
+`:"";
 
 }).join("");
-
 }
-
-
-/* =========================
-   LANGUAGE
-========================= */
 
 function changeLanguage(){
 
-selectedLanguage=
-$("languageSelect").value;
+selectedLanguage=$("languageSelect").value;
 
 stopSpeech();
 
-
 dialogues.forEach((d,i)=>{
 
-const box=
-$("dialogue-"+i);
-
+const box=$("dialogue-"+i);
 
 if(box){
-
 box.innerHTML=`
-
 <div class="num">
 DIALOGUE ${d.number}
 </div>
-
 ${renderLines(d)}
-
 `;
-
 }
 
 });
+}
 
+async function getLesson(n,language){
+
+const r=await fetch(
+`${API}/lesson?course=${COURSE}&lesson=${n}&language=${language}`,
+{headers}
+);
+
+const text=await r.text();
+
+let d;
+
+try{
+d=JSON.parse(text);
+}catch{
+throw Error(`Lesson server error (${r.status})`);
+}
+
+if(!r.ok||!d.success)
+throw Error(d.error||d.message||"Unable to load lesson.");
+
+return d;
 }
 
 
-/* =========================
-   PREMIUM PAYMENT
-========================= */
+/* PAYHERE PREMIUM CHECKOUT */
 
 async function buyPremium(){
 
-const btn=
-$("premiumBtn");
-
+const btn=$("premiumBtn");
 
 btn.disabled=true;
-
-btn.textContent=
-"Connecting...";
-
+btn.textContent="Connecting...";
 
 try{
 
-const currentToken=
-localStorage.getItem("createlk_token");
+const currentToken=localStorage.getItem("createlk_token");
 
-
-if(!currentToken){
-
+if(!currentToken)
 throw Error(
 "Your login session has expired. Please login again."
 );
 
-}
-
-
-const r=
-await fetch(
+const r=await fetch(
 `${PAY}/premium-checkout`,
 {
 method:"POST",
 headers:{
-"Content-Type":
-"application/json",
-"Authorization":
-"Bearer "+currentToken
+"Content-Type":"application/json",
+"Authorization":"Bearer "+currentToken
 },
 body:"{}"
 }
 );
 
-
-const text=
-await r.text();
-
+const text=await r.text();
 
 let d;
 
-
 try{
-
 d=JSON.parse(text);
-
 }catch{
 
 throw Error(
 "Payment server returned an invalid response ("+
 r.status+")."
 );
-
 }
-
 
 if(!r.ok||!d.success){
 
@@ -1075,57 +569,33 @@ d.message||
 d.error||
 `Checkout failed (${r.status})`
 );
-
 }
 
+const fields=d.fields||d.checkout;
 
-const fields=
-d.fields||
-d.checkout;
+if(!fields)
+throw Error("Payment details are missing.");
 
-
-if(!fields){
-
-throw Error(
-"Payment details are missing."
-);
-
-}
-
-
-const form=
-document.createElement("form");
-
+const form=document.createElement("form");
 
 form.method="POST";
-
-form.action=
-"https://www.payhere.lk/pay/checkout";
-
+form.action="https://www.payhere.lk/pay/checkout";
 form.style.display="none";
 
+Object.entries(fields).forEach(([key,value])=>{
 
-Object.entries(fields)
-.forEach(([key,value])=>{
-
-const input=
-document.createElement("input");
+const input=document.createElement("input");
 
 input.type="hidden";
-
 input.name=key;
-
 input.value=value??"";
 
 form.appendChild(input);
-
 });
-
 
 document.body.appendChild(form);
 
 form.submit();
-
 
 }catch(e){
 
@@ -1140,18 +610,12 @@ e.message||
 );
 
 btn.disabled=false;
-
-btn.textContent=
-"GET PREMIUM";
-
+btn.textContent="GET PREMIUM";
 }
-
 }
 
 
-/* =========================
-   SPEECH
-========================= */
+/* SPEECH */
 
 const voiceLang={
 English:"en-US",
@@ -1159,64 +623,44 @@ Sinhala:"si-LK",
 Tamil:"ta-LK"
 };
 
-
 function playAll(){
 
 stopSpeech();
 
 playing=true;
 
-
 if($("playBtn")){
-
-$("playBtn").textContent=
-"⏸️ Playing...";
-
+$("playBtn").textContent="⏸️ Playing...";
 }
-
 
 let index=0;
 
-
 function next(){
 
-if(
-!playing||
-index>=dialogues.length
-){
+if(!playing||index>=dialogues.length){
 
 playing=false;
 
 if($("playBtn")){
-
-$("playBtn").textContent=
-"▶️ Play All";
-
+$("playBtn").textContent="▶️ Play All";
 }
 
 return;
-
 }
 
-
-const box=
-$("dialogue-"+index);
-
+const box=$("dialogue-"+index);
 
 document.querySelectorAll(".dialogue")
 .forEach(x=>
 x.classList.remove("playing")
 );
 
-
 box.classList.add("playing");
-
 
 box.scrollIntoView({
 behavior:"smooth",
 block:"center"
 });
-
 
 const allowed=
 selectedLanguage==="en"
@@ -1225,12 +669,10 @@ selectedLanguage==="en"
 ?["English","Tamil"]
 :["English","Sinhala"];
 
-
 const lines=
 dialogues[index].lines.filter(
 x=>allowed.includes(x.language)
 );
-
 
 speakLines(
 lines,
@@ -1240,73 +682,37 @@ index++;
 next();
 }
 );
-
 }
-
 
 next();
-
 }
-
 
 function speakLines(lines,i,done){
 
-if(
-!playing||
-i>=lines.length
-){
-
+if(!playing||i>=lines.length){
 done();
-
 return;
-
 }
 
-
-const line=
-lines[i];
-
+const line=lines[i];
 
 if(!line.text){
-
-speakLines(
-lines,
-i+1,
-done
-);
-
+speakLines(lines,i+1,done);
 return;
-
 }
-
 
 const u=
-new SpeechSynthesisUtterance(
-line.text
-);
+new SpeechSynthesisUtterance(line.text);
 
-
-u.lang=
-voiceLang[line.language];
-
+u.lang=voiceLang[line.language];
 u.rate=.88;
 
-
 u.onend=()=>{
-
-speakLines(
-lines,
-i+1,
-done
-);
-
+speakLines(lines,i+1,done);
 };
 
-
 speechSynthesis.speak(u);
-
 }
-
 
 function stopSpeech(){
 
@@ -1314,33 +720,24 @@ playing=false;
 
 speechSynthesis.cancel();
 
-
 document.querySelectorAll(".dialogue")
 .forEach(x=>
 x.classList.remove("playing")
 );
 
-
 if($("playBtn")){
-
-$("playBtn").textContent=
-"▶️ Play All";
-
+$("playBtn").textContent="▶️ Play All";
 }
-
 }
 
 
-/* =========================
-   COMPLETE LESSON
-========================= */
+/* LESSON COMPLETION */
 
 async function completeLesson(n){
 
 try{
 
-const r=
-await fetch(
+const r=await fetch(
 `${API}/lesson/complete`,
 {
 method:"POST",
@@ -1352,35 +749,22 @@ lesson_number:n
 }
 );
 
-
-const d=
-await r.json();
-
-
-if(!r.ok||!d.success){
-
-throw Error(
-d.error||
-d.message||
-"Unable to complete lesson."
-);
-
+if(r.status===401){
+logout();
+return;
 }
 
+const d=await r.json();
 
-if(!completed.includes(n)){
+if(!r.ok||!d.success)
+throw Error(d.error||d.message);
 
+if(!completed.includes(n))
 completed.push(n);
-
-}
-
-
-updateCertificate();
 
 closeLesson();
 
 loadLessons();
-
 
 }catch(e){
 
@@ -1388,103 +772,69 @@ alert(
 e.message||
 "Unable to complete lesson."
 );
-
+}
 }
 
-}
 
-
-/* =========================
-   LOAD PROGRESS
-========================= */
+/* PROGRESS IS STILL LOADED
+   INTERNALLY FOR LESSON STATUS */
 
 async function loadProgress(){
 
 try{
 
-const r=
-await fetch(
+const r=await fetch(
 `${API}/progress?course=${COURSE}`,
 {headers}
 );
 
-
 if(r.status===401){
-
 logout();
-
 return;
-
 }
 
-
-const d=
-await r.json();
-
+const d=await r.json();
 
 if(d.success){
 
-completed=
-(d.lessons||[])
+completed=(d.lessons||[])
 .map(x=>+x.lesson_number);
-
-
-updateCertificate();
 
 }
 
 }catch(e){
 
-console.error(
-"Progress:",
-e
-);
+console.error("Progress:",e);
 
 }
 
 }
 
 
-/* =========================
-   CLOSE LESSON
-========================= */
+/* CLOSE LESSON */
 
 function closeLesson(){
 
 stopSpeech();
 
-$("modalBg").style.display=
-"none";
-
+$("modalBg").style.display="none";
 }
 
 
-/* =========================
-   LOGOUT
-========================= */
+/* LOGOUT */
 
 function logout(){
 
-localStorage.removeItem(
-"createlk_token"
-);
-
-localStorage.removeItem(
-"createlk_customer"
-);
+localStorage.removeItem("createlk_token");
+localStorage.removeItem("createlk_customer");
 
 sessionStorage.clear();
 
-location.replace(
-"/index.html"
-);
-
+location.replace("/index.html");
 }
 
 
-/* =========================
-   ESCAPE HTML
-========================= */
+/* ESCAPE HTML */
 
 function esc(v){
 
@@ -1498,32 +848,21 @@ return String(v??"")
 }
 
 
-/* =========================
-   MODAL CLICK
-========================= */
+/* MODAL BACKGROUND */
 
 $("modalBg").onclick=e=>{
 
-if(
-e.target===
-$("modalBg")
-){
-
+if(e.target===$("modalBg"))
 closeLesson();
-
-}
 
 };
 
 
-/* =========================
-   INIT
-========================= */
+/* INIT */
 
 async function init(){
 
 await loadProgress();
-
 await loadLessons();
 
 }
