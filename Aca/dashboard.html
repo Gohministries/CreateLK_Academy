@@ -6,7 +6,10 @@
 <title>CreateLK Academy</title>
 
 <style>
-*{box-sizing:border-box;margin:0}
+*{
+box-sizing:border-box;
+margin:0
+}
 
 body{
 font-family:Arial,sans-serif;
@@ -18,6 +21,11 @@ button{
 cursor:pointer;
 font:700 13px Arial;
 transition:.2s
+}
+
+button:disabled{
+opacity:.7;
+cursor:not-allowed
 }
 
 header{
@@ -173,13 +181,14 @@ display:grid;
 gap:10px
 }
 
-/* Removed the box around lesson buttons */
-.today-card,.lesson{
+.today-card,
+.lesson{
 padding:0;
 position:relative
 }
 
-.today-card:before,.lesson:before{
+.today-card:before,
+.lesson:before{
 display:none
 }
 
@@ -198,7 +207,7 @@ gap:10px
 }
 
 .lesson{
-min-height:45px;
+min-height:44px;
 display:flex;
 flex-direction:column
 }
@@ -208,17 +217,21 @@ margin-top:auto;
 padding-top:0
 }
 
+/* SAME SIZE FOR ALL LESSON BUTTONS */
 .today-card button,
 .lesson button,
 .try-today{
 display:block;
-width:max-content;
-min-width:180px;
+width:220px;
+height:44px;
 margin:9px auto 0;
 text-align:center;
 border:0;
-padding:10px 18px;
-border-radius:10px
+padding:0 14px;
+border-radius:10px;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis
 }
 
 .open{
@@ -303,7 +316,9 @@ gap:8px;
 margin-bottom:15px
 }
 
-.play,.stop,.language-select{
+.play,
+.stop,
+.language-select{
 flex:1;
 padding:10px;
 border-radius:9px;
@@ -383,9 +398,11 @@ font-size:13px
 }
 
 @media(max-width:750px){
+
 .lessons{
 grid-template-columns:repeat(2,1fr)
 }
+
 }
 
 @media(max-width:520px){
@@ -425,7 +442,15 @@ gap:9px
 }
 
 .lesson{
-min-height:45px
+min-height:44px
+}
+
+.today-card button,
+.lesson button,
+.try-today{
+width:100%;
+max-width:320px;
+height:44px
 }
 
 .controls{
@@ -460,25 +485,45 @@ location.replace("/Aca/login.html");
 
 <header>
 <div class="head">
-<div class="logo">CreateLK <b>Academy</b></div>
-<button class="logout" onclick="logout()">Logout</button>
+
+<div class="logo">
+CreateLK <b>Academy</b>
+</div>
+
+<button class="logout" onclick="logout()">
+Logout
+</button>
+
 </div>
 </header>
 
 <main class="wrap">
 
 <section class="hero">
+
 <small>ONLINE COURSE</small>
+
 <h1>Spoken English</h1>
-<p>Build confidence through practical conversations and real-life situations.</p>
-<span class="badge">100 Lessons • 1,000 Practical Dialogues</span>
+
+<p>
+Build confidence through practical conversations and real-life situations.
+</p>
+
+<span class="badge">
+100 Lessons • 1,000 Practical Dialogues
+</span>
+
 </section>
 
 <section class="card premium-card">
+
 <div class="row">
 
 <div>
-<div class="premium-title">👑 Premium Membership</div>
+
+<div class="premium-title">
+👑 Premium Membership
+</div>
 
 <div class="price">
 LKR 999 <span class="status">• 30 Days</span>
@@ -491,21 +536,28 @@ Unlock all 100 lessons and learn through practical conversations for everyday, t
 <div id="premiumStatus" class="status">
 Checking...
 </div>
+
 </div>
 
-<button id="premiumBtn"
+<button
+id="premiumBtn"
 class="premium"
 onclick="buyPremium()">
 GET PREMIUM 👑
 </button>
 
 </div>
+
 </section>
 
-<h2 class="section">✨ One Lesson for Today</h2>
+<h2 class="section">
+✨ One Lesson for Today
+</h2>
 
 <div id="todayLessons" class="today">
-<div class="loading">Loading...</div>
+<div class="loading">
+Loading...
+</div>
 </div>
 
 <section class="card" style="text-align:center">
@@ -524,10 +576,14 @@ Try a different lesson and start learning today.
 
 </section>
 
-<h2 class="section">100 Spoken English Lessons</h2>
+<h2 class="section">
+100 Spoken English Lessons
+</h2>
 
 <div id="lessons">
-<div class="loading">Loading...</div>
+<div class="loading">
+Loading...
+</div>
 </div>
 
 </main>
@@ -538,11 +594,17 @@ Try a different lesson and start learning today.
 
 <div class="modal-head">
 
-<button class="close" onclick="closeLesson()">×</button>
+<button class="close" onclick="closeLesson()">
+×
+</button>
 
-<small id="modalNum">LESSON</small>
+<small id="modalNum">
+LESSON
+</small>
 
-<h2 id="modalTitle">Loading...</h2>
+<h2 id="modalTitle">
+Loading...
+</h2>
 
 </div>
 
@@ -566,11 +628,15 @@ const COURSE="spoken-english";
 
 const $=id=>document.getElementById(id);
 
-let premium=false,
-completed=[],
-dialogues=[],
-playing=false,
-selectedLanguage="en";
+let premium=false;
+
+let completed=JSON.parse(
+localStorage.getItem("createlk_completed")||"[]"
+);
+
+let dialogues=[];
+let playing=false;
+let selectedLanguage="en";
 
 const titles=[
 "Introducing Yourself","Greetings and Small Talk","Talking About Your Family",
@@ -616,19 +682,47 @@ const headers=()=>({
 
 function updatePremium(){
 
-$("premiumStatus").innerHTML=
-premium
+$("premiumStatus").innerHTML=premium
 ?'<span class="active">✓ Premium Active</span>'
 :"Premium not active";
 
 $("premiumBtn").style.display=
 premium?"none":"block";
+
+}
+
+function dailyLesson(){
+
+const key="createlk_daily_lesson";
+
+const today=new Date().toISOString().slice(0,10);
+
+const saved=JSON.parse(
+localStorage.getItem(key)||"null"
+);
+
+if(saved&&saved.date===today)
+return saved.lesson;
+
+const n=Math.floor(Math.random()*100)+1;
+
+localStorage.setItem(
+key,
+JSON.stringify({
+date:today,
+lesson:n
+})
+);
+
+return n;
+
 }
 
 function renderToday(){
 
-let n=Math.floor(Math.random()*100)+1;
-let unlocked=n===1||premium;
+const n=dailyLesson();
+
+const unlocked=n===1||premium;
 
 $("todayLessons").innerHTML=`
 
@@ -649,16 +743,20 @@ ${esc(titles[n-1])}${n===1?"":" 👑"}
 </article>
 
 `;
+
 }
 
 function tryToday(){
 
-let n=Math.floor(Math.random()*100)+1;
+const n=Math.floor(Math.random()*100)+1;
 
-if(n!==1&&!premium)
-return buyPremium();
+if(n!==1&&!premium){
+buyPremium();
+return;
+}
 
 openLesson(n);
+
 }
 
 async function loadLessons(){
@@ -759,8 +857,11 @@ cache:"no-store"
 );
 
 if(r.status===401){
+
 logout();
+
 throw Error("Login session expired.");
+
 }
 
 let d=await r.json().catch(()=>null);
@@ -769,6 +870,7 @@ if(!r.ok||!d?.success)
 throw Error(d?.error||"Unable to load lesson.");
 
 return d;
+
 }
 
 async function openLesson(n){
@@ -808,24 +910,31 @@ number:x.dialogue_number||i+1,
 lines:[
 
 ["English",x.speaker_a,x.text_a],
-
 ["English",x.speaker_b,x.text_b],
 
-["Sinhala",
+[
+"Sinhala",
 si.lesson?.dialogues?.[i]?.speaker_a,
-si.lesson?.dialogues?.[i]?.text_a],
+si.lesson?.dialogues?.[i]?.text_a
+],
 
-["Sinhala",
+[
+"Sinhala",
 si.lesson?.dialogues?.[i]?.speaker_b,
-si.lesson?.dialogues?.[i]?.text_b],
+si.lesson?.dialogues?.[i]?.text_b
+],
 
-["Tamil",
+[
+"Tamil",
 ta.lesson?.dialogues?.[i]?.speaker_a,
-ta.lesson?.dialogues?.[i]?.text_a],
+ta.lesson?.dialogues?.[i]?.text_a
+],
 
-["Tamil",
+[
+"Tamil",
 ta.lesson?.dialogues?.[i]?.speaker_b,
-ta.lesson?.dialogues?.[i]?.text_b]
+ta.lesson?.dialogues?.[i]?.text_b
+]
 
 ].map(x=>({
 language:x[0],
@@ -848,9 +957,17 @@ id="languageSelect"
 class="language-select"
 onchange="changeLanguage()">
 
-<option value="en">English Only</option>
-<option value="ta">English → Tamil</option>
-<option value="si">English → Sinhala</option>
+<option value="en">
+English Only
+</option>
+
+<option value="ta">
+English → Tamil
+</option>
+
+<option value="si">
+English → Sinhala
+</option>
 
 </select>
 
@@ -948,9 +1065,13 @@ dialogues.forEach((d,i)=>{
 
 let b=$("dialogue-"+i);
 
-if(b)
+if(b){
+
 b.innerHTML=
-`<div class="num">DIALOGUE ${esc(d.number)}</div>${renderLines(d)}`;
+`<div class="num">DIALOGUE ${esc(d.number)}</div>
+${renderLines(d)}`;
+
+}
 
 });
 
@@ -961,6 +1082,7 @@ async function buyPremium(){
 let btn=$("premiumBtn");
 
 btn.disabled=true;
+
 btn.textContent="Connecting...";
 
 try{
@@ -1048,6 +1170,7 @@ e.message||
 );
 
 btn.disabled=false;
+
 btn.textContent="GET PREMIUM 👑";
 
 }
@@ -1080,7 +1203,9 @@ return stopSpeech();
 
 document
 .querySelectorAll(".dialogue")
-.forEach(x=>x.classList.remove("playing"));
+.forEach(x=>
+x.classList.remove("playing")
+);
 
 let box=$("dialogue-"+i);
 
@@ -1103,6 +1228,7 @@ x=>allowed().includes(x.language)
 ()=>{
 
 i++;
+
 next();
 
 }
@@ -1146,7 +1272,9 @@ speechSynthesis.cancel();
 
 document
 .querySelectorAll(".dialogue")
-.forEach(x=>x.classList.remove("playing"));
+.forEach(x=>
+x.classList.remove("playing")
+);
 
 if($("playBtn"))
 $("playBtn").textContent="▶️ Play All";
@@ -1155,8 +1283,16 @@ $("playBtn").textContent="▶️ Play All";
 
 function completeLesson(n){
 
-if(!completed.includes(n))
+if(!completed.includes(n)){
+
 completed.push(n);
+
+localStorage.setItem(
+"createlk_completed",
+JSON.stringify(completed)
+);
+
+}
 
 alert("Lesson "+n+" completed!");
 
@@ -1202,7 +1338,10 @@ await loadLessons();
 
 }
 
-window.addEventListener("pageshow",refresh);
+window.addEventListener(
+"pageshow",
+refresh
+);
 
 document.addEventListener(
 "visibilitychange",
