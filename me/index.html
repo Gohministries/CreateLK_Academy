@@ -12,7 +12,8 @@ button,input,select{font:inherit}
 header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:18px}
 .head,.wrap{max-width:1000px;margin:auto}
 .head{display:flex;justify-content:space-between;align-items:center}
-.logo{font-size:21px;font-weight:800}.sub{font-size:12px;opacity:.8;margin-top:3px}
+.logo{font-size:21px;font-weight:800}
+.sub{font-size:12px;opacity:.8;margin-top:3px}
 .wrap{padding:18px}
 .card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 5px 20px #0001}
 .row,.status{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
@@ -20,26 +21,37 @@ header{background:linear-gradient(135deg,#111827,#1e3a8a);color:#fff;padding:18p
 h2{font-size:18px;margin:0 0 12px}
 input,select{padding:11px;border:1px solid #d1d5db;border-radius:11px;background:#fff}
 button{border:0;border-radius:11px;padding:10px 14px;font-weight:700;cursor:pointer}
-.primary{background:#2563eb;color:#fff}.light{background:#e5e7eb;color:#111827}
+.primary{background:#2563eb;color:#fff}
+.light{background:#e5e7eb;color:#111827}
 .danger{background:#fee2e2;color:#991b1b}
+.actions{display:flex;gap:7px;flex-wrap:wrap}
 .badge{display:inline-block;background:#fef3c7;color:#92400e;padding:7px 12px;border-radius:20px;font-size:12px;font-weight:700}
 .badge.ok{background:#dcfce7;color:#166534}
-.actions{display:flex;gap:7px;flex-wrap:wrap}
 .files{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
 .file{border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;background:#fff}
-.preview{height:140px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:48px}
-.info{padding:13px}.name{font-weight:700;word-break:break-word}.meta{font-size:12px;color:#6b7280;margin:5px 0}
-.backup{font-size:12px;font-weight:700;margin:8px 0}.pending{color:#b45309}.done{color:#15803d}
-.file-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}.file-actions button{padding:8px;font-size:12px}
+.preview{height:150px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.preview img{width:100%;height:100%;object-fit:cover;cursor:pointer}
+.icon{font-size:48px}
+.info{padding:13px}
+.name{font-weight:700;word-break:break-word}
+.meta{font-size:12px;color:#6b7280;margin:5px 0}
+.backup{font-size:12px;font-weight:700;margin:8px 0}
+.pending{color:#b45309}.done{color:#15803d}
+.file-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.file-actions button{padding:8px;font-size:12px}
 .empty{text-align:center;padding:30px;color:#6b7280}
 #msg{margin-top:10px;font-size:13px;font-weight:700}
 .modal{position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;padding:15px;z-index:10}
 .modalbox{background:#fff;width:min(900px,100%);max-height:90vh;overflow:auto;border-radius:18px;padding:15px}
 .modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.modalbuttons{display:flex;gap:7px}
 #viewer{display:block;max-width:100%;max-height:75vh;margin:auto}
 pre{white-space:pre-wrap;word-break:break-word}
 .hidden{display:none!important}
-@media(max-width:600px){.row{display:grid;grid-template-columns:1fr}.files{grid-template-columns:1fr}}
+@media(max-width:600px){
+.row{display:grid;grid-template-columns:1fr}
+.files{grid-template-columns:1fr}
+}
 </style>
 </head>
 
@@ -70,8 +82,10 @@ pre{white-space:pre-wrap;word-break:break-word}
 
 <div class="card">
 <h2>Upload File</h2>
+
 <div class="row">
 <input id="fileInput" type="file">
+
 <select id="category">
 <option>General</option>
 <option>Photos</option>
@@ -81,18 +95,24 @@ pre{white-space:pre-wrap;word-break:break-word}
 <option>Other</option>
 </select>
 </div>
-<button class="primary" style="margin-top:10px" onclick="uploadFile()">🔐 Encrypt & Upload</button>
+
+<button class="primary" style="margin-top:10px" onclick="uploadFile()">
+🔐 Encrypt & Upload
+</button>
+
 <div id="msg"></div>
 </div>
 
 <div class="card">
 <div class="status">
 <h2>My Files</h2>
+
 <div class="actions">
 <button class="light" onclick="setView('grid')">▦ Grid</button>
 <button class="light" onclick="setView('list')">☷ List</button>
 </div>
 </div>
+
 <div id="files" class="files"></div>
 </div>
 
@@ -100,11 +120,17 @@ pre{white-space:pre-wrap;word-break:break-word}
 
 <div id="modal" class="modal hidden" onclick="closeModal(event)">
 <div class="modalbox">
+
 <div class="modalhead">
 <b id="modalTitle">Preview</b>
-<button class="danger" onclick="hideModal()">✕</button>
+
+<div class="modalbuttons">
+<button class="danger" onclick="hideModal()">❌ Cancel</button>
 </div>
+</div>
+
 <div id="modalContent"></div>
+
 </div>
 </div>
 
@@ -113,95 +139,173 @@ const API="https://personal.createlk.workers.dev";
 let files=[],viewMode="grid",keyCache=null;
 
 /* Encryption */
+
 async function getKey(){
 if(keyCache)return keyCache;
+
 const h=await crypto.subtle.digest(
-"SHA-256",new TextEncoder().encode("personal-vault-key")
+"SHA-256",
+new TextEncoder().encode("personal-vault-key")
 );
-return keyCache=await crypto.subtle.importKey(
+
+return keyCache=crypto.subtle.importKey(
 "raw",h,{name:"AES-GCM"},false,["encrypt","decrypt"]
 );
 }
 
 async function encryptData(buffer){
-const key=await getKey(),iv=crypto.getRandomValues(new Uint8Array(12));
-const e=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,buffer);
+const key=await getKey();
+const iv=crypto.getRandomValues(new Uint8Array(12));
+
+const e=await crypto.subtle.encrypt(
+{name:"AES-GCM",iv},key,buffer
+);
+
 const out=new Uint8Array(12+e.byteLength);
-out.set(iv);out.set(new Uint8Array(e),12);
+out.set(iv);
+out.set(new Uint8Array(e),12);
+
 return out;
 }
 
 async function decryptData(buffer){
-const key=await getKey(),d=new Uint8Array(buffer);
-if(d.length<=12)throw Error("Invalid encrypted file");
+const key=await getKey();
+const d=new Uint8Array(buffer);
+
+if(d.length<=12)
+throw Error("Invalid encrypted file");
+
 return crypto.subtle.decrypt(
-{name:"AES-GCM",iv:d.slice(0,12)},key,d.slice(12)
+{name:"AES-GCM",iv:d.slice(0,12)},
+key,
+d.slice(12)
 );
 }
 
 /* Auth */
+
 async function checkAuth(){
 try{
-const r=await fetch(API+"/api/auth/status",{credentials:"include"});
+const r=await fetch(API+"/api/auth/status",{
+credentials:"include"
+});
+
 const d=await r.json();
-if(d.authenticated===false||d.ok===false&&!d.authenticated){
-location.href="/auth/login.html";return false;
+
+if(d.authenticated===false){
+location.href="/auth/login.html";
+return false;
 }
+
 return true;
+
 }catch(e){
-location.href="/auth/login.html";return false;
+location.href="/auth/login.html";
+return false;
 }
 }
 
 async function logout(){
-try{await fetch(API+"/api/logout",{method:"POST",credentials:"include"})}catch(e){}
+try{
+await fetch(API+"/api/logout",{
+method:"POST",
+credentials:"include"
+});
+}catch(e){}
+
 location.href="/auth/login.html";
 }
 
 /* Google */
+
 async function googleStatus(){
 const el=document.getElementById("googleStatus");
+
 try{
-const r=await fetch(API+"/api/google/status",{credentials:"include"});
+const r=await fetch(API+"/api/google/status",{
+credentials:"include"
+});
+
 const d=await r.json();
+
 el.textContent=d.connected?"Connected":"Not connected";
 el.className="badge"+(d.connected?" ok":"");
+
 }catch(e){
-el.textContent="Not connected";el.className="badge";
+el.textContent="Not connected";
+el.className="badge";
 }
 }
 
 /* Files */
+
 async function loadFiles(){
+
 const box=document.getElementById("files");
-box.innerHTML='<div class="empty">🔄 Loading files...</div>';
+
+box.innerHTML=
+'<div class="empty">🔄 Loading files...</div>';
 
 try{
-const r=await fetch(API+"/api/items",{credentials:"include"});
-if(r.status===401){location.href="/auth/login.html";return}
+
+const r=await fetch(API+"/api/items",{
+credentials:"include"
+});
+
+if(r.status===401){
+location.href="/auth/login.html";
+return;
+}
+
 const d=await r.json();
-if(!d.ok)throw Error(d.error||"Unable to load files");
+
+if(!d.ok)
+throw Error(d.error||"Unable to load files");
 
 files=Array.isArray(d.items)?d.items:[];
+
 renderFiles();
+
 }catch(e){
-box.innerHTML='<div class="empty">❌ '+esc(e.message)+'</div>';
+
+box.innerHTML=
+'<div class="empty">❌ '+esc(e.message)+'</div>';
 }
 }
 
 function renderFiles(){
+
 const box=document.getElementById("files");
+
 if(!files.length){
-box.innerHTML='<div class="empty">No files yet.</div>';return;
+box.innerHTML=
+'<div class="empty">No files yet.</div>';
+return;
 }
+
 box.innerHTML=files.map(card).join("");
+
+/* Load thumbnails after cards appear */
+files.forEach(f=>{
+if((f.file_type||"").startsWith("image/")){
+loadThumbnail(Number(f.id));
+}
+});
 }
 
 function card(f){
-const id=Number(f.id),name=esc(f.filename||"Unnamed file");
-const type=f.file_type||"",size=formatSize(f.file_size||0);
-const backed=!!(f.google_drive_file_id||f.google_drive_url);
+
+const id=Number(f.id);
+const name=esc(f.filename||"Unnamed file");
+const type=f.file_type||"";
+const size=formatSize(f.file_size||0);
+const backed=!!(
+f.google_drive_file_id||
+f.google_drive_url
+);
+
 let icon="📄";
+
 if(type.startsWith("image/"))icon="🖼️";
 else if(type.startsWith("video/"))icon="🎬";
 else if(type.startsWith("audio/"))icon="🎵";
@@ -209,214 +313,526 @@ else if(type.includes("pdf"))icon="📕";
 
 return `
 <div class="file">
-<div class="preview">${icon}</div>
+
+<div class="preview" id="preview-${id}">
+<div class="icon">${icon}</div>
+</div>
+
 <div class="info">
+
 <div class="name">${name}</div>
-<div class="meta">${esc(f.category||"General")} • ${size}</div>
+
+<div class="meta">
+${esc(f.category||"General")} • ${size}
+</div>
+
 <div class="backup ${backed?"done":"pending"}">
 ${backed?"☁️ Backed up":"⏳ Backup pending"}
 </div>
+
 <div class="file-actions">
-<button class="light" onclick="viewFile(${id})">👁 View</button>
-<button class="light" onclick="downloadFile(${id})">⬇ Download</button>
-<button class="primary" onclick="backupFile(${id})">☁ Backup</button>
-<button class="danger" onclick="deleteFile(${id})">🗑 Delete</button>
+
+<button class="light"
+onclick="viewFile(${id})">
+👁 View
+</button>
+
+<button class="light"
+onclick="downloadFile(${id})">
+⬇ Download
+</button>
+
+<button class="primary"
+onclick="backupFile(${id})">
+☁ Backup
+</button>
+
+<button class="danger"
+onclick="deleteFile(${id})">
+🗑 Delete
+</button>
+
 </div>
+
 </div>
 </div>`;
 }
 
+/* Thumbnail */
+
+async function loadThumbnail(id){
+
+const f=files.find(x=>Number(x.id)===id);
+
+if(!f)return;
+
+if(!(f.file_type||"").startsWith("image/"))
+return;
+
+const box=document.getElementById("preview-"+id);
+
+if(!box)return;
+
+try{
+
+const data=await getFile(id);
+
+const blob=new Blob(
+[data],
+{type:f.file_type}
+);
+
+const url=URL.createObjectURL(blob);
+
+box.innerHTML=
+`<img src="${url}" alt="Thumbnail"
+onclick="viewFile(${id})">`;
+
+}catch(e){
+
+box.innerHTML='<div class="icon">🖼️</div>';
+}
+}
+
 /* Upload */
+
 async function uploadFile(){
+
 const input=document.getElementById("fileInput");
 const msg=document.getElementById("msg");
+
 if(!input.files.length){
-msg.textContent="Please select a file.";msg.style.color="#b91c1c";return;
+msg.textContent="Please select a file.";
+msg.style.color="#b91c1c";
+return;
 }
 
 const f=input.files[0];
-msg.textContent="🔐 Encrypting...";msg.style.color="#2563eb";
 
 try{
-const encrypted=await encryptData(await f.arrayBuffer());
+
+msg.textContent="🔐 Encrypting...";
+msg.style.color="#2563eb";
+
+const encrypted=
+await encryptData(await f.arrayBuffer());
+
 msg.textContent="☁️ Uploading...";
 
 const r=await fetch(API+"/api/photos",{
-method:"POST",credentials:"include",
+method:"POST",
+credentials:"include",
+
 headers:{
 "Content-Type":"application/octet-stream",
 "X-Filename":encodeURIComponent(f.name),
-"X-File-Type":encodeURIComponent(f.type||"application/octet-stream"),
-"X-Category":encodeURIComponent(document.getElementById("category").value)
+"X-File-Type":encodeURIComponent(
+f.type||"application/octet-stream"
+),
+"X-Category":encodeURIComponent(
+document.getElementById("category").value
+)
 },
+
 body:encrypted
 });
 
-if(r.status===401){location.href="/auth/login.html";return}
+if(r.status===401){
+location.href="/auth/login.html";
+return;
+}
+
 const d=await r.json();
-if(!d.ok)throw Error(d.error||"Upload failed");
+
+if(!d.ok)
+throw Error(d.error||"Upload failed");
 
 input.value="";
+
 msg.textContent="✅ Uploaded successfully.";
 msg.style.color="#15803d";
+
 await loadFiles();
+
 }catch(e){
+
 msg.textContent="❌ "+e.message;
 msg.style.color="#b91c1c";
 }
 }
 
 /* Get + decrypt */
+
 async function getFile(id){
-const r=await fetch(API+"/api/photos/"+id+"/download",{credentials:"include"});
-if(r.status===401){location.href="/auth/login.html";throw Error("Session expired")}
-if(!r.ok)throw Error("Unable to retrieve file");
+
+const r=await fetch(
+API+"/api/photos/"+id+"/download",
+{credentials:"include"}
+);
+
+if(r.status===401){
+location.href="/auth/login.html";
+throw Error("Session expired");
+}
+
+if(!r.ok)
+throw Error("Unable to retrieve file");
+
 return decryptData(await r.arrayBuffer());
 }
 
 /* View */
+
 async function viewFile(id){
+
 const f=files.find(x=>Number(x.id)===id);
+
 if(!f)return;
 
-showModal(f.filename||"Preview",
-'<div class="empty">🔐 Decrypting...</div>');
+showModal(
+f.filename||"Preview",
+'<div class="empty">🔐 Opening...</div>'
+);
 
 try{
-const data=await getFile(id);
-const type=f.file_type||"application/octet-stream";
-const blob=new Blob([data],{type}),url=URL.createObjectURL(blob);
 
-if(type.startsWith("image/"))
-showModal(f.filename,`<img id="viewer" src="${url}">`);
-else if(type.startsWith("video/"))
-showModal(f.filename,`<video id="viewer" controls style="width:100%"><source src="${url}"></video>`);
-else if(type.startsWith("audio/"))
-showModal(f.filename,`<audio controls style="width:100%"><source src="${url}"></audio>`);
-else if(type==="application/pdf")
-showModal(f.filename,`<iframe src="${url}" style="width:100%;height:70vh;border:0"></iframe>`);
-else if(type.startsWith("text/")||type==="application/json")
-showModal(f.filename,"<pre>"+esc(new TextDecoder().decode(data))+"</pre>");
-else
-showModal(f.filename,`<div class="empty">📄<br><br>This file cannot be previewed.<br><br><button class="primary" onclick="downloadFile(${id})">⬇ Download</button></div>`);
+const data=await getFile(id);
+const type=f.file_type||
+"application/octet-stream";
+
+const blob=new Blob([data],{type});
+const url=URL.createObjectURL(blob);
+
+if(type.startsWith("image/")){
+
+showModal(
+f.filename,
+`<img id="viewer" src="${url}">`
+);
+
+}
+
+else if(type.startsWith("video/")){
+
+showModal(
+f.filename,
+`<video id="viewer" controls style="width:100%">
+<source src="${url}">
+</video>`
+);
+
+}
+
+else if(type.startsWith("audio/")){
+
+showModal(
+f.filename,
+`<audio controls style="width:100%">
+<source src="${url}">
+</audio>`
+);
+
+}
+
+else if(type==="application/pdf"){
+
+showModal(
+f.filename,
+`<iframe src="${url}"
+style="width:100%;height:70vh;border:0"></iframe>`
+);
+
+}
+
+else if(
+type.startsWith("text/")||
+type==="application/json"
+){
+
+showModal(
+f.filename,
+"<pre>"+esc(
+new TextDecoder().decode(data)
+)+"</pre>"
+);
+
+}
+
+else{
+
+showModal(
+f.filename,
+`<div class="empty">
+📄<br><br>
+This file cannot be previewed.
+<br><br>
+<button class="primary"
+onclick="downloadFile(${id})">
+⬇ Download
+</button>
+</div>`
+);
+
+}
 
 }catch(e){
-showModal(f.filename||"File",
-'<div class="empty">❌ Unable to decrypt file.</div>');
+
+showModal(
+f.filename||"File",
+`<div class="empty">
+❌ Unable to open file.
+</div>`
+);
+
 }
 }
 
 /* Download */
+
 async function downloadFile(id){
+
 const f=files.find(x=>Number(x.id)===id);
+
 if(!f)return;
 
 try{
+
 const data=await getFile(id);
-const blob=new Blob([data],{type:f.file_type||"application/octet-stream"});
+
+const blob=new Blob(
+[data],
+{type:f.file_type||"application/octet-stream"}
+);
+
+const url=URL.createObjectURL(blob);
+
 const a=document.createElement("a");
-a.href=URL.createObjectURL(blob);
+
+a.href=url;
 a.download=f.filename||"download";
+
+document.body.appendChild(a);
 a.click();
+a.remove();
+
+setTimeout(()=>{
+URL.revokeObjectURL(url);
+},1000);
+
 }catch(e){
+
 alert("❌ Unable to decrypt file.");
 }
 }
 
 /* Backup */
+
 async function backupFile(id){
+
 const f=files.find(x=>Number(x.id)===id);
+
 if(!f)return;
 
 if(f.google_drive_file_id||f.google_drive_url){
-alert("☁️ Already backed up.");return;
+
+alert("☁️ Already backed up.");
+return;
 }
 
 try{
-const r=await fetch(API+"/api/google/backup/"+id,{
-method:"POST",credentials:"include"
-});
+
+const r=await fetch(
+API+"/api/google/backup/"+id,
+{
+method:"POST",
+credentials:"include"
+}
+);
+
 const d=await r.json();
-if(!d.ok)throw Error(d.error||"Backup failed");
-alert(d.duplicate?"☁️ Already backed up.":"☁️ Backup completed.");
+
+if(!d.ok)
+throw Error(d.error||"Backup failed");
+
+alert(
+d.duplicate
+?"☁️ Already backed up."
+:"☁️ Backup completed."
+);
+
 await loadFiles();
+
 }catch(e){
+
 alert("❌ Backup failed.\n\n"+e.message);
 }
 }
 
 async function backupAll(){
-const pending=files.filter(f=>!f.google_drive_file_id&&!f.google_drive_url);
-if(!pending.length){alert("☁️ All files are already backed up.");return}
+
+const pending=files.filter(
+f=>!f.google_drive_file_id&&!f.google_drive_url
+);
+
+if(!pending.length){
+
+alert("☁️ All files are already backed up.");
+return;
+}
 
 let ok=0,fail=0;
+
 for(const f of pending){
+
 try{
-const r=await fetch(API+"/api/google/backup/"+f.id,{
-method:"POST",credentials:"include"
-});
-const d=await r.json();
-d.ok?ok++:fail++;
-}catch(e){fail++}
+
+const r=await fetch(
+API+"/api/google/backup/"+f.id,
+{
+method:"POST",
+credentials:"include"
 }
+);
+
+const d=await r.json();
+
+d.ok?ok++:fail++;
+
+}catch(e){
+fail++;
+}
+}
+
 await loadFiles();
-alert(`☁️ Backup finished\n\nSuccessful: ${ok}\nFailed: ${fail}`);
+
+alert(
+"☁️ Backup finished\n\n"+
+"Successful: "+ok+
+"\nFailed: "+fail
+);
 }
 
 /* Delete */
+
 async function deleteFile(id){
+
 const f=files.find(x=>Number(x.id)===id);
+
 if(!f)return;
-if(!confirm("Delete this file?\n\n"+f.filename))return;
+
+if(!confirm(
+"Delete this file?\n\n"+
+(f.filename||"Unnamed file")
+))return;
 
 try{
-const r=await fetch(API+"/api/photos/"+id,{
-method:"DELETE",credentials:"include"
-});
+
+const r=await fetch(
+API+"/api/photos/"+id,
+{
+method:"DELETE",
+credentials:"include"
+}
+);
+
 const d=await r.json();
-if(!d.ok)throw Error(d.error||"Delete failed");
+
+if(!d.ok)
+throw Error(d.error||"Delete failed");
+
 await loadFiles();
-}catch(e){alert("❌ "+e.message)}
+
+}catch(e){
+
+alert("❌ "+e.message);
+}
 }
 
 /* Modal */
+
 function showModal(title,content){
-document.getElementById("modalTitle").textContent=title;
-document.getElementById("modalContent").innerHTML=content;
-document.getElementById("modal").classList.remove("hidden");
+
+document.getElementById("modalTitle")
+.textContent=title;
+
+document.getElementById("modalContent")
+.innerHTML=content;
+
+document.getElementById("modal")
+.classList.remove("hidden");
 }
+
 function hideModal(){
-document.getElementById("modal").classList.add("hidden");
-document.getElementById("modalContent").innerHTML="";
+
+document.getElementById("modal")
+.classList.add("hidden");
+
+document.getElementById("modalContent")
+.innerHTML="";
 }
+
 function closeModal(e){
-if(e.target.id==="modal")hideModal();
+
+if(e.target.id==="modal")
+hideModal();
 }
+
+/* View */
+
 function setView(mode){
+
 viewMode=mode;
+
 const box=document.getElementById("files");
-box.style.gridTemplateColumns=mode==="list"?"1fr":"";
+
+box.style.gridTemplateColumns=
+mode==="list"?"1fr":"";
 }
+
+/* Helpers */
+
 function formatSize(n){
+
 if(!n)return"0 B";
-const u=["B","KB","MB","GB"];let i=0;
-while(n>=1024&&i<3){n/=1024;i++}
+
+const u=["B","KB","MB","GB"];
+let i=0;
+
+while(n>=1024&&i<3){
+n/=1024;
+i++;
+}
+
 return n.toFixed(i?1:0)+" "+u[i];
 }
+
 function esc(s){
-return String(s??"").replace(/[&<>"']/g,m=>({
-"&":"&amp;","<":"&lt;",">":"&gt;",
-'"':"&quot;","'":"&#039;"
-}[m]));
+
+return String(s??"").replace(
+/[&<>"']/g,
+m=>({
+"&":"&amp;",
+"<":"&lt;",
+">":"&gt;",
+'"':"&quot;",
+"'":"&#039;"
+}[m])
+);
 }
 
 /* Start */
+
 (async()=>{
+
 if(await checkAuth()){
+
 await googleStatus();
 await loadFiles();
+
 }
+
 })();
 </script>
+
 </body>
 </html>
