@@ -1,0 +1,942 @@
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization"
+};
+
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...cors,
+      "Content-Type": "application/json"
+    }
+  });
+
+async function auth(request, env) {
+  const h = request.headers.get("Authorization");
+
+  if (!h?.startsWith("Bearer "))
+    return null;
+
+  try {
+    const r = await env.AUTH.fetch(
+      new Request("https://auth.internal/auth/me", {
+        headers: {
+          Authorization: h
+        }
+      })
+    );
+
+    if (!r.ok)
+      return null;
+
+    const d = await r.json();
+
+    return d.customer || d.user || d;
+
+  } catch {
+    return null;
+  }
+}
+
+async function subscription(env, customerId) {
+  return await env.DB.prepare(`
+    SELECT
+      id,
+      customer_id,
+      grade,
+      status,
+      order_id,
+      payment_id,
+      amount,
+      currency,
+      starts_at,
+      expires_at
+    FROM premium_subscriptions
+    WHERE customer_id=?
+      AND REPLACE(LOWER(TRIM(grade)),'-',' ')
+          = 'spoken english'
+      AND status='ACTIVE'
+      AND expires_at>datetime('now')
+    ORDER BY id DESC
+    LIMIT 1
+  `).bind(customerId).first();
+}
+
+async function findLesson(env, number) {
+  return await env.DB.prepare(`
+    SELECT
+      id,
+      grade,
+      subject,
+      unit,
+      lesson_number,
+      lesson_code,
+      duration,
+      video_url,
+      image_url,
+      is_active,
+      is_free,
+      created_at
+    FROM premium_lessons
+    WHERE LOWER(TRIM(grade))='spoken english'
+      AND LOWER(TRIM(subject))='spoken english'
+      AND lesson_number=?
+      AND is_active=1
+    LIMIT 1
+  `).bind(number).first();
+}
+
+/* Get lesson title from D1 lessons table */
+async function findTitle(env, number) {
+  return await env.DB.prepare(`
+    SELECT
+      id,
+      lesson_number,
+      title,
+      description,
+      access_type
+    FROM lessons
+    WHERE subject_id=6
+      AND lesson_number=?
+      AND published=1
+    LIMIT 1
+  `).bind(number).first();
+}
+
+export default {
+
+  async fetch(request, env) {
+
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: cors
+      });
+    }
+
+    try {
+
+      /* =========================
+         API HOME
+      ========================= */
+
+      if (
+        url.pathname === "/" &&
+        request.method === "GET"
+      ) {
+        return json({
+          success: true,
+          service: "CreateLK Academy API",
+          status: "online",
+          version: "2.5"
+        });
+      }
+
+
+      /* =========================
+         AUTH TEST
+      ========================= */
+
+      if (url.pathname === "/auth-test") {
+
+        const customer = await auth(request, env);
+
+        return customer
+          ? json({
+              success: true,
+              authenticated: true,
+              customer
+            })
+          : json({
+              success: false,
+              authenticated: false
+            }, 401);
+      }
+
+
+      /* =========================
+         LESSON LIST
+         TITLES COME FROM D1
+      ========================= */
+
+      if (
+        url.pathname === "/lessons" &&
+        request.method === "GET"
+      ) {
+
+        const course =
+          url.searchParams.get("course") ||
+          "spoken-english";
+
+        const language =
+          url.searchParams.get("language") ||
+          "en";
+
+        if (course !== "spoken-english") {
+          return json({
+            success: false,
+            error: "Invalid course."
+          }, 400);
+        }
+
+        const customer = await auth(request, env);
+
+        let premium = false;
+
+        if (customer) {
+
+          const id =
+            customer.id ||
+            customer.customer_id;
+
+          if (id) {
+            premium =
+              !!await subscription(env, id);
+          }
+        }
+
+        /*
+          D1 `lessons` = title/order/access
+          premium_lessons = lesson content
+        */
+
+        const r = await env.DB.prepare(`
+          SELECT
+            p.id,
+            l.id AS title_id,
+            l.lesson_number,
+            l.title,
+            l.description,
+            l.access_type,
+
+            p.lesson_code,
+            p.duration,
+            p.video_url,
+            p.image_url,
+            p.is_active,
+            p.is_free
+
+          FROM lessons l
+
+          LEFT JOIN premium_lessons p
+            ON p.lesson_number=l.lesson_number
+            AND LOWER(TRIM(p.grade))='spoken english'
+            AND LOWER(TRIM(p.subject))='spoken english'
+            AND p.is_active=1
+
+          WHERE l.subject_id=6
+            AND l.published=1
+
+          ORDER BY l.lesson_number
+        `).all();
+
+        const lessons = (r.results || []).map(x => ({
+
+          id: x.id,
+
+          title_id: x.title_id,
+
+          lesson_number:
+            Number(x.lesson_number),
+
+          title:
+            x.title ||
+            `Lesson ${x.lesson_number}`,
+
+          description:
+            x.description || "",
+
+          access_type:
+            x.access_type ||
+            (
+              Number(x.lesson_number) <= 2
+                ? "free"
+                : "premium"
+            ),
+
+          premium:
+            Number(x.lesson_number) > 2,
+
+          lesson_code:
+            x.lesson_code || "",
+
+          duration:
+            x.duration || "",
+
+          video_url:
+            x.video_url || "",
+
+          image_url:
+            x.image_url || "",
+
+          is_active:
+            x.is_active ?? 1,
+
+          is_free:
+            Number(x.lesson_number) <= 2
+              ? 1
+              : 0
+
+        }));
+
+        return json({
+          success: true,
+          course,
+          language,
+          premium,
+          total_lessons: lessons.length,
+          lessons
+        });
+      }
+
+
+      /* =========================
+         SINGLE LESSON
+      ========================= */
+
+      if (
+        url.pathname === "/lesson" &&
+        request.method === "GET"
+      ) {
+
+        const course =
+          url.searchParams.get("course") ||
+          "spoken-english";
+
+        const language =
+          url.searchParams.get("language") ||
+          "en";
+
+        const number =
+          Number(
+            url.searchParams.get("lesson") || 1
+          );
+
+        if (
+          course !== "spoken-english" ||
+          !Number.isInteger(number) ||
+          number < 1 ||
+          number > 100
+        ) {
+          return json({
+            success: false,
+            error: "Invalid lesson."
+          }, 400);
+        }
+
+        const customer =
+          await auth(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        const customerId =
+          customer.id ||
+          customer.customer_id;
+
+        const lesson =
+          await findLesson(env, number);
+
+        if (!lesson) {
+          return json({
+            success: false,
+            error: "Lesson not found.",
+            lesson_number: number
+          }, 404);
+        }
+
+        /* Get title from D1 */
+
+        const titleRow =
+          await findTitle(env, number);
+
+        /*
+          First 2 lessons are FREE.
+          3-100 are PREMIUM.
+        */
+
+        const free =
+          number === 1 ||
+          number === 2;
+
+        let sub = null;
+
+        if (!free) {
+          sub =
+            await subscription(
+              env,
+              customerId
+            );
+        }
+
+        if (!free && !sub) {
+
+          return json({
+            success: false,
+            premium_required: true,
+            message:
+              "This lesson requires a Premium subscription.",
+
+            lesson: {
+              id: lesson.id,
+
+              lesson_number: number,
+
+              lesson_code:
+                lesson.lesson_code,
+
+              title:
+                titleRow?.title ||
+                `Lesson ${number}`,
+
+              free: false
+            }
+
+          }, 403);
+        }
+
+
+        /* =========================
+           TRANSLATION
+        ========================= */
+
+        let t =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              language,
+              title,
+              objectives,
+              content,
+              key_points,
+              summary
+            FROM premium_lesson_translations
+            WHERE lesson_id=?
+              AND language=?
+            LIMIT 1
+          `)
+          .bind(
+            lesson.id,
+            language
+          )
+          .first();
+
+
+        if (!t && language !== "en") {
+
+          t =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                language,
+                title,
+                objectives,
+                content,
+                key_points,
+                summary
+              FROM premium_lesson_translations
+              WHERE lesson_id=?
+                AND language='en'
+              LIMIT 1
+            `)
+            .bind(lesson.id)
+            .first();
+        }
+
+
+        /* =========================
+           DIALOGUES
+        ========================= */
+
+        let d =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              dialogue_number,
+              speaker_a,
+              text_a,
+              speaker_b,
+              text_b
+            FROM lesson_dialogues
+            WHERE lesson_id=?
+              AND language=?
+            ORDER BY dialogue_number
+          `)
+          .bind(
+            lesson.id,
+            language
+          )
+          .all();
+
+        d = d.results || [];
+
+
+        if (!d.length && language !== "en") {
+
+          const x =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                dialogue_number,
+                speaker_a,
+                text_a,
+                speaker_b,
+                text_b
+              FROM lesson_dialogues
+              WHERE lesson_id=?
+                AND language='en'
+              ORDER BY dialogue_number
+            `)
+            .bind(lesson.id)
+            .all();
+
+          d = x.results || [];
+        }
+
+
+        /* =========================
+           QUESTIONS
+        ========================= */
+
+        let questions = [];
+
+        try {
+
+          const q =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                question,
+                option_a,
+                option_b,
+                option_c,
+                option_d,
+                correct_answer,
+                explanation
+              FROM premium_questions
+              WHERE lesson_id=?
+                AND language=?
+              ORDER BY id
+            `)
+            .bind(
+              lesson.id,
+              language
+            )
+            .all();
+
+          questions =
+            q.results || [];
+
+        } catch {}
+
+
+        /* =========================
+           RESPONSE
+        ========================= */
+
+        return json({
+
+          success: true,
+
+          access: true,
+
+          course,
+
+          free,
+
+          lesson: {
+
+            id:
+              lesson.id,
+
+            lesson_number:
+              lesson.lesson_number,
+
+            lesson_code:
+              lesson.lesson_code,
+
+            duration:
+              lesson.duration,
+
+            video_url:
+              lesson.video_url,
+
+            image_url:
+              lesson.image_url,
+
+            language:
+              t?.language ||
+              language,
+
+            /*
+              IMPORTANT:
+              Title comes from D1 lessons table.
+            */
+
+            title:
+              titleRow?.title ||
+              t?.title ||
+              `Lesson ${number}`,
+
+            objectives:
+              t?.objectives ||
+              "",
+
+            content:
+              t?.content ||
+              "",
+
+            key_points:
+              t?.key_points ||
+              "",
+
+            summary:
+              t?.summary ||
+              "",
+
+            dialogues:
+              d,
+
+            questions:
+              questions
+          },
+
+          subscription:
+            sub
+              ? {
+                  active: true,
+                  starts_at:
+                    sub.starts_at,
+                  expires_at:
+                    sub.expires_at
+                }
+              : null
+        });
+      }
+
+
+      /* =========================
+         PREMIUM STATUS
+      ========================= */
+
+      if (
+        url.pathname === "/premium/status" &&
+        request.method === "GET"
+      ) {
+
+        const customer =
+          await auth(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        const id =
+          customer.id ||
+          customer.customer_id;
+
+        const sub =
+          await subscription(env, id);
+
+        return json({
+
+          success: true,
+
+          course:
+            "spoken-english",
+
+          premium:
+            !!sub,
+
+          subscription:
+            sub
+              ? {
+                  id: sub.id,
+                  status: sub.status,
+                  starts_at:
+                    sub.starts_at,
+                  expires_at:
+                    sub.expires_at,
+                  amount:
+                    sub.amount,
+                  currency:
+                    sub.currency
+                }
+              : null
+        });
+      }
+
+
+      /* =========================
+         PROGRESS
+      ========================= */
+
+      if (
+        url.pathname === "/progress" &&
+        request.method === "GET"
+      ) {
+
+        const course =
+          url.searchParams.get("course") ||
+          "spoken-english";
+
+        const customer =
+          await auth(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        const id =
+          customer.id ||
+          customer.customer_id;
+
+        const r =
+          await env.DB.prepare(`
+            SELECT
+              lesson_number,
+              completed_at
+            FROM lesson_progress
+            WHERE customer_id=?
+              AND course=?
+            ORDER BY lesson_number
+          `)
+          .bind(
+            id,
+            course
+          )
+          .all();
+
+        const lessons =
+          r.results || [];
+
+        return json({
+
+          success: true,
+
+          course,
+
+          completed_count:
+            lessons.length,
+
+          total_lessons:
+            100,
+
+          lessons
+        });
+      }
+
+
+      /* =========================
+         COMPLETE LESSON
+      ========================= */
+
+      if (
+        url.pathname === "/lesson/complete" &&
+        request.method === "POST"
+      ) {
+
+        const customer =
+          await auth(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        let body;
+
+        try {
+
+          body =
+            await request.json();
+
+        } catch {
+
+          return json({
+            success: false,
+            error: "Invalid JSON."
+          }, 400);
+        }
+
+        const course =
+          body.course ||
+          "spoken-english";
+
+        const number =
+          Number(body.lesson_number);
+
+        const id =
+          customer.id ||
+          customer.customer_id;
+
+        if (
+          course !== "spoken-english" ||
+          !Number.isInteger(number) ||
+          number < 1 ||
+          number > 100
+        ) {
+          return json({
+            success: false,
+            error: "Invalid lesson."
+          }, 400);
+        }
+
+        const lesson =
+          await findLesson(
+            env,
+            number
+          );
+
+        if (!lesson) {
+
+          return json({
+            success: false,
+            error:
+              "Lesson does not exist."
+          }, 404);
+        }
+
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO lesson_progress
+          (customer_id,course,lesson_number)
+          VALUES (?,?,?)
+        `)
+        .bind(
+          id,
+          course,
+          number
+        )
+        .run();
+
+        const count =
+          await env.DB.prepare(`
+            SELECT COUNT(*) AS count
+            FROM lesson_progress
+            WHERE customer_id=?
+              AND course=?
+          `)
+          .bind(
+            id,
+            course
+          )
+          .first();
+
+        const completed =
+          Number(count?.count || 0);
+
+        return json({
+
+          success: true,
+
+          course,
+
+          lesson_number:
+            number,
+
+          completed_count:
+            completed,
+
+          total_lessons:
+            100,
+
+          certificate_ready:
+            completed >= 100
+        });
+      }
+
+
+      /* =========================
+         PREMIUM CHECKOUT
+      ========================= */
+
+      if (
+        url.pathname === "/premium/checkout" &&
+        request.method === "GET"
+      ) {
+
+        const customer =
+          await auth(request, env);
+
+        if (!customer) {
+          return json({
+            success: false,
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        return json({
+
+          success: false,
+
+          configured: false,
+
+          message:
+            "Premium payment is not configured yet.",
+
+          course:
+            "spoken-english",
+
+          price:
+            999,
+
+          currency:
+            "LKR",
+
+          period_days:
+            30
+        }, 501);
+      }
+
+
+      /* =========================
+         NOT FOUND
+      ========================= */
+
+      return json({
+
+        success: false,
+
+        error:
+          "API route not found.",
+
+        path:
+          url.pathname
+
+      }, 404);
+
+
+    } catch (e) {
+
+      console.error(e);
+
+      return json({
+
+        success: false,
+
+        error:
+          "Internal server error.",
+
+        details:
+          e?.message ||
+          String(e)
+
+      }, 500);
+    }
+  }
+};
