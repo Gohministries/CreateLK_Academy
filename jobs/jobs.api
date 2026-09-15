@@ -1,0 +1,458 @@
+export default {
+  async fetch(request, env) {
+
+    const url = new URL(request.url);
+
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    };
+
+
+    /* =========================
+       CORS
+    ========================= */
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: cors
+      });
+    }
+
+
+    try {
+
+      /* =========================
+         HEALTH
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/"
+      ) {
+
+        return json({
+          ok: true,
+          service: "CreateLK Jobs API"
+        }, 200, cors);
+
+      }
+
+
+      /* =========================
+         GET ALL JOBS
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/jobs"
+      ) {
+
+        const result = await env.DB.prepare(`
+          SELECT
+            id,
+            title,
+            company_name,
+            description,
+            location,
+            category,
+            job_type,
+            experience,
+            salary_min,
+            salary_max,
+            salary_type,
+            package,
+            status,
+            created_at,
+            updated_at
+          FROM jobs
+          WHERE status = 'Active'
+          ORDER BY id DESC
+        `).all();
+
+
+        return json({
+          ok: true,
+          jobs: result.results || []
+        }, 200, cors);
+
+      }
+
+
+      /* =========================
+         GET SINGLE JOB
+         /api/jobs/1
+      ========================= */
+
+      const singleMatch =
+        url.pathname.match(
+          /^\/api\/jobs\/(\d+)$/
+        );
+
+
+      if (
+        request.method === "GET" &&
+        singleMatch
+      ) {
+
+        const id =
+          Number(singleMatch[1]);
+
+
+        const job =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              title,
+              company_name,
+              description,
+              location,
+              category,
+              job_type,
+              experience,
+              salary_min,
+              salary_max,
+              salary_type,
+              package,
+              status,
+              created_at,
+              updated_at
+            FROM jobs
+            WHERE id = ?
+          `)
+          .bind(id)
+          .first();
+
+
+        if (!job) {
+
+          return json({
+            ok: false,
+            error: "Job not found"
+          }, 404, cors);
+
+        }
+
+
+        return json({
+          ok: true,
+          job
+        }, 200, cors);
+
+      }
+
+
+      /* =========================
+         CREATE JOB
+         POST /api/jobs
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/jobs"
+      ) {
+
+        const body =
+          await request.json();
+
+
+        const title =
+          String(body.title || "").trim();
+
+        const company_name =
+          String(body.company_name || "").trim();
+
+        const description =
+          String(body.description || "").trim();
+
+        const location =
+          String(body.location || "").trim();
+
+        const category =
+          String(body.category || "").trim();
+
+        const job_type =
+          String(body.job_type || "").trim();
+
+        const experience =
+          String(body.experience || "").trim();
+
+        const salary_min =
+          body.salary_min === "" ||
+          body.salary_min == null
+          ? null
+          : Number(body.salary_min);
+
+        const salary_max =
+          body.salary_max === "" ||
+          body.salary_max == null
+          ? null
+          : Number(body.salary_max);
+
+        const salary_type =
+          String(body.salary_type || "").trim();
+
+        const package_name =
+          String(body.package || "").trim();
+
+
+        if (
+          !title ||
+          !company_name ||
+          !description
+        ) {
+
+          return json({
+            ok: false,
+            error:
+              "Title, company name and description are required."
+          }, 400, cors);
+
+        }
+
+
+        const result =
+          await env.DB.prepare(`
+            INSERT INTO jobs (
+              title,
+              company_name,
+              description,
+              location,
+              category,
+              job_type,
+              experience,
+              salary_min,
+              salary_max,
+              salary_type,
+              package,
+              status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+          `)
+          .bind(
+            title,
+            company_name,
+            description,
+            location,
+            category,
+            job_type,
+            experience,
+            salary_min,
+            salary_max,
+            salary_type,
+            package_name
+          )
+          .run();
+
+
+        return json({
+          ok: true,
+          message: "Job created successfully.",
+          id: result.meta?.last_row_id
+        }, 201, cors);
+
+      }
+
+
+      /* =========================
+         UPDATE JOB
+         PUT /api/jobs/1
+      ========================= */
+
+      const updateMatch =
+        url.pathname.match(
+          /^\/api\/jobs\/(\d+)$/
+        );
+
+
+      if (
+        request.method === "PUT" &&
+        updateMatch
+      ) {
+
+        const id =
+          Number(updateMatch[1]);
+
+        const body =
+          await request.json();
+
+
+        const existing =
+          await env.DB.prepare(
+            "SELECT id FROM jobs WHERE id = ?"
+          )
+          .bind(id)
+          .first();
+
+
+        if (!existing) {
+
+          return json({
+            ok: false,
+            error: "Job not found"
+          }, 404, cors);
+
+        }
+
+
+        const fields = [];
+        const values = [];
+
+
+        const allowed = [
+          "title",
+          "company_name",
+          "description",
+          "location",
+          "category",
+          "job_type",
+          "experience",
+          "salary_min",
+          "salary_max",
+          "salary_type",
+          "package",
+          "status"
+        ];
+
+
+        for (const field of allowed) {
+
+          if (
+            Object.prototype.hasOwnProperty.call(
+              body,
+              field
+            )
+          ) {
+
+            fields.push(`${field} = ?`);
+            values.push(body[field]);
+
+          }
+
+        }
+
+
+        if (!fields.length) {
+
+          return json({
+            ok: false,
+            error: "No fields to update."
+          }, 400, cors);
+
+        }
+
+
+        fields.push(
+          "updated_at = CURRENT_TIMESTAMP"
+        );
+
+        values.push(id);
+
+
+        await env.DB.prepare(`
+          UPDATE jobs
+          SET ${fields.join(", ")}
+          WHERE id = ?
+        `)
+        .bind(...values)
+        .run();
+
+
+        return json({
+          ok: true,
+          message: "Job updated successfully."
+        }, 200, cors);
+
+      }
+
+
+      /* =========================
+         DELETE JOB
+         DELETE /api/jobs/1
+      ========================= */
+
+      if (
+        request.method === "DELETE" &&
+        updateMatch
+      ) {
+
+        const id =
+          Number(updateMatch[1]);
+
+
+        const result =
+          await env.DB.prepare(
+            "DELETE FROM jobs WHERE id = ?"
+          )
+          .bind(id)
+          .run();
+
+
+        if (
+          !result.meta ||
+          result.meta.changes === 0
+        ) {
+
+          return json({
+            ok: false,
+            error: "Job not found"
+          }, 404, cors);
+
+        }
+
+
+        return json({
+          ok: true,
+          message: "Job deleted successfully."
+        }, 200, cors);
+
+      }
+
+
+      /* =========================
+         404
+      ========================= */
+
+      return json({
+        ok: false,
+        error: "Endpoint not found"
+      }, 404, cors);
+
+
+    }
+    catch (error) {
+
+      console.error(error);
+
+
+      return json({
+        ok: false,
+        error: error.message
+      }, 500, cors);
+
+    }
+
+  }
+};
+
+
+/* =========================
+   JSON RESPONSE
+========================= */
+
+function json(data, status = 200, cors = {}) {
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json; charset=UTF-8",
+        ...cors
+      }
+    }
+  );
+
+}
