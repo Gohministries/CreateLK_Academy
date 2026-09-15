@@ -129,7 +129,6 @@ font-weight:700
 
 .hero{
 padding:75px 0 70px;
-
 background:
 radial-gradient(circle at 15% 20%,#dcecff 0,transparent 35%),
 radial-gradient(circle at 85% 30%,#fff0c7 0,transparent 35%),
@@ -548,13 +547,10 @@ width:52px;
 height:52px;
 border-radius:50%;
 background:#25D366;
-
 display:flex;
 align-items:center;
 justify-content:center;
-
 box-shadow:0 5px 18px #0003;
-
 z-index:9999;
 transition:.2s
 }
@@ -733,15 +729,10 @@ alt="CreateLK Jobs">
 <nav class="nav">
 
 <a href="/">Home</a>
-
 <a href="/jobs/">Find Jobs</a>
-
 <a href="/categories/">Categories</a>
-
 <a href="/companies/">Companies</a>
-
 <a href="/login/" class="login">Sign In</a>
-
 <a href="/register/" class="post">Post a Job</a>
 
 </nav>
@@ -758,6 +749,7 @@ aria-label="Open menu">
 
 </div>
 
+
 <div class="mobile" id="mobile">
 
 <a href="/">Home</a>
@@ -771,6 +763,8 @@ aria-label="Open menu">
 
 </header>
 
+
+<!-- HERO -->
 
 <section class="hero">
 
@@ -792,12 +786,20 @@ Discover jobs across Sri Lanka and connect with employers looking for talented p
 
 <div class="buttons">
 
-<a href="/jobs/" class="btn primary">
+<a
+href="/jobs/"
+class="btn primary">
+
 🔎 Find Jobs
+
 </a>
 
-<a href="/register/" class="btn secondary">
+<a
+href="/register/"
+class="btn secondary">
+
 💼 Post a Job
+
 </a>
 
 </div>
@@ -1065,15 +1067,17 @@ aria-hidden="true">
 
 <script>
 
-/* API ENDPOINTS */
+/* =========================
+   CLOUDFLARE API
+========================= */
 
-const JOBS_API =
+const API =
 "https://createlk-jobs-api.createlk.workers.dev";
 
-const CATEGORIES_API =
+const CATEGORY_API =
 "https://categoriesapi.createlk.workers.dev";
 
-const LOCATIONS_API =
+const LOCATION_API =
 "https://locationsapi.createlk.workers.dev";
 
 
@@ -1081,23 +1085,30 @@ const $ = id =>
 document.getElementById(id);
 
 
-/* MOBILE MENU */
+/* =========================
+   MOBILE MENU
+========================= */
 
 $("menuBtn").onclick = () => {
 
-$("mobile").style.display =
-$("mobile").style.display === "block"
+const menu = $("mobile");
+
+menu.style.display =
+menu.style.display === "block"
 ? "none"
 : "block";
 
 };
 
 
-/* HTML ESCAPE */
+/* =========================
+   ESCAPE HTML
+========================= */
 
-function esc(v){
+function esc(value){
 
-return String(v ?? "").replace(
+return String(value ?? "")
+.replace(
 /[&<>"']/g,
 
 m => ({
@@ -1113,50 +1124,52 @@ m => ({
 }
 
 
-/* SALARY */
+/* =========================
+   SALARY
+========================= */
 
-function salary(j){
+function salary(job){
 
-const a =
-j.salary_min
-? Number(j.salary_min).toLocaleString()
+const min =
+job.salary_min
+? Number(job.salary_min).toLocaleString()
 : "";
 
-const b =
-j.salary_max
-? Number(j.salary_max).toLocaleString()
+const max =
+job.salary_max
+? Number(job.salary_max).toLocaleString()
 : "";
 
-if(a && b)
-return "LKR " + a + " – " + b;
+if(min && max)
+return "LKR " + min + " – " + max;
 
-if(a)
-return "From LKR " + a;
+if(min)
+return "From LKR " + min;
 
-if(b)
-return "Up to LKR " + b;
+if(max)
+return "Up to LKR " + max;
 
 return "Salary not specified";
 
 }
 
 
+/* =========================
+   SEARCH
+   NAVIGATE TO HTML PAGE
+========================= */
+
+$("searchForm").onsubmit = event => {
+
+event.preventDefault();
+
 /*
-SEARCH
+   Search results are handled by:
 
-The search form sends the visitor
-directly to the Cloudflare-served
-Jobs HTML page.
+   https://createlk.com/jobs/
 
-No API request is made here.
-No query string is added.
-
-The /jobs/ page handles searching.
+   This page is served by Cloudflare.
 */
-
-$("searchForm").onsubmit = e => {
-
-e.preventDefault();
 
 window.location.href =
 "https://createlk.com/jobs/";
@@ -1164,37 +1177,63 @@ window.location.href =
 };
 
 
-/* LOAD LATEST JOBS */
+/* =========================
+   LOAD JOBS FROM CLOUDFLARE
+========================= */
 
 async function loadJobs(){
 
 try{
 
-const r =
+const response =
 await fetch(
-JOBS_API + "/api/jobs"
+API + "/api/jobs"
 );
 
-if(!r.ok)
-throw new Error("Jobs API error");
+if(!response.ok)
+throw new Error("Jobs API failed");
 
-const d =
-await r.json();
+const data =
+await response.json();
 
 const jobs =
-Array.isArray(d)
-? d
-: (d.jobs || []);
+Array.isArray(data)
+? data
+: (data.jobs || []);
+
+
+/* JOB COUNT */
 
 $("jobCount").textContent =
 jobs.length;
 
 
+/* LATEST 6 JOBS */
+
+if(!jobs.length){
+
+$("jobsGrid").innerHTML = `
+
+<div style="
+grid-column:1/-1;
+text-align:center;
+padding:35px;
+color:#68748a">
+
+No jobs available yet.
+
+</div>
+
+`;
+
+return;
+
+}
+
+
 $("jobsGrid").innerHTML =
 
-jobs.length
-
-? jobs.slice(0,6).map(j => `
+jobs.slice(0,6).map(job => `
 
 <article class="job">
 
@@ -1203,25 +1242,28 @@ jobs.length
 <div>
 
 <div class="title">
-${esc(j.title)}
+${esc(job.title)}
 </div>
 
 <div class="company">
 ${esc(
-j.company_name ||
-j.company ||
+job.company_name ||
+job.company ||
 "Employer"
 )}
 </div>
 
 </div>
 
-${
-j.featured ||
-j.urgent ||
-j.top_job
 
-? '<span class="badge-job">Featured</span>'
+${
+job.featured ||
+job.urgent ||
+job.top_job
+
+? `<span class="badge-job">
+Featured
+</span>`
 
 : ""
 }
@@ -1232,13 +1274,13 @@ j.top_job
 <div class="meta">
 
 ${
-j.location_name ||
-j.location
+job.location_name ||
+job.location
 
 ? `<span>
 📍 ${esc(
-j.location_name ||
-j.location
+job.location_name ||
+job.location
 )}
 </span>`
 
@@ -1247,10 +1289,10 @@ j.location
 
 
 ${
-j.job_type
+job.job_type
 
 ? `<span>
-💼 ${esc(j.job_type)}
+💼 ${esc(job.job_type)}
 </span>`
 
 : ""
@@ -1258,10 +1300,10 @@ j.job_type
 
 
 ${
-j.experience
+job.experience
 
 ? `<span>
-⭐ ${esc(j.experience)}
+⭐ ${esc(job.experience)}
 </span>`
 
 : ""
@@ -1273,12 +1315,13 @@ j.experience
 <div class="bottom">
 
 <span class="salary">
-${salary(j)}
+${salary(job)}
 </span>
+
 
 <a
 class="job-link"
-href="/job-details/?id=${encodeURIComponent(j.id)}">
+href="/job-details/?id=${encodeURIComponent(job.id)}">
 
 View Job →
 
@@ -1288,36 +1331,26 @@ View Job →
 
 </article>
 
-`).join("")
+`).join("");
 
 
-: `
 
-<div style="
-grid-column:1/-1;
-text-align:center;
-padding:30px;
-color:#68748a">
+}catch(error){
 
-No jobs available yet.
+console.error(error);
 
-</div>
-
-`;
-
-}catch(e){
-
-$("jobCount").textContent = "0";
+$("jobCount").textContent =
+"0";
 
 $("jobsGrid").innerHTML = `
 
 <div style="
 grid-column:1/-1;
 text-align:center;
-padding:30px;
+padding:35px;
 color:#68748a">
 
-No jobs available yet.
+Unable to load jobs.
 
 </div>
 
@@ -1328,27 +1361,30 @@ No jobs available yet.
 }
 
 
-/* LOAD CATEGORIES */
+/* =========================
+   LOAD CATEGORIES
+========================= */
 
 async function loadCategories(){
 
 try{
 
-const r =
+const response =
 await fetch(
-CATEGORIES_API + "/api/categories"
+CATEGORY_API + "/api/categories"
 );
 
-if(!r.ok)
-throw new Error("Categories API error");
+if(!response.ok)
+throw new Error("Categories API failed");
 
-const d =
-await r.json();
+const data =
+await response.json();
 
 const list =
-Array.isArray(d)
-? d
-: (d.categories || []);
+Array.isArray(data)
+? data
+: (data.categories || []);
+
 
 $("categoryCount").textContent =
 list.length;
@@ -1370,29 +1406,48 @@ const icons = [
 ];
 
 
+if(!list.length){
+
+$("categoryGrid").innerHTML = `
+
+<div style="
+grid-column:1/-1;
+text-align:center;
+padding:35px;
+color:#68748a">
+
+No categories available yet.
+
+</div>
+
+`;
+
+return;
+
+}
+
+
 $("categoryGrid").innerHTML =
 
-list.length
+list.slice(0,10).map((category,index) => {
 
-? list.slice(0,10).map((c,i) => {
-
-const n =
-typeof c === "string"
-? c
-: c.name;
+const name =
+typeof category === "string"
+? category
+: category.name;
 
 return `
 
 <a
 class="category"
-href="/jobs/?category=${encodeURIComponent(n)}">
+href="/jobs/?category=${encodeURIComponent(name)}">
 
 <div class="icon">
-${icons[i % icons.length]}
+${icons[index % icons.length]}
 </div>
 
 <div class="name">
-${esc(n)}
+${esc(name)}
 </div>
 
 <div class="count">
@@ -1403,57 +1458,45 @@ View jobs →
 
 `;
 
-}).join("")
+}).join("");
 
 
-: `
+/* DROPDOWN */
 
-<div style="
-grid-column:1/-1;
-text-align:center;
-padding:30px;
-color:#68748a">
+list.forEach(category => {
 
-No categories available yet.
+const name =
+typeof category === "string"
+? category
+: category.name;
 
-</div>
-
-`;
-
-
-/* CATEGORY DROPDOWN */
-
-list.forEach(c => {
-
-const n =
-typeof c === "string"
-? c
-: c.name;
-
-if(!n)
+if(!name)
 return;
 
 const option =
 document.createElement("option");
 
-option.value = n;
-option.textContent = n;
+option.value = name;
+option.textContent = name;
 
 $("category").appendChild(option);
 
 });
 
 
-}catch(e){
+}catch(error){
 
-$("categoryCount").textContent = "0";
+console.error(error);
+
+$("categoryCount").textContent =
+"0";
 
 $("categoryGrid").innerHTML = `
 
 <div style="
 grid-column:1/-1;
 text-align:center;
-padding:30px;
+padding:35px;
 color:#68748a">
 
 No categories available yet.
@@ -1467,63 +1510,71 @@ No categories available yet.
 }
 
 
-/* LOAD LOCATIONS */
+/* =========================
+   LOAD LOCATIONS
+========================= */
 
 async function loadLocations(){
 
 try{
 
-const r =
+const response =
 await fetch(
-LOCATIONS_API + "/api/locations"
+LOCATION_API + "/api/locations"
 );
 
-if(!r.ok)
-throw new Error("Locations API error");
+if(!response.ok)
+throw new Error("Locations API failed");
 
-const d =
-await r.json();
+const data =
+await response.json();
 
 const list =
-Array.isArray(d)
-? d
-: (d.locations || []);
+Array.isArray(data)
+? data
+: (data.locations || []);
+
 
 $("locationCount").textContent =
 list.length;
 
 
-list.forEach(x => {
+list.forEach(location => {
 
-const n =
-typeof x === "string"
-? x
-: x.name;
+const name =
+typeof location === "string"
+? location
+: location.name;
 
-if(!n)
+if(!name)
 return;
 
 const option =
 document.createElement("option");
 
-option.value = n;
-option.textContent = n;
+option.value = name;
+option.textContent = name;
 
 $("location").appendChild(option);
 
 });
 
 
-}catch(e){
+}catch(error){
 
-$("locationCount").textContent = "0";
+console.error(error);
+
+$("locationCount").textContent =
+"0";
 
 }
 
 }
 
 
-/* START */
+/* =========================
+   START
+========================= */
 
 loadJobs();
 loadCategories();
