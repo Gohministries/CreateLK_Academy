@@ -1,0 +1,99 @@
+// ============================================
+// CreateLK Jobs — Experience Levels API Worker
+// Worker: experienceapi.createlk.workers.dev
+// ============================================
+
+const EXPERIENCE_LEVELS = [
+  "No Experience",
+  "Entry Level",
+  "1–2 Years",
+  "3–5 Years",
+  "5–10 Years",
+  "10+ Years"
+];
+
+export default {
+  async fetch(request) {
+
+    const url = new URL(request.url);
+
+    const headers = {
+      "Content-Type": "application/json; charset=UTF-8",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    };
+
+    // CORS
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers
+      });
+    }
+
+    // GET only
+    if (request.method !== "GET") {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Method not allowed"
+        }),
+        {
+          status: 405,
+          headers
+        }
+      );
+    }
+
+    // Experience Levels API
+    if (url.pathname === "/api/experience-levels") {
+
+      const experienceLevels = EXPERIENCE_LEVELS.map((name, index) => ({
+        id: index + 1,
+        name
+      }));
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          count: experienceLevels.length,
+          experience_levels: experienceLevels
+        }),
+        {
+          status: 200,
+          headers
+        }
+      );
+    }
+
+    // Root
+    if (url.pathname === "/") {
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          service: "CreateLK Jobs Experience Levels API",
+          endpoint: "/api/experience-levels",
+          count: EXPERIENCE_LEVELS.length
+        }),
+        {
+          status: 200,
+          headers
+        }
+      );
+    }
+
+    // 404
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Endpoint not found"
+      }),
+      {
+        status: 404,
+        headers
+      }
+    );
+  }
+};
