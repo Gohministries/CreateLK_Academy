@@ -225,7 +225,7 @@ font-size:11px
 }
 .actions{
 display:grid;
-grid-template-columns:1fr 1fr;
+grid-template-columns:repeat(2,1fr);
 gap:6px;
 margin-top:10px
 }
@@ -246,6 +246,7 @@ color:#2563eb
 border-color:#dc2626;
 color:#dc2626
 }
+
 .empty{
 grid-column:1/-1;
 padding:45px 20px;
@@ -283,8 +284,7 @@ background:#e5e7eb
 .progress-bar{
 width:0;
 height:100%;
-background:#2563eb;
-transition:.2s
+background:#2563eb
 }
 
 @media(max-width:600px){
@@ -438,14 +438,14 @@ key,
 buffer
 );
 
-const out=new Uint8Array(
+const result=new Uint8Array(
 12+encrypted.byteLength
 );
 
-out.set(iv,0);
-out.set(new Uint8Array(encrypted),12);
+result.set(iv);
+result.set(new Uint8Array(encrypted),12);
 
-return out;
+return result;
 }
 
 async function decryptData(buffer){
@@ -716,7 +716,7 @@ console.error(err);
 }
 
 
-/* FILE LIST */
+/* FILES */
 
 async function loadFiles(){
 
@@ -794,7 +794,8 @@ ${typeIcon(file.file_type)}
 
 <div class="file-info">
 
-<div class="filename" title="${esc(file.filename)}">
+<div class="filename"
+title="${esc(file.filename)}">
 ${esc(file.filename)}
 </div>
 
@@ -820,6 +821,11 @@ onclick="saveFile(${file.id})">
 Save
 </button>
 
+<button class="action"
+onclick="renameFile(${file.id})">
+Rename
+</button>
+
 <button class="action delete"
 onclick="deleteFile(${file.id})">
 Delete
@@ -836,7 +842,7 @@ loadThumbnails();
 }
 
 
-/* GET ENCRYPTED FILE + METADATA */
+/* FILE */
 
 async function getFile(id){
 
@@ -859,20 +865,20 @@ throw Error("Unable to load file");
 
 const encrypted=await response.arrayBuffer();
 
-const decrypted=await decryptData(encrypted);
-
-const type=
-item.file_type||
-response.headers.get("Content-Type")||
-"application/octet-stream";
+const decrypted=
+await decryptData(encrypted);
 
 return{
 blob:new Blob(
 [decrypted],
-{type}
+{
+type:item.file_type||
+"application/octet-stream"
+}
 ),
 name:item.filename||"file",
-type
+type:item.file_type||
+"application/octet-stream"
 };
 }
 
@@ -885,23 +891,36 @@ const images=[
 ...document.querySelectorAll(".thumb-image")
 ];
 
-for(const img of images){
+const results=await Promise.allSettled(
+images.map(async img=>{
 
-try{
-
-const file=await getFile(img.dataset.id);
-
-img.src=URL.createObjectURL(file.blob);
-
-}catch(err){
-
-console.error(
-"Thumbnail:",
-img.dataset.id,
-err
+const file=await getFile(
+img.dataset.id
 );
-}
-}
+
+const url=URL.createObjectURL(
+file.blob
+);
+
+img.onload=()=>{
+URL.revokeObjectURL(url);
+};
+
+img.src=url;
+
+})
+);
+
+results.forEach((r,i)=>{
+
+if(r.status==="rejected")
+console.error(
+"Thumbnail failed:",
+images[i].dataset.id,
+r.reason
+);
+
+});
 }
 
 
@@ -913,19 +932,23 @@ try{
 
 const file=await getFile(id);
 
-const url=URL.createObjectURL(file.blob);
-
-/*
-PDF/images/videos/audio can open directly.
-Other files may not be browser-viewable.
-*/
-
 if(
-file.type.startsWith("image/")||
-file.type==="application/pdf"||
-file.type.startsWith("video/")||
-file.type.startsWith("audio/")
+!file.type.startsWith("image/")&&
+file.type!=="application/pdf"&&
+!file.type.startsWith("video/")&&
+!file.type.startsWith("audio/")
 ){
+
+alert(
+"This file type cannot be previewed. Use Save or Share."
+);
+
+return;
+}
+
+const url=URL.createObjectURL(
+file.blob
+);
 
 const win=window.open();
 
@@ -945,15 +968,6 @@ setTimeout(
 60000
 );
 
-}else{
-
-URL.revokeObjectURL(url);
-
-alert(
-"This file type cannot be opened directly in the browser. Use Save or Share."
-);
-}
-
 }catch(err){
 
 alert(err.message);
@@ -961,7 +975,7 @@ alert(err.message);
 }
 
 
-/* SAVE / DOWNLOAD */
+/* SAVE */
 
 async function saveFile(id){
 
@@ -969,7 +983,9 @@ try{
 
 const file=await getFile(id);
 
-const url=URL.createObjectURL(file.blob);
+const url=URL.createObjectURL(
+file.blob
+);
 
 const a=document.createElement("a");
 
@@ -993,7 +1009,7 @@ alert(err.message);
 }
 
 
-/* ANDROID SHARE */
+/* SHARE */
 
 async function shareFile(id){
 
@@ -1001,7 +1017,7 @@ try{
 
 const file=await getFile(id);
 
-const sharedFile=new File(
+const shared=new File(
 [file.blob],
 file.name,
 {
@@ -1011,44 +1027,82 @@ lastModified:Date.now()
 );
 
 if(
-navigator.share &&
-navigator.canShare &&
-navigator.canShare({
-files:[sharedFile]
+navigator.share&&
+navigator.canShare?.({
+files:[shared]
 })
 ){
 
 await navigator.share({
 title:file.name,
-text:file.name,
-files:[sharedFile]
-});
-
-return;
-}
-
-/*
-Fallback for browsers without file sharing.
-*/
-
-if(navigator.share){
-
-await navigator.share({
-title:file.name,
-text:"Personal Vault file: "+file.name
+files:[shared]
 });
 
 return;
 }
 
 alert(
-"File sharing is not supported by this browser. Use Save instead."
+"File sharing is not supported on this browser."
 );
 
 }catch(err){
 
 if(err.name!=="AbortError")
 alert("Share failed: "+err.message);
+}
+}
+
+
+/* RENAME */
+
+async function renameFile(id){
+
+const item=allFiles.find(
+x=>String(x.id)===String(id)
+);
+
+if(!item)return;
+
+const oldName=item.filename||"";
+
+const newName=prompt(
+"Enter new filename:",
+oldName
+);
+
+if(newName===null)return;
+
+const name=newName.trim();
+
+if(!name){
+alert("Filename cannot be empty.");
+return;
+}
+
+if(name===oldName)return;
+
+try{
+
+await api(
+`/api/photos/${id}`,
+{
+method:"PATCH",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+filename:name
+})
+}
+);
+
+item.filename=name;
+
+renderFiles();
+
+}catch(err){
+
+alert("Rename failed: "+err.message);
 }
 }
 
