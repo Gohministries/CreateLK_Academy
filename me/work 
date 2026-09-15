@@ -1,1127 +1,726 @@
-const ORIGIN="https://createlk.com";
-const TTL=86400;
+const COOKIE = "vault_session";
+const SESSION_DAYS = 7;
 
-const GOOGLE_CLIENT_ID=
-"582157960266-e15mcm3vfl5ni38smv7h96cob9tng6p3.apps.googleusercontent.com";
+function cors(request) {
+  const origin = request.headers.get("Origin") || "";
 
-const corsHeaders={
- "Access-Control-Allow-Origin":ORIGIN,
- "Access-Control-Allow-Credentials":"true",
- "Access-Control-Allow-Headers":
- "Content-Type, X-Filename, X-File-Type, X-Category",
- "Access-Control-Allow-Methods":
- "GET, POST, PUT, DELETE, OPTIONS",
- "Vary":"Origin"
-};
-
-function C(){return{...corsHeaders}}
-
-function J(data,status=200,extra={}){
- return new Response(JSON.stringify(data),{
-  status,
-  headers:{
-   ...C(),
-   "Content-Type":"application/json; charset=utf-8",
-   ...extra
-  }
- });
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type,X-Filename,X-File-Type,X-Category",
+    "Vary": "Origin"
+  };
 }
 
-/* ================= SESSION ================= */
-
-function b64u(bytes){
- let s="";
- for(const b of bytes)s+=String.fromCharCode(b);
- return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
-}
-
-function ub64u(s){
- s=s.replace(/-/g,"+").replace(/_/g,"/");
- while(s.length%4)s+="=";
- const bin=atob(s);
- return Uint8Array.from(bin,c=>c.charCodeAt(0));
-}
-
-async function hmac(data,secret){
- const key=await crypto.subtle.importKey(
-  "raw",
-  new TextEncoder().encode(secret),
-  {name:"HMAC",hash:"SHA-256"},
-  false,
-  ["sign","verify"]
- );
-
- return new Uint8Array(
-  await crypto.subtle.sign(
-   "HMAC",
-   key,
-   new TextEncoder().encode(data)
-  )
- );
-}
-
-async function makeSession(user,secret){
- const payload=b64u(
-  new TextEncoder().encode(
-   JSON.stringify({
-    u:user,
-    exp:Math.floor(Date.now()/1000)+TTL
-   })
-  )
- );
-
- const sig=b64u(await hmac(payload,secret));
- return `${payload}.${sig}`;
-}
-
-async function checkSession(request,env){
- const cookie=request.headers.get("Cookie")||"";
- const m=cookie.match(/(?:^|;\s*)session=([^;]+)/);
-
- if(!m)return false;
-
- const parts=m[1].split(".");
- if(parts.length!==2)return false;
-
- const[payload,sig]=parts;
-
- try{
-  const expected=await hmac(
-   payload,
-   env.SESSION_SECRET
-  );
-
-  const a=ub64u(sig);
-
-  if(a.length!==expected.length)return false;
-
-  let ok=true;
-
-  for(let i=0;i<a.length;i++){
-   if(a[i]!==expected[i])ok=false;
-  }
-
-  if(!ok)return false;
-
-  const data=JSON.parse(
-   new TextDecoder().decode(
-    ub64u(payload)
-   )
-  );
-
-  if(!data.exp||
-     data.exp<Math.floor(Date.now()/1000))
-   return false;
-
-  return data.u===env.VAULT_USER;
-
- }catch{
-  return false;
- }
-}
-
-async function requireAuth(request,env){
- return await checkSession(request,env);
-}
-
-function cookie(value,maxAge){
- return `session=${value}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}`;
-}
-
-/* ================= LOGIN ================= */
-
-async function login(request,env){
-
- const sec=await env.DB.prepare(
-  "SELECT failed_attempts,blocked FROM login_security WHERE id=1"
- ).first();
-
- if(sec?.blocked)
-  return J({
-   error:"Login blocked after 3 failed attempts."
-  },403);
-
- let body;
-
- try{
-  body=await request.json();
- }catch{
-  return J({error:"Invalid request."},400);
- }
-
- const username=String(body.username||"");
- const password=String(body.password||"");
-
- if(
-  username!==env.VAULT_USER||
-  password!==env.VAULT_PASSWORD
- ){
-
-  const attempts=(sec?.failed_attempts||0)+1;
-  const blocked=attempts>=3?1:0;
-
-  await env.DB.prepare(`
-   INSERT INTO login_security(
-    id,failed_attempts,blocked
-   )
-   VALUES(1,?,?)
-   ON CONFLICT(id) DO UPDATE SET
-    failed_attempts=excluded.failed_attempts,
-    blocked=excluded.blocked
-  `).bind(attempts,blocked).run();
-
-  if(blocked)
-   return J({
-    error:"Login blocked after 3 failed attempts."
-   },403);
-
-  return J({
-   error:"Invalid username or password.",
-   attempts_left:3-attempts
-  },401);
- }
-
- await env.DB.prepare(`
-  INSERT INTO login_security(
-   id,failed_attempts,blocked
-  )
-  VALUES(1,0,0)
-  ON CONFLICT(id) DO UPDATE SET
-   failed_attempts=0,
-   blocked=0
- `).run();
-
- const session=await makeSession(
-  env.VAULT_USER,
-  env.SESSION_SECRET
- );
-
- return J(
-  {ok:true},
-  200,
-  {"Set-Cookie":cookie(session,TTL)}
- );
-}
-
-async function logout(){
- return J(
-  {ok:true},
-  200,
-  {"Set-Cookie":cookie("",0)}
- );
-}
-
-/* ================= VAULT META ================= */
-
-async function vaultMeta(request,env){
-
- if(!(await requireAuth(request,env)))
-  return J({error:"Unauthorized."},401);
-
- if(request.method==="GET"){
-
-  const row=await env.DB.prepare(
-   "SELECT salt,verifier FROM vault_meta WHERE id=1"
-  ).first();
-
-  return J({
-   initialized:!!row,
-   salt:row?.salt||null,
-   verifier:row?.verifier||null
+function json(data, status, request) {
+  return new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...cors(request)
+    }
   });
- }
-
- if(request.method==="POST"){
-
-  let body;
-
-  try{
-   body=await request.json();
-  }catch{
-   return J({error:"Invalid request."},400);
-  }
-
-  if(!body.salt||!body.verifier)
-   return J({
-    error:"Missing vault data."
-   },400);
-
-  const existing=await env.DB.prepare(
-   "SELECT id FROM vault_meta WHERE id=1"
-  ).first();
-
-  if(existing)
-   return J({
-    error:"Vault is already initialized."
-   },409);
-
-  await env.DB.prepare(`
-   INSERT INTO vault_meta(id,salt,verifier)
-   VALUES(1,?,?)
-  `).bind(
-   body.salt,
-   body.verifier
-  ).run();
-
-  return J({ok:true});
- }
-
- return J({
-  error:"Method not allowed."
- },405);
 }
 
-/* ================= CATEGORIES ================= */
-
-async function categories(request,env){
-
- if(!(await requireAuth(request,env)))
-  return J({error:"Unauthorized."},401);
-
- if(request.method==="GET"){
-
-  const{results}=await env.DB.prepare(
-   "SELECT id,name,created_at FROM categories ORDER BY name COLLATE NOCASE"
-  ).all();
-
-  return J({categories:results});
- }
-
- if(request.method==="POST"){
-
-  let body;
-
-  try{
-   body=await request.json();
-  }catch{
-   return J({error:"Invalid request."},400);
-  }
-
-  const name=String(body.name||"").trim();
-
-  if(!name)
-   return J({
-    error:"Category name required."
-   },400);
-
-  try{
-
-   const r=await env.DB.prepare(`
-    INSERT INTO categories(name)
-    VALUES(?)
-    RETURNING id,name,created_at
-   `).bind(name).first();
-
-   return J(r);
-
-  }catch{
-   return J({
-    error:"Category already exists."
-   },409);
-  }
- }
-
- return J({
-  error:"Method not allowed."
- },405);
+function getCookie(request, name) {
+  const cookie = request.headers.get("Cookie") || "";
+  const match = cookie.match(
+    new RegExp("(?:^|;\\s*)" + name + "=([^;]+)")
+  );
+  return match ? match[1] : null;
 }
 
-/* ================= STATS ================= */
-
-async function stats(request,env){
-
- if(!(await requireAuth(request,env)))
-  return J({error:"Unauthorized."},401);
-
- const items=await env.DB.prepare(
-  "SELECT COUNT(*) AS n FROM vault_items"
- ).first();
-
- const files=await env.DB.prepare(
-  "SELECT COUNT(*) AS n FROM files"
- ).first();
-
- const size=await env.DB.prepare(
-  "SELECT COALESCE(SUM(file_size),0) AS n FROM files"
- ).first();
-
- return J({
-  items:items?.n||0,
-  files:files?.n||0,
-  file_size:size?.n||0
- });
-}
-
-/* ================= ITEMS ================= */
-
-async function items(request,env){
-
- if(!(await requireAuth(request,env)))
-  return J({error:"Unauthorized."},401);
-
- if(request.method==="GET"){
-
-  const{results}=await env.DB.prepare(`
-   SELECT
-    id,
-    category,
-    title,
-    username,
-    encrypted_password,
-    encrypted_backup_codes,
-    encrypted_notes,
-    created_at,
-    updated_at
-   FROM vault_items
-   ORDER BY updated_at DESC,id DESC
-  `).all();
-
-  return J({items:results});
- }
-
- let body;
-
- try{
-  body=await request.json();
- }catch{
-  return J({error:"Invalid request."},400);
- }
-
- if(request.method==="POST"){
-
-  if(!body.category||!body.title)
-   return J({
-    error:"Category and title are required."
-   },400);
-
-  const r=await env.DB.prepare(`
-   INSERT INTO vault_items(
-    category,
-    title,
-    username,
-    encrypted_password,
-    encrypted_backup_codes,
-    encrypted_notes
-   )
-   VALUES(?,?,?,?,?,?)
-   RETURNING *
-  `).bind(
-   body.category,
-   body.title,
-   body.username||"",
-   body.encrypted_password||"",
-   body.encrypted_backup_codes||"",
-   body.encrypted_notes||""
-  ).first();
-
-  return J(r);
- }
-
- return J({
-  error:"Method not allowed."
- },405);
-}
-
-/* ================= ITEM BY ID ================= */
-
-async function itemById(request,env,id){
-
- if(!(await requireAuth(request,env)))
-  return J({error:"Unauthorized."},401);
-
- if(!/^\d+$/.test(id))
-  return J({error:"Invalid ID."},400);
-
- if(request.method==="DELETE"){
-
-  await env.DB.prepare(
-   "DELETE FROM vault_items WHERE id=?"
-  ).bind(Number(id)).run();
-
-  return J({ok:true});
- }
-
- if(request.method==="PUT"){
-
-  let body;
-
-  try{
-   body=await request.json();
-  }catch{
-   return J({error:"Invalid request."},400);
+function encode64(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
   }
 
-  const r=await env.DB.prepare(`
-   UPDATE vault_items
-   SET
-    category=?,
-    title=?,
-    username=?,
-    encrypted_password=?,
-    encrypted_backup_codes=?,
-    encrypted_notes=?,
-    updated_at=CURRENT_TIMESTAMP
-   WHERE id=?
-   RETURNING *
-  `).bind(
-   body.category,
-   body.title,
-   body.username||"",
-   body.encrypted_password||"",
-   body.encrypted_backup_codes||"",
-   body.encrypted_notes||"",
-   Number(id)
-  ).first();
-
-  if(!r)
-   return J({
-    error:"Item not found."
-   },404);
-
-  return J(r);
- }
-
- return J({
-  error:"Method not allowed."
- },405);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
-/* ================= GOOGLE DRIVE ================= */
+function decode64(value) {
+  value = value.replace(/-/g, "+").replace(/_/g, "/");
 
-async function googleToken(env){
-
- const r=await fetch(
-  "https://oauth2.googleapis.com/token",
-  {
-   method:"POST",
-   headers:{
-    "Content-Type":
-    "application/x-www-form-urlencoded"
-   },
-   body:new URLSearchParams({
-    client_id:GOOGLE_CLIENT_ID,
-    client_secret:env.GOOGLE_CLIENT_SECRET,
-    refresh_token:env.GOOGLE_REFRESH_TOKEN,
-    grant_type:"refresh_token"
-   })
+  while (value.length % 4) {
+    value += "=";
   }
- );
 
- const d=await r.json();
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
 
- if(!r.ok)
-  throw Error(
-   d.error_description||
-   "Google authentication failed"
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+async function createSignature(text, secret) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
   );
 
- return d.access_token;
-}
-
-async function backupFile(env,id){
-
- const file=await env.DB.prepare(`
-  SELECT *
-  FROM files
-  WHERE id=?
- `).bind(id).first();
-
- if(!file)
-  throw Error("File not found");
-
- /* Already backed up */
- if(file.google_drive_file_id)
-  return {
-   success:true,
-   duplicate:true,
-   url:file.google_drive_url
-  };
-
- const token=await googleToken(env);
-
- /* Find existing Drive copy */
- const q=
-  `trashed=false and appProperties has `+
-  `{key='vault_file_id' and value='${id}'}`;
-
- const check=await fetch(
-  "https://www.googleapis.com/drive/v3/files?"+
-  new URLSearchParams({
-   q,
-   fields:"files(id,webViewLink)",
-   pageSize:"1"
-  }),
-  {
-   headers:{
-    Authorization:"Bearer "+token
-   }
-  }
- );
-
- const found=await check.json();
-
- if(found.files?.length){
-
-  const g=found.files[0];
-
-  const url=
-   g.webViewLink||
-   `https://drive.google.com/file/d/${g.id}/view`;
-
-  await env.DB.prepare(`
-   UPDATE files
-   SET
-    google_drive_file_id=?,
-    google_drive_url=?
-   WHERE id=?
-  `).bind(
-   g.id,
-   url,
-   id
-  ).run();
-
-  return {
-   success:true,
-   duplicate:true,
-   url
-  };
- }
-
- /* Get encrypted object from R2 */
- const object=await env.PHOTOS.get(
-  file.r2_key
- );
-
- if(!object)
-  throw Error(
-   "Cloudflare R2 file missing"
-  );
-
- /* Google Drive metadata */
- const metadata={
-  name:file.filename,
-  mimeType:"application/octet-stream",
-  parents:[env.GOOGLE_DRIVE_ROOT_ID],
-  appProperties:{
-   vault_file_id:String(id)
-  }
- };
-
- /* Start resumable upload */
- const start=await fetch(
-  "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
-  {
-   method:"POST",
-   headers:{
-    Authorization:"Bearer "+token,
-    "Content-Type":"application/json",
-    "X-Upload-Content-Type":
-     "application/octet-stream",
-    "X-Upload-Content-Length":
-     String(object.size)
-   },
-   body:JSON.stringify(metadata)
-  }
- );
-
- if(!start.ok)
-  throw Error(await start.text());
-
- const location=
-  start.headers.get("Location");
-
- if(!location)
-  throw Error(
-   "Google upload URL missing"
-  );
-
- /* Upload encrypted R2 data */
- const upload=await fetch(
-  location,
-  {
-   method:"PUT",
-   headers:{
-    "Content-Type":
-     "application/octet-stream",
-    "Content-Length":
-     String(object.size)
-   },
-   body:object.body
-  }
- );
-
- const result=await upload.json();
-
- if(!upload.ok)
-  throw Error(
-   result.error?.message||
-   "Google Drive upload failed"
-  );
-
- const url=
-  result.webViewLink||
-  `https://drive.google.com/file/d/${result.id}/view`;
-
- /* Save Drive information */
- await env.DB.prepare(`
-  UPDATE files
-  SET
-   google_drive_file_id=?,
-   google_drive_url=?
-  WHERE id=?
- `).bind(
-  result.id,
-  url,
-  id
- ).run();
-
- return {
-  success:true,
-  duplicate:false,
-  url
- };
-}
-
-/* ================= GOOGLE STATUS ================= */
-
-async function googleStatus(request,env){
-
- if(!(await requireAuth(request,env)))
-  return J({
-   error:"Unauthorized."
-  },401);
-
- const row=await env.DB.prepare(`
-  SELECT
-   COUNT(*) AS total,
-   SUM(
-    CASE
-     WHEN google_drive_file_id IS NOT NULL
-     THEN 1 ELSE 0
-    END
-   ) AS backed_up
-  FROM files
- `).first();
-
- return J({
-  connected:!!env.GOOGLE_REFRESH_TOKEN,
-  total:row?.total||0,
-  backed_up:row?.backed_up||0
- });
-}
-
-/* ================= PHOTOS ================= */
-
-async function photos(request,env,ctx){
-
- if(!(await requireAuth(request,env)))
-  return J({error:"Unauthorized."},401);
-
- if(request.method==="GET"){
-
-  const{results}=await env.DB.prepare(`
-   SELECT
-    id,
-    filename,
-    file_type,
-    file_size,
-    category,
-    created_at,
-    google_drive_file_id,
-    google_drive_url
-   FROM files
-   ORDER BY created_at DESC,id DESC
-  `).all();
-
-  return J({files:results});
- }
-
- if(request.method==="POST"){
-
-  let filename=
-   request.headers.get("X-Filename")||
-   "encrypted-file";
-
-  try{
-   filename=decodeURIComponent(filename);
-  }catch{}
-
-  const type=
-   request.headers.get("X-File-Type")||
-   "application/octet-stream";
-
-  let category=
-   request.headers.get("X-Category")||
-   "Other";
-
-  try{
-   category=decodeURIComponent(category);
-  }catch{}
-
-  category=String(category).trim()||"Other";
-
-  const allowed=[
-   "Family",
-   "Church",
-   "Ministry",
-   "Personal",
-   "Documents",
-   "Travel",
-   "Memories",
-   "Backup",
-   "Other"
-  ];
-
-  if(!allowed.includes(category))
-   category="Other";
-
-  const data=request.body;
-
-  const size=
-   Number(request.headers.get("Content-Length"))||0;
-
-  const key=
-   crypto.randomUUID()+
-   "-"+
-   filename.replace(/[^\w.\- ]/g,"_");
-
-  await env.PHOTOS.put(
-   key,
-   data,
-   {
-    httpMetadata:{
-     contentType:
-      "application/octet-stream"
-    }
-   }
-  );
-
-  try{
-
-   const r=await env.DB.prepare(`
-    INSERT INTO files(
-     filename,
-     r2_key,
-     file_type,
-     file_size,
-     category
+  return new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(text)
     )
-    VALUES(?,?,?,?,?)
-    RETURNING
-     id,
-     filename,
-     file_type,
-     file_size,
-     category,
-     created_at
-   `).bind(
-    filename,
-    key,
-    type,
-    size,
-    category
-   ).first();
+  );
+}
 
-   if(r?.id){
+async function createSession(env) {
+  const timestamp = Date.now().toString();
+  const data = `${env.VAULT_USER}.${timestamp}`;
 
-    await env.DB.prepare(`
-     INSERT OR REPLACE INTO file_features(
-      file_id,
-      category
-     )
-     VALUES(?,?)
-    `).bind(
-     r.id,
-     category
-    ).run();
+  const signature = encode64(
+    await createSignature(
+      data,
+      env.SESSION_SECRET
+    )
+  );
 
-    /*
-     * Google Drive backup runs AFTER
-     * Cloudflare R2 + D1 are saved.
-     *
-     * It does not block the upload.
-     */
-    if(ctx?.waitUntil){
-     ctx.waitUntil(
-      backupFile(env,r.id).catch(
-       console.error
-      )
-     );
+  return encode64(
+    new TextEncoder().encode(
+      `${data}.${signature}`
+    )
+  );
+}
+
+async function verifySession(token, env) {
+  try {
+    if (!token) return false;
+
+    const decoded = new TextDecoder().decode(
+      decode64(token)
+    );
+
+    const parts = decoded.split(".");
+
+    if (parts.length !== 3) {
+      return false;
     }
-   }
 
-   return J(r);
+    const username = parts[0];
+    const timestamp = Number(parts[1]);
+    const signature = parts[2];
 
-  }catch(e){
+    if (username !== env.VAULT_USER) {
+      return false;
+    }
 
-   await env.PHOTOS.delete(key);
+    if (!timestamp) {
+      return false;
+    }
 
-   throw e;
+    if (
+      Date.now() - timestamp >
+      SESSION_DAYS * 24 * 60 * 60 * 1000
+    ) {
+      return false;
+    }
+
+    const expected = encode64(
+      await createSignature(
+        `${username}.${timestamp}`,
+        env.SESSION_SECRET
+      )
+    );
+
+    return signature === expected;
+  } catch {
+    return false;
   }
- }
-
- return J({
-  error:"Method not allowed."
- },405);
 }
 
-/* ================= DOWNLOAD ================= */
+async function isAuthenticated(request, env) {
+  const token = getCookie(
+    request,
+    COOKIE
+  );
 
-async function photoDownload(request,env,id){
+  return verifySession(token, env);
+}
 
- if(!(await requireAuth(request,env)))
-  return J({
-   error:"Unauthorized."
-  },401);
+function getCategory(type) {
+  if (!type) return "General";
 
- if(!/^\d+$/.test(id))
-  return J({
-   error:"Invalid ID."
-  },400);
-
- const row=await env.DB.prepare(`
-  SELECT filename,r2_key
-  FROM files
-  WHERE id=?
- `).bind(Number(id)).first();
-
- if(!row)
-  return J({
-   error:"File not found."
-  },404);
-
- const object=await env.PHOTOS.get(
-  row.r2_key
- );
-
- if(!object)
-  return J({
-   error:"File not found in storage."
-  },404);
-
- return new Response(
-  object.body,
-  {
-   headers:{
-    ...C(),
-    "Content-Type":
-     "application/octet-stream",
-    "Content-Disposition":
-     `attachment; filename="${row.filename.replace(/"/g,"")}"`
-   }
+  if (type.startsWith("image/")) {
+    return "Photos";
   }
- );
+
+  if (type.startsWith("video/")) {
+    return "Videos";
+  }
+
+  if (type.startsWith("audio/")) {
+    return "Audio";
+  }
+
+  if (type === "application/pdf") {
+    return "Documents";
+  }
+
+  return "General";
 }
-
-/* ================= DELETE ================= */
-
-async function photoDelete(request,env,id){
-
- if(!(await requireAuth(request,env)))
-  return J({
-   error:"Unauthorized."
-  },401);
-
- if(!/^\d+$/.test(id))
-  return J({
-   error:"Invalid ID."
-  },400);
-
- const row=await env.DB.prepare(`
-  SELECT r2_key
-  FROM files
-  WHERE id=?
- `).bind(Number(id)).first();
-
- if(!row)
-  return J({
-   error:"File not found."
-  },404);
-
- await env.PHOTOS.delete(
-  row.r2_key
- );
-
- await env.DB.prepare(
-  "DELETE FROM files WHERE id=?"
- ).bind(Number(id)).run();
-
- return J({ok:true});
-}
-
-/* ================= MANUAL GOOGLE BACKUP ================= */
-
-async function googleBackup(request,env,id){
-
- if(!(await requireAuth(request,env)))
-  return J({
-   error:"Unauthorized."
-  },401);
-
- try{
-
-  const result=
-   await backupFile(env,id);
-
-  return J(result);
-
- }catch(e){
-
-  return J({
-   success:false,
-   error:e.message||"Backup failed"
-  },500);
- }
-}
-
-/* ================= MAIN ================= */
 
 export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
 
- async fetch(request,env,ctx){
+    /* CORS */
 
-  const url=new URL(request.url);
-  const path=url.pathname;
-
-  if(request.method==="OPTIONS"){
-   return new Response(null,{
-    status:204,
-    headers:C()
-   });
-  }
-
-  try{
-
-   /* LOGIN */
-   if(path==="/api/login/status")
-    return J({
-     logged_in:
-      await checkSession(request,env)
-    });
-
-   if(
-    path==="/api/login"&&
-    request.method==="POST"
-   )
-    return await login(request,env);
-
-   if(
-    path==="/api/logout"&&
-    request.method==="POST"
-   )
-    return await logout();
-
-   /* VAULT */
-   if(path==="/api/vault/meta")
-    return await vaultMeta(
-     request,env
-    );
-
-   /* CATEGORIES */
-   if(path==="/api/categories")
-    return await categories(
-     request,env
-    );
-
-   /* STATS */
-   if(path==="/api/stats")
-    return await stats(
-     request,env
-    );
-
-   /* ITEMS */
-   if(path==="/api/items")
-    return await items(
-     request,env
-    );
-
-   const itemMatch=
-    path.match(/^\/api\/items\/(\d+)$/);
-
-   if(itemMatch)
-    return await itemById(
-     request,
-     env,
-     itemMatch[1]
-    );
-
-   /* PHOTOS */
-   if(path==="/api/photos")
-    return await photos(
-     request,
-     env,
-     ctx
-    );
-
-   const downloadMatch=
-    path.match(
-     /^\/api\/photos\/(\d+)\/download$/
-    );
-
-   if(downloadMatch)
-    return await photoDownload(
-     request,
-     env,
-     downloadMatch[1]
-    );
-
-   const photoMatch=
-    path.match(
-     /^\/api\/photos\/(\d+)$/
-    );
-
-   if(photoMatch)
-    return await photoDelete(
-     request,
-     env,
-     photoMatch[1]
-    );
-
-   /* GOOGLE STATUS */
-   if(
-    path==="/api/google/status"&&
-    request.method==="GET"
-   )
-    return await googleStatus(
-     request,
-     env
-    );
-
-   /* GOOGLE MANUAL BACKUP */
-   const backupMatch=
-    path.match(
-     /^\/api\/google\/backup\/(\d+)$/
-    );
-
-   if(
-    backupMatch&&
-    request.method==="POST"
-   )
-    return await googleBackup(
-     request,
-     env,
-     Number(backupMatch[1])
-    );
-
-   return new Response(
-    "Personal Vault API",
-    {
-     status:404,
-     headers:C()
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: cors(request)
+      });
     }
-   );
 
-  }catch(e){
+    try {
 
-   return J(
-    {
-     error:"Server error.",
-     detail:String(
-      e?.message||e
-     )
-    },
-    500
-   );
+      /* LOGIN */
+
+      if (
+        path === "/api/login" &&
+        request.method === "POST"
+      ) {
+        const body = await request.json();
+
+        if (
+          body.username !== env.VAULT_USER ||
+          body.password !== env.VAULT_PASSWORD
+        ) {
+          return json(
+            {
+              ok: false,
+              error: "Invalid username or password"
+            },
+            401,
+            request
+          );
+        }
+
+        const session =
+          await createSession(env);
+
+        return new Response(
+          JSON.stringify({
+            ok: true
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "Cache-Control":
+                "no-store",
+
+              "Set-Cookie":
+                `${COOKIE}=${session}; ` +
+                `Path=/; ` +
+                `HttpOnly; ` +
+                `Secure; ` +
+                `SameSite=None; ` +
+                `Max-Age=${SESSION_DAYS * 86400}`,
+
+              ...cors(request)
+            }
+          }
+        );
+      }
+
+      /* AUTH STATUS */
+
+      if (
+        path === "/api/auth/status" &&
+        request.method === "GET"
+      ) {
+        const authenticated =
+          await isAuthenticated(
+            request,
+            env
+          );
+
+        return json(
+          {
+            authenticated
+          },
+          200,
+          request
+        );
+      }
+
+      /* LOGOUT */
+
+      if (
+        path === "/api/logout" &&
+        request.method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            ok: true
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "Set-Cookie":
+                `${COOKIE}=; ` +
+                `Path=/; ` +
+                `HttpOnly; ` +
+                `Secure; ` +
+                `SameSite=None; ` +
+                `Max-Age=0`,
+
+              ...cors(request)
+            }
+          }
+        );
+      }
+
+      /* PROTECTED API */
+
+      if (
+        !(await isAuthenticated(
+          request,
+          env
+        ))
+      ) {
+        return json(
+          {
+            ok: false,
+            error: "Unauthorized"
+          },
+          401,
+          request
+        );
+      }
+
+      /* SERVICE STATUS */
+
+      if (
+        path === "/api/status" &&
+        request.method === "GET"
+      ) {
+        return json(
+          {
+            ok: true,
+            service: "Personal Vault"
+          },
+          200,
+          request
+        );
+      }
+
+      /* STATS */
+
+      if (
+        path === "/api/stats" &&
+        request.method === "GET"
+      ) {
+        const result =
+          await env.DB.prepare(`
+            SELECT
+              COUNT(*) AS count,
+              COALESCE(
+                SUM(file_size),
+                0
+              ) AS total_size
+            FROM files
+          `).first();
+
+        return json(
+          {
+            count:
+              Number(
+                result?.count || 0
+              ),
+
+            total_size:
+              Number(
+                result?.total_size || 0
+              )
+          },
+          200,
+          request
+        );
+      }
+
+      /* CATEGORIES */
+
+      if (
+        path === "/api/categories" &&
+        request.method === "GET"
+      ) {
+        const result =
+          await env.DB.prepare(`
+            SELECT DISTINCT category
+            FROM files
+            ORDER BY category
+          `).all();
+
+        return json(
+          {
+            categories:
+              result.results || []
+          },
+          200,
+          request
+        );
+      }
+
+      /* FILE LIST */
+
+      if (
+        path === "/api/items" &&
+        request.method === "GET"
+      ) {
+        const result =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              filename,
+              file_type,
+              file_size,
+              created_at,
+              category
+            FROM files
+            ORDER BY
+              created_at DESC,
+              id DESC
+          `).all();
+
+        return json(
+          {
+            items:
+              result.results || []
+          },
+          200,
+          request
+        );
+      }
+
+      /* SINGLE FILE */
+
+      const itemMatch =
+        path.match(
+          /^\/api\/items\/(\d+)$/
+        );
+
+      if (
+        itemMatch &&
+        request.method === "GET"
+      ) {
+        const id =
+          Number(itemMatch[1]);
+
+        const item =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              filename,
+              file_type,
+              file_size,
+              created_at,
+              category
+            FROM files
+            WHERE id = ?
+          `)
+            .bind(id)
+            .first();
+
+        if (!item) {
+          return json(
+            {
+              error: "File not found"
+            },
+            404,
+            request
+          );
+        }
+
+        return json(
+          item,
+          200,
+          request
+        );
+      }
+
+      /* UPLOAD */
+
+      if (
+        path === "/api/photos" &&
+        request.method === "POST"
+      ) {
+        const filename =
+          request.headers.get(
+            "X-Filename"
+          ) || "file";
+
+        const fileType =
+          request.headers.get(
+            "X-File-Type"
+          ) ||
+          "application/octet-stream";
+
+        const category =
+          request.headers.get(
+            "X-Category"
+          ) ||
+          getCategory(fileType);
+
+        const encrypted =
+          await request.arrayBuffer();
+
+        const safeName =
+          filename.replace(
+            /[^\w.\- ]/g,
+            "_"
+          );
+
+        const r2Key =
+          crypto.randomUUID() +
+          "-" +
+          safeName;
+
+        await env.PHOTOS.put(
+          r2Key,
+          encrypted,
+          {
+            httpMetadata: {
+              contentType:
+                "application/octet-stream"
+            }
+          }
+        );
+
+        const result =
+          await env.DB.prepare(`
+            INSERT INTO files
+            (
+              filename,
+              r2_key,
+              file_type,
+              file_size,
+              category
+            )
+            VALUES (?, ?, ?, ?, ?)
+          `)
+            .bind(
+              filename,
+              r2Key,
+              fileType,
+              encrypted.byteLength,
+              category
+            )
+            .run();
+
+        const id =
+          result.meta.last_row_id;
+
+        try {
+          await env.DB.prepare(`
+            INSERT INTO file_features
+            (
+              file_id,
+              category
+            )
+            VALUES (?, ?)
+          `)
+            .bind(
+              id,
+              category
+            )
+            .run();
+        } catch {}
+
+        return json(
+          {
+            ok: true,
+            id
+          },
+          201,
+          request
+        );
+      }
+
+      /* DOWNLOAD */
+
+      const downloadMatch =
+        path.match(
+          /^\/api\/photos\/(\d+)\/download$/
+        );
+
+      if (
+        downloadMatch &&
+        request.method === "GET"
+      ) {
+        const id =
+          Number(downloadMatch[1]);
+
+        const item =
+          await env.DB.prepare(`
+            SELECT
+              filename,
+              r2_key,
+              file_type
+            FROM files
+            WHERE id = ?
+          `)
+            .bind(id)
+            .first();
+
+        if (!item) {
+          return json(
+            {
+              error: "File not found"
+            },
+            404,
+            request
+          );
+        }
+
+        const object =
+          await env.PHOTOS.get(
+            item.r2_key
+          );
+
+        if (!object) {
+          return json(
+            {
+              error: "Stored file not found"
+            },
+            404,
+            request
+          );
+        }
+
+        return new Response(
+          object.body,
+          {
+            status: 200,
+            headers: {
+              "Content-Type":
+                "application/octet-stream",
+
+              "X-Filename":
+                encodeURIComponent(
+                  item.filename
+                ),
+
+              "X-File-Type":
+                item.file_type ||
+                "application/octet-stream",
+
+              "Cache-Control":
+                "no-store",
+
+              ...cors(request)
+            }
+          }
+        );
+      }
+
+      /* DELETE */
+
+      const deleteMatch =
+        path.match(
+          /^\/api\/photos\/(\d+)$/
+        );
+
+      if (
+        deleteMatch &&
+        request.method === "DELETE"
+      ) {
+        const id =
+          Number(deleteMatch[1]);
+
+        const item =
+          await env.DB.prepare(`
+            SELECT r2_key
+            FROM files
+            WHERE id = ?
+          `)
+            .bind(id)
+            .first();
+
+        if (!item) {
+          return json(
+            {
+              error: "File not found"
+            },
+            404,
+            request
+          );
+        }
+
+        await env.PHOTOS.delete(
+          item.r2_key
+        );
+
+        try {
+          await env.DB.prepare(`
+            DELETE FROM file_features
+            WHERE file_id = ?
+          `)
+            .bind(id)
+            .run();
+        } catch {}
+
+        await env.DB.prepare(`
+          DELETE FROM files
+          WHERE id = ?
+        `)
+          .bind(id)
+          .run();
+
+        return json(
+          {
+            ok: true
+          },
+          200,
+          request
+        );
+      }
+
+      return json(
+        {
+          error: "Not found"
+        },
+        404,
+        request
+      );
+
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error:
+            error?.message ||
+            "Internal server error"
+        },
+        500,
+        request
+      );
+    }
   }
- }
 };
