@@ -1,601 +1,26 @@
+const API_PREFIX = "/jobs-api";
+
 const ORIGIN = "https://createlk.com";
 
-function cors() {
-  return {
-    "Access-Control-Allow-Origin": ORIGIN,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
-  };
-}
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...cors()
-    }
-  });
-}
-
-function cookie(request) {
-  const value = request.headers.get("Cookie") || "";
-  const match = value.match(/(?:^|;\s*)session=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-async function auth(request, env) {
-  const token = cookie(request);
-  if (!token) return null;
-
-  const row = await env.DB.prepare(`
-    SELECT
-      users.id,
-      users.name,
-      users.email,
-      users.photo_url,
-      users.role
-    FROM sessions
-    JOIN users ON users.id = sessions.user_id
-    WHERE sessions.token = ?
-      AND sessions.expires_at > datetime('now')
-    LIMIT 1
-  `).bind(token).first();
-
-  return row || null;
-}
-
-function safeName(name) {
-  return String(name || "file")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .slice(0, 100);
-}
-
-async function uploadFile(request, env, userId, folder) {
-  const form = await request.formData();
-  const file = form.get("file");
-
-  if (!(file instanceof File)) {
-    throw new Error("File required");
-  }
-
-  if (file.size > 10 * 1024 * 1024) {
-    throw new Error("Maximum file size is 10MB");
-  }
-
-  const allowed = [
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "application/pdf"
-  ];
-
-  if (!allowed.includes(file.type)) {
-    throw new Error("Unsupported file type");
-  }
-
-  const key =
-    `${folder}/${userId}/${crypto.randomUUID()}-${safeName(file.name)}`;
-
-  await env.JOBS_BUCKET.put(key, file.stream(), {
-    httpMetadata: {
-      contentType: file.type
-    }
-  });
-
-  return key;
-}
-
-async function getJob(jobId, env) {
-  return await env.DB.prepare(`
-    SELECT *
-    FROM jobs
-    WHERE id = ?
-    LIMIT 1
-  `).bind(jobId).first();
-}
-
-async function createAd(request, env, user) {
-  const form = await request.formData();
-
-  const title = String(form.get("title") || "").trim();
-  const description = String(form.get("description") || "").trim();
-  const whatsapp = String(form.get("whatsapp") || "").trim();
-  const phone = String(form.get("phone") || "").trim();
-
-  const company =
-    String(form.get("company_name") || user.name || "").trim();
-
-  const location =
-    String(form.get("location") || "").trim();
-
-  const category =
-    String(form.get("category") || "").trim();
-
-  const adType =
-    String(form.get("ad_type") || "Basic").trim();
-
-  if (!title || !description || !whatsapp || !phone) {
-    return json({
-      ok: false,
-      error: "Title, description, WhatsApp and phone are required."
-    }, 400);
-  }
-
-  if (!["Basic", "Premium"].includes(adType)) {
-    return json({
-      ok: false,
-      error: "Invalid ad type."
-    }, 400);
-  }
-
-  /* Free ads: maximum 1 per calendar month */
-  if (adType === "Basic") {
-    const free = await env.DB.prepare(`
-      SELECT COUNT(*) AS total
-      FROM jobs
-      WHERE employer_id = ?
-        AND ad_type = 'Basic'
-        AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
-    `).bind(user.id).first();
-
-    if (Number(free.total) >= 1) {
-      return json({
-        ok: false,
-        error: "Your free ad for this month has already been used.",
-        premium_required: true
-      }, 403);
-    }
-  }
-
-  const photo = form.get("photo");
-
-  if (!(photo instanceof File)) {
-    return json({
-      ok: false,
-      error: "Ad photo is required."
-    }, 400);
-  }
-
-  let photoKey;
-
-  try {
-    photoKey = await uploadFile(
-      new Request("https://upload", {
-        method: "POST",
-        body: (() => {
-          const fd = new FormData();
-          fd.append("file", photo);
-          return fd;
-        })()
-      }),
-      env,
-      user.id,
-      "ads"
-    );
-  } catch (e) {
-    return json({
-      ok: false,
-      error: e.message
-    }, 400);
-  }
-
-  let paymentId = null;
-
-  if (adType === "Premium") {
-    const slip = form.get("slip");
-
-    if (!(slip instanceof File)) {
-      return json({
-        ok: false,
-        error: "Payment slip is required for Premium ads."
-      }, 400);
-    }
-
-    const slipKey = await uploadFile(
-      new Request("https://upload", {
-        method: "POST",
-        body: (() => {
-          const fd = new FormData();
-          fd.append("file", slip);
-          return fd;
-        })()
-      }),
-      env,
-      user.id,
-      "slips"
-    );
-
-    const packageRow = await env.DB.prepare(`
-      SELECT id, price
-      FROM packages
-      WHERE name = 'Premium Ad'
-        AND status = 'active'
-      LIMIT 1
-    `).first();
-
-    if (!packageRow) {
-      return json({
-        ok: false,
-        error: "Premium package is not configured."
-      }, 500);
-    }
-
-    const jobInsert = await env.DB.prepare(`
-      INSERT INTO jobs (
-        title,
-        company_name,
-        description,
-        location,
-        category,
-        status,
-        employer_id,
-        ad_type,
-        photo_url,
-        whatsapp,
-        phone,
-        approval_status
-      )
-      VALUES (?, ?, ?, ?, ?, 'Pending', ?, 'Premium', ?, ?, ?, 'pending')
-    `).bind(
-      title,
-      company,
-      description,
-      location,
-      category,
-      user.id,
-      photoKey,
-      whatsapp,
-      phone
-    ).run();
-
-    const jobId = jobInsert.meta.last_row_id;
-
-    const payment = await env.DB.prepare(`
-      INSERT INTO payments (
-        user_id,
-        job_id,
-        package_id,
-        amount,
-        payment_method,
-        receipt_url,
-        status
-      )
-      VALUES (?, ?, ?, ?, 'bank_transfer', ?, 'pending')
-    `).bind(
-      user.id,
-      jobId,
-      packageRow.id,
-      packageRow.price,
-      slipKey
-    ).run();
-
-    paymentId = payment.meta.last_row_id;
-
-    return json({
-      ok: true,
-      message: "Premium ad submitted for admin approval.",
-      job_id: jobId,
-      payment_id: paymentId,
-      status: "pending"
-    });
-  }
-
-  const result = await env.DB.prepare(`
-    INSERT INTO jobs (
-      title,
-      company_name,
-      description,
-      location,
-      category,
-      status,
-      employer_id,
-      ad_type,
-      photo_url,
-      whatsapp,
-      phone,
-      approval_status
-    )
-    VALUES (?, ?, ?, ?, ?, 'Pending', ?, 'Basic', ?, ?, ?, 'pending')
-  `).bind(
-    title,
-    company,
-    description,
-    location,
-    category,
-    user.id,
-    photoKey,
-    whatsapp,
-    phone
-  ).run();
-
-  return json({
-    ok: true,
-    message: "Free ad submitted for admin approval.",
-    job_id: result.meta.last_row_id,
-    status: "pending"
-  });
-}
-
-async function myAds(env, user) {
-  const result = await env.DB.prepare(`
-    SELECT
-      id,
-      title,
-      company_name,
-      description,
-      location,
-      category,
-      ad_type,
-      photo_url,
-      whatsapp,
-      phone,
-      status,
-      approval_status,
-      created_at
-    FROM jobs
-    WHERE employer_id = ?
-    ORDER BY created_at DESC
-  `).bind(user.id).all();
-
-  const free = await env.DB.prepare(`
-    SELECT COUNT(*) AS total
-    FROM jobs
-    WHERE employer_id = ?
-      AND ad_type = 'Basic'
-      AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
-  `).bind(user.id).first();
-
-  return json({
-    ok: true,
-    free_ads_remaining:
-      Math.max(0, 1 - Number(free.total)),
-    ads: result.results || []
-  });
-}
-
-async function myApplications(env, user) {
-  const result = await env.DB.prepare(`
-    SELECT
-      applications.id,
-      applications.job_id,
-      applications.status,
-      applications.created_at,
-      jobs.title,
-      jobs.company_name,
-      jobs.location
-    FROM applications
-    JOIN jobs ON jobs.id = applications.job_id
-    WHERE applications.seeker_id = ?
-    ORDER BY applications.created_at DESC
-  `).bind(user.id).all();
-
-  return json({
-    ok: true,
-    applications: result.results || []
-  });
-}
-
-async function publicJobs(env) {
-  const result = await env.DB.prepare(`
-    SELECT
-      id,
-      title,
-      company_name,
-      description,
-      location,
-      category,
-      ad_type,
-      photo_url,
-      whatsapp,
-      phone,
-      created_at
-    FROM jobs
-    WHERE approval_status = 'approved'
-      AND status = 'Active'
-    ORDER BY
-      CASE WHEN ad_type = 'Premium' THEN 0 ELSE 1 END,
-      created_at DESC
-  `).all();
-
-  return json({
-    ok: true,
-    jobs: result.results || []
-  });
-}
-
-async function adminAds(env, user) {
-  if (user.role !== "Admin") {
-    return json({
-      ok: false,
-      error: "Admin access required."
-    }, 403);
-  }
-
-  const result = await env.DB.prepare(`
-    SELECT
-      jobs.*,
-      users.name AS owner_name,
-      users.email AS owner_email,
-      payments.id AS payment_id,
-      payments.amount,
-      payments.receipt_url,
-      payments.status AS payment_status
-    FROM jobs
-    LEFT JOIN users
-      ON users.id = jobs.employer_id
-    LEFT JOIN payments
-      ON payments.job_id = jobs.id
-    WHERE jobs.approval_status = 'pending'
-    ORDER BY jobs.created_at ASC
-  `).all();
-
-  return json({
-    ok: true,
-    ads: result.results || []
-  });
-}
-
-async function approveAd(env, user, jobId) {
-  if (user.role !== "Admin") {
-    return json({
-      ok: false,
-      error: "Admin access required."
-    }, 403);
-  }
-
-  const job = await getJob(jobId, env);
-
-  if (!job) {
-    return json({
-      ok: false,
-      error: "Ad not found."
-    }, 404);
-  }
-
-  if (job.ad_type === "Premium") {
-    const payment = await env.DB.prepare(`
-      SELECT *
-      FROM payments
-      WHERE job_id = ?
-      ORDER BY id DESC
-      LIMIT 1
-    `).bind(jobId).first();
-
-    if (!payment || payment.status !== "approved") {
-      return json({
-        ok: false,
-        error: "Premium payment must be approved first."
-      }, 400);
-    }
-  }
-
-  await env.DB.prepare(`
-    UPDATE jobs
-    SET
-      approval_status = 'approved',
-      status = 'Active',
-      approved_at = datetime('now'),
-      approved_by = ?
-    WHERE id = ?
-  `).bind(user.id, jobId).run();
-
-  await env.DB.prepare(`
-    INSERT INTO admin_logs (
-      admin_id,
-      action,
-      target_type,
-      target_id
-    )
-    VALUES (?, 'approve_ad', 'job', ?)
-  `).bind(user.id, jobId).run();
-
-  return json({
-    ok: true,
-    message: "Ad approved and published."
-  });
-}
-
-async function rejectAd(request, env, user, jobId) {
-  if (user.role !== "Admin") {
-    return json({
-      ok: false,
-      error: "Admin access required."
-    }, 403);
-  }
-
-  const body = await request.json().catch(() => ({}));
-  const note = String(body.note || "").trim();
-
-  await env.DB.prepare(`
-    UPDATE jobs
-    SET
-      approval_status = 'rejected',
-      status = 'Rejected'
-    WHERE id = ?
-  `).bind(jobId).run();
-
-  await env.DB.prepare(`
-    INSERT INTO admin_logs (
-      admin_id,
-      action,
-      target_type,
-      target_id
-    )
-    VALUES (?, ?, 'job', ?)
-  `).bind(
-    user.id,
-    note ? `reject_ad: ${note}` : "reject_ad",
-    jobId
-  ).run();
-
-  return json({
-    ok: true,
-    message: "Ad rejected."
-  });
-}
-
-async function approvePayment(env, user, paymentId) {
-  if (user.role !== "Admin") {
-    return json({
-      ok: false,
-      error: "Admin access required."
-    }, 403);
-  }
-
-  const payment = await env.DB.prepare(`
-    SELECT *
-    FROM payments
-    WHERE id = ?
-    LIMIT 1
-  `).bind(paymentId).first();
-
-  if (!payment) {
-    return json({
-      ok: false,
-      error: "Payment not found."
-    }, 404);
-  }
-
-  await env.DB.prepare(`
-    UPDATE payments
-    SET
-      status = 'approved',
-      verified_by = ?,
-      verified_at = datetime('now')
-    WHERE id = ?
-  `).bind(user.id, paymentId).run();
-
-  return json({
-    ok: true,
-    message: "Payment approved."
-  });
-}
-
-async function fileResponse(request, env, key) {
-  const object = await env.JOBS_BUCKET.get(key);
-
-  if (!object) {
-    return new Response("Not found", {
-      status: 404,
-      headers: cors()
-    });
-  }
-
-  const headers = new Headers(cors());
-
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  headers.set("Cache-Control", "public, max-age=86400");
-
-  return new Response(object.body, {
-    headers
-  });
-}
+// =========================
+// MAIN WORKER
+// =========================
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+
+    let pathname = url.pathname;
+
+    // Remove /jobs-api prefix
+    if (pathname === API_PREFIX) {
+      pathname = "/";
+    } else if (pathname.startsWith(API_PREFIX + "/")) {
+      pathname = pathname.slice(API_PREFIX.length);
+    }
+
+    // OPTIONS
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -603,129 +28,1006 @@ export default {
       });
     }
 
-    const url = new URL(request.url);
-
     try {
-      /* Public R2 files */
-      if (url.pathname.startsWith("/files/")) {
-        const key = decodeURIComponent(
-          url.pathname.substring("/files/".length)
+
+      // =========================
+      // PUBLIC FILES
+      // =========================
+
+      if (
+        request.method === "GET" &&
+        pathname.startsWith("/files/")
+      ) {
+        return await fileResponse(
+          request,
+          env,
+          pathname
         );
-
-        return fileResponse(request, env, key);
       }
 
-      /* Public jobs */
-      if (
-        url.pathname === "/api/jobs" &&
-        request.method === "GET"
-      ) {
-        return publicJobs(env);
-      }
 
-      /* Authentication */
-      const user = await auth(request, env);
-
-      if (!user) {
-        return json({
-          ok: false,
-          error: "Login required."
-        }, 401);
-      }
+      // =========================
+      // PUBLIC JOBS
+      // =========================
 
       if (
-        url.pathname === "/api/me" &&
-        request.method === "GET"
+        request.method === "GET" &&
+        pathname === "/api/jobs"
       ) {
+        return await publicJobs(
+          request,
+          env
+        );
+      }
+
+
+      // =========================
+      // CURRENT USER
+      // =========================
+
+      if (
+        request.method === "GET" &&
+        pathname === "/api/me"
+      ) {
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              user: null,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
         return json({
           ok: true,
           user
         });
       }
 
-      if (
-        url.pathname === "/api/my-ads" &&
-        request.method === "GET"
-      ) {
-        return myAds(env, user);
-      }
+
+      // =========================
+      // MY ADS
+      // =========================
 
       if (
-        url.pathname === "/api/my-applications" &&
-        request.method === "GET"
+        request.method === "GET" &&
+        pathname === "/api/my-ads"
       ) {
-        return myApplications(env, user);
-      }
+        const user =
+          await auth(request, env);
 
-      if (
-        url.pathname === "/api/create-ad" &&
-        request.method === "POST"
-      ) {
-        return createAd(request, env, user);
-      }
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
 
-      if (
-        url.pathname === "/api/admin/ads" &&
-        request.method === "GET"
-      ) {
-        return adminAds(env, user);
-      }
-
-      const approveMatch =
-        url.pathname.match(/^\/api\/admin\/ads\/(\d+)\/approve$/);
-
-      if (
-        approveMatch &&
-        request.method === "POST"
-      ) {
-        return approveAd(
-          env,
-          user,
-          Number(approveMatch[1])
-        );
-      }
-
-      const rejectMatch =
-        url.pathname.match(/^\/api\/admin\/ads\/(\d+)\/reject$/);
-
-      if (
-        rejectMatch &&
-        request.method === "POST"
-      ) {
-        return rejectAd(
+        return await myAds(
           request,
           env,
-          user,
-          Number(rejectMatch[1])
+          user
         );
       }
 
-      const paymentMatch =
-        url.pathname.match(/^\/api\/admin\/payments\/(\d+)\/approve$/);
+
+      // =========================
+      // MY APPLICATIONS
+      // =========================
 
       if (
-        paymentMatch &&
-        request.method === "POST"
+        request.method === "GET" &&
+        pathname === "/api/my-applications"
       ) {
-        return approvePayment(
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
+        return await myApplications(
+          request,
           env,
-          user,
-          Number(paymentMatch[1])
+          user
         );
       }
 
-      return json({
-        ok: false,
-        error: "Not found."
-      }, 404);
+
+      // =========================
+      // CREATE AD
+      // =========================
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/create-ad"
+      ) {
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
+        return await createAd(
+          request,
+          env,
+          user
+        );
+      }
+
+
+      // =========================
+      // ADMIN ADS
+      // =========================
+
+      if (
+        request.method === "GET" &&
+        pathname === "/api/admin/ads"
+      ) {
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
+        if (user.role !== "Admin") {
+          return json(
+            {
+              ok: false,
+              error: "Admin access required."
+            },
+            403
+          );
+        }
+
+        return await adminAds(
+          request,
+          env
+        );
+      }
+
+
+      // =========================
+      // APPROVE AD
+      // =========================
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/admin/approve-ad"
+      ) {
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
+        if (user.role !== "Admin") {
+          return json(
+            {
+              ok: false,
+              error: "Admin access required."
+            },
+            403
+          );
+        }
+
+        return await approveAd(
+          request,
+          env
+        );
+      }
+
+
+      // =========================
+      // REJECT AD
+      // =========================
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/admin/reject-ad"
+      ) {
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
+        if (user.role !== "Admin") {
+          return json(
+            {
+              ok: false,
+              error: "Admin access required."
+            },
+            403
+          );
+        }
+
+        return await rejectAd(
+          request,
+          env
+        );
+      }
+
+
+      // =========================
+      // APPROVE PAYMENT
+      // =========================
+
+      if (
+        request.method === "POST" &&
+        pathname === "/api/admin/approve-payment"
+      ) {
+        const user =
+          await auth(request, env);
+
+        if (!user) {
+          return json(
+            {
+              ok: false,
+              error: "Login required."
+            },
+            401
+          );
+        }
+
+        if (user.role !== "Admin") {
+          return json(
+            {
+              ok: false,
+              error: "Admin access required."
+            },
+            403
+          );
+        }
+
+        return await approvePayment(
+          request,
+          env
+        );
+      }
+
+
+      // =========================
+      // ROOT
+      // =========================
+
+      if (
+        request.method === "GET" &&
+        pathname === "/"
+      ) {
+        return json({
+          ok: true,
+          service: "CreateLK Jobs API V2"
+        });
+      }
+
+
+      return json(
+        {
+          ok: false,
+          error: "Not found"
+        },
+        404
+      );
 
     } catch (error) {
+
       console.error(error);
 
-      return json({
-        ok: false,
-        error: "Server error."
-      }, 500);
+      return json(
+        {
+          ok: false,
+          error: "Internal server error"
+        },
+        500
+      );
     }
   }
 };
+
+
+// ==================================================
+// CORS
+// ==================================================
+
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": ORIGIN,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods":
+      "GET,POST,OPTIONS"
+  };
+}
+
+
+// ==================================================
+// JSON
+// ==================================================
+
+function json(data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type":
+          "application/json;charset=UTF-8",
+
+        "Cache-Control":
+          "no-store",
+
+        ...cors()
+      }
+    }
+  );
+}
+
+
+// ==================================================
+// COOKIE
+// ==================================================
+
+function cookie(request) {
+
+  const value =
+    request.headers.get("Cookie") || "";
+
+  const match =
+    value.match(
+      /(?:^|;\s*)session=([^;]+)/
+    );
+
+  return match
+    ? decodeURIComponent(match[1])
+    : null;
+}
+
+
+// ==================================================
+// AUTH
+// ==================================================
+
+async function auth(request, env) {
+
+  const token =
+    cookie(request);
+
+  if (!token) {
+    return null;
+  }
+
+  const row =
+    await env.DB.prepare(`
+      SELECT
+        users.id,
+        users.name,
+        users.email,
+        users.photo_url,
+        users.role
+      FROM sessions
+      JOIN users
+        ON users.id = sessions.user_id
+      WHERE sessions.token = ?
+        AND sessions.expires_at > datetime('now')
+      LIMIT 1
+    `)
+    .bind(token)
+    .first();
+
+  return row || null;
+}
+
+
+// ==================================================
+// SAFE FILE NAME
+// ==================================================
+
+function safeName(name) {
+
+  return String(name || "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(0, 150);
+}
+
+
+// ==================================================
+// UPLOAD FILE
+// ==================================================
+
+async function uploadFile(
+  request,
+  env,
+  file,
+  folder
+) {
+
+  if (!file) {
+    return null;
+  }
+
+  const original =
+    safeName(file.name);
+
+  const key =
+    `${folder}/${Date.now()}-${crypto.randomUUID()}-${original}`;
+
+  await env.JOBS_BUCKET.put(
+    key,
+    file.stream(),
+    {
+      httpMetadata: {
+        contentType:
+          file.type ||
+          "application/octet-stream"
+      }
+    }
+  );
+
+  return `/files/${key}`;
+}
+
+
+// ==================================================
+// GET JOB
+// ==================================================
+
+async function getJob(
+  env,
+  id
+) {
+
+  return await env.DB.prepare(`
+    SELECT *
+    FROM ads
+    WHERE id = ?
+    LIMIT 1
+  `)
+  .bind(id)
+  .first();
+}
+
+
+// ==================================================
+// CREATE AD
+// ==================================================
+
+async function createAd(
+  request,
+  env,
+  user
+) {
+
+  const form =
+    await request.formData();
+
+  const title =
+    String(
+      form.get("title") || ""
+    ).trim();
+
+  const category =
+    String(
+      form.get("category") || ""
+    ).trim();
+
+  const location =
+    String(
+      form.get("location") || ""
+    ).trim();
+
+  const description =
+    String(
+      form.get("description") || ""
+    ).trim();
+
+  const company =
+    String(
+      form.get("company") || ""
+    ).trim();
+
+  const phone =
+    String(
+      form.get("phone") || ""
+    ).trim();
+
+  const email =
+    String(
+      form.get("email") || ""
+    ).trim();
+
+  const website =
+    String(
+      form.get("website") || ""
+    ).trim();
+
+  const salary =
+    String(
+      form.get("salary") || ""
+    ).trim();
+
+  const adType =
+    String(
+      form.get("ad_type") ||
+      form.get("plan") ||
+      "Basic"
+    ).trim();
+
+  if (
+    !title ||
+    !category ||
+    !location ||
+    !description
+  ) {
+    return json(
+      {
+        ok: false,
+        error:
+          "Please complete all required fields."
+      },
+      400
+    );
+  }
+
+
+  // Files
+  const logo =
+    form.get("logo");
+
+  const image =
+    form.get("image");
+
+  let logoUrl = null;
+  let imageUrl = null;
+
+
+  if (
+    logo &&
+    typeof logo === "object" &&
+    logo.name
+  ) {
+    logoUrl =
+      await uploadFile(
+        request,
+        env,
+        logo,
+        `ads/${user.id}/logos`
+      );
+  }
+
+
+  if (
+    image &&
+    typeof image === "object" &&
+    image.name
+  ) {
+    imageUrl =
+      await uploadFile(
+        request,
+        env,
+        image,
+        `ads/${user.id}/images`
+      );
+  }
+
+
+  // Basic / Premium
+  const premium =
+    adType.toLowerCase() === "premium";
+
+
+  const status =
+    premium
+      ? "pending_payment"
+      : "pending";
+
+
+  const result =
+    await env.DB.prepare(`
+      INSERT INTO ads
+      (
+        user_id,
+        title,
+        category,
+        location,
+        description,
+        company,
+        phone,
+        email,
+        website,
+        salary,
+        ad_type,
+        status,
+        logo_url,
+        image_url,
+        created_at
+      )
+      VALUES
+      (
+        ?,?,?,?,?,?,?,?,?,?,
+        ?,?,?,?,
+        CURRENT_TIMESTAMP
+      )
+    `)
+    .bind(
+      user.id,
+      title,
+      category,
+      location,
+      description,
+      company,
+      phone,
+      email,
+      website,
+      salary,
+      adType,
+      status,
+      logoUrl,
+      imageUrl
+    )
+    .run();
+
+
+  return json({
+    ok: true,
+    id: result.meta.last_row_id,
+    status,
+    message:
+      premium
+        ? "Ad created. Payment approval is required."
+        : "Ad submitted for approval."
+  });
+}
+
+
+// ==================================================
+// MY ADS
+// ==================================================
+
+async function myAds(
+  request,
+  env,
+  user
+) {
+
+  const result =
+    await env.DB.prepare(`
+      SELECT *
+      FROM ads
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+    `)
+    .bind(user.id)
+    .all();
+
+  return json({
+    ok: true,
+    ads: result.results || []
+  });
+}
+
+
+// ==================================================
+// MY APPLICATIONS
+// ==================================================
+
+async function myApplications(
+  request,
+  env,
+  user
+) {
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        applications.*,
+        ads.title,
+        ads.company,
+        ads.location
+      FROM applications
+      JOIN ads
+        ON ads.id = applications.ad_id
+      WHERE applications.user_id = ?
+      ORDER BY applications.created_at DESC
+    `)
+    .bind(user.id)
+    .all();
+
+  return json({
+    ok: true,
+    applications:
+      result.results || []
+  });
+}
+
+
+// ==================================================
+// PUBLIC JOBS
+// ==================================================
+
+async function publicJobs(
+  request,
+  env
+) {
+
+  const result =
+    await env.DB.prepare(`
+      SELECT *
+      FROM ads
+      WHERE status = 'approved'
+      ORDER BY created_at DESC
+    `)
+    .all();
+
+  return json({
+    ok: true,
+    jobs: result.results || []
+  });
+}
+
+
+// ==================================================
+// ADMIN ADS
+// ==================================================
+
+async function adminAds(
+  request,
+  env
+) {
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        ads.*,
+        users.name AS user_name,
+        users.email AS user_email
+      FROM ads
+      JOIN users
+        ON users.id = ads.user_id
+      ORDER BY ads.created_at DESC
+    `)
+    .all();
+
+  return json({
+    ok: true,
+    ads: result.results || []
+  });
+}
+
+
+// ==================================================
+// APPROVE AD
+// ==================================================
+
+async function approveAd(
+  request,
+  env
+) {
+
+  const body =
+    await request.json();
+
+  const id =
+    Number(body.id);
+
+  if (!id) {
+    return json(
+      {
+        ok: false,
+        error: "Invalid ad ID."
+      },
+      400
+    );
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE ads
+    SET
+      status = 'approved',
+      approved_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(id)
+  .run();
+
+
+  return json({
+    ok: true,
+    message:
+      "Ad approved successfully."
+  });
+}
+
+
+// ==================================================
+// REJECT AD
+// ==================================================
+
+async function rejectAd(
+  request,
+  env
+) {
+
+  const body =
+    await request.json();
+
+  const id =
+    Number(body.id);
+
+  if (!id) {
+    return json(
+      {
+        ok: false,
+        error: "Invalid ad ID."
+      },
+      400
+    );
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE ads
+    SET
+      status = 'rejected'
+    WHERE id = ?
+  `)
+  .bind(id)
+  .run();
+
+
+  return json({
+    ok: true,
+    message:
+      "Ad rejected successfully."
+  });
+}
+
+
+// ==================================================
+// APPROVE PAYMENT
+// ==================================================
+
+async function approvePayment(
+  request,
+  env
+) {
+
+  const body =
+    await request.json();
+
+  const id =
+    Number(body.id);
+
+  if (!id) {
+    return json(
+      {
+        ok: false,
+        error: "Invalid ad ID."
+      },
+      400
+    );
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE ads
+    SET
+      status = 'pending',
+      payment_status = 'approved',
+      payment_approved_at =
+        CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+  .bind(id)
+  .run();
+
+
+  return json({
+    ok: true,
+    message:
+      "Payment approved successfully."
+  });
+}
+
+
+// ==================================================
+// FILE RESPONSE
+// ==================================================
+
+async function fileResponse(
+  request,
+  env,
+  pathname
+) {
+
+  const key =
+    pathname
+      .replace(/^\/files\//, "")
+      .trim();
+
+  if (!key) {
+    return new Response(
+      "Not found",
+      {
+        status: 404
+      }
+    );
+  }
+
+
+  const object =
+    await env.JOBS_BUCKET.get(key);
+
+  if (!object) {
+    return new Response(
+      "Not found",
+      {
+        status: 404
+      }
+    );
+  }
+
+
+  const headers =
+    new Headers();
+
+  object.writeHttpMetadata(
+    headers
+  );
+
+  headers.set(
+    "Cache-Control",
+    "public, max-age=86400"
+  );
+
+
+  return new Response(
+    object.body,
+    {
+      headers
+    }
+  );
+}
