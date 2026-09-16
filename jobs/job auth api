@@ -1,15 +1,26 @@
-const DASHBOARD = "https://createlk.com/jobs/dashboard.html";
-const LOGIN = "https://createlk.com/jobs/login.html";
-const REDIRECT = "https://createlk-jobs-auth-v2.createlk.workers.dev/callback";
-const ORIGIN = "https://createlk.com";
+const DASHBOARD =
+  "https://createlk.com/jobs/dashboard.html";
+
+const LOGIN =
+  "https://createlk.com/jobs/login.html";
+
+const REDIRECT =
+  "https://createlk-jobs-auth-v2.createlk.workers.dev/callback";
+
+const ORIGIN =
+  "https://createlk.com";
 
 export default {
   async fetch(request, env) {
+
     const url = new URL(request.url);
 
     try {
 
-      // CORS preflight
+      /* =========================
+         CORS
+      ========================= */
+
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
@@ -17,22 +28,34 @@ export default {
         });
       }
 
-      // Google Login
-      if (request.method === "GET" && url.pathname === "/login") {
+
+      /* =========================
+         GOOGLE LOGIN
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/login"
+      ) {
 
         if (
           !env.GOOGLE_CLIENT_ID ||
           !env.GOOGLE_CLIENT_SECRET ||
           !env.SESSION_SECRET
         ) {
-          return Response.redirect(LOGIN + "?error=config", 302);
+          return Response.redirect(
+            LOGIN + "?error=config",
+            302
+          );
         }
+
 
         const state = crypto.randomUUID();
 
-        const google = new URL(
-          "https://accounts.google.com/o/oauth2/v2/auth"
-        );
+        const google =
+          new URL(
+            "https://accounts.google.com/o/oauth2/v2/auth"
+          );
 
         google.searchParams.set(
           "client_id",
@@ -69,25 +92,42 @@ export default {
           "select_account"
         );
 
-        const response = new Response(null, {
-          status: 302,
-          headers: {
-            Location: google.toString(),
-            "Cache-Control": "no-store"
-          }
-        });
+
+        const response =
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location: google.toString(),
+              "Cache-Control": "no-store"
+            }
+          });
+
 
         response.headers.append(
           "Set-Cookie",
-          `oauth_state=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`
+          [
+            `oauth_state=${encodeURIComponent(state)}`,
+            "Path=/",
+            "HttpOnly",
+            "Secure",
+            "SameSite=Lax",
+            "Max-Age=600"
+          ].join("; ")
         );
+
 
         return response;
       }
 
 
-      // Google Callback
-      if (request.method === "GET" && url.pathname === "/callback") {
+      /* =========================
+         GOOGLE CALLBACK
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/callback"
+      ) {
 
         if (
           !env.GOOGLE_CLIENT_ID ||
@@ -100,8 +140,13 @@ export default {
           );
         }
 
-        const code = url.searchParams.get("code");
-        const state = url.searchParams.get("state");
+
+        const code =
+          url.searchParams.get("code");
+
+        const state =
+          url.searchParams.get("state");
+
 
         if (!code || !state) {
           return Response.redirect(
@@ -110,9 +155,12 @@ export default {
           );
         }
 
-        const cookies = parseCookies(
-          request.headers.get("Cookie") || ""
-        );
+
+        const cookies =
+          parseCookies(
+            request.headers.get("Cookie") || ""
+          );
+
 
         if (
           !cookies.oauth_state ||
@@ -125,24 +173,34 @@ export default {
         }
 
 
-        // Exchange authorization code
-        const tokenResponse = await fetch(
-          "https://oauth2.googleapis.com/token",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/x-www-form-urlencoded"
-            },
-            body: new URLSearchParams({
-              code,
-              client_id: env.GOOGLE_CLIENT_ID,
-              client_secret: env.GOOGLE_CLIENT_SECRET,
-              redirect_uri: REDIRECT,
-              grant_type: "authorization_code"
-            })
-          }
-        );
+        /* =========================
+           GOOGLE TOKEN
+        ========================= */
+
+        const tokenResponse =
+          await fetch(
+            "https://oauth2.googleapis.com/token",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/x-www-form-urlencoded"
+              },
+              body:
+                new URLSearchParams({
+                  code,
+                  client_id:
+                    env.GOOGLE_CLIENT_ID,
+                  client_secret:
+                    env.GOOGLE_CLIENT_SECRET,
+                  redirect_uri:
+                    REDIRECT,
+                  grant_type:
+                    "authorization_code"
+                })
+            }
+          );
+
 
         if (!tokenResponse.ok) {
           return Response.redirect(
@@ -151,7 +209,10 @@ export default {
           );
         }
 
-        const tokens = await tokenResponse.json();
+
+        const tokens =
+          await tokenResponse.json();
+
 
         if (!tokens.access_token) {
           return Response.redirect(
@@ -161,16 +222,21 @@ export default {
         }
 
 
-        // Get Google user
-        const userResponse = await fetch(
-          "https://www.googleapis.com/oauth2/v2/userinfo",
-          {
-            headers: {
-              Authorization:
-                `Bearer ${tokens.access_token}`
+        /* =========================
+           GOOGLE USER
+        ========================= */
+
+        const userResponse =
+          await fetch(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            {
+              headers: {
+                Authorization:
+                  `Bearer ${tokens.access_token}`
+              }
             }
-          }
-        );
+          );
+
 
         if (!userResponse.ok) {
           return Response.redirect(
@@ -179,11 +245,11 @@ export default {
           );
         }
 
+
         const googleUser =
           await userResponse.json();
 
 
-        // Require verified Google email
         if (
           !googleUser.id ||
           !googleUser.email ||
@@ -196,26 +262,12 @@ export default {
         }
 
 
-        // Find by Google ID
-        let user = await env.DB.prepare(`
-          SELECT
-            id,
-            google_id,
-            name,
-            email,
-            photo_url,
-            role
-          FROM users
-          WHERE google_id = ?
-          LIMIT 1
-        `)
-          .bind(googleUser.id)
-          .first();
+        /* =========================
+           FIND USER
+        ========================= */
 
-
-        // If not found, find by email
-        if (!user) {
-          user = await env.DB.prepare(`
+        let user =
+          await env.DB.prepare(`
             SELECT
               id,
               google_id,
@@ -224,28 +276,51 @@ export default {
               photo_url,
               role
             FROM users
-            WHERE email = ?
+            WHERE google_id = ?
             LIMIT 1
           `)
-            .bind(googleUser.email)
-            .first();
-        }
+          .bind(googleUser.id)
+          .first();
 
 
-        // Create user
         if (!user) {
 
-          const result = await env.DB.prepare(`
-            INSERT INTO users
-              (
+          user =
+            await env.DB.prepare(`
+              SELECT
+                id,
                 google_id,
                 name,
                 email,
                 photo_url,
                 role
-              )
-            VALUES (?, ?, ?, ?, ?)
-          `)
+              FROM users
+              WHERE email = ?
+              LIMIT 1
+            `)
+            .bind(googleUser.email)
+            .first();
+        }
+
+
+        /* =========================
+           CREATE USER
+        ========================= */
+
+        if (!user) {
+
+          const result =
+            await env.DB.prepare(`
+              INSERT INTO users
+                (
+                  google_id,
+                  name,
+                  email,
+                  photo_url,
+                  role
+                )
+              VALUES (?, ?, ?, ?, ?)
+            `)
             .bind(
               googleUser.id,
               googleUser.name || "",
@@ -255,24 +330,29 @@ export default {
             )
             .run();
 
-          user = await env.DB.prepare(`
-            SELECT
-              id,
-              google_id,
-              name,
-              email,
-              photo_url,
-              role
-            FROM users
-            WHERE id = ?
-            LIMIT 1
-          `)
+
+          user =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              FROM users
+              WHERE id = ?
+              LIMIT 1
+            `)
             .bind(result.meta.last_row_id)
             .first();
 
         } else {
 
-          // Update existing account
+          /* =========================
+             UPDATE USER
+          ========================= */
+
           await env.DB.prepare(`
             UPDATE users
             SET
@@ -282,29 +362,32 @@ export default {
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `)
-            .bind(
-              googleUser.id,
-              googleUser.name || user.name || "",
-              googleUser.picture ||
-                user.photo_url ||
-                null,
-              user.id
-            )
-            .run();
+          .bind(
+            googleUser.id,
+            googleUser.name ||
+              user.name ||
+              "",
+            googleUser.picture ||
+              user.photo_url ||
+              null,
+            user.id
+          )
+          .run();
 
-          // Refresh object
-          user = await env.DB.prepare(`
-            SELECT
-              id,
-              google_id,
-              name,
-              email,
-              photo_url,
-              role
-            FROM users
-            WHERE id = ?
-            LIMIT 1
-          `)
+
+          user =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              FROM users
+              WHERE id = ?
+              LIMIT 1
+            `)
             .bind(user.id)
             .first();
         }
@@ -318,19 +401,36 @@ export default {
         }
 
 
-        // Create session token
-        const token = await createSessionToken(
-          user.id,
-          env.SESSION_SECRET
-        );
+        /* =========================
+           DELETE OLD SESSIONS
+        ========================= */
 
-        const expires = new Date(
-          Date.now() +
-          30 * 24 * 60 * 60 * 1000
-        ).toISOString();
+        await env.DB.prepare(`
+          DELETE FROM sessions
+          WHERE user_id = ?
+        `)
+        .bind(user.id)
+        .run();
 
 
-        // Save session
+        /* =========================
+           CREATE SESSION
+        ========================= */
+
+        const token =
+          await createSessionToken(
+            user.id,
+            env.SESSION_SECRET
+          );
+
+
+        const expires =
+          new Date(
+            Date.now() +
+            30 * 24 * 60 * 60 * 1000
+          ).toISOString();
+
+
         await env.DB.prepare(`
           INSERT INTO sessions
             (
@@ -340,47 +440,75 @@ export default {
             )
           VALUES (?, ?, ?)
         `)
-          .bind(
-            token,
-            user.id,
-            expires
-          )
-          .run();
+        .bind(
+          token,
+          user.id,
+          expires
+        )
+        .run();
 
 
-        // Redirect to dashboard
-        const response = new Response(null, {
-          status: 302,
-          headers: {
-            Location: DASHBOARD,
-            "Cache-Control": "no-store"
-          }
-        });
+        /* =========================
+           REDIRECT DASHBOARD
+        ========================= */
+
+        const response =
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location: DASHBOARD,
+              "Cache-Control":
+                "no-store",
+              "Pragma":
+                "no-cache"
+            }
+          });
 
 
         response.headers.append(
           "Set-Cookie",
-          `session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
+          [
+            `session=${encodeURIComponent(token)}`,
+            "Path=/",
+            "HttpOnly",
+            "Secure",
+            "SameSite=None",
+            "Max-Age=2592000"
+          ].join("; ")
         );
+
 
         response.headers.append(
           "Set-Cookie",
-          "oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
+          [
+            "oauth_state=",
+            "Path=/",
+            "HttpOnly",
+            "Secure",
+            "SameSite=Lax",
+            "Max-Age=0"
+          ].join("; ")
         );
+
 
         return response;
       }
 
 
-      // Current user
+      /* =========================
+         CURRENT USER
+      ========================= */
+
       if (
         request.method === "GET" &&
         url.pathname === "/api/me"
       ) {
 
-        const token = parseCookies(
-          request.headers.get("Cookie") || ""
-        ).session;
+        const token =
+          parseCookies(
+            request.headers.get("Cookie") || ""
+          ).session;
+
 
         if (!token) {
           return json(
@@ -394,22 +522,23 @@ export default {
         }
 
 
-        const session = await env.DB.prepare(`
-          SELECT
-            s.token,
-            s.expires_at,
-            u.id,
-            u.google_id,
-            u.name,
-            u.email,
-            u.photo_url,
-            u.role
-          FROM sessions s
-          JOIN users u
-            ON u.id = s.user_id
-          WHERE s.token = ?
-          LIMIT 1
-        `)
+        const session =
+          await env.DB.prepare(`
+            SELECT
+              s.token,
+              s.expires_at,
+              u.id,
+              u.google_id,
+              u.name,
+              u.email,
+              u.photo_url,
+              u.role
+            FROM sessions s
+            JOIN users u
+              ON u.id = s.user_id
+            WHERE s.token = ?
+            LIMIT 1
+          `)
           .bind(token)
           .first();
 
@@ -426,17 +555,17 @@ export default {
         }
 
 
-        // Expired session
         if (
-          new Date(session.expires_at) <=
-          new Date()
+          new Date(session.expires_at)
+          <= new Date()
         ) {
 
           await env.DB.prepare(
             "DELETE FROM sessions WHERE token = ?"
           )
-            .bind(token)
-            .run();
+          .bind(token)
+          .run();
+
 
           return json(
             {
@@ -454,11 +583,16 @@ export default {
             ok: true,
             user: {
               id: session.id,
-              google_id: session.google_id,
-              name: session.name,
-              email: session.email,
-              photo_url: session.photo_url,
-              role: session.role
+              google_id:
+                session.google_id,
+              name:
+                session.name,
+              email:
+                session.email,
+              photo_url:
+                session.photo_url,
+              role:
+                session.role
             }
           },
           200,
@@ -467,7 +601,10 @@ export default {
       }
 
 
-      // Logout
+      /* =========================
+         LOGOUT
+      ========================= */
+
       if (
         (
           request.method === "GET" &&
@@ -479,16 +616,19 @@ export default {
         )
       ) {
 
-        const token = parseCookies(
-          request.headers.get("Cookie") || ""
-        ).session;
+        const token =
+          parseCookies(
+            request.headers.get("Cookie") || ""
+          ).session;
+
 
         if (token) {
+
           await env.DB.prepare(
             "DELETE FROM sessions WHERE token = ?"
           )
-            .bind(token)
-            .run();
+          .bind(token)
+          .run();
         }
 
 
@@ -498,7 +638,8 @@ export default {
                 status: 302,
                 headers: {
                   Location: LOGIN,
-                  "Cache-Control": "no-store"
+                  "Cache-Control":
+                    "no-store"
                 }
               })
             : json(
@@ -512,22 +653,35 @@ export default {
 
         response.headers.append(
           "Set-Cookie",
-          "session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0"
+          [
+            "session=",
+            "Path=/",
+            "HttpOnly",
+            "Secure",
+            "SameSite=None",
+            "Max-Age=0"
+          ].join("; ")
         );
+
 
         return response;
       }
 
 
-      // Service status
+      /* =========================
+         STATUS
+      ========================= */
+
       if (
         request.method === "GET" &&
         url.pathname === "/"
       ) {
+
         return json(
           {
             ok: true,
-            service: "CreateLK Jobs Auth V2"
+            service:
+              "CreateLK Jobs Auth V2"
           },
           200,
           request
@@ -544,6 +698,7 @@ export default {
         request
       );
 
+
     } catch (error) {
 
       console.error(error);
@@ -551,7 +706,8 @@ export default {
       return json(
         {
           ok: false,
-          error: "Internal server error"
+          error:
+            "Internal server error"
         },
         500,
         request
@@ -561,7 +717,10 @@ export default {
 };
 
 
-// CORS
+/* =========================
+   CORS
+========================= */
+
 function cors(request) {
 
   const headers = {
@@ -574,15 +733,17 @@ function cors(request) {
     "Access-Control-Allow-Credentials":
       "true",
 
-    "Vary": "Origin"
+    "Vary":
+      "Origin"
   };
 
 
   if (
     request.headers.get("Origin") === ORIGIN
   ) {
-    headers["Access-Control-Allow-Origin"] =
-      ORIGIN;
+    headers[
+      "Access-Control-Allow-Origin"
+    ] = ORIGIN;
   }
 
 
@@ -590,70 +751,103 @@ function cors(request) {
 }
 
 
-// JSON response
-function json(data, status, request) {
+/* =========================
+   JSON
+========================= */
 
-  const response = new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type":
-          "application/json;charset=UTF-8",
+function json(
+  data,
+  status,
+  request
+) {
 
-        "Cache-Control":
-          "no-store"
+  const response =
+    new Response(
+      JSON.stringify(data),
+      {
+        status,
+        headers: {
+          "Content-Type":
+            "application/json;charset=UTF-8",
+
+          "Cache-Control":
+            "no-store"
+        }
       }
+    );
+
+
+  Object.entries(
+    cors(request)
+  ).forEach(
+    ([key, value]) => {
+      response.headers.set(
+        key,
+        value
+      );
     }
   );
-
-
-  Object.entries(cors(request))
-    .forEach(([key, value]) => {
-      response.headers.set(key, value);
-    });
 
 
   return response;
 }
 
 
-// Parse cookies
+/* =========================
+   COOKIES
+========================= */
+
 function parseCookies(header) {
 
   const cookies = {};
 
-  for (const part of header.split(";")) {
+  for (
+    const part of header.split(";")
+  ) {
 
-    const index = part.indexOf("=");
+    const index =
+      part.indexOf("=");
 
     if (index < 0) continue;
 
+
     const key =
-      part.slice(0, index).trim();
+      part
+        .slice(0, index)
+        .trim();
 
     const value =
-      part.slice(index + 1).trim();
+      part
+        .slice(index + 1)
+        .trim();
+
 
     try {
+
       cookies[key] =
         decodeURIComponent(value);
+
     } catch {
-      cookies[key] = value;
+
+      cookies[key] =
+        value;
     }
   }
+
 
   return cookies;
 }
 
 
-// Create HMAC session token
+/* =========================
+   SESSION TOKEN
+========================= */
+
 async function createSessionToken(
   userId,
   secret
 ) {
 
-  // FIXED: actual template literal
   const data =
     `${userId}.${crypto.randomUUID()}.${Date.now()}`;
 
@@ -682,13 +876,14 @@ async function createSessionToken(
   let binary = "";
 
   for (
-    const byte of new Uint8Array(signature)
+    const byte of
+    new Uint8Array(signature)
   ) {
-    binary += String.fromCharCode(byte);
+    binary +=
+      String.fromCharCode(byte);
   }
 
 
-  // FIXED: invalid ///g regex
   return btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
