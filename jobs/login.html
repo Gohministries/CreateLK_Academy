@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <meta name="theme-color" content="#102a56">
+
 <title>CreateLK Jobs | Login</title>
 
 <style>
@@ -65,8 +66,9 @@ h1{
   cursor:pointer;
 }
 
-.google-btn:hover{
-  opacity:.94;
+.google-btn:disabled{
+  opacity:.65;
+  cursor:not-allowed;
 }
 
 .status{
@@ -101,11 +103,9 @@ h1{
 }
 
 @keyframes spin{
-  to{transform:rotate(360deg)}
-}
-
-.hidden{
-  display:none;
+  to{
+    transform:rotate(360deg);
+  }
 }
 </style>
 </head>
@@ -129,6 +129,7 @@ h1{
   <button
     id="loginBtn"
     class="google-btn"
+    type="button"
     onclick="login()"
   >
     Continue with Google
@@ -150,19 +151,25 @@ const AUTH_API =
   "https://createlk-jobs-auth-v2.createlk.workers.dev";
 
 const DASHBOARD =
-  "/jobs/dashboard.html";
+  "https://createlk.com/jobs/dashboard.html";
+
+let checkingLogin = false;
 
 
-function setStatus(text, loading=false){
+function setStatus(text, loading = false){
 
   const status =
     document.getElementById("status");
 
   if(loading){
+
     status.innerHTML =
       '<span class="spinner"></span>' + text;
+
   }else{
+
     status.textContent = text;
+
   }
 
 }
@@ -170,17 +177,33 @@ function setStatus(text, loading=false){
 
 function login(){
 
+  if(checkingLogin){
+    return;
+  }
+
   setStatus(
     "Redirecting to Google...",
     true
   );
 
+  document.getElementById(
+    "loginBtn"
+  ).disabled = true;
+
   window.location.href =
-    AUTH_API + "/login";
+    AUTH_API + "/login?return_to=" +
+    encodeURIComponent(DASHBOARD);
+
 }
 
 
 async function checkLogin(){
+
+  if(checkingLogin){
+    return;
+  }
+
+  checkingLogin = true;
 
   try{
 
@@ -189,7 +212,10 @@ async function checkLogin(){
       {
         method:"GET",
         credentials:"include",
-        cache:"no-store"
+        cache:"no-store",
+        headers:{
+          "Accept":"application/json"
+        }
       }
     );
 
@@ -202,10 +228,8 @@ async function checkLogin(){
       return;
     }
 
-
     const data =
       await response.json();
-
 
     if(data.ok && data.user){
 
@@ -221,18 +245,24 @@ async function checkLogin(){
       return;
     }
 
-
     setStatus(
       "Please sign in with Google."
     );
 
   }catch(error){
 
-    console.error(error);
+    console.error(
+      "Login check error:",
+      error
+    );
 
     setStatus(
       "Please sign in with Google."
     );
+
+  }finally{
+
+    checkingLogin = false;
 
   }
 
@@ -245,4 +275,3 @@ checkLogin();
 
 </body>
 </html>
-
