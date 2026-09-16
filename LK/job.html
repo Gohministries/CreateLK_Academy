@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Job Details | CreateLK Jobs</title>
+
+<style>
+*{box-sizing:border-box;margin:0}
+body{font-family:Arial,sans-serif;background:#f5f7fb;color:#172033}
+a{text-decoration:none;color:inherit}
+header{background:#fff;border-bottom:1px solid #ddd}
+nav{max-width:1000px;margin:auto;padding:18px 20px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-size:21px;font-weight:800}.logo span{color:#2563eb}
+.nav a{margin-left:15px;font-size:14px;font-weight:700}
+.post{background:#2563eb;color:white;padding:9px 13px;border-radius:7px}
+main{max-width:900px;margin:30px auto;padding:0 15px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:25px}
+h1{font-size:27px;margin-bottom:8px}
+.company{color:#555;margin-bottom:18px}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:25px}
+.tag{background:#f1f5f9;padding:7px 10px;border-radius:6px;font-size:12px}
+.apply{display:block;text-align:center;background:#2563eb;color:white;padding:13px;border-radius:8px;font-weight:800;margin-bottom:25px}
+h2{font-size:18px;margin:24px 0 10px}
+.description{white-space:pre-line;line-height:1.7;color:#444;font-size:14px}
+.back{display:inline-block;margin-bottom:15px;color:#2563eb;font-size:13px;font-weight:700}
+.loading,.error{text-align:center;padding:40px;color:#666}
+footer{text-align:center;padding:30px;color:#777;font-size:12px}
+@media(max-width:600px){
+nav{padding:15px}.nav a:first-child{display:none}
+.card{padding:18px}h1{font-size:22px}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<nav>
+<a href="index.html" class="logo">CreateLK <span>Jobs</span></a>
+<div class="nav">
+<a href="jobs.html">Find Jobs</a>
+<a href="login.html">Login</a>
+<a href="post.html" class="post">Post a Job</a>
+</div>
+</nav>
+</header>
+
+<main>
+
+<a href="jobs.html" class="back">← Back to Jobs</a>
+
+<div id="job" class="card">
+<div class="loading">Loading job...</div>
+</div>
+
+</main>
+
+<footer>
+© 2026 CreateLK Jobs
+</footer>
+
+<script>
+const API="https://jobs.createlk.com/api";
+const id=new URLSearchParams(location.search).get("id");
+const box=document.getElementById("job");
+
+if(!id){
+ box.innerHTML='<div class="error">Job not found.</div>';
+}else{
+ loadJob();
+}
+
+async function loadJob(){
+ try{
+  const r=await fetch(API+"/jobs/"+encodeURIComponent(id));
+  if(!r.ok)throw Error();
+  const j=await r.json();
+
+  box.innerHTML=`
+   <h1>${safe(j.title||"Job Vacancy")}</h1>
+   <div class="company">🏢 ${safe(j.company||j.company_name||"Company")}</div>
+
+   <div class="tags">
+    ${tag("📍 "+(j.location||"Sri Lanka"))}
+    ${j.type?tag("💼 "+j.type):""}
+    ${j.salary?tag("💰 "+j.salary):""}
+    ${j.work_location?tag("🏢 "+j.work_location):""}
+   </div>
+
+   <a class="apply" href="apply.html?id=${encodeURIComponent(id)}">
+    Apply Now
+   </a>
+
+   <h2>Job Description</h2>
+   <div class="description">${safe(j.description||"No description provided.")}</div>
+
+   ${j.requirements?`
+   <h2>Requirements</h2>
+   <div class="description">${safe(j.requirements)}</div>
+   `:""}
+
+   ${j.category?`
+   <h2>Category</h2>
+   <div class="description">${safe(j.category)}</div>
+   `:""}
+  `;
+ }catch(e){
+  box.innerHTML='<div class="error">Unable to load this job.</div>';
+ }
+}
+
+function tag(x){
+ return `<span class="tag">${safe(x)}</span>`;
+}
+
+function safe(x){
+ return String(x??"")
+ .replace(/&/g,"&amp;")
+ .replace(/</g,"&lt;")
+ .replace(/>/g,"&gt;")
+ .replace(/"/g,"&quot;")
+ .replace(/'/g,"&#039;");
+}
+</script>
+
+</body>
+</html>
