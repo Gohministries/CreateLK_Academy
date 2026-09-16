@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <meta name="theme-color" content="#102a56">
 
 <title>CreateLK Jobs | Dashboard</title>
 
 <style>
+
 *{
   box-sizing:border-box;
 }
@@ -61,6 +64,11 @@ header{
   border-radius:10px;
   font-weight:700;
   cursor:pointer;
+}
+
+.logout:disabled{
+  opacity:.6;
+  cursor:not-allowed;
 }
 
 main{
@@ -353,31 +361,40 @@ main{
   .action{
     display:inline-block;
   }
+
 }
+
 </style>
 </head>
 
 <body>
 
 <header>
+
   <div class="header-inner">
 
     <a class="brand" href="/jobs/">
+
       <img
         src="https://jobs.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
         alt="CreateLK Jobs"
       >
+
       <span>CreateLK Jobs</span>
+
     </a>
 
     <button
+      id="logoutBtn"
       class="logout"
+      type="button"
       onclick="logout()"
     >
       Logout
     </button>
 
   </div>
+
 </header>
 
 
@@ -385,13 +402,17 @@ main{
 
   <div id="errorBox"></div>
 
+
   <section class="hero">
+
     <h1>My Dashboard</h1>
-    <p>Manage your ads and applications from one place.</p>
+
+    <p>
+      Manage your ads and applications from one place.
+    </p>
+
   </section>
 
-
-  <!-- PROFILE -->
 
   <section class="profile">
 
@@ -403,24 +424,31 @@ main{
     >
 
     <div>
-      <h2 id="userName">Loading...</h2>
-      <p id="userEmail">Loading...</p>
+
+      <h2 id="userName">
+        Loading...
+      </h2>
+
+      <p id="userEmail">
+        Loading...
+      </p>
+
       <span
         id="userRole"
         class="role"
       >
         Account
       </span>
+
     </div>
 
   </section>
 
 
-  <!-- STATS -->
-
   <section class="stats">
 
     <div class="stat">
+
       <div class="stat-label">
         Free Ads Remaining
       </div>
@@ -431,10 +459,12 @@ main{
       >
         —
       </div>
+
     </div>
 
 
     <div class="stat">
+
       <div class="stat-label">
         My Ads
       </div>
@@ -445,10 +475,12 @@ main{
       >
         —
       </div>
+
     </div>
 
 
     <div class="stat">
+
       <div class="stat-label">
         Applications
       </div>
@@ -459,12 +491,11 @@ main{
       >
         —
       </div>
+
     </div>
 
   </section>
 
-
-  <!-- FREE AD INFORMATION -->
 
   <section class="free-info">
 
@@ -481,13 +512,13 @@ main{
   </section>
 
 
-  <!-- MY ADS -->
-
   <section class="section">
 
     <div class="section-title">
 
-      <h2>My Ads</h2>
+      <h2>
+        My Ads
+      </h2>
 
       <a
         class="action"
@@ -499,34 +530,36 @@ main{
     </div>
 
     <div id="adsList">
+
       <div class="loading">
         Loading your ads...
       </div>
+
     </div>
 
   </section>
 
-
-  <!-- APPLICATIONS -->
 
   <section class="section">
 
     <div class="section-title">
 
-      <h2>My Applications</h2>
+      <h2>
+        My Applications
+      </h2>
 
     </div>
 
     <div id="applicationsList">
+
       <div class="loading">
         Loading applications...
       </div>
+
     </div>
 
   </section>
 
-
-  <!-- ADMIN -->
 
   <section
     id="adminSection"
@@ -554,10 +587,15 @@ const AUTH_API =
 const JOBS_API =
   "https://createlk-jobs-api-v2.createlk.workers.dev";
 
+const LOGIN_PAGE =
+  "https://createlk.com/jobs/login.html";
 
-/* =========================
-   HELPERS
-========================= */
+let redirecting = false;
+
+
+// =========================
+// HELPERS
+// =========================
 
 function escapeHTML(value){
 
@@ -567,6 +605,7 @@ function escapeHTML(value){
     .replace(/>/g,"&gt;")
     .replace(/"/g,"&quot;")
     .replace(/'/g,"&#039;");
+
 }
 
 
@@ -576,22 +615,41 @@ function showError(message){
     "errorBox"
   ).innerHTML =
     `<div class="error">${escapeHTML(message)}</div>`;
+
+}
+
+
+function redirectToLogin(){
+
+  if(redirecting){
+    return;
+  }
+
+  redirecting = true;
+
+  window.location.replace(
+    LOGIN_PAGE
+  );
+
 }
 
 
 function imageURL(key){
 
-  if(!key) return "";
+  if(!key){
+    return "";
+  }
 
   return JOBS_API +
     "/files/" +
     encodeURIComponent(key);
+
 }
 
 
-/* =========================
-   LOAD USER
-========================= */
+// =========================
+// LOAD USER
+// =========================
 
 async function loadUser(){
 
@@ -603,7 +661,10 @@ async function loadUser(){
         {
           method:"GET",
           credentials:"include",
-          cache:"no-store"
+          cache:"no-store",
+          headers:{
+            "Accept":"application/json"
+          }
         }
       );
 
@@ -613,7 +674,7 @@ async function loadUser(){
 
 
     console.log(
-      "Auth:",
+      "Auth response:",
       response.status,
       data
     );
@@ -625,11 +686,10 @@ async function loadUser(){
       !data.user
     ){
 
-      window.location.replace(
-        "/jobs/login.html"
-      );
+      redirectToLogin();
 
       return false;
+
     }
 
 
@@ -670,15 +730,20 @@ async function loadUser(){
 
       avatar.style.display =
         "none";
+
     }
 
 
-    if(user.role === "Admin"){
+    if(
+      String(user.role || "").toLowerCase()
+      === "admin"
+    ){
 
       document.getElementById(
         "adminButton"
       ).style.display =
         "inline-block";
+
     }
 
 
@@ -687,20 +752,25 @@ async function loadUser(){
 
   }catch(error){
 
-    console.error(error);
+    console.error(
+      "User loading error:",
+      error
+    );
 
     showError(
       "Unable to connect to the authentication service."
     );
 
     return false;
+
   }
+
 }
 
 
-/* =========================
-   LOAD MY ADS
-========================= */
+// =========================
+// LOAD MY ADS
+// =========================
 
 async function loadAds(){
 
@@ -718,18 +788,20 @@ async function loadAds(){
         {
           method:"GET",
           credentials:"include",
-          cache:"no-store"
+          cache:"no-store",
+          headers:{
+            "Accept":"application/json"
+          }
         }
       );
 
 
     if(response.status === 401){
 
-      window.location.replace(
-        "/jobs/login.html"
-      );
+      redirectToLogin();
 
       return;
+
     }
 
 
@@ -743,6 +815,7 @@ async function loadAds(){
         data.error ||
         "Unable to load ads"
       );
+
     }
 
 
@@ -782,6 +855,7 @@ async function loadAds(){
         `;
 
       return;
+
     }
 
 
@@ -802,8 +876,7 @@ async function loadAds(){
 
 
         const typeClass =
-          type.toLowerCase() ===
-          "premium"
+          type.toLowerCase() === "premium"
             ? "premium"
             : "basic";
 
@@ -841,18 +914,12 @@ async function loadAds(){
                 ${escapeHTML(ad.title)}
               </h3>
 
-              <span
-                class="badge ${typeClass}"
-              >
+              <span class="badge ${typeClass}">
                 ${escapeHTML(type)}
               </span>
 
-              <span
-                class="badge ${statusClass}"
-              >
-                ${escapeHTML(
-                  approval
-                )}
+              <span class="badge ${statusClass}">
+                ${escapeHTML(approval)}
               </span>
 
               ${
@@ -903,7 +970,10 @@ async function loadAds(){
 
   }catch(error){
 
-    console.error(error);
+    console.error(
+      "Ads loading error:",
+      error
+    );
 
     container.innerHTML =
       `
@@ -911,13 +981,15 @@ async function loadAds(){
         Unable to load your ads.
       </div>
       `;
+
   }
+
 }
 
 
-/* =========================
-   LOAD APPLICATIONS
-========================= */
+// =========================
+// LOAD APPLICATIONS
+// =========================
 
 async function loadApplications(){
 
@@ -931,23 +1003,24 @@ async function loadApplications(){
 
     const response =
       await fetch(
-        JOBS_API +
-        "/api/my-applications",
+        JOBS_API + "/api/my-applications",
         {
           method:"GET",
           credentials:"include",
-          cache:"no-store"
+          cache:"no-store",
+          headers:{
+            "Accept":"application/json"
+          }
         }
       );
 
 
     if(response.status === 401){
 
-      window.location.replace(
-        "/jobs/login.html"
-      );
+      redirectToLogin();
 
       return;
+
     }
 
 
@@ -961,6 +1034,7 @@ async function loadApplications(){
         data.error ||
         "Unable to load applications"
       );
+
     }
 
 
@@ -984,6 +1058,7 @@ async function loadApplications(){
         `;
 
       return;
+
     }
 
 
@@ -1041,7 +1116,10 @@ async function loadApplications(){
 
   }catch(error){
 
-    console.error(error);
+    console.error(
+      "Applications loading error:",
+      error
+    );
 
     container.innerHTML =
       `
@@ -1049,15 +1127,26 @@ async function loadApplications(){
         Unable to load applications.
       </div>
       `;
+
   }
+
 }
 
 
-/* =========================
-   LOGOUT
-========================= */
+// =========================
+// LOGOUT
+// =========================
 
 async function logout(){
+
+  const button =
+    document.getElementById(
+      "logoutBtn"
+    );
+
+  button.disabled = true;
+  button.textContent = "Logging out...";
+
 
   try{
 
@@ -1072,20 +1161,24 @@ async function logout(){
 
   }catch(error){
 
-    console.error(error);
+    console.error(
+      "Logout error:",
+      error
+    );
 
   }
 
 
   window.location.replace(
-    "/jobs/login.html"
+    LOGIN_PAGE
   );
+
 }
 
 
-/* =========================
-   START
-========================= */
+// =========================
+// START
+// =========================
 
 async function start(){
 
@@ -1093,13 +1186,16 @@ async function start(){
     await loadUser();
 
 
-  if(!loggedIn) return;
+  if(!loggedIn){
+    return;
+  }
 
 
   await Promise.all([
     loadAds(),
     loadApplications()
   ]);
+
 }
 
 
@@ -1109,4 +1205,3 @@ start();
 
 </body>
 </html>
-
