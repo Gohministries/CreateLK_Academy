@@ -3,73 +3,109 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <meta name="theme-color" content="#102a56">
 <title>CreateLK Jobs | Login</title>
 
 <style>
-*{box-sizing:border-box}
+*{
+  box-sizing:border-box;
+}
 
 body{
   margin:0;
   min-height:100vh;
+  font-family:Arial,sans-serif;
+  background:#f4f7fb;
+  color:#102a56;
   display:flex;
   align-items:center;
   justify-content:center;
-  font-family:Arial,sans-serif;
-  background:#f5f7fb;
-  padding:20px
+  padding:20px;
 }
 
 .card{
   width:100%;
   max-width:420px;
   background:#fff;
-  padding:30px 22px;
   border-radius:20px;
+  padding:32px 24px;
+  box-shadow:0 12px 40px rgba(16,42,86,.12);
   text-align:center;
-  box-shadow:0 8px 30px #00000012
 }
 
 .logo{
-  width:70px;
-  height:70px;
-  border-radius:16px;
-  object-fit:cover
+  width:80px;
+  height:80px;
+  object-fit:contain;
+  border-radius:18px;
+  margin-bottom:15px;
 }
 
 h1{
-  margin:15px 0 7px;
-  color:#102a56
+  margin:0 0 8px;
+  font-size:27px;
 }
 
-p{
-  color:#687386;
-  line-height:1.5
+.subtitle{
+  margin:0 0 28px;
+  color:#667085;
+  line-height:1.5;
 }
 
-.login{
-  display:block;
-  margin-top:22px;
-  padding:14px;
-  border-radius:11px;
+.google-btn{
+  width:100%;
+  border:0;
+  border-radius:12px;
+  padding:15px 18px;
   background:#102a56;
   color:#fff;
-  text-decoration:none;
-  font-weight:700
+  font-size:16px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.google-btn:hover{
+  opacity:.94;
+}
+
+.status{
+  margin-top:18px;
+  min-height:22px;
+  color:#667085;
+  font-size:14px;
 }
 
 .back{
   display:block;
-  margin-top:15px;
+  margin-top:22px;
   color:#102a56;
   text-decoration:none;
-  font-size:14px
+  font-size:14px;
 }
 
-#status{
-  margin-top:15px;
-  color:#687386;
-  font-size:14px
+.back:hover{
+  text-decoration:underline;
+}
+
+.spinner{
+  width:18px;
+  height:18px;
+  border:2px solid #d0d5dd;
+  border-top-color:#102a56;
+  border-radius:50%;
+  display:inline-block;
+  animation:spin .7s linear infinite;
+  vertical-align:middle;
+  margin-right:7px;
+}
+
+@keyframes spin{
+  to{transform:rotate(360deg)}
+}
+
+.hidden{
+  display:none;
 }
 </style>
 </head>
@@ -81,45 +117,77 @@ p{
   <img
     class="logo"
     src="https://jobs.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
-    alt="CreateLK Jobs">
+    alt="CreateLK Jobs"
+  >
 
   <h1>CreateLK Jobs</h1>
 
-  <p>
-    Login to post jobs, manage your advertisements
-    and view applications.
+  <p class="subtitle">
+    Sign in to manage your jobs, applications and account.
   </p>
 
-  <a
-    class="login"
-    href="https://createlk-jobs-auth-v2.createlk.workers.dev/login">
+  <button
+    id="loginBtn"
+    class="google-btn"
+    onclick="login()"
+  >
     Continue with Google
-  </a>
+  </button>
 
-  <a
-    class="back"
-    href="/jobs/index.html">
-    ← Browse Jobs
-  </a>
-
-  <div id="status">
+  <div id="status" class="status">
     Checking login...
   </div>
+
+  <a class="back" href="/jobs/">
+    ← Back to Jobs
+  </a>
 
 </div>
 
 <script>
 
-const AUTH =
-"https://createlk-jobs-auth-v2.createlk.workers.dev";
+const AUTH_API =
+  "https://createlk-jobs-auth-v2.createlk.workers.dev";
+
+const DASHBOARD =
+  "/jobs/dashboard.html";
+
+
+function setStatus(text, loading=false){
+
+  const status =
+    document.getElementById("status");
+
+  if(loading){
+    status.innerHTML =
+      '<span class="spinner"></span>' + text;
+  }else{
+    status.textContent = text;
+  }
+
+}
+
+
+function login(){
+
+  setStatus(
+    "Redirecting to Google...",
+    true
+  );
+
+  window.location.href =
+    AUTH_API + "/login";
+}
+
 
 async function checkLogin(){
 
   try{
 
-    const response=await fetch(
-      AUTH+"/api/me",
+    const response = await fetch(
+      AUTH_API + "/api/me",
       {
+        method:"GET",
         credentials:"include",
         cache:"no-store"
       }
@@ -127,35 +195,49 @@ async function checkLogin(){
 
     if(!response.ok){
 
-      document.getElementById("status").textContent=
-        "Please login to continue.";
+      setStatus(
+        "Please sign in with Google."
+      );
 
       return;
     }
 
-    const data=await response.json();
+
+    const data =
+      await response.json();
+
 
     if(data.ok && data.user){
 
-      document.getElementById("status").textContent=
-        "Already logged in. Opening dashboard...";
+      setStatus(
+        "Already signed in. Opening dashboard...",
+        true
+      );
 
-      location.replace("/jobs/dashboard.html");
+      window.location.replace(
+        DASHBOARD
+      );
 
       return;
     }
 
-    document.getElementById("status").textContent=
-      "Please login to continue.";
+
+    setStatus(
+      "Please sign in with Google."
+    );
 
   }catch(error){
 
-    document.getElementById("status").textContent=
-      "Please login to continue.";
+    console.error(error);
+
+    setStatus(
+      "Please sign in with Google."
+    );
 
   }
 
 }
+
 
 checkLogin();
 
@@ -163,3 +245,4 @@ checkLogin();
 
 </body>
 </html>
+
