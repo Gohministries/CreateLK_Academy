@@ -1,3 +1,5 @@
+const AUTH_PREFIX = "/jobs-auth";
+
 const DASHBOARD =
   "https://createlk.com/jobs/dashboard.html";
 
@@ -5,22 +7,25 @@ const LOGIN =
   "https://createlk.com/jobs/login.html";
 
 const REDIRECT =
-  "https://createlk-jobs-auth-v2.createlk.workers.dev/callback";
+  "https://createlk.com/jobs-auth/callback";
 
 const ORIGIN =
   "https://createlk.com";
 
 export default {
   async fetch(request, env) {
-
     const url = new URL(request.url);
 
+    // Remove /jobs-auth from the route
+    let pathname = url.pathname;
+
+    if (pathname === AUTH_PREFIX) {
+      pathname = "/";
+    } else if (pathname.startsWith(AUTH_PREFIX + "/")) {
+      pathname = pathname.slice(AUTH_PREFIX.length);
+    }
+
     try {
-
-      /* =========================
-         CORS
-      ========================= */
-
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
@@ -28,16 +33,10 @@ export default {
         });
       }
 
-
-      /* =========================
-         GOOGLE LOGIN
-      ========================= */
-
-      if (
-        request.method === "GET" &&
-        url.pathname === "/login"
-      ) {
-
+      // =========================
+      // GOOGLE LOGIN
+      // =========================
+      if (request.method === "GET" && pathname === "/login") {
         if (
           !env.GOOGLE_CLIENT_ID ||
           !env.GOOGLE_CLIENT_SECRET ||
@@ -49,13 +48,11 @@ export default {
           );
         }
 
-
         const state = crypto.randomUUID();
 
-        const google =
-          new URL(
-            "https://accounts.google.com/o/oauth2/v2/auth"
-          );
+        const google = new URL(
+          "https://accounts.google.com/o/oauth2/v2/auth"
+        );
 
         google.searchParams.set(
           "client_id",
@@ -92,21 +89,19 @@ export default {
           "select_account"
         );
 
-
-        const response =
-          new Response(null, {
-            status: 302,
-            headers: {
-              Location: google.toString(),
-              "Cache-Control": "no-store"
-            }
-          });
-
+        const response = new Response(null, {
+          status: 302,
+          headers: {
+            Location: google.toString(),
+            "Cache-Control": "no-store"
+          }
+        });
 
         response.headers.append(
           "Set-Cookie",
           [
             `oauth_state=${encodeURIComponent(state)}`,
+            "Domain=.createlk.com",
             "Path=/",
             "HttpOnly",
             "Secure",
@@ -115,20 +110,16 @@ export default {
           ].join("; ")
         );
 
-
         return response;
       }
 
-
-      /* =========================
-         GOOGLE CALLBACK
-      ========================= */
-
+      // =========================
+      // GOOGLE CALLBACK
+      // =========================
       if (
         request.method === "GET" &&
-        url.pathname === "/callback"
+        pathname === "/callback"
       ) {
-
         if (
           !env.GOOGLE_CLIENT_ID ||
           !env.GOOGLE_CLIENT_SECRET ||
@@ -140,13 +131,11 @@ export default {
           );
         }
 
-
         const code =
           url.searchParams.get("code");
 
         const state =
           url.searchParams.get("state");
-
 
         if (!code || !state) {
           return Response.redirect(
@@ -155,12 +144,9 @@ export default {
           );
         }
 
-
-        const cookies =
-          parseCookies(
-            request.headers.get("Cookie") || ""
-          );
-
+        const cookies = parseCookies(
+          request.headers.get("Cookie") || ""
+        );
 
         if (
           !cookies.oauth_state ||
@@ -172,35 +158,24 @@ export default {
           );
         }
 
-
-        /* =========================
-           GOOGLE TOKEN
-        ========================= */
-
-        const tokenResponse =
-          await fetch(
-            "https://oauth2.googleapis.com/token",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/x-www-form-urlencoded"
-              },
-              body:
-                new URLSearchParams({
-                  code,
-                  client_id:
-                    env.GOOGLE_CLIENT_ID,
-                  client_secret:
-                    env.GOOGLE_CLIENT_SECRET,
-                  redirect_uri:
-                    REDIRECT,
-                  grant_type:
-                    "authorization_code"
-                })
-            }
-          );
-
+        // Exchange Google authorization code
+        const tokenResponse = await fetch(
+          "https://oauth2.googleapis.com/token",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/x-www-form-urlencoded"
+            },
+            body: new URLSearchParams({
+              code,
+              client_id: env.GOOGLE_CLIENT_ID,
+              client_secret: env.GOOGLE_CLIENT_SECRET,
+              redirect_uri: REDIRECT,
+              grant_type: "authorization_code"
+            })
+          }
+        );
 
         if (!tokenResponse.ok) {
           return Response.redirect(
@@ -209,10 +184,8 @@ export default {
           );
         }
 
-
         const tokens =
           await tokenResponse.json();
-
 
         if (!tokens.access_token) {
           return Response.redirect(
@@ -221,22 +194,16 @@ export default {
           );
         }
 
-
-        /* =========================
-           GOOGLE USER
-        ========================= */
-
-        const userResponse =
-          await fetch(
-            "https://www.googleapis.com/oauth2/v2/userinfo",
-            {
-              headers: {
-                Authorization:
-                  `Bearer ${tokens.access_token}`
-              }
+        // Get Google user
+        const userResponse = await fetch(
+          "https://www.googleapis.com/oauth2/v2/userinfo",
+          {
+            headers: {
+              Authorization:
+                `Bearer ${tokens.access_token}`
             }
-          );
-
+          }
+        );
 
         if (!userResponse.ok) {
           return Response.redirect(
@@ -245,10 +212,8 @@ export default {
           );
         }
 
-
         const googleUser =
           await userResponse.json();
-
 
         if (
           !googleUser.id ||
@@ -261,10 +226,9 @@ export default {
           );
         }
 
-
-        /* =========================
-           FIND USER
-        ========================= */
+        // =========================
+        // FIND USER
+        // =========================
 
         let user =
           await env.DB.prepare(`
@@ -282,9 +246,8 @@ export default {
           .bind(googleUser.id)
           .first();
 
-
+        // Try email if Google ID wasn't found
         if (!user) {
-
           user =
             await env.DB.prepare(`
               SELECT
@@ -302,23 +265,21 @@ export default {
             .first();
         }
 
-
-        /* =========================
-           CREATE USER
-        ========================= */
+        // =========================
+        // CREATE USER
+        // =========================
 
         if (!user) {
-
           const result =
             await env.DB.prepare(`
               INSERT INTO users
-                (
-                  google_id,
-                  name,
-                  email,
-                  photo_url,
-                  role
-                )
+              (
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              )
               VALUES (?, ?, ?, ?, ?)
             `)
             .bind(
@@ -329,7 +290,6 @@ export default {
               "Job Seeker"
             )
             .run();
-
 
           user =
             await env.DB.prepare(`
@@ -346,13 +306,13 @@ export default {
             `)
             .bind(result.meta.last_row_id)
             .first();
+        }
 
-        } else {
+        // =========================
+        // UPDATE EXISTING USER
+        // =========================
 
-          /* =========================
-             UPDATE USER
-          ========================= */
-
+        else {
           await env.DB.prepare(`
             UPDATE users
             SET
@@ -364,16 +324,13 @@ export default {
           `)
           .bind(
             googleUser.id,
-            googleUser.name ||
-              user.name ||
-              "",
+            googleUser.name || user.name || "",
             googleUser.picture ||
               user.photo_url ||
               null,
             user.id
           )
           .run();
-
 
           user =
             await env.DB.prepare(`
@@ -392,7 +349,6 @@ export default {
             .first();
         }
 
-
         if (!user) {
           return Response.redirect(
             LOGIN + "?error=create_user",
@@ -400,22 +356,19 @@ export default {
           );
         }
 
+        // =========================
+        // REMOVE OLD SESSIONS
+        // =========================
 
-        /* =========================
-           DELETE OLD SESSIONS
-        ========================= */
+        await env.DB.prepare(
+          `DELETE FROM sessions WHERE user_id = ?`
+        )
+          .bind(user.id)
+          .run();
 
-        await env.DB.prepare(`
-          DELETE FROM sessions
-          WHERE user_id = ?
-        `)
-        .bind(user.id)
-        .run();
-
-
-        /* =========================
-           CREATE SESSION
-        ========================= */
+        // =========================
+        // CREATE SESSION
+        // =========================
 
         const token =
           await createSessionToken(
@@ -423,21 +376,19 @@ export default {
             env.SESSION_SECRET
           );
 
-
         const expires =
           new Date(
             Date.now() +
-            30 * 24 * 60 * 60 * 1000
+              30 * 24 * 60 * 60 * 1000
           ).toISOString();
-
 
         await env.DB.prepare(`
           INSERT INTO sessions
-            (
-              token,
-              user_id,
-              expires_at
-            )
+          (
+            token,
+            user_id,
+            expires_at
+          )
           VALUES (?, ?, ?)
         `)
         .bind(
@@ -447,41 +398,37 @@ export default {
         )
         .run();
 
-
-        /* =========================
-           REDIRECT DASHBOARD
-        ========================= */
-
         const response =
           new Response(null, {
             status: 302,
             headers: {
               Location: DASHBOARD,
-              "Cache-Control":
-                "no-store",
-              "Pragma":
-                "no-cache"
+              "Cache-Control": "no-store",
+              "Pragma": "no-cache"
             }
           });
 
-
+        // IMPORTANT:
+        // Shared across createlk.com
         response.headers.append(
           "Set-Cookie",
           [
             `session=${encodeURIComponent(token)}`,
+            "Domain=.createlk.com",
             "Path=/",
             "HttpOnly",
             "Secure",
-            "SameSite=None",
+            "SameSite=Lax",
             "Max-Age=2592000"
           ].join("; ")
         );
 
-
+        // Clear OAuth state
         response.headers.append(
           "Set-Cookie",
           [
             "oauth_state=",
+            "Domain=.createlk.com",
             "Path=/",
             "HttpOnly",
             "Secure",
@@ -490,25 +437,21 @@ export default {
           ].join("; ")
         );
 
-
         return response;
       }
 
-
-      /* =========================
-         CURRENT USER
-      ========================= */
+      // =========================
+      // CURRENT USER
+      // =========================
 
       if (
         request.method === "GET" &&
-        url.pathname === "/api/me"
+        pathname === "/api/me"
       ) {
-
         const token =
           parseCookies(
             request.headers.get("Cookie") || ""
           ).session;
-
 
         if (!token) {
           return json(
@@ -520,7 +463,6 @@ export default {
             request
           );
         }
-
 
         const session =
           await env.DB.prepare(`
@@ -542,7 +484,6 @@ export default {
           .bind(token)
           .first();
 
-
         if (!session) {
           return json(
             {
@@ -554,18 +495,15 @@ export default {
           );
         }
 
-
         if (
-          new Date(session.expires_at)
-          <= new Date()
+          new Date(session.expires_at) <=
+          new Date()
         ) {
-
           await env.DB.prepare(
-            "DELETE FROM sessions WHERE token = ?"
+            `DELETE FROM sessions WHERE token = ?`
           )
-          .bind(token)
-          .run();
-
+            .bind(token)
+            .run();
 
           return json(
             {
@@ -577,22 +515,16 @@ export default {
           );
         }
 
-
         return json(
           {
             ok: true,
             user: {
               id: session.id,
-              google_id:
-                session.google_id,
-              name:
-                session.name,
-              email:
-                session.email,
-              photo_url:
-                session.photo_url,
-              role:
-                session.role
+              google_id: session.google_id,
+              name: session.name,
+              email: session.email,
+              photo_url: session.photo_url,
+              role: session.role
             }
           },
           200,
@@ -600,37 +532,32 @@ export default {
         );
       }
 
-
-      /* =========================
-         LOGOUT
-      ========================= */
+      // =========================
+      // LOGOUT
+      // =========================
 
       if (
         (
           request.method === "GET" &&
-          url.pathname === "/logout"
+          pathname === "/logout"
         ) ||
         (
           request.method === "POST" &&
-          url.pathname === "/api/logout"
+          pathname === "/api/logout"
         )
       ) {
-
         const token =
           parseCookies(
             request.headers.get("Cookie") || ""
           ).session;
 
-
         if (token) {
-
           await env.DB.prepare(
-            "DELETE FROM sessions WHERE token = ?"
+            `DELETE FROM sessions WHERE token = ?`
           )
           .bind(token)
           .run();
         }
-
 
         const response =
           request.method === "GET"
@@ -638,56 +565,48 @@ export default {
                 status: 302,
                 headers: {
                   Location: LOGIN,
-                  "Cache-Control":
-                    "no-store"
+                  "Cache-Control": "no-store"
                 }
               })
             : json(
-                {
-                  ok: true
-                },
+                { ok: true },
                 200,
                 request
               );
-
 
         response.headers.append(
           "Set-Cookie",
           [
             "session=",
+            "Domain=.createlk.com",
             "Path=/",
             "HttpOnly",
             "Secure",
-            "SameSite=None",
+            "SameSite=Lax",
             "Max-Age=0"
           ].join("; ")
         );
 
-
         return response;
       }
 
-
-      /* =========================
-         STATUS
-      ========================= */
+      // =========================
+      // ROOT
+      // =========================
 
       if (
         request.method === "GET" &&
-        url.pathname === "/"
+        pathname === "/"
       ) {
-
         return json(
           {
             ok: true,
-            service:
-              "CreateLK Jobs Auth V2"
+            service: "CreateLK Jobs Auth V2"
           },
           200,
           request
         );
       }
-
 
       return json(
         {
@@ -698,16 +617,13 @@ export default {
         request
       );
 
-
     } catch (error) {
-
       console.error(error);
 
       return json(
         {
           ok: false,
-          error:
-            "Internal server error"
+          error: "Internal server error"
         },
         500,
         request
@@ -717,12 +633,11 @@ export default {
 };
 
 
-/* =========================
-   CORS
-========================= */
+// =========================
+// CORS
+// =========================
 
 function cors(request) {
-
   const headers = {
     "Access-Control-Allow-Methods":
       "GET,POST,OPTIONS",
@@ -733,34 +648,29 @@ function cors(request) {
     "Access-Control-Allow-Credentials":
       "true",
 
-    "Vary":
-      "Origin"
+    "Vary": "Origin"
   };
-
 
   if (
     request.headers.get("Origin") === ORIGIN
   ) {
-    headers[
-      "Access-Control-Allow-Origin"
-    ] = ORIGIN;
+    headers["Access-Control-Allow-Origin"] =
+      ORIGIN;
   }
-
 
   return headers;
 }
 
 
-/* =========================
-   JSON
-========================= */
+// =========================
+// JSON RESPONSE
+// =========================
 
 function json(
   data,
   status,
   request
 ) {
-
   const response =
     new Response(
       JSON.stringify(data),
@@ -776,7 +686,6 @@ function json(
       }
     );
 
-
   Object.entries(
     cors(request)
   ).forEach(
@@ -788,28 +697,24 @@ function json(
     }
   );
 
-
   return response;
 }
 
 
-/* =========================
-   COOKIES
-========================= */
+// =========================
+// COOKIE PARSER
+// =========================
 
 function parseCookies(header) {
-
   const cookies = {};
 
   for (
     const part of header.split(";")
   ) {
-
     const index =
       part.indexOf("=");
 
     if (index < 0) continue;
-
 
     const key =
       part
@@ -821,36 +726,28 @@ function parseCookies(header) {
         .slice(index + 1)
         .trim();
 
-
     try {
-
       cookies[key] =
         decodeURIComponent(value);
-
     } catch {
-
-      cookies[key] =
-        value;
+      cookies[key] = value;
     }
   }
-
 
   return cookies;
 }
 
 
-/* =========================
-   SESSION TOKEN
-========================= */
+// =========================
+// CREATE SESSION TOKEN
+// =========================
 
 async function createSessionToken(
   userId,
   secret
 ) {
-
   const data =
     `${userId}.${crypto.randomUUID()}.${Date.now()}`;
-
 
   const key =
     await crypto.subtle.importKey(
@@ -864,7 +761,6 @@ async function createSessionToken(
       ["sign"]
     );
 
-
   const signature =
     await crypto.subtle.sign(
       "HMAC",
@@ -872,20 +768,17 @@ async function createSessionToken(
       new TextEncoder().encode(data)
     );
 
-
   let binary = "";
 
   for (
     const byte of
-    new Uint8Array(signature)
+      new Uint8Array(signature)
   ) {
-    binary +=
-      String.fromCharCode(byte);
+    binary += String.fromCharCode(byte);
   }
-
 
   return btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+    .replace(/=+$/, "");
 }
