@@ -1,0 +1,950 @@
+const DASHBOARD =
+  "https://createlk.com/jobs/dashboard.html";
+
+const LOGIN =
+  "https://createlk.com/jobs/login.html";
+
+const GOOGLE_REDIRECT =
+  "https://createlk-jobs-auth-v2.createlk.workers.dev/callback";
+
+const SITE_ORIGIN =
+  "https://createlk.com";
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    try {
+
+      /* =========================
+         CORS PREFLIGHT
+      ========================= */
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: corsHeaders(request)
+        });
+      }
+
+
+      /* =========================
+         GOOGLE LOGIN
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/login"
+      ) {
+
+        if (!env.GOOGLE_CLIENT_ID) {
+          return json({
+            ok: false,
+            error: "GOOGLE_CLIENT_ID is not configured."
+          }, 500, request);
+        }
+
+        const state = crypto.randomUUID();
+
+        const googleUrl = new URL(
+          "https://accounts.google.com/o/oauth2/v2/auth"
+        );
+
+        googleUrl.searchParams.set(
+          "client_id",
+          env.GOOGLE_CLIENT_ID
+        );
+
+        googleUrl.searchParams.set(
+          "redirect_uri",
+          GOOGLE_REDIRECT
+        );
+
+        googleUrl.searchParams.set(
+          "response_type",
+          "code"
+        );
+
+        googleUrl.searchParams.set(
+          "scope",
+          "openid email profile"
+        );
+
+        googleUrl.searchParams.set(
+          "state",
+          state
+        );
+
+        googleUrl.searchParams.set(
+          "access_type",
+          "online"
+        );
+
+        googleUrl.searchParams.set(
+          "prompt",
+          "select_account"
+        );
+
+        const response = new Response(null, {
+          status: 302,
+          headers: {
+            Location: googleUrl.toString(),
+            "Cache-Control": "no-store"
+          }
+        });
+
+        response.headers.append(
+          "Set-Cookie",
+          `oauth_state=${encodeURIComponent(state)}; ` +
+          `Path=/; ` +
+          `HttpOnly; ` +
+          `Secure; ` +
+          `SameSite=Lax; ` +
+          `Max-Age=600`
+        );
+
+        return response;
+      }
+
+
+      /* =========================
+         GOOGLE CALLBACK
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/callback"
+      ) {
+
+        if (
+          !env.GOOGLE_CLIENT_ID ||
+          !env.GOOGLE_CLIENT_SECRET
+        ) {
+          return Response.redirect(
+            LOGIN + "?error=google_config",
+            302
+          );
+        }
+
+        if (!env.SESSION_SECRET) {
+          return Response.redirect(
+            LOGIN + "?error=session_config",
+            302
+          );
+        }
+
+
+        const code =
+          url.searchParams.get("code");
+
+        const state =
+          url.searchParams.get("state");
+
+        const googleError =
+          url.searchParams.get("error");
+
+
+        if (googleError) {
+          return Response.redirect(
+            LOGIN + "?error=google_cancelled",
+            302
+          );
+        }
+
+
+        if (!code || !state) {
+          return Response.redirect(
+            LOGIN + "?error=invalid_callback",
+            302
+          );
+        }
+
+
+        /* =========================
+           CHECK OAUTH STATE
+        ========================= */
+
+        const cookies = parseCookies(
+          request.headers.get("Cookie") || ""
+        );
+
+        if (
+          !cookies.oauth_state ||
+          cookies.oauth_state !== state
+        ) {
+          return Response.redirect(
+            LOGIN + "?error=invalid_state",
+            302
+          );
+        }
+
+
+        /* =========================
+           GOOGLE TOKEN
+        ========================= */
+
+        const tokenResponse = await fetch(
+          "https://oauth2.googleapis.com/token",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/x-www-form-urlencoded"
+            },
+
+            body: new URLSearchParams({
+              code: code,
+
+              client_id:
+                env.GOOGLE_CLIENT_ID,
+
+              client_secret:
+                env.GOOGLE_CLIENT_SECRET,
+
+              redirect_uri:
+                GOOGLE_REDIRECT,
+
+              grant_type:
+                "authorization_code"
+            })
+          }
+        );
+
+
+        if (!tokenResponse.ok) {
+
+          console.error(
+            "Google token error:",
+            await tokenResponse.text()
+          );
+
+          return Response.redirect(
+            LOGIN + "?error=google_token",
+            302
+          );
+        }
+
+
+        const tokens =
+          await tokenResponse.json();
+
+
+        if (!tokens.access_token) {
+
+          return Response.redirect(
+            LOGIN + "?error=no_access_token",
+            302
+          );
+        }
+
+
+        /* =========================
+           GOOGLE USER PROFILE
+        ========================= */
+
+        const userResponse = await fetch(
+          "https://www.googleapis.com/oauth2/v2/userinfo",
+          {
+            headers: {
+              Authorization:
+                `Bearer ${tokens.access_token}`
+            }
+          }
+        );
+
+
+        if (!userResponse.ok) {
+
+          console.error(
+            "Google user error:",
+            await userResponse.text()
+          );
+
+          return Response.redirect(
+            LOGIN + "?error=google_profile",
+            302
+          );
+        }
+
+
+        const googleUser =
+          await userResponse.json();
+
+
+        if (
+          !googleUser.id ||
+          !googleUser.email
+        ) {
+
+          return Response.redirect(
+            LOGIN + "?error=invalid_google_user",
+            302
+          );
+        }
+
+
+        /* =========================
+           FIND USER BY GOOGLE ID
+        ========================= */
+
+        let user =
+          await env.DB.prepare(`
+            SELECT
+              id,
+              google_id,
+              name,
+              email,
+              photo_url,
+              role
+            FROM users
+            WHERE google_id = ?
+            LIMIT 1
+          `)
+          .bind(googleUser.id)
+          .first();
+
+
+        /* =========================
+           FIND USER BY EMAIL
+        ========================= */
+
+        if (!user) {
+
+          user =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              FROM users
+              WHERE email = ?
+              LIMIT 1
+            `)
+            .bind(googleUser.email)
+            .first();
+        }
+
+
+        /* =========================
+           CREATE USER
+        ========================= */
+
+        if (!user) {
+
+          const result =
+            await env.DB.prepare(`
+              INSERT INTO users (
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              )
+              VALUES (?, ?, ?, ?, 'Job Seeker')
+            `)
+            .bind(
+              googleUser.id,
+              googleUser.name || "",
+              googleUser.email,
+              googleUser.picture || null
+            )
+            .run();
+
+
+          user =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              FROM users
+              WHERE id = ?
+              LIMIT 1
+            `)
+            .bind(result.meta.last_row_id)
+            .first();
+
+        } else {
+
+          /* =========================
+             UPDATE USER
+          ========================= */
+
+          await env.DB.prepare(`
+            UPDATE users
+            SET
+              google_id = ?,
+              name = ?,
+              photo_url = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `)
+          .bind(
+            googleUser.id,
+            googleUser.name ||
+              user.name ||
+              "",
+            googleUser.picture ||
+              user.photo_url ||
+              null,
+            user.id
+          )
+          .run();
+
+
+          user =
+            await env.DB.prepare(`
+              SELECT
+                id,
+                google_id,
+                name,
+                email,
+                photo_url,
+                role
+              FROM users
+              WHERE id = ?
+              LIMIT 1
+            `)
+            .bind(user.id)
+            .first();
+        }
+
+
+        if (!user) {
+
+          return Response.redirect(
+            LOGIN + "?error=user_creation",
+            302
+          );
+        }
+
+
+        /* =========================
+           CREATE SESSION
+        ========================= */
+
+        const sessionToken =
+          await createSessionToken(
+            user.id,
+            env.SESSION_SECRET
+          );
+
+
+        const expiresAt =
+          new Date(
+            Date.now() +
+            30 * 24 * 60 * 60 * 1000
+          ).toISOString();
+
+
+        await env.DB.prepare(`
+          INSERT INTO sessions (
+            token,
+            user_id,
+            expires_at
+          )
+          VALUES (?, ?, ?)
+        `)
+        .bind(
+          sessionToken,
+          user.id,
+          expiresAt
+        )
+        .run();
+
+
+        /* =========================
+           REDIRECT TO DASHBOARD
+        ========================= */
+
+        const response =
+          new Response(null, {
+            status: 302,
+
+            headers: {
+              Location: DASHBOARD,
+
+              "Cache-Control":
+                "no-store"
+            }
+          });
+
+
+        response.headers.append(
+          "Set-Cookie",
+          `session=${encodeURIComponent(sessionToken)}; ` +
+          `Path=/; ` +
+          `HttpOnly; ` +
+          `Secure; ` +
+          `SameSite=Lax; ` +
+          `Max-Age=2592000`
+        );
+
+
+        response.headers.append(
+          "Set-Cookie",
+          "oauth_state=; " +
+          "Path=/; " +
+          "HttpOnly; " +
+          "Secure; " +
+          "SameSite=Lax; " +
+          "Max-Age=0"
+        );
+
+
+        return response;
+      }
+
+
+      /* =========================
+         CURRENT USER
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/me"
+      ) {
+
+        const cookies =
+          parseCookies(
+            request.headers.get("Cookie") || ""
+          );
+
+
+        const token =
+          cookies.session;
+
+
+        if (!token) {
+
+          return json({
+            ok: false,
+            user: null
+          }, 401, request);
+        }
+
+
+        const session =
+          await env.DB.prepare(`
+            SELECT
+              sessions.token,
+              sessions.user_id,
+              sessions.expires_at,
+              users.id,
+              users.google_id,
+              users.name,
+              users.email,
+              users.photo_url,
+              users.role
+            FROM sessions
+            INNER JOIN users
+              ON users.id = sessions.user_id
+            WHERE sessions.token = ?
+            LIMIT 1
+          `)
+          .bind(token)
+          .first();
+
+
+        if (!session) {
+
+          return json({
+            ok: false,
+            user: null
+          }, 401, request);
+        }
+
+
+        /* =========================
+           CHECK EXPIRY
+        ========================= */
+
+        if (
+          !session.expires_at ||
+          new Date(session.expires_at) <= new Date()
+        ) {
+
+          await env.DB.prepare(`
+            DELETE FROM sessions
+            WHERE token = ?
+          `)
+          .bind(token)
+          .run();
+
+
+          return json({
+            ok: false,
+            user: null
+          }, 401, request);
+        }
+
+
+        return json({
+          ok: true,
+
+          user: {
+            id: session.id,
+            google_id: session.google_id,
+            name: session.name,
+            email: session.email,
+            photo_url: session.photo_url,
+            role: session.role
+          }
+        }, 200, request);
+      }
+
+
+      /* =========================
+         LOGOUT
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/logout"
+      ) {
+
+        const cookies =
+          parseCookies(
+            request.headers.get("Cookie") || ""
+          );
+
+
+        const token =
+          cookies.session;
+
+
+        if (token) {
+
+          await env.DB.prepare(`
+            DELETE FROM sessions
+            WHERE token = ?
+          `)
+          .bind(token)
+          .run();
+        }
+
+
+        const response =
+          new Response(null, {
+            status: 302,
+
+            headers: {
+              Location: LOGIN,
+
+              "Cache-Control":
+                "no-store"
+            }
+          });
+
+
+        response.headers.append(
+          "Set-Cookie",
+          "session=; " +
+          "Path=/; " +
+          "HttpOnly; " +
+          "Secure; " +
+          "SameSite=Lax; " +
+          "Max-Age=0"
+        );
+
+
+        return response;
+      }
+
+
+      /* =========================
+         API LOGOUT
+      ========================= */
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/logout"
+      ) {
+
+        const cookies =
+          parseCookies(
+            request.headers.get("Cookie") || ""
+          );
+
+
+        const token =
+          cookies.session;
+
+
+        if (token) {
+
+          await env.DB.prepare(`
+            DELETE FROM sessions
+            WHERE token = ?
+          `)
+          .bind(token)
+          .run();
+        }
+
+
+        const response =
+          new Response(
+            JSON.stringify({
+              ok: true
+            }),
+            {
+              status: 200,
+
+              headers: {
+                "Content-Type":
+                  "application/json; charset=UTF-8",
+
+                "Cache-Control":
+                  "no-store"
+              }
+            }
+          );
+
+
+        response.headers.append(
+          "Set-Cookie",
+          "session=; " +
+          "Path=/; " +
+          "HttpOnly; " +
+          "Secure; " +
+          "SameSite=Lax; " +
+          "Max-Age=0"
+        );
+
+
+        addCors(response, request);
+
+        return response;
+      }
+
+
+      /* =========================
+         HEALTH CHECK
+      ========================= */
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/"
+      ) {
+
+        return json({
+          ok: true,
+          service: "CreateLK Jobs Auth V2"
+        }, 200, request);
+      }
+
+
+      /* =========================
+         NOT FOUND
+      ========================= */
+
+      return json({
+        ok: false,
+        error: "Endpoint not found"
+      }, 404, request);
+
+
+    } catch (error) {
+
+      console.error(
+        "AUTH ERROR:",
+        error
+      );
+
+
+      return json({
+        ok: false,
+        error: "Internal server error"
+      }, 500, request);
+    }
+  }
+};
+
+
+/* =========================
+   CORS HEADERS
+========================= */
+
+function corsHeaders(request) {
+
+  const origin =
+    request.headers.get("Origin");
+
+  const headers = {
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type",
+
+    "Access-Control-Allow-Credentials":
+      "true",
+
+    "Vary":
+      "Origin"
+  };
+
+
+  if (origin === SITE_ORIGIN) {
+    headers["Access-Control-Allow-Origin"] =
+      SITE_ORIGIN;
+  }
+
+
+  return headers;
+}
+
+
+/* =========================
+   ADD CORS
+========================= */
+
+function addCors(response, request) {
+
+  const headers =
+    corsHeaders(request);
+
+  for (const [key, value] of Object.entries(headers)) {
+    response.headers.set(key, value);
+  }
+
+  return response;
+}
+
+
+/* =========================
+   COOKIE PARSER
+========================= */
+
+function parseCookies(cookieHeader) {
+
+  const cookies = {};
+
+  for (
+    const part of cookieHeader.split(";")
+  ) {
+
+    const index =
+      part.indexOf("=");
+
+    if (index === -1) continue;
+
+
+    const key =
+      part.slice(0, index).trim();
+
+
+    const value =
+      part.slice(index + 1).trim();
+
+
+    try {
+
+      cookies[key] =
+        decodeURIComponent(value);
+
+    } catch {
+
+      cookies[key] =
+        value;
+    }
+  }
+
+  return cookies;
+}
+
+
+/* =========================
+   SESSION TOKEN
+========================= */
+
+async function createSessionToken(
+  userId,
+  secret
+) {
+
+  const data =
+    `${userId}.${crypto.randomUUID()}.${Date.now()}`;
+
+
+  const key =
+    await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      {
+        name: "HMAC",
+        hash: "SHA-256"
+      },
+      false,
+      ["sign"]
+    );
+
+
+  const signature =
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(data)
+    );
+
+
+  const bytes =
+    new Uint8Array(signature);
+
+
+  let binary = "";
+
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+
+/* =========================
+   JSON RESPONSE
+========================= */
+
+function json(
+  data,
+  status = 200,
+  request = null
+) {
+
+  const response =
+    new Response(
+      JSON.stringify(data),
+      {
+        status,
+
+        headers: {
+          "Content-Type":
+            "application/json; charset=UTF-8",
+
+          "Cache-Control":
+            "no-store"
+        }
+      }
+    );
+
+
+  if (request) {
+    addCors(response, request);
+  }
+
+
+  return response;
+}
