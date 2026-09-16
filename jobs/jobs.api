@@ -1,458 +1,731 @@
+const ORIGIN = "https://createlk.com";
+
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": ORIGIN,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+  };
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...cors()
+    }
+  });
+}
+
+function cookie(request) {
+  const value = request.headers.get("Cookie") || "";
+  const match = value.match(/(?:^|;\s*)session=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function auth(request, env) {
+  const token = cookie(request);
+  if (!token) return null;
+
+  const row = await env.DB.prepare(`
+    SELECT
+      users.id,
+      users.name,
+      users.email,
+      users.photo_url,
+      users.role
+    FROM sessions
+    JOIN users ON users.id = sessions.user_id
+    WHERE sessions.token = ?
+      AND sessions.expires_at > datetime('now')
+    LIMIT 1
+  `).bind(token).first();
+
+  return row || null;
+}
+
+function safeName(name) {
+  return String(name || "file")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(0, 100);
+}
+
+async function uploadFile(request, env, userId, folder) {
+  const form = await request.formData();
+  const file = form.get("file");
+
+  if (!(file instanceof File)) {
+    throw new Error("File required");
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("Maximum file size is 10MB");
+  }
+
+  const allowed = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf"
+  ];
+
+  if (!allowed.includes(file.type)) {
+    throw new Error("Unsupported file type");
+  }
+
+  const key =
+    `${folder}/${userId}/${crypto.randomUUID()}-${safeName(file.name)}`;
+
+  await env.JOBS_BUCKET.put(key, file.stream(), {
+    httpMetadata: {
+      contentType: file.type
+    }
+  });
+
+  return key;
+}
+
+async function getJob(jobId, env) {
+  return await env.DB.prepare(`
+    SELECT *
+    FROM jobs
+    WHERE id = ?
+    LIMIT 1
+  `).bind(jobId).first();
+}
+
+async function createAd(request, env, user) {
+  const form = await request.formData();
+
+  const title = String(form.get("title") || "").trim();
+  const description = String(form.get("description") || "").trim();
+  const whatsapp = String(form.get("whatsapp") || "").trim();
+  const phone = String(form.get("phone") || "").trim();
+
+  const company =
+    String(form.get("company_name") || user.name || "").trim();
+
+  const location =
+    String(form.get("location") || "").trim();
+
+  const category =
+    String(form.get("category") || "").trim();
+
+  const adType =
+    String(form.get("ad_type") || "Basic").trim();
+
+  if (!title || !description || !whatsapp || !phone) {
+    return json({
+      ok: false,
+      error: "Title, description, WhatsApp and phone are required."
+    }, 400);
+  }
+
+  if (!["Basic", "Premium"].includes(adType)) {
+    return json({
+      ok: false,
+      error: "Invalid ad type."
+    }, 400);
+  }
+
+  /* Free ads: maximum 1 per calendar month */
+  if (adType === "Basic") {
+    const free = await env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM jobs
+      WHERE employer_id = ?
+        AND ad_type = 'Basic'
+        AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
+    `).bind(user.id).first();
+
+    if (Number(free.total) >= 1) {
+      return json({
+        ok: false,
+        error: "Your free ad for this month has already been used.",
+        premium_required: true
+      }, 403);
+    }
+  }
+
+  const photo = form.get("photo");
+
+  if (!(photo instanceof File)) {
+    return json({
+      ok: false,
+      error: "Ad photo is required."
+    }, 400);
+  }
+
+  let photoKey;
+
+  try {
+    photoKey = await uploadFile(
+      new Request("https://upload", {
+        method: "POST",
+        body: (() => {
+          const fd = new FormData();
+          fd.append("file", photo);
+          return fd;
+        })()
+      }),
+      env,
+      user.id,
+      "ads"
+    );
+  } catch (e) {
+    return json({
+      ok: false,
+      error: e.message
+    }, 400);
+  }
+
+  let paymentId = null;
+
+  if (adType === "Premium") {
+    const slip = form.get("slip");
+
+    if (!(slip instanceof File)) {
+      return json({
+        ok: false,
+        error: "Payment slip is required for Premium ads."
+      }, 400);
+    }
+
+    const slipKey = await uploadFile(
+      new Request("https://upload", {
+        method: "POST",
+        body: (() => {
+          const fd = new FormData();
+          fd.append("file", slip);
+          return fd;
+        })()
+      }),
+      env,
+      user.id,
+      "slips"
+    );
+
+    const packageRow = await env.DB.prepare(`
+      SELECT id, price
+      FROM packages
+      WHERE name = 'Premium Ad'
+        AND status = 'active'
+      LIMIT 1
+    `).first();
+
+    if (!packageRow) {
+      return json({
+        ok: false,
+        error: "Premium package is not configured."
+      }, 500);
+    }
+
+    const jobInsert = await env.DB.prepare(`
+      INSERT INTO jobs (
+        title,
+        company_name,
+        description,
+        location,
+        category,
+        status,
+        employer_id,
+        ad_type,
+        photo_url,
+        whatsapp,
+        phone,
+        approval_status
+      )
+      VALUES (?, ?, ?, ?, ?, 'Pending', ?, 'Premium', ?, ?, ?, 'pending')
+    `).bind(
+      title,
+      company,
+      description,
+      location,
+      category,
+      user.id,
+      photoKey,
+      whatsapp,
+      phone
+    ).run();
+
+    const jobId = jobInsert.meta.last_row_id;
+
+    const payment = await env.DB.prepare(`
+      INSERT INTO payments (
+        user_id,
+        job_id,
+        package_id,
+        amount,
+        payment_method,
+        receipt_url,
+        status
+      )
+      VALUES (?, ?, ?, ?, 'bank_transfer', ?, 'pending')
+    `).bind(
+      user.id,
+      jobId,
+      packageRow.id,
+      packageRow.price,
+      slipKey
+    ).run();
+
+    paymentId = payment.meta.last_row_id;
+
+    return json({
+      ok: true,
+      message: "Premium ad submitted for admin approval.",
+      job_id: jobId,
+      payment_id: paymentId,
+      status: "pending"
+    });
+  }
+
+  const result = await env.DB.prepare(`
+    INSERT INTO jobs (
+      title,
+      company_name,
+      description,
+      location,
+      category,
+      status,
+      employer_id,
+      ad_type,
+      photo_url,
+      whatsapp,
+      phone,
+      approval_status
+    )
+    VALUES (?, ?, ?, ?, ?, 'Pending', ?, 'Basic', ?, ?, ?, 'pending')
+  `).bind(
+    title,
+    company,
+    description,
+    location,
+    category,
+    user.id,
+    photoKey,
+    whatsapp,
+    phone
+  ).run();
+
+  return json({
+    ok: true,
+    message: "Free ad submitted for admin approval.",
+    job_id: result.meta.last_row_id,
+    status: "pending"
+  });
+}
+
+async function myAds(env, user) {
+  const result = await env.DB.prepare(`
+    SELECT
+      id,
+      title,
+      company_name,
+      description,
+      location,
+      category,
+      ad_type,
+      photo_url,
+      whatsapp,
+      phone,
+      status,
+      approval_status,
+      created_at
+    FROM jobs
+    WHERE employer_id = ?
+    ORDER BY created_at DESC
+  `).bind(user.id).all();
+
+  const free = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM jobs
+    WHERE employer_id = ?
+      AND ad_type = 'Basic'
+      AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
+  `).bind(user.id).first();
+
+  return json({
+    ok: true,
+    free_ads_remaining:
+      Math.max(0, 1 - Number(free.total)),
+    ads: result.results || []
+  });
+}
+
+async function myApplications(env, user) {
+  const result = await env.DB.prepare(`
+    SELECT
+      applications.id,
+      applications.job_id,
+      applications.status,
+      applications.created_at,
+      jobs.title,
+      jobs.company_name,
+      jobs.location
+    FROM applications
+    JOIN jobs ON jobs.id = applications.job_id
+    WHERE applications.seeker_id = ?
+    ORDER BY applications.created_at DESC
+  `).bind(user.id).all();
+
+  return json({
+    ok: true,
+    applications: result.results || []
+  });
+}
+
+async function publicJobs(env) {
+  const result = await env.DB.prepare(`
+    SELECT
+      id,
+      title,
+      company_name,
+      description,
+      location,
+      category,
+      ad_type,
+      photo_url,
+      whatsapp,
+      phone,
+      created_at
+    FROM jobs
+    WHERE approval_status = 'approved'
+      AND status = 'Active'
+    ORDER BY
+      CASE WHEN ad_type = 'Premium' THEN 0 ELSE 1 END,
+      created_at DESC
+  `).all();
+
+  return json({
+    ok: true,
+    jobs: result.results || []
+  });
+}
+
+async function adminAds(env, user) {
+  if (user.role !== "Admin") {
+    return json({
+      ok: false,
+      error: "Admin access required."
+    }, 403);
+  }
+
+  const result = await env.DB.prepare(`
+    SELECT
+      jobs.*,
+      users.name AS owner_name,
+      users.email AS owner_email,
+      payments.id AS payment_id,
+      payments.amount,
+      payments.receipt_url,
+      payments.status AS payment_status
+    FROM jobs
+    LEFT JOIN users
+      ON users.id = jobs.employer_id
+    LEFT JOIN payments
+      ON payments.job_id = jobs.id
+    WHERE jobs.approval_status = 'pending'
+    ORDER BY jobs.created_at ASC
+  `).all();
+
+  return json({
+    ok: true,
+    ads: result.results || []
+  });
+}
+
+async function approveAd(env, user, jobId) {
+  if (user.role !== "Admin") {
+    return json({
+      ok: false,
+      error: "Admin access required."
+    }, 403);
+  }
+
+  const job = await getJob(jobId, env);
+
+  if (!job) {
+    return json({
+      ok: false,
+      error: "Ad not found."
+    }, 404);
+  }
+
+  if (job.ad_type === "Premium") {
+    const payment = await env.DB.prepare(`
+      SELECT *
+      FROM payments
+      WHERE job_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `).bind(jobId).first();
+
+    if (!payment || payment.status !== "approved") {
+      return json({
+        ok: false,
+        error: "Premium payment must be approved first."
+      }, 400);
+    }
+  }
+
+  await env.DB.prepare(`
+    UPDATE jobs
+    SET
+      approval_status = 'approved',
+      status = 'Active',
+      approved_at = datetime('now'),
+      approved_by = ?
+    WHERE id = ?
+  `).bind(user.id, jobId).run();
+
+  await env.DB.prepare(`
+    INSERT INTO admin_logs (
+      admin_id,
+      action,
+      target_type,
+      target_id
+    )
+    VALUES (?, 'approve_ad', 'job', ?)
+  `).bind(user.id, jobId).run();
+
+  return json({
+    ok: true,
+    message: "Ad approved and published."
+  });
+}
+
+async function rejectAd(request, env, user, jobId) {
+  if (user.role !== "Admin") {
+    return json({
+      ok: false,
+      error: "Admin access required."
+    }, 403);
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const note = String(body.note || "").trim();
+
+  await env.DB.prepare(`
+    UPDATE jobs
+    SET
+      approval_status = 'rejected',
+      status = 'Rejected'
+    WHERE id = ?
+  `).bind(jobId).run();
+
+  await env.DB.prepare(`
+    INSERT INTO admin_logs (
+      admin_id,
+      action,
+      target_type,
+      target_id
+    )
+    VALUES (?, ?, 'job', ?)
+  `).bind(
+    user.id,
+    note ? `reject_ad: ${note}` : "reject_ad",
+    jobId
+  ).run();
+
+  return json({
+    ok: true,
+    message: "Ad rejected."
+  });
+}
+
+async function approvePayment(env, user, paymentId) {
+  if (user.role !== "Admin") {
+    return json({
+      ok: false,
+      error: "Admin access required."
+    }, 403);
+  }
+
+  const payment = await env.DB.prepare(`
+    SELECT *
+    FROM payments
+    WHERE id = ?
+    LIMIT 1
+  `).bind(paymentId).first();
+
+  if (!payment) {
+    return json({
+      ok: false,
+      error: "Payment not found."
+    }, 404);
+  }
+
+  await env.DB.prepare(`
+    UPDATE payments
+    SET
+      status = 'approved',
+      verified_by = ?,
+      verified_at = datetime('now')
+    WHERE id = ?
+  `).bind(user.id, paymentId).run();
+
+  return json({
+    ok: true,
+    message: "Payment approved."
+  });
+}
+
+async function fileResponse(request, env, key) {
+  const object = await env.JOBS_BUCKET.get(key);
+
+  if (!object) {
+    return new Response("Not found", {
+      status: 404,
+      headers: cors()
+    });
+  }
+
+  const headers = new Headers(cors());
+
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("Cache-Control", "public, max-age=86400");
+
+  return new Response(object.body, {
+    headers
+  });
+}
+
 export default {
   async fetch(request, env) {
-
-    const url = new URL(request.url);
-
-    const cors = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization"
-    };
-
-
-    /* =========================
-       CORS
-    ========================= */
-
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: cors
+        headers: cors()
       });
     }
 
+    const url = new URL(request.url);
 
     try {
-
-      /* =========================
-         HEALTH
-      ========================= */
-
-      if (
-        request.method === "GET" &&
-        url.pathname === "/"
-      ) {
-
-        return json({
-          ok: true,
-          service: "CreateLK Jobs API"
-        }, 200, cors);
-
-      }
-
-
-      /* =========================
-         GET ALL JOBS
-      ========================= */
-
-      if (
-        request.method === "GET" &&
-        url.pathname === "/api/jobs"
-      ) {
-
-        const result = await env.DB.prepare(`
-          SELECT
-            id,
-            title,
-            company_name,
-            description,
-            location,
-            category,
-            job_type,
-            experience,
-            salary_min,
-            salary_max,
-            salary_type,
-            package,
-            status,
-            created_at,
-            updated_at
-          FROM jobs
-          WHERE status = 'Active'
-          ORDER BY id DESC
-        `).all();
-
-
-        return json({
-          ok: true,
-          jobs: result.results || []
-        }, 200, cors);
-
-      }
-
-
-      /* =========================
-         GET SINGLE JOB
-         /api/jobs/1
-      ========================= */
-
-      const singleMatch =
-        url.pathname.match(
-          /^\/api\/jobs\/(\d+)$/
+      /* Public R2 files */
+      if (url.pathname.startsWith("/files/")) {
+        const key = decodeURIComponent(
+          url.pathname.substring("/files/".length)
         );
 
-
-      if (
-        request.method === "GET" &&
-        singleMatch
-      ) {
-
-        const id =
-          Number(singleMatch[1]);
-
-
-        const job =
-          await env.DB.prepare(`
-            SELECT
-              id,
-              title,
-              company_name,
-              description,
-              location,
-              category,
-              job_type,
-              experience,
-              salary_min,
-              salary_max,
-              salary_type,
-              package,
-              status,
-              created_at,
-              updated_at
-            FROM jobs
-            WHERE id = ?
-          `)
-          .bind(id)
-          .first();
-
-
-        if (!job) {
-
-          return json({
-            ok: false,
-            error: "Job not found"
-          }, 404, cors);
-
-        }
-
-
-        return json({
-          ok: true,
-          job
-        }, 200, cors);
-
+        return fileResponse(request, env, key);
       }
 
-
-      /* =========================
-         CREATE JOB
-         POST /api/jobs
-      ========================= */
-
+      /* Public jobs */
       if (
-        request.method === "POST" &&
-        url.pathname === "/api/jobs"
+        url.pathname === "/api/jobs" &&
+        request.method === "GET"
       ) {
-
-        const body =
-          await request.json();
-
-
-        const title =
-          String(body.title || "").trim();
-
-        const company_name =
-          String(body.company_name || "").trim();
-
-        const description =
-          String(body.description || "").trim();
-
-        const location =
-          String(body.location || "").trim();
-
-        const category =
-          String(body.category || "").trim();
-
-        const job_type =
-          String(body.job_type || "").trim();
-
-        const experience =
-          String(body.experience || "").trim();
-
-        const salary_min =
-          body.salary_min === "" ||
-          body.salary_min == null
-          ? null
-          : Number(body.salary_min);
-
-        const salary_max =
-          body.salary_max === "" ||
-          body.salary_max == null
-          ? null
-          : Number(body.salary_max);
-
-        const salary_type =
-          String(body.salary_type || "").trim();
-
-        const package_name =
-          String(body.package || "").trim();
-
-
-        if (
-          !title ||
-          !company_name ||
-          !description
-        ) {
-
-          return json({
-            ok: false,
-            error:
-              "Title, company name and description are required."
-          }, 400, cors);
-
-        }
-
-
-        const result =
-          await env.DB.prepare(`
-            INSERT INTO jobs (
-              title,
-              company_name,
-              description,
-              location,
-              category,
-              job_type,
-              experience,
-              salary_min,
-              salary_max,
-              salary_type,
-              package,
-              status
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
-          `)
-          .bind(
-            title,
-            company_name,
-            description,
-            location,
-            category,
-            job_type,
-            experience,
-            salary_min,
-            salary_max,
-            salary_type,
-            package_name
-          )
-          .run();
-
-
-        return json({
-          ok: true,
-          message: "Job created successfully.",
-          id: result.meta?.last_row_id
-        }, 201, cors);
-
+        return publicJobs(env);
       }
 
+      /* Authentication */
+      const user = await auth(request, env);
 
-      /* =========================
-         UPDATE JOB
-         PUT /api/jobs/1
-      ========================= */
+      if (!user) {
+        return json({
+          ok: false,
+          error: "Login required."
+        }, 401);
+      }
 
-      const updateMatch =
-        url.pathname.match(
-          /^\/api\/jobs\/(\d+)$/
+      if (
+        url.pathname === "/api/me" &&
+        request.method === "GET"
+      ) {
+        return json({
+          ok: true,
+          user
+        });
+      }
+
+      if (
+        url.pathname === "/api/my-ads" &&
+        request.method === "GET"
+      ) {
+        return myAds(env, user);
+      }
+
+      if (
+        url.pathname === "/api/my-applications" &&
+        request.method === "GET"
+      ) {
+        return myApplications(env, user);
+      }
+
+      if (
+        url.pathname === "/api/create-ad" &&
+        request.method === "POST"
+      ) {
+        return createAd(request, env, user);
+      }
+
+      if (
+        url.pathname === "/api/admin/ads" &&
+        request.method === "GET"
+      ) {
+        return adminAds(env, user);
+      }
+
+      const approveMatch =
+        url.pathname.match(/^\/api\/admin\/ads\/(\d+)\/approve$/);
+
+      if (
+        approveMatch &&
+        request.method === "POST"
+      ) {
+        return approveAd(
+          env,
+          user,
+          Number(approveMatch[1])
         );
+      }
 
+      const rejectMatch =
+        url.pathname.match(/^\/api\/admin\/ads\/(\d+)\/reject$/);
 
       if (
-        request.method === "PUT" &&
-        updateMatch
+        rejectMatch &&
+        request.method === "POST"
       ) {
-
-        const id =
-          Number(updateMatch[1]);
-
-        const body =
-          await request.json();
-
-
-        const existing =
-          await env.DB.prepare(
-            "SELECT id FROM jobs WHERE id = ?"
-          )
-          .bind(id)
-          .first();
-
-
-        if (!existing) {
-
-          return json({
-            ok: false,
-            error: "Job not found"
-          }, 404, cors);
-
-        }
-
-
-        const fields = [];
-        const values = [];
-
-
-        const allowed = [
-          "title",
-          "company_name",
-          "description",
-          "location",
-          "category",
-          "job_type",
-          "experience",
-          "salary_min",
-          "salary_max",
-          "salary_type",
-          "package",
-          "status"
-        ];
-
-
-        for (const field of allowed) {
-
-          if (
-            Object.prototype.hasOwnProperty.call(
-              body,
-              field
-            )
-          ) {
-
-            fields.push(`${field} = ?`);
-            values.push(body[field]);
-
-          }
-
-        }
-
-
-        if (!fields.length) {
-
-          return json({
-            ok: false,
-            error: "No fields to update."
-          }, 400, cors);
-
-        }
-
-
-        fields.push(
-          "updated_at = CURRENT_TIMESTAMP"
+        return rejectAd(
+          request,
+          env,
+          user,
+          Number(rejectMatch[1])
         );
-
-        values.push(id);
-
-
-        await env.DB.prepare(`
-          UPDATE jobs
-          SET ${fields.join(", ")}
-          WHERE id = ?
-        `)
-        .bind(...values)
-        .run();
-
-
-        return json({
-          ok: true,
-          message: "Job updated successfully."
-        }, 200, cors);
-
       }
 
-
-      /* =========================
-         DELETE JOB
-         DELETE /api/jobs/1
-      ========================= */
+      const paymentMatch =
+        url.pathname.match(/^\/api\/admin\/payments\/(\d+)\/approve$/);
 
       if (
-        request.method === "DELETE" &&
-        updateMatch
+        paymentMatch &&
+        request.method === "POST"
       ) {
-
-        const id =
-          Number(updateMatch[1]);
-
-
-        const result =
-          await env.DB.prepare(
-            "DELETE FROM jobs WHERE id = ?"
-          )
-          .bind(id)
-          .run();
-
-
-        if (
-          !result.meta ||
-          result.meta.changes === 0
-        ) {
-
-          return json({
-            ok: false,
-            error: "Job not found"
-          }, 404, cors);
-
-        }
-
-
-        return json({
-          ok: true,
-          message: "Job deleted successfully."
-        }, 200, cors);
-
+        return approvePayment(
+          env,
+          user,
+          Number(paymentMatch[1])
+        );
       }
-
-
-      /* =========================
-         404
-      ========================= */
 
       return json({
         ok: false,
-        error: "Endpoint not found"
-      }, 404, cors);
+        error: "Not found."
+      }, 404);
 
-
-    }
-    catch (error) {
-
+    } catch (error) {
       console.error(error);
 
-
       return json({
         ok: false,
-        error: error.message
-      }, 500, cors);
-
+        error: "Server error."
+      }, 500);
     }
-
   }
 };
-
-
-/* =========================
-   JSON RESPONSE
-========================= */
-
-function json(data, status = 200, cors = {}) {
-
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type": "application/json; charset=UTF-8",
-        ...cors
-      }
-    }
-  );
-
-}
