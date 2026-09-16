@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
+<title>CreateLK Jobs | Admin</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#f5f7fb;
+  color:#172033
+}
+
+header{
+  background:#102a56;
+  color:#fff;
+  padding:14px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between
+}
+
+.logo{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:700
+}
+
+.logo img{
+  width:42px;
+  height:42px;
+  border-radius:10px;
+  object-fit:cover
+}
+
+main{
+  max-width:1000px;
+  margin:auto;
+  padding:20px
+}
+
+h1{margin:0 0 6px}
+
+.muted{
+  color:#687386;
+  font-size:14px
+}
+
+.card{
+  background:#fff;
+  border-radius:18px;
+  padding:18px;
+  margin-bottom:18px;
+  box-shadow:0 5px 20px #0000000d
+}
+
+.ad{
+  border:1px solid #e1e6ef;
+  border-radius:15px;
+  padding:15px;
+  margin-top:15px
+}
+
+.ad-grid{
+  display:grid;
+  grid-template-columns:180px 1fr;
+  gap:18px
+}
+
+.photo{
+  width:100%;
+  height:150px;
+  object-fit:cover;
+  border-radius:12px;
+  background:#edf1f7
+}
+
+h2{
+  margin:0 0 8px;
+  font-size:19px
+}
+
+p{
+  line-height:1.5
+}
+
+.badge{
+  display:inline-block;
+  padding:5px 9px;
+  border-radius:20px;
+  font-size:12px;
+  font-weight:700;
+  background:#fff3d6;
+  color:#8a6100;
+  margin:2px
+}
+
+.premium{
+  background:#fff0c2;
+  color:#825b00
+}
+
+.payment{
+  background:#f7f8fb;
+  border-radius:12px;
+  padding:13px;
+  margin-top:15px
+}
+
+.slip{
+  max-width:100%;
+  max-height:350px;
+  margin-top:10px;
+  border-radius:10px;
+  display:block
+}
+
+.actions{
+  display:flex;
+  gap:10px;
+  margin-top:15px;
+  flex-wrap:wrap
+}
+
+button{
+  border:0;
+  border-radius:10px;
+  padding:11px 16px;
+  font-weight:700;
+  cursor:pointer
+}
+
+.approve{
+  background:#16a34a;
+  color:#fff
+}
+
+.reject{
+  background:#dc2626;
+  color:#fff
+}
+
+.pay{
+  background:#d69b16;
+  color:#fff
+}
+
+.loading,
+.empty{
+  text-align:center;
+  padding:30px;
+  color:#687386
+}
+
+.error{
+  background:#fee2e2;
+  color:#991b1b;
+  padding:14px;
+  border-radius:10px
+}
+
+@media(max-width:650px){
+  main{padding:14px}
+
+  .ad-grid{
+    grid-template-columns:1fr
+  }
+
+  .photo{
+    height:200px
+  }
+
+  .actions button{
+    width:100%
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="logo">
+    <img
+      src="https://jobs.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
+      alt="CreateLK Jobs">
+    <span>CreateLK Jobs Admin</span>
+  </div>
+</header>
+
+<main>
+
+<div class="card">
+  <h1>Admin Approval</h1>
+  <div class="muted">
+    Review advertisements and payments before publishing.
+  </div>
+</div>
+
+<div id="message"></div>
+
+<div class="card">
+  <div id="ads">
+    <div class="loading">Loading pending ads...</div>
+  </div>
+</div>
+
+</main>
+
+<script>
+
+const API =
+"https://createlk-jobs-api-v2.createlk.workers.dev";
+
+
+function escapeHTML(value){
+
+  return String(value ?? "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+
+}
+
+
+function showMessage(text,error=false){
+
+  const box=document.getElementById("message");
+
+  box.className=error ? "error" : "card";
+
+  box.textContent=text;
+
+  box.style.display="block";
+}
+
+
+async function loadAds(){
+
+  const box=document.getElementById("ads");
+
+  try{
+
+    const response=await fetch(
+      API+"/api/admin/ads",
+      {
+        credentials:"include",
+        cache:"no-store"
+      }
+    );
+
+    if(response.status===401){
+
+      location.href="/jobs/login.html";
+      return;
+    }
+
+    const data=await response.json();
+
+    if(!response.ok || !data.ok){
+
+      if(response.status===403){
+        box.innerHTML=
+          `<div class="error">Admin access required.</div>`;
+        return;
+      }
+
+      throw new Error(data.error || "Unable to load ads.");
+    }
+
+    if(!data.ads.length){
+
+      box.innerHTML=
+        `<div class="empty">
+          No pending advertisements.
+        </div>`;
+
+      return;
+    }
+
+    box.innerHTML=data.ads.map(ad=>{
+
+      const photo=ad.photo_url
+        ? API+"/files/"+encodeURIComponent(ad.photo_url)
+        : "";
+
+      const premium=ad.ad_type==="Premium";
+
+      let paymentHTML="";
+
+      if(premium){
+
+        let slip="";
+
+        if(ad.receipt_url){
+
+          const slipURL =
+            API+"/files/"+
+            encodeURIComponent(ad.receipt_url);
+
+          if(
+            ad.receipt_url.toLowerCase().endsWith(".pdf")
+          ){
+
+            slip=`
+              <p>
+                <a href="${slipURL}"
+                   target="_blank">
+                  📄 View Payment Slip
+                </a>
+              </p>
+            `;
+
+          }else{
+
+            slip=`
+              <img
+                class="slip"
+                src="${slipURL}"
+                alt="Payment slip">
+            `;
+
+          }
+        }
+
+        paymentHTML=`
+          <div class="payment">
+
+            <strong>⭐ Premium Payment</strong>
+
+            <p class="muted">
+              Amount: LKR ${escapeHTML(ad.amount || "—")}<br>
+              Payment status:
+              ${escapeHTML(ad.payment_status || "pending")}
+            </p>
+
+            ${slip}
+
+            ${
+              ad.payment_status==="pending"
+              && ad.payment_id
+              ? `
+                <div class="actions">
+                  <button
+                    class="pay"
+                    onclick="approvePayment(${ad.payment_id})">
+                    Approve Payment
+                  </button>
+                </div>
+              `
+              : ""
+            }
+
+          </div>
+        `;
+
+      }
+
+      const canApprove =
+        !premium ||
+        ad.payment_status==="approved";
+
+      return `
+        <div class="ad">
+
+          <div class="ad-grid">
+
+            ${
+              photo
+              ? `<img class="photo"
+                       src="${photo}"
+                       alt="Ad photo">`
+              : `<div class="photo"></div>`
+            }
+
+            <div>
+
+              <h2>
+                ${escapeHTML(ad.title)}
+              </h2>
+
+              <div>
+                <span class="badge">
+                  ${escapeHTML(ad.ad_type)}
+                </span>
+
+                ${
+                  premium
+                  ? `<span class="badge premium">
+                       ⭐ Premium
+                     </span>`
+                  : ""
+                }
+              </div>
+
+              <p>
+                ${escapeHTML(ad.description)}
+              </p>
+
+              <div class="muted">
+                <b>Company:</b>
+                ${escapeHTML(ad.company_name || "")}
+              </div>
+
+              <div class="muted">
+                <b>Location:</b>
+                ${escapeHTML(ad.location || "")}
+              </div>
+
+              <div class="muted">
+                <b>WhatsApp:</b>
+                ${escapeHTML(ad.whatsapp || "")}
+              </div>
+
+              <div class="muted">
+                <b>Call:</b>
+                ${escapeHTML(ad.phone || "")}
+              </div>
+
+              <br>
+
+              <div class="muted">
+                <b>Posted by:</b>
+                ${escapeHTML(ad.owner_name || "")}
+                <br>
+                ${escapeHTML(ad.owner_email || "")}
+              </div>
+
+            </div>
+
+          </div>
+
+          ${paymentHTML}
+
+          <div class="actions">
+
+            <button
+              class="approve"
+              ${canApprove ? "" : "disabled"}
+              onclick="approveAd(${ad.id})">
+              ✓ Approve Ad
+            </button>
+
+            <button
+              class="reject"
+              onclick="rejectAd(${ad.id})">
+              ✕ Reject
+            </button>
+
+          </div>
+
+          ${
+            !canApprove
+            ? `
+              <p class="muted">
+                Approve the Premium payment before approving this ad.
+              </p>
+            `
+            : ""
+          }
+
+        </div>
+      `;
+
+    }).join("");
+
+  }catch(error){
+
+    box.innerHTML=
+      `<div class="error">
+        ${escapeHTML(error.message)}
+      </div>`;
+
+  }
+}
+
+
+async function approvePayment(id){
+
+  if(!confirm("Approve this payment?")) return;
+
+  try{
+
+    const response=await fetch(
+      API+"/api/admin/payments/"+id+"/approve",
+      {
+        method:"POST",
+        credentials:"include"
+      }
+    );
+
+    const data=await response.json();
+
+    if(!response.ok || !data.ok){
+
+      throw new Error(
+        data.error || "Payment approval failed."
+      );
+
+    }
+
+    await loadAds();
+
+  }catch(error){
+
+    alert(error.message);
+
+  }
+}
+
+
+async function approveAd(id){
+
+  if(!confirm("Approve and publish this ad?")) return;
+
+  try{
+
+    const response=await fetch(
+      API+"/api/admin/ads/"+id+"/approve",
+      {
+        method:"POST",
+        credentials:"include"
+      }
+    );
+
+    const data=await response.json();
+
+    if(!response.ok || !data.ok){
+
+      throw new Error(
+        data.error || "Approval failed."
+      );
+
+    }
+
+    await loadAds();
+
+  }catch(error){
+
+    alert(error.message);
+
+  }
+}
+
+
+async function rejectAd(id){
+
+  const note=prompt(
+    "Reason for rejection (optional):"
+  );
+
+  if(note===null) return;
+
+  try{
+
+    const response=await fetch(
+      API+"/api/admin/ads/"+id+"/reject",
+      {
+        method:"POST",
+        credentials:"include",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          note:note
+        })
+      }
+    );
+
+    const data=await response.json();
+
+    if(!response.ok || !data.ok){
+
+      throw new Error(
+        data.error || "Rejection failed."
+      );
+
+    }
+
+    await loadAds();
+
+  }catch(error){
+
+    alert(error.message);
+
+  }
+}
+
+
+loadAds();
+
+</script>
+
+</body>
+</html>
