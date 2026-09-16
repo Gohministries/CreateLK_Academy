@@ -121,15 +121,20 @@ h1{font-size:38px}
 </a>
 
 <nav class="nav">
+
 <a href="/">Home</a>
 <a href="/jobs/">Find Jobs</a>
 <a href="/categories/">Categories</a>
 <a href="/companies/">Companies</a>
-<a href="/login/" class="login">Sign In</a>
 
-<a href="/login/" class="post" onclick="return postJobCheck(event)">
+<a href="/jobs/login.html" class="login">
+Sign In
+</a>
+
+<a href="/jobs/login.html" class="post" onclick="return postJobCheck(event)">
 Post a Job
 </a>
+
 </nav>
 
 <button class="menu" id="menuBtn">☰</button>
@@ -142,9 +147,12 @@ Post a Job
 <a href="/jobs/">Find Jobs</a>
 <a href="/categories/">Categories</a>
 <a href="/companies/">Companies</a>
-<a href="/login/">Sign In</a>
 
-<a href="/login/" class="mobile-post" onclick="return postJobCheck(event)">
+<a href="/jobs/login.html">
+Sign In
+</a>
+
+<a href="/jobs/login.html" class="mobile-post" onclick="return postJobCheck(event)">
 ➕ Post a Job
 </a>
 
@@ -166,7 +174,7 @@ Post a Job
 Search jobs and career opportunities across Sri Lanka.
 </p>
 
-<a href="/login/" class="hero-post" onclick="return postJobCheck(event)">
+<a href="/jobs/login.html" class="hero-post" onclick="return postJobCheck(event)">
 ➕ Post a Job
 </a>
 
@@ -298,7 +306,6 @@ aria-label="WhatsApp">
 const API="https://createlk-jobs-api.createlk.workers.dev";
 const CATEGORY_API="https://categoriesapi.createlk.workers.dev";
 const LOCATION_API="https://locationsapi.createlk.workers.dev";
-
 const AUTH_API="https://createlk-jobs-auth.createlk.workers.dev";
 
 const $=id=>document.getElementById(id);
@@ -335,7 +342,7 @@ return String(v??"").replace(/[&<>"']/g,m=>({
 }
 
 
-/* CHECK LOGIN BEFORE POSTING A JOB */
+/* CHECK LOGIN BEFORE POSTING */
 
 async function postJobCheck(e){
 
@@ -559,6 +566,32 @@ return j.salary
 }
 
 
+/* AD TYPE */
+
+function adType(j){
+
+const type=String(
+j.ad_type||
+j.package||
+""
+).trim().toLowerCase();
+
+if(type==="featured")
+return "Featured";
+
+if(type==="urgent")
+return "Urgent";
+
+if(type==="top")
+return "Top";
+
+if(type==="basic")
+return "";
+
+return "";
+}
+
+
 /* LOAD JOBS */
 
 async function loadJobs(){
@@ -582,7 +615,7 @@ Array.isArray(d)
 ?d
 :d.jobs||d.data||[];
 
-loadFilters();
+await loadFilters();
 
 renderJobs(allJobs);
 
@@ -659,6 +692,7 @@ j.salary_min,
 j.salary_max,
 j.salary_type,
 j.package,
+j.ad_type,
 j.education,
 j.skills,
 j.requirements,
@@ -776,11 +810,8 @@ j.experience_level||
 j.experience||
 "";
 
-const featured=
-j.featured||
-j.is_featured||
-j.urgent||
-j.top_job;
+const badge=
+adType(j);
 
 
 return`
@@ -802,8 +833,8 @@ ${esc(company)}
 </div>
 
 ${
-featured
-?`<span class="badge-job">Featured</span>`
+badge
+?`<span class="badge-job">${esc(badge)}</span>`
 :""
 }
 
