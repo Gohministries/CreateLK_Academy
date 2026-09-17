@@ -1,8 +1,17 @@
 const ORIGIN = "https://createlk.com";
+
 const MAX = 5 * 1024 * 1024;
 
-const IMAGES = ["image/jpeg", "image/png", "image/webp"];
-const SLIPS = [...IMAGES, "application/pdf"];
+const IMAGES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp"
+];
+
+const SLIPS = [
+  ...IMAGES,
+  "application/pdf"
+];
 
 const PRICES = {
   free: 0,
@@ -12,64 +21,114 @@ const PRICES = {
   featured_urgent_top: 1500
 };
 
-const PAID = ["featured", "urgent", "top", "featured_urgent_top"];
+const PAID = [
+  "featured",
+  "urgent",
+  "top",
+  "featured_urgent_top"
+];
 
 const cors = {
   "Access-Control-Allow-Origin": ORIGIN,
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization"
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Max-Age": "86400",
+  "Vary": "Origin"
 };
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...cors,
-      "Content-Type": "application/json"
-    }
-  });
-}
 
-function token(request) {
-  const h = request.headers.get("Authorization");
-  return h?.startsWith("Bearer ") ? h.slice(7).trim() : null;
+/* =========================================================
+   JSON RESPONSE
+   ========================================================= */
+
+function json(data, status = 200) {
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        ...cors,
+        "Content-Type":
+          "application/json; charset=UTF-8"
+      }
+    }
+  );
 }
 
 
 /* =========================================================
-   AUTH
-   expires_at = Unix seconds
+   TOKEN
+   ========================================================= */
+
+function token(request) {
+
+  const h =
+    request.headers.get("Authorization");
+
+  if (
+    h &&
+    h.startsWith("Bearer ")
+  ) {
+    return h.slice(7).trim();
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   AUTHENTICATION
+   sessions.expires_at = Unix seconds
    ========================================================= */
 
 async function getUser(request, env) {
 
   const t = token(request);
+
   if (!t) return null;
 
-  const s = await env.DB.prepare(`
-    SELECT
-      s.user_id,
-      s.expires_at,
-      u.google_id,
-      u.name,
-      u.email,
-      u.photo_url,
-      u.email_verified
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.id = ?
-    LIMIT 1
-  `).bind(t).first();
+  const s =
+    await env.DB.prepare(`
+      SELECT
+        s.user_id,
+        s.expires_at,
+        u.google_id,
+        u.name,
+        u.email,
+        u.photo_url,
+        u.email_verified
+      FROM sessions s
+      JOIN users u
+        ON u.id = s.user_id
+      WHERE s.id = ?
+      LIMIT 1
+    `)
+    .bind(t)
+    .first();
 
   if (!s) return null;
 
-  if (Number(s.expires_at) <= Math.floor(Date.now() / 1000)) {
-    await env.DB.prepare(
-      `DELETE FROM sessions WHERE id = ?`
-    ).bind(t).run();
+
+  /* -------------------------------------------------------
+     Check session expiry
+     ------------------------------------------------------- */
+
+  if (
+    Number(s.expires_at) <=
+    Math.floor(Date.now() / 1000)
+  ) {
+
+    await env.DB.prepare(`
+      DELETE FROM sessions
+      WHERE id = ?
+    `)
+      .bind(t)
+      .run();
 
     return null;
   }
+
 
   return {
     id: s.user_id,
@@ -77,16 +136,15 @@ async function getUser(request, env) {
     name: s.name,
     email: s.email,
     photo_url: s.photo_url,
-    email_verified: Number(s.email_verified) === 1
+    email_verified:
+      Number(s.email_verified) === 1
   };
 }
 
-async function auth(request, env) {
-  const user = await getUser(request, env);
 
-  return user
-    ? user
-    : null;
+async function auth(request, env) {
+
+  return await getUser(request, env);
 }
 
 
@@ -96,33 +154,76 @@ async function auth(request, env) {
 
 async function upload(request, env) {
 
-  const user = await auth(request, env);
-  if (!user) return json({ error: "Unauthorized" }, 401);
+  const user =
+    await auth(request, env);
 
-  const form = await request.formData();
-  const file = form.get("file");
-  const folder = String(form.get("folder") || "ads");
+  if (!user) {
 
-  if (!(file instanceof File))
-    return json({ error: "File is required." }, 400);
+    return json({
+      success: false,
+      error: "Unauthorized"
+    }, 401);
+  }
 
-  if (file.size > MAX)
-    return json({ error: "Maximum file size is 5 MB." }, 400);
+
+  const form =
+    await request.formData();
+
+  const file =
+    form.get("file");
+
+  const folder =
+    String(
+      form.get("folder") || "ads"
+    ).trim();
+
+
+  if (!(file instanceof File)) {
+
+    return json({
+      success: false,
+      error: "File is required."
+    }, 400);
+  }
+
+
+  if (file.size > MAX) {
+
+    return json({
+      success: false,
+      error: "Maximum file size is 5 MB."
+    }, 400);
+  }
+
 
   const allowed =
-    folder === "payments" ? SLIPS : IMAGES;
+    folder === "payments"
+      ? SLIPS
+      : IMAGES;
 
-  if (!allowed.includes(file.type))
-    return json({ error: "Invalid file type." }, 400);
 
-  const ext =
-    file.type === "image/jpeg" ? "jpg" :
-    file.type === "image/png" ? "png" :
-    file.type === "image/webp" ? "webp" :
-    "pdf";
+  if (!allowed.includes(file.type)) {
+
+    return json({
+      success: false,
+      error: "Invalid file type."
+    }, 400);
+  }
+
+
+  const extension =
+    file.type === "image/jpeg"
+      ? "jpg"
+      : file.type === "image/png"
+      ? "png"
+      : file.type === "image/webp"
+      ? "webp"
+      : "pdf";
+
 
   const key =
-    `${folder}/${user.id}/${crypto.randomUUID()}.${ext}`;
+    `${folder}/${user.id}/${crypto.randomUUID()}.${extension}`;
+
 
   await env.JOBS_BUCKET.put(
     key,
@@ -134,10 +235,159 @@ async function upload(request, env) {
     }
   );
 
+
   return json({
     success: true,
-    key
+    key: key
   });
+}
+
+
+/* =========================================================
+   LOCATIONS
+   GET /locations
+   ========================================================= */
+
+async function locations(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const province =
+    String(
+      url.searchParams.get("province") || ""
+    ).trim();
+
+  const district =
+    String(
+      url.searchParams.get("district") || ""
+    ).trim();
+
+
+  /* -------------------------------------------------------
+     Province + District + City
+     ------------------------------------------------------- */
+
+  if (province && district) {
+
+    const result =
+      await env.DB.prepare(`
+        SELECT
+          city
+        FROM locations
+        WHERE province = ?
+          AND district = ?
+        ORDER BY city COLLATE NOCASE
+      `)
+      .bind(
+        province,
+        district
+      )
+      .all();
+
+    return json({
+      success: true,
+      province,
+      district,
+      cities:
+        (result.results || [])
+          .map(row => row.city)
+    });
+  }
+
+
+  /* -------------------------------------------------------
+     Province only
+     ------------------------------------------------------- */
+
+  if (province) {
+
+    const result =
+      await env.DB.prepare(`
+        SELECT DISTINCT
+          district
+        FROM locations
+        WHERE province = ?
+        ORDER BY district COLLATE NOCASE
+      `)
+      .bind(province)
+      .all();
+
+    return json({
+      success: true,
+      province,
+      districts:
+        (result.results || [])
+          .map(row => row.district)
+    });
+  }
+
+
+  /* -------------------------------------------------------
+     All provinces / top-level options
+     ------------------------------------------------------- */
+
+  const result =
+    await env.DB.prepare(`
+      SELECT DISTINCT
+        province
+      FROM locations
+      ORDER BY
+        CASE province
+          WHEN 'Western Province' THEN 1
+          WHEN 'Central Province' THEN 2
+          WHEN 'Southern Province' THEN 3
+          WHEN 'Northern Province' THEN 4
+          WHEN 'Eastern Province' THEN 5
+          WHEN 'North Western Province' THEN 6
+          WHEN 'North Central Province' THEN 7
+          WHEN 'Uva Province' THEN 8
+          WHEN 'Sabaragamuwa Province' THEN 9
+          WHEN 'Remote' THEN 10
+          WHEN 'Overseas' THEN 11
+          ELSE 99
+        END
+    `)
+    .all();
+
+
+  return json({
+    success: true,
+    provinces:
+      (result.results || [])
+        .map(row => row.province)
+  });
+}
+
+
+/* =========================================================
+   VALIDATE LOCATION
+   ========================================================= */
+
+async function validateLocation(
+  env,
+  province,
+  district,
+  city
+) {
+
+  const result =
+    await env.DB.prepare(`
+      SELECT id
+      FROM locations
+      WHERE province = ?
+        AND district = ?
+        AND city = ?
+      LIMIT 1
+    `)
+    .bind(
+      province,
+      district,
+      city
+    )
+    .first();
+
+  return !!result;
 }
 
 
@@ -147,51 +397,182 @@ async function upload(request, env) {
 
 async function createAd(request, env) {
 
-  const user = await auth(request, env);
-  if (!user) return json({ error: "Unauthorized" }, 401);
+  const user =
+    await auth(request, env);
 
-  const b = await request.json();
+  if (!user) {
 
-  const photo = String(b.photo_url || "").trim();
-  const title = String(b.title || "").trim();
-  const description = String(b.description || "").trim();
-  const whatsapp = String(b.whatsapp_no || "").trim();
-  const call = String(b.call_no || "").trim();
-  const type = String(b.ad_type || "free").trim();
-  const slip = String(b.slip_url || "").trim();
-  const depositDate = String(b.deposit_date || "").trim();
-
-  const types = Object.keys(PRICES);
-
-  if (!types.includes(type))
-    return json({ error: "Invalid ad type." }, 400);
-
-  if (!photo || !title || !description || !whatsapp || !call)
     return json({
-      error: "Please complete all required fields."
+      success: false,
+      error: "Unauthorized"
+    }, 401);
+  }
+
+
+  let b;
+
+  try {
+
+    b =
+      await request.json();
+
+  } catch {
+
+    return json({
+      success: false,
+      error: "Invalid JSON request."
     }, 400);
+  }
 
 
-  /* ---------------------------------------------------------
-     FREE AD: only approved ads count
-     --------------------------------------------------------- */
+  const photo =
+    String(
+      b.photo_url || ""
+    ).trim();
+
+  const title =
+    String(
+      b.title || ""
+    ).trim();
+
+  const description =
+    String(
+      b.description || ""
+    ).trim();
+
+  const whatsapp =
+    String(
+      b.whatsapp_no || ""
+    ).trim();
+
+  const call =
+    String(
+      b.call_no || ""
+    ).trim();
+
+  const province =
+    String(
+      b.province || ""
+    ).trim();
+
+  const district =
+    String(
+      b.district || ""
+    ).trim();
+
+  const city =
+    String(
+      b.city || ""
+    ).trim();
+
+  const type =
+    String(
+      b.ad_type || "free"
+    ).trim();
+
+  const slip =
+    String(
+      b.slip_url || ""
+    ).trim();
+
+  const depositDate =
+    String(
+      b.deposit_date || ""
+    ).trim();
+
+
+  /* -------------------------------------------------------
+     Validate ad type
+     ------------------------------------------------------- */
+
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      PRICES,
+      type
+    )
+  ) {
+
+    return json({
+      success: false,
+      error: "Invalid ad type."
+    }, 400);
+  }
+
+
+  /* -------------------------------------------------------
+     Required fields
+     ------------------------------------------------------- */
+
+  if (
+    !photo ||
+    !title ||
+    !description ||
+    !whatsapp ||
+    !call ||
+    !province ||
+    !district ||
+    !city
+  ) {
+
+    return json({
+      success: false,
+      error:
+        "Photo, title, description, WhatsApp number, call number, province, district and city are required."
+    }, 400);
+  }
+
+
+  /* -------------------------------------------------------
+     Validate location against D1
+     ------------------------------------------------------- */
+
+  const validLocation =
+    await validateLocation(
+      env,
+      province,
+      district,
+      city
+    );
+
+
+  if (!validLocation) {
+
+    return json({
+      success: false,
+      error:
+        "Invalid province, district or city selection."
+    }, 400);
+  }
+
+
+  /* -------------------------------------------------------
+     FREE AD RULE
+     Only APPROVED free ads count.
+     30 days from approved_at.
+     ------------------------------------------------------- */
 
   if (type === "free") {
 
-    const existing = await env.DB.prepare(`
-      SELECT id
-      FROM ads
-      WHERE user_id = ?
-        AND ad_type = 'free'
-        AND status = 'approved'
-        AND approved_at IS NOT NULL
-        AND datetime(approved_at)
-            >= datetime('now', '-30 days')
-      LIMIT 1
-    `).bind(user.id).first();
+    const existing =
+      await env.DB.prepare(`
+        SELECT id
+        FROM ads
+        WHERE user_id = ?
+          AND ad_type = 'free'
+          AND status = 'approved'
+          AND approved_at IS NOT NULL
+          AND datetime(approved_at)
+              >= datetime('now', '-30 days')
+        LIMIT 1
+      `)
+      .bind(user.id)
+      .first();
+
 
     if (existing) {
+
       return json({
+        success: false,
         error:
           "You already have an approved Free Ad. You can post another Free Ad after 30 days."
       }, 429);
@@ -199,105 +580,150 @@ async function createAd(request, env) {
   }
 
 
-  /* ---------------------------------------------------------
+  /* -------------------------------------------------------
      PAYMENT
-     --------------------------------------------------------- */
+     ------------------------------------------------------- */
 
   let paymentId = null;
 
+
   if (PAID.includes(type)) {
 
-    if (!slip || !depositDate)
+    if (
+      !slip ||
+      !depositDate
+    ) {
+
       return json({
+        success: false,
         error:
           "Bank slip and deposit date are required."
       }, 400);
+    }
 
-    const payment = await env.DB.prepare(`
-      INSERT INTO payments (
-        user_id,
-        ad_id,
-        amount,
-        bank_name,
-        branch_name,
-        account_name,
-        account_number,
-        depositor_name,
-        deposit_date,
-        reference_number,
-        slip_url,
-        status,
-        rejection_reason,
-        approved_at
-      )
-      VALUES (
-        ?, NULL, ?,
-        ?, ?, ?, ?,
-        '', ?, '',
-        ?, 'pending', '', NULL
-      )
-    `).bind(
-      user.id,
-      PRICES[type],
-      "People's Bank",
-      "Udapussellawa",
-      "Thinarathnam Saththiyanadan",
-      "292200280023178",
-      depositDate,
-      slip
-    ).run();
 
-    paymentId = payment.meta.last_row_id;
+    const payment =
+      await env.DB.prepare(`
+        INSERT INTO payments (
+          user_id,
+          ad_id,
+          amount,
+          bank_name,
+          branch_name,
+          account_name,
+          account_number,
+          depositor_name,
+          deposit_date,
+          reference_number,
+          slip_url,
+          status,
+          rejection_reason,
+          approved_at
+        )
+        VALUES (
+          ?, NULL, ?,
+          ?, ?, ?, ?,
+          '', ?, '',
+          ?, 'pending', '', NULL
+        )
+      `)
+      .bind(
+        user.id,
+        PRICES[type],
+        "People's Bank",
+        "Udapussellawa",
+        "Thinarathnam Saththiyanadan",
+        "292200280023178",
+        depositDate,
+        slip
+      )
+      .run();
+
+
+    paymentId =
+      payment.meta.last_row_id;
   }
 
 
-  /* ---------------------------------------------------------
-     AD
-     --------------------------------------------------------- */
+  /* -------------------------------------------------------
+     CREATE AD
+     ------------------------------------------------------- */
 
-  const ad = await env.DB.prepare(`
-    INSERT INTO ads (
-      user_id,
-      photo_url,
+  const ad =
+    await env.DB.prepare(`
+      INSERT INTO ads (
+        user_id,
+        photo_url,
+        title,
+        description,
+        whatsapp_no,
+        call_no,
+        province,
+        district,
+        city,
+        ad_type,
+        status,
+        payment_status,
+        payment_id,
+        rejection_reason,
+        created_at,
+        approved_at,
+        expires_at
+      )
+      VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?,
+        'pending',
+        ?,
+        ?,
+        '',
+        CURRENT_TIMESTAMP,
+        NULL,
+        NULL
+      )
+    `)
+    .bind(
+      user.id,
+      photo,
       title,
       description,
-      whatsapp_no,
-      call_no,
-      ad_type,
-      status,
-      payment_status,
-      payment_id,
-      rejection_reason,
-      created_at,
-      approved_at,
-      expires_at
+      whatsapp,
+      call,
+      province,
+      district,
+      city,
+      type,
+      PAID.includes(type)
+        ? "pending"
+        : "not_required",
+      paymentId
     )
-    VALUES (
-      ?, ?, ?, ?, ?, ?, ?,
-      'pending', ?, ?, '',
-      CURRENT_TIMESTAMP, NULL, NULL
-    )
-  `).bind(
-    user.id,
-    photo,
-    title,
-    description,
-    whatsapp,
-    call,
-    type,
-    PAID.includes(type) ? "pending" : "not_required",
-    paymentId
-  ).run();
+    .run();
 
-  const adId = ad.meta.last_row_id;
+
+  const adId =
+    ad.meta.last_row_id;
+
+
+  /* -------------------------------------------------------
+     Connect payment to ad
+     ------------------------------------------------------- */
 
   if (paymentId) {
+
     await env.DB.prepare(`
       UPDATE payments
       SET ad_id = ?
       WHERE id = ?
-    `).bind(adId, paymentId).run();
+    `)
+      .bind(
+        adId,
+        paymentId
+      )
+      .run();
   }
+
 
   return json({
     success: true,
@@ -314,74 +740,99 @@ async function createAd(request, env) {
 
 async function myAds(request, env) {
 
-  const user = await auth(request, env);
-  if (!user) return json({ error: "Unauthorized" }, 401);
+  const user =
+    await auth(request, env);
 
-  const result = await env.DB.prepare(`
-    SELECT
-      id,
-      photo_url,
-      title,
-      description,
-      whatsapp_no,
-      call_no,
-      ad_type,
-      status,
-      payment_status,
-      payment_id,
-      rejection_reason,
-      created_at,
-      approved_at,
-      expires_at
-    FROM ads
-    WHERE user_id = ?
-    ORDER BY id DESC
-  `).bind(user.id).all();
+  if (!user) {
+
+    return json({
+      success: false,
+      error: "Unauthorized"
+    }, 401);
+  }
+
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        photo_url,
+        title,
+        description,
+        whatsapp_no,
+        call_no,
+        province,
+        district,
+        city,
+        ad_type,
+        status,
+        payment_status,
+        payment_id,
+        rejection_reason,
+        created_at,
+        approved_at,
+        expires_at
+      FROM ads
+      WHERE user_id = ?
+      ORDER BY id DESC
+    `)
+    .bind(user.id)
+    .all();
+
 
   return json({
     success: true,
-    ads: result.results || []
+    ads:
+      result.results || []
   });
 }
 
 
 /* =========================================================
-   PUBLIC ADS
+   PUBLIC APPROVED ADS
    ========================================================= */
 
 async function approved(request, env) {
 
-  const result = await env.DB.prepare(`
-    SELECT
-      id,
-      photo_url,
-      title,
-      description,
-      whatsapp_no,
-      call_no,
-      ad_type,
-      approved_at,
-      expires_at
-    FROM ads
-    WHERE status = 'approved'
-      AND (
-        expires_at IS NULL
-        OR datetime(expires_at) > datetime('now')
-      )
-    ORDER BY
-      CASE ad_type
-        WHEN 'featured_urgent_top' THEN 1
-        WHEN 'featured' THEN 2
-        WHEN 'urgent' THEN 3
-        WHEN 'top' THEN 4
-        ELSE 5
-      END,
-      approved_at DESC
-  `).all();
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        photo_url,
+        title,
+        description,
+        whatsapp_no,
+        call_no,
+        province,
+        district,
+        city,
+        ad_type,
+        approved_at,
+        expires_at
+      FROM ads
+      WHERE status = 'approved'
+        AND (
+          expires_at IS NULL
+          OR datetime(expires_at)
+             > datetime('now')
+        )
+      ORDER BY
+        CASE ad_type
+          WHEN 'featured_urgent_top' THEN 1
+          WHEN 'featured' THEN 2
+          WHEN 'urgent' THEN 3
+          WHEN 'top' THEN 4
+          ELSE 5
+        END,
+        approved_at DESC
+    `)
+    .all();
+
 
   return json({
     success: true,
-    ads: result.results || []
+    ads:
+      result.results || []
   });
 }
 
@@ -393,51 +844,85 @@ async function approved(request, env) {
 async function photo(request, env) {
 
   const key =
-    new URL(request.url).searchParams.get("key");
+    new URL(request.url)
+      .searchParams
+      .get("key");
 
-  if (!key || !key.startsWith("ads/"))
-    return new Response("Forbidden", {
-      status: 403,
-      headers: cors
-    });
 
-  const ad = await env.DB.prepare(`
-    SELECT id
-    FROM ads
-    WHERE photo_url = ?
-      AND status = 'approved'
-      AND (
-        expires_at IS NULL
-        OR datetime(expires_at) > datetime('now')
-      )
-    LIMIT 1
-  `).bind(key).first();
+  if (
+    !key ||
+    !key.startsWith("ads/")
+  ) {
 
-  if (!ad)
-    return new Response("Not found", {
-      status: 404,
-      headers: cors
-    });
+    return new Response(
+      "Forbidden",
+      {
+        status: 403,
+        headers: cors
+      }
+    );
+  }
+
+
+  const ad =
+    await env.DB.prepare(`
+      SELECT id
+      FROM ads
+      WHERE photo_url = ?
+        AND status = 'approved'
+        AND (
+          expires_at IS NULL
+          OR datetime(expires_at)
+             > datetime('now')
+        )
+      LIMIT 1
+    `)
+    .bind(key)
+    .first();
+
+
+  if (!ad) {
+
+    return new Response(
+      "Not found",
+      {
+        status: 404,
+        headers: cors
+      }
+    );
+  }
+
 
   const object =
     await env.JOBS_BUCKET.get(key);
 
-  if (!object)
-    return new Response("Not found", {
-      status: 404,
-      headers: cors
-    });
 
-  return new Response(object.body, {
-    headers: {
-      ...cors,
-      "Content-Type":
-        object.httpMetadata?.contentType ||
-        "application/octet-stream",
-      "Cache-Control":
-        "public, max-age=3600"
+  if (!object) {
+
+    return new Response(
+      "Not found",
+      {
+        status: 404,
+        headers: cors
+      }
+    );
+  }
+
+
+  return new Response(
+    object.body,
+    {
+      status: 200,
+      headers: {
+        ...cors,
+        "Content-Type":
+          object.httpMetadata?.contentType ||
+          "application/octet-stream",
+        "Cache-Control":
+          "public, max-age=3600"
+      }
     }
-  });
+  );
 }
 
 
@@ -449,70 +934,183 @@ export default {
 
   async fetch(request, env) {
 
-    if (request.method === "OPTIONS")
-      return new Response(null, {
-        status: 204,
-        headers: cors
-      });
+    /* -------------------------------------------------------
+       CORS PREFLIGHT
+       ------------------------------------------------------- */
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: cors
+        }
+      );
+    }
+
 
     try {
 
+      const url =
+        new URL(request.url);
+
       const path =
-        new URL(request.url).pathname;
+        url.pathname;
 
-      if (path === "/")
+
+      /* -----------------------------------------------------
+         HOME
+         ----------------------------------------------------- */
+
+      if (
+        path === "/" &&
+        request.method === "GET"
+      ) {
+
         return json({
           success: true,
-          service: "CreateLK Jobs Ads API",
+          service:
+            "CreateLK Jobs Ads API",
           status: "online"
         });
+      }
 
-      if (path === "/health")
+
+      /* -----------------------------------------------------
+         HEALTH
+         ----------------------------------------------------- */
+
+      if (
+        path === "/health" &&
+        request.method === "GET"
+      ) {
+
         return json({
           success: true,
           status: "online"
         });
+      }
+
+
+      /* -----------------------------------------------------
+         LOCATIONS
+         ----------------------------------------------------- */
+
+      if (
+        path === "/locations" &&
+        request.method === "GET"
+      ) {
+
+        return locations(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         UPLOAD
+         ----------------------------------------------------- */
 
       if (
         path === "/upload" &&
         request.method === "POST"
-      )
-        return upload(request, env);
+      ) {
+
+        return upload(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         CREATE AD
+         ----------------------------------------------------- */
 
       if (
         path === "/ads" &&
         request.method === "POST"
-      )
-        return createAd(request, env);
+      ) {
+
+        return createAd(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         MY ADS
+         ----------------------------------------------------- */
 
       if (
         path === "/my-ads" &&
         request.method === "GET"
-      )
-        return myAds(request, env);
+      ) {
+
+        return myAds(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         PUBLIC APPROVED ADS
+         ----------------------------------------------------- */
 
       if (
         path === "/approved" &&
         request.method === "GET"
-      )
-        return approved(request, env);
+      ) {
+
+        return approved(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         PUBLIC PHOTO
+         ----------------------------------------------------- */
 
       if (
         path === "/photo" &&
         request.method === "GET"
-      )
-        return photo(request, env);
+      ) {
+
+        return photo(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         NOT FOUND
+         ----------------------------------------------------- */
 
       return json({
+        success: false,
         error: "Endpoint not found."
       }, 404);
 
     } catch (error) {
 
-      console.error(error);
+      console.error(
+        "ADS WORKER ERROR:",
+        error
+      );
 
       return json({
-        error: "Internal server error."
+        success: false,
+        error:
+          "Internal server error."
       }, 500);
     }
   }
