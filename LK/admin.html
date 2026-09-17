@@ -130,22 +130,21 @@ Continue with Google
 <div
 id="loading"
 class="loading">
-Checking administrator access...
+Signing in...
 </div>
 
 <a
 class="back"
-href="index.html">
+href="../index.html">
 ← Back to CreateLK Jobs
 </a>
 
 </div>
 
-
 <script>
 
-const LOGIN =
-"https://login.createlk.workers.dev";
+const ADMIN_LOGIN =
+"https://admin-login.createlk.workers.dev";
 
 const ADMIN_API =
 "https://admin.createlk.workers.dev";
@@ -156,158 +155,224 @@ const TOKEN =
 
 function showError(message){
 
-const notice =
-document.getElementById("notice");
+  const notice =
+    document.getElementById("notice");
 
-notice.textContent =
-message;
+  notice.textContent =
+    message;
 
-notice.style.display =
-"block";
-
+  notice.style.display =
+    "block";
 }
 
 
-function getToken(){
+function saveToken(token){
 
-return (
-localStorage.getItem(TOKEN) ||
-sessionStorage.getItem(TOKEN)
-);
+  localStorage.setItem(
+    TOKEN,
+    token
+  );
 
+  sessionStorage.setItem(
+    TOKEN,
+    token
+  );
 }
 
 
-async function checkAdmin(){
+function removeToken(){
 
-const token =
-getToken();
+  localStorage.removeItem(TOKEN);
 
-if(!token){
-return;
+  sessionStorage.removeItem(TOKEN);
 }
 
 
-document.getElementById(
-"loading"
-).style.display =
-"block";
+async function exchangeTicket(ticket){
+
+  document.getElementById(
+    "loading"
+  ).style.display =
+    "block";
+
+  document.getElementById(
+    "googleLogin"
+  ).style.display =
+    "none";
 
 
-try{
+  try{
 
-const response =
-await fetch(
-ADMIN_API + "/stats",
-{
-method:"GET",
-headers:{
-Authorization:
-"Bearer " + token
+    const response =
+      await fetch(
+        ADMIN_LOGIN + "/exchange",
+        {
+          method:"POST",
+
+          headers:{
+            "Content-Type":
+              "application/json"
+          },
+
+          body:JSON.stringify({
+            ticket:ticket
+          })
+        }
+      );
+
+
+    const data =
+      await response.json()
+        .catch(()=>({}));
+
+
+    if(
+      !response.ok ||
+      !data.success
+    ){
+
+      throw new Error(
+        data.error ||
+        "Administrator login failed."
+      );
+    }
+
+
+    if(!data.token){
+
+      throw new Error(
+        "No administrator session was returned."
+      );
+    }
+
+
+    saveToken(
+      data.token
+    );
+
+
+    /*
+      Remove the one-time ticket
+      from the browser URL.
+    */
+
+    history.replaceState(
+      {},
+      document.title,
+      location.pathname
+    );
+
+
+    /*
+      Verify with the EXISTING
+      Admin Worker.
+    */
+
+    const verify =
+      await fetch(
+        ADMIN_API + "/stats",
+        {
+          method:"GET",
+
+          headers:{
+            Authorization:
+              "Bearer " + data.token
+          }
+        }
+      );
+
+
+    if(!verify.ok){
+
+      removeToken();
+
+      if(verify.status === 403){
+
+        throw new Error(
+          "Admin access is not authorized."
+        );
+
+      }
+
+      throw new Error(
+        "Administrator session could not be verified."
+      );
+    }
+
+
+    /*
+      Successful admin login.
+    */
+
+    location.replace(
+      "admin.html"
+    );
+
+
+  }catch(error){
+
+    removeToken();
+
+    showError(
+      error.message ||
+      "Administrator login failed."
+    );
+
+    document.getElementById(
+      "googleLogin"
+    ).style.display =
+      "block";
+
+  }finally{
+
+    document.getElementById(
+      "loading"
+    ).style.display =
+      "none";
+
+  }
 }
-}
-);
 
 
-if(response.ok){
-
-location.href =
-"admin.html";
-
-return;
-
-}
-
-
-if(response.status === 403){
-
-localStorage.removeItem(TOKEN);
-sessionStorage.removeItem(TOKEN);
-
-showError(
-"Admin access is not authorized for this Google account."
-);
-
-return;
-
-}
-
-
-if(response.status === 401){
-
-localStorage.removeItem(TOKEN);
-sessionStorage.removeItem(TOKEN);
-
-return;
-
-}
-
-
-const data =
-await response.json()
-.catch(()=>({}));
-
-showError(
-data.error ||
-"Unable to verify administrator access."
-);
-
-}catch(error){
-
-showError(
-"Could not connect to the admin service."
-);
-
-}finally{
-
-document.getElementById(
-"loading"
-).style.display =
-"none";
-
-}
-
-}
-
+/*
+  Start the SEPARATE admin
+  Google login.
+*/
 
 document
 .getElementById("googleLogin")
 .addEventListener(
-"click",
-function(){
+  "click",
+  function(){
+
+    location.href =
+      ADMIN_LOGIN + "/login";
+
+  }
+);
+
 
 /*
-   Existing user Login Worker remains unchanged.
-
-   The admin-login flag tells
-   LK/login.html to return here
-   after Google authentication.
+  Google callback returns here
+  with a one-time ticket.
 */
 
-sessionStorage.setItem(
-"createlk_admin_login",
-"1"
-);
+const params =
+  new URLSearchParams(
+    window.location.search
+  );
 
-sessionStorage.setItem(
-"createlk_admin_return",
-"admin-login.html"
-);
+const ticket =
+  params.get("ticket");
 
-location.href =
-LOGIN + "/login";
+
+if(ticket){
+
+  exchangeTicket(
+    ticket
+  );
 
 }
-);
-
-
-/*
-   If an existing session belongs
-   to the authorized admin, go
-   directly to the dashboard.
-*/
-
-checkAdmin();
 
 </script>
 
