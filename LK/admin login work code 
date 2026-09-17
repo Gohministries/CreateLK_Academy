@@ -1,0 +1,1016 @@
+const CLIENT_ID =
+  "582157960266-rsril7394snes3qg1cjpiqnolea7qagp.apps.googleusercontent.com";
+
+const REDIRECT_URI =
+  "https://admin-login.createlk.workers.dev/callback";
+
+const ADMIN_LOGIN_PAGE =
+  "https://createlk.com/LK/admin-login.html";
+
+const ADMIN_DASHBOARD =
+  "https://createlk.com/LK/admin.html";
+
+const GOOGLE_AUTH_URL =
+  "https://accounts.google.com/o/oauth2/v2/auth";
+
+const GOOGLE_TOKEN_URL =
+  "https://oauth2.googleapis.com/token";
+
+const GOOGLE_USERINFO_URL =
+  "https://openidconnect.googleapis.com/v1/userinfo";
+
+const STATE_COOKIE =
+  "createlk_admin_oauth_state";
+
+const SESSION_DAYS = 30;
+const TICKET_MINUTES = 5;
+
+
+/* =========================
+   RESPONSE HELPERS
+========================= */
+
+function json(data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type":
+          "application/json;charset=UTF-8",
+        "Cache-Control":
+          "no-store"
+      }
+    }
+  );
+}
+
+
+function errorPage(message) {
+
+  return new Response(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+name="viewport"
+content="width=device-width,initial-scale=1">
+
+<title>Admin Login Error | CreateLK Jobs</title>
+
+<style>
+
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+min-height:100vh;
+display:flex;
+align-items:center;
+justify-content:center;
+padding:20px;
+font-family:Arial,sans-serif;
+background:#f4f7fb;
+}
+
+.box{
+width:100%;
+max-width:430px;
+background:#fff;
+border-radius:16px;
+padding:32px;
+text-align:center;
+box-shadow:0 10px 35px rgba(0,0,0,.08);
+}
+
+h1{
+font-size:24px;
+margin:0 0 12px;
+}
+
+p{
+color:#667085;
+line-height:1.5;
+}
+
+a{
+display:inline-block;
+margin-top:18px;
+padding:12px 20px;
+border-radius:8px;
+background:#1261d6;
+color:#fff;
+text-decoration:none;
+font-weight:700;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="box">
+
+<h1>Admin Login</h1>
+
+<p>${escapeHtml(message)}</p>
+
+<a href="${ADMIN_LOGIN_PAGE}">
+Try Again
+</a>
+
+</div>
+
+</body>
+</html>
+`,
+{
+  status: 400,
+  headers:{
+    "Content-Type":
+      "text/html;charset=UTF-8",
+    "Cache-Control":
+      "no-store"
+  }
+});
+
+}
+
+
+/* =========================
+   SECURITY HELPERS
+========================= */
+
+function escapeHtml(value) {
+
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
+function randomToken(bytesLength = 32) {
+
+  const bytes =
+    crypto.getRandomValues(
+      new Uint8Array(bytesLength)
+    );
+
+  return Array.from(bytes)
+    .map(
+      b => b.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+
+function getCookie(request, name) {
+
+  const cookie =
+    request.headers.get("Cookie") || "";
+
+  for (
+    const part of cookie.split(";")
+  ) {
+
+    const index =
+      part.indexOf("=");
+
+    if(index === -1) continue;
+
+    const key =
+      part.slice(0,index).trim();
+
+    const value =
+      part.slice(index + 1).trim();
+
+    if(key === name) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+
+function createStateCookie(state) {
+
+  return [
+    `${STATE_COOKIE}=${state}`,
+    "Path=/",
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax",
+    "Max-Age=600"
+  ].join("; ");
+}
+
+
+function clearStateCookie() {
+
+  return [
+    `${STATE_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax",
+    "Max-Age=0"
+  ].join("; ");
+}
+
+
+/* =========================
+   GOOGLE LOGIN
+========================= */
+
+async function startGoogleLogin() {
+
+  const state =
+    randomToken(32);
+
+  const url =
+    new URL(GOOGLE_AUTH_URL);
+
+  url.searchParams.set(
+    "client_id",
+    CLIENT_ID
+  );
+
+  url.searchParams.set(
+    "redirect_uri",
+    REDIRECT_URI
+  );
+
+  url.searchParams.set(
+    "response_type",
+    "code"
+  );
+
+  url.searchParams.set(
+    "scope",
+    "openid email profile"
+  );
+
+  url.searchParams.set(
+    "state",
+    state
+  );
+
+  url.searchParams.set(
+    "access_type",
+    "online"
+  );
+
+  return new Response(null,{
+    status:302,
+
+    headers:{
+      "Location":
+        url.toString(),
+
+      "Set-Cookie":
+        createStateCookie(state),
+
+      "Cache-Control":
+        "no-store"
+    }
+  });
+}
+
+
+/* =========================
+   GOOGLE CALLBACK
+========================= */
+
+async function handleCallback(
+  request,
+  env
+) {
+
+  const url =
+    new URL(request.url);
+
+  const code =
+    url.searchParams.get("code");
+
+  const returnedState =
+    url.searchParams.get("state");
+
+  const savedState =
+    getCookie(
+      request,
+      STATE_COOKIE
+    );
+
+
+  if(
+    !code ||
+    !returnedState ||
+    !savedState ||
+    returnedState !== savedState
+  ){
+
+    return errorPage(
+      "Invalid or expired login request."
+    );
+  }
+
+
+  try {
+
+    /* =====================
+       EXCHANGE GOOGLE CODE
+    ===================== */
+
+    const tokenResponse =
+      await fetch(
+        GOOGLE_TOKEN_URL,
+        {
+          method:"POST",
+
+          headers:{
+            "Content-Type":
+              "application/x-www-form-urlencoded"
+          },
+
+          body:
+            new URLSearchParams({
+
+              client_id:
+                CLIENT_ID,
+
+              client_secret:
+                env.GOOGLE_CLIENT_SECRET,
+
+              code:
+
+                code,
+
+              grant_type:
+                "authorization_code",
+
+              redirect_uri:
+                REDIRECT_URI
+
+            })
+        }
+      );
+
+
+    if(!tokenResponse.ok){
+
+      return errorPage(
+        "Google authentication failed."
+      );
+    }
+
+
+    const googleTokens =
+      await tokenResponse.json();
+
+
+    /* =====================
+       GET GOOGLE USER
+    ===================== */
+
+    const userResponse =
+      await fetch(
+        GOOGLE_USERINFO_URL,
+        {
+          headers:{
+            Authorization:
+              `Bearer ${googleTokens.access_token}`
+          }
+        }
+      );
+
+
+    if(!userResponse.ok){
+
+      return errorPage(
+        "Could not retrieve your Google account."
+      );
+    }
+
+
+    const googleUser =
+      await userResponse.json();
+
+
+    const email =
+      String(
+        googleUser.email || ""
+      )
+      .trim()
+      .toLowerCase();
+
+
+    const adminEmail =
+      String(
+        env.ADMIN_EMAIL || ""
+      )
+      .trim()
+      .toLowerCase();
+
+
+    /* =====================
+       ADMIN CHECK
+    ===================== */
+
+    if(!adminEmail){
+
+      return errorPage(
+        "ADMIN_EMAIL is not configured in the Worker."
+      );
+    }
+
+
+    if(
+      !email ||
+      email !== adminEmail
+    ){
+
+      return errorPage(
+        "This Google account is not authorized for administrator access."
+      );
+    }
+
+
+    if(
+      googleUser.email_verified !== true
+    ){
+
+      return errorPage(
+        "The administrator Google email must be verified."
+      );
+    }
+
+
+    /* =====================
+       USER RECORD
+    ===================== */
+
+    const googleId =
+      String(
+        googleUser.sub || ""
+      );
+
+
+    if(!googleId){
+
+      return errorPage(
+        "Google account information is incomplete."
+      );
+    }
+
+
+    await env.DB.prepare(`
+      INSERT INTO users
+      (
+        google_id,
+        name,
+        email,
+        photo_url,
+        email_verified,
+        last_login
+      )
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+
+      ON CONFLICT(google_id)
+      DO UPDATE SET
+        name = excluded.name,
+        email = excluded.email,
+        photo_url = excluded.photo_url,
+        email_verified = excluded.email_verified,
+        last_login = CURRENT_TIMESTAMP
+    `)
+    .bind(
+
+      googleId,
+
+      String(
+        googleUser.name || ""
+      ),
+
+      email,
+
+      String(
+        googleUser.picture || ""
+      ),
+
+      1
+
+    )
+    .run();
+
+
+    const user =
+      await env.DB.prepare(`
+        SELECT
+          id,
+          name,
+          email
+        FROM users
+        WHERE google_id = ?
+        LIMIT 1
+      `)
+      .bind(googleId)
+      .first();
+
+
+    if(!user){
+
+      return errorPage(
+        "Could not create the administrator account."
+      );
+    }
+
+
+    /* =====================
+       REMOVE OLD SESSIONS
+    ===================== */
+
+    await env.DB.prepare(`
+      DELETE FROM sessions
+      WHERE user_id = ?
+    `)
+    .bind(user.id)
+    .run();
+
+
+    /* =====================
+       CREATE SESSION
+    ===================== */
+
+    const sessionToken =
+      randomToken(32);
+
+    const now =
+      Math.floor(
+        Date.now() / 1000
+      );
+
+    const expiresAt =
+      now +
+      SESSION_DAYS * 86400;
+
+
+    await env.DB.prepare(`
+      INSERT INTO sessions
+      (
+        id,
+        user_id,
+        expires_at
+      )
+      VALUES (?, ?, ?)
+    `)
+    .bind(
+
+      sessionToken,
+
+      user.id,
+
+      expiresAt
+
+    )
+    .run();
+
+
+    /* =====================
+       CREATE ONE-TIME TICKET
+    ===================== */
+
+    const ticket =
+      randomToken(32);
+
+    const ticketExpires =
+      now +
+      TICKET_MINUTES * 60;
+
+
+    /*
+     * The ticket stores the session
+     * token temporarily.
+     *
+     * We need this column.
+     */
+
+    try {
+
+      await env.DB.prepare(`
+        ALTER TABLE admin_oauth_tickets
+        ADD COLUMN session_token TEXT
+      `)
+      .run();
+
+    } catch(e) {
+
+      /*
+       * Column probably already exists.
+       * Ignore duplicate-column error.
+       */
+    }
+
+
+    await env.DB.prepare(`
+      INSERT INTO admin_oauth_tickets
+      (
+        id,
+        user_id,
+        expires_at,
+        session_token
+      )
+      VALUES (?, ?, ?, ?)
+    `)
+    .bind(
+
+      ticket,
+
+      user.id,
+
+      ticketExpires,
+
+      sessionToken
+
+    )
+    .run();
+
+
+    /* =====================
+       REDIRECT TO ADMIN LOGIN
+    ===================== */
+
+    const redirect =
+      new URL(
+        ADMIN_LOGIN_PAGE
+      );
+
+    redirect.searchParams.set(
+      "ticket",
+      ticket
+    );
+
+
+    return new Response(null,{
+      status:302,
+
+      headers:{
+        Location:
+          redirect.toString(),
+
+        "Set-Cookie":
+          clearStateCookie(),
+
+        "Cache-Control":
+          "no-store"
+      }
+    });
+
+
+  } catch(error) {
+
+    console.error(
+      "ADMIN LOGIN ERROR",
+      error
+    );
+
+    return errorPage(
+      "An unexpected error occurred during administrator login."
+    );
+  }
+}
+
+
+/* =========================
+   EXCHANGE TICKET
+========================= */
+
+async function exchangeTicket(
+  request,
+  env
+) {
+
+  if(request.method !== "POST"){
+
+    return json({
+      success:false,
+      error:"POST required."
+    },405);
+  }
+
+
+  let body;
+
+  try{
+
+    body =
+      await request.json();
+
+  }catch{
+
+    return json({
+      success:false,
+      error:"Invalid JSON."
+    },400);
+  }
+
+
+  const ticket =
+    String(
+      body.ticket || ""
+    ).trim();
+
+
+  if(!ticket){
+
+    return json({
+      success:false,
+      error:"Ticket is required."
+    },400);
+  }
+
+
+  const now =
+    Math.floor(
+      Date.now() / 1000
+    );
+
+
+  const row =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        user_id,
+        expires_at,
+        session_token
+      FROM admin_oauth_tickets
+      WHERE id = ?
+      LIMIT 1
+    `)
+    .bind(ticket)
+    .first();
+
+
+  if(!row){
+
+    return json({
+      success:false,
+      error:"Invalid or expired ticket."
+    },401);
+  }
+
+
+  if(
+    Number(row.expires_at) <= now
+  ){
+
+    await env.DB.prepare(`
+      DELETE FROM admin_oauth_tickets
+      WHERE id = ?
+    `)
+    .bind(ticket)
+    .run();
+
+
+    return json({
+      success:false,
+      error:"Ticket expired."
+    },401);
+  }
+
+
+  if(!row.session_token){
+
+    return json({
+      success:false,
+      error:"Invalid ticket."
+    },401);
+  }
+
+
+  /*
+   * Make sure the session still exists.
+   */
+
+  const session =
+    await env.DB.prepare(`
+      SELECT
+        s.id,
+        s.user_id,
+        s.expires_at,
+        u.email
+      FROM sessions s
+      INNER JOIN users u
+        ON u.id = s.user_id
+      WHERE s.id = ?
+      AND s.user_id = ?
+      LIMIT 1
+    `)
+    .bind(
+      row.session_token,
+      row.user_id
+    )
+    .first();
+
+
+  if(!session){
+
+    await env.DB.prepare(`
+      DELETE FROM admin_oauth_tickets
+      WHERE id = ?
+    `)
+    .bind(ticket)
+    .run();
+
+
+    return json({
+      success:false,
+      error:"Session not found."
+    },401);
+  }
+
+
+  if(
+    Number(session.expires_at) <= now
+  ){
+
+    await env.DB.prepare(`
+      DELETE FROM admin_oauth_tickets
+      WHERE id = ?
+    `)
+    .bind(ticket)
+    .run();
+
+
+    return json({
+      success:false,
+      error:"Session expired."
+    },401);
+  }
+
+
+  const adminEmail =
+    String(
+      env.ADMIN_EMAIL || ""
+    )
+    .trim()
+    .toLowerCase();
+
+
+  if(
+    String(session.email || "")
+      .trim()
+      .toLowerCase()
+      !== adminEmail
+  ){
+
+    await env.DB.prepare(`
+      DELETE FROM admin_oauth_tickets
+      WHERE id = ?
+    `)
+    .bind(ticket)
+    .run();
+
+
+    return json({
+      success:false,
+      error:"Administrator access denied."
+    },403);
+  }
+
+
+  /*
+   * Delete ticket immediately.
+   * It can only be exchanged once.
+   */
+
+  await env.DB.prepare(`
+    DELETE FROM admin_oauth_tickets
+    WHERE id = ?
+  `)
+  .bind(ticket)
+  .run();
+
+
+  return json({
+    success:true,
+    token:row.session_token
+  });
+}
+
+
+/* =========================
+   CLEAN EXPIRED TICKETS
+========================= */
+
+async function cleanTickets(env){
+
+  const now =
+    Math.floor(
+      Date.now() / 1000
+    );
+
+  await env.DB.prepare(`
+    DELETE FROM admin_oauth_tickets
+    WHERE expires_at <= ?
+  `)
+  .bind(now)
+  .run();
+}
+
+
+/* =========================
+   MAIN ROUTER
+========================= */
+
+export default {
+
+  async fetch(request,env) {
+
+    const url =
+      new URL(request.url);
+
+
+    await cleanTickets(env);
+
+
+    if(
+      request.method === "GET" &&
+      url.pathname === "/"
+    ){
+
+      return json({
+        success:true,
+        service:
+          "CreateLK Jobs Admin Login",
+        status:"online"
+      });
+    }
+
+
+    if(
+      request.method === "GET" &&
+      url.pathname === "/health"
+    ){
+
+      return json({
+        success:true,
+        service:
+          "CreateLK Jobs Admin Login",
+        status:"online"
+      });
+    }
+
+
+    if(
+      request.method === "GET" &&
+      (
+        url.pathname === "/login" ||
+        url.pathname === "/auth/google"
+      )
+    ){
+
+      return startGoogleLogin();
+    }
+
+
+    if(
+      request.method === "GET" &&
+      url.pathname === "/callback"
+    ){
+
+      return handleCallback(
+        request,
+        env
+      );
+    }
+
+
+    if(
+      request.method === "POST" &&
+      url.pathname === "/exchange"
+    ){
+
+      return exchangeTicket(
+        request,
+        env
+      );
+    }
+
+
+    return json({
+      success:false,
+      error:"Not found"
+    },404);
+  }
+
+};
