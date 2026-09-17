@@ -1,0 +1,1184 @@
+const ORIGIN = "https://createlk.com";
+
+const cors = {
+  "Access-Control-Allow-Origin": ORIGIN,
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Max-Age": "86400",
+  "Vary": "Origin"
+};
+
+
+/* =========================================================
+   JSON RESPONSE
+   ========================================================= */
+
+function json(data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        ...cors,
+        "Content-Type": "application/json; charset=UTF-8"
+      }
+    }
+  );
+}
+
+
+/* =========================================================
+   TOKEN
+   ========================================================= */
+
+function getToken(request) {
+
+  const authorization =
+    request.headers.get("Authorization");
+
+  if (
+    authorization &&
+    authorization.startsWith("Bearer ")
+  ) {
+    return authorization.slice(7).trim();
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   USER AUTHENTICATION
+   ========================================================= */
+
+async function getUser(request, env) {
+
+  const token = getToken(request);
+
+  if (!token) {
+    return null;
+  }
+
+  const session =
+    await env.DB.prepare(`
+      SELECT
+        s.user_id,
+        s.expires_at,
+        u.google_id,
+        u.name,
+        u.email,
+        u.photo_url,
+        u.email_verified
+      FROM sessions s
+      JOIN users u
+        ON u.id = s.user_id
+      WHERE s.id = ?
+      LIMIT 1
+    `)
+    .bind(token)
+    .first();
+
+  if (!session) {
+    return null;
+  }
+
+  /*
+     sessions.expires_at uses Unix seconds
+  */
+
+  if (
+    Number(session.expires_at) <=
+    Math.floor(Date.now() / 1000)
+  ) {
+
+    await env.DB.prepare(`
+      DELETE FROM sessions
+      WHERE id = ?
+    `)
+    .bind(token)
+    .run();
+
+    return null;
+  }
+
+  return {
+    id: session.user_id,
+    google_id: session.google_id,
+    name: session.name,
+    email: session.email,
+    photo_url: session.photo_url,
+    email_verified:
+      Number(session.email_verified) === 1
+  };
+}
+
+
+/* =========================================================
+   ADMIN AUTHENTICATION
+   ========================================================= */
+
+async function requireAdmin(request, env) {
+
+  const user =
+    await getUser(request, env);
+
+  if (!user) {
+
+    return {
+      ok: false,
+      response: json({
+        success: false,
+        error: "Unauthorized"
+      }, 401)
+    };
+  }
+
+  const adminEmail =
+    String(env.ADMIN_EMAIL || "")
+      .trim()
+      .toLowerCase();
+
+  if (!adminEmail) {
+
+    return {
+      ok: false,
+      response: json({
+        success: false,
+        error:
+          "ADMIN_EMAIL is not configured."
+      }, 500)
+    };
+  }
+
+  if (
+    String(user.email || "")
+      .trim()
+      .toLowerCase() !== adminEmail
+  ) {
+
+    return {
+      ok: false,
+      response: json({
+        success: false,
+        error:
+          "Admin access required."
+      }, 403)
+    };
+  }
+
+  return {
+    ok: true,
+    user
+  };
+}
+
+
+/* =========================================================
+   HEALTH
+   GET /health
+   ========================================================= */
+
+async function health(request, env) {
+
+  return json({
+    success: true,
+    service: "CreateLK Jobs Admin API",
+    status: "online"
+  });
+}
+
+
+/* =========================================================
+   STATS
+   GET /stats
+   ========================================================= */
+
+async function stats(request, env) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  const pendingAds =
+    await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM ads
+      WHERE status = 'pending'
+    `)
+    .first();
+
+
+  const approvedAds =
+    await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM ads
+      WHERE status = 'approved'
+    `)
+    .first();
+
+
+  const rejectedAds =
+    await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM ads
+      WHERE status = 'rejected'
+    `)
+    .first();
+
+
+  const pendingPayments =
+    await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM payments
+      WHERE status = 'pending'
+    `)
+    .first();
+
+
+  const users =
+    await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM users
+    `)
+    .first();
+
+
+  const totalAds =
+    await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM ads
+    `)
+    .first();
+
+
+  return json({
+    success: true,
+
+    stats: {
+      pending_ads:
+        Number(pendingAds?.count || 0),
+
+      approved_ads:
+        Number(approvedAds?.count || 0),
+
+      rejected_ads:
+        Number(rejectedAds?.count || 0),
+
+      pending_payments:
+        Number(pendingPayments?.count || 0),
+
+      users:
+        Number(users?.count || 0),
+
+      total_ads:
+        Number(totalAds?.count || 0)
+    }
+  });
+}
+
+
+/* =========================================================
+   ADMIN ADS
+   GET /ads
+   ========================================================= */
+
+async function adminAds(request, env) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        a.id,
+        a.user_id,
+        a.photo_url,
+        a.title,
+        a.description,
+        a.whatsapp_no,
+        a.call_no,
+        a.province,
+        a.district,
+        a.city,
+        a.ad_type,
+        a.status,
+        a.payment_status,
+        a.payment_id,
+        a.rejection_reason,
+        a.created_at,
+        a.approved_at,
+        a.expires_at,
+
+        u.name AS user_name,
+        u.email AS user_email,
+
+        p.amount AS payment_amount,
+        p.bank_name,
+        p.branch_name,
+        p.account_name,
+        p.account_number,
+        p.deposit_date,
+        p.slip_url,
+        p.status AS payment_record_status,
+        p.rejection_reason AS payment_rejection_reason,
+        p.created_at AS payment_created_at,
+        p.approved_at AS payment_approved_at
+
+      FROM ads a
+
+      JOIN users u
+        ON u.id = a.user_id
+
+      LEFT JOIN payments p
+        ON p.id = a.payment_id
+
+      WHERE a.status = 'pending'
+
+      ORDER BY a.id DESC
+    `)
+    .all();
+
+
+  return json({
+    success: true,
+    ads: result.results || []
+  });
+}
+
+
+/* =========================================================
+   APPROVE AD
+   POST /ads/:id/approve
+   ========================================================= */
+
+async function approveAd(
+  request,
+  env,
+  id
+) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  const ad =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        ad_type,
+        status,
+        payment_id
+      FROM ads
+      WHERE id = ?
+      LIMIT 1
+    `)
+    .bind(id)
+    .first();
+
+
+  if (!ad) {
+
+    return json({
+      success: false,
+      error: "Ad not found."
+    }, 404);
+  }
+
+
+  if (ad.status !== "pending") {
+
+    return json({
+      success: false,
+      error:
+        "Only pending ads can be approved."
+    }, 400);
+  }
+
+
+  /*
+     Paid ads require approved payment.
+  */
+
+  const paidTypes = [
+    "featured",
+    "urgent",
+    "top",
+    "featured_urgent_top"
+  ];
+
+
+  if (paidTypes.includes(ad.ad_type)) {
+
+    if (!ad.payment_id) {
+
+      return json({
+        success: false,
+        error:
+          "This paid ad has no payment record."
+      }, 400);
+    }
+
+
+    const payment =
+      await env.DB.prepare(`
+        SELECT
+          id,
+          status
+        FROM payments
+        WHERE id = ?
+        LIMIT 1
+      `)
+      .bind(ad.payment_id)
+      .first();
+
+
+    if (!payment) {
+
+      return json({
+        success: false,
+        error:
+          "Payment record not found."
+      }, 400);
+    }
+
+
+    if (payment.status !== "approved") {
+
+      return json({
+        success: false,
+        error:
+          "Payment must be approved before the paid ad can be approved."
+      }, 400);
+    }
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE ads
+    SET
+      status = 'approved',
+      approved_at = CURRENT_TIMESTAMP,
+      expires_at =
+        datetime('now', '+30 days'),
+      rejection_reason = ''
+    WHERE id = ?
+  `)
+  .bind(id)
+  .run();
+
+
+  return json({
+    success: true,
+    message:
+      "Ad approved successfully."
+  });
+}
+
+
+/* =========================================================
+   REJECT AD
+   POST /ads/:id/reject
+   ========================================================= */
+
+async function rejectAd(
+  request,
+  env,
+  id
+) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  let body = {};
+
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+
+  const reason =
+    String(
+      body.rejection_reason || ""
+    ).trim();
+
+
+  if (!reason) {
+
+    return json({
+      success: false,
+      error:
+        "Rejection reason is required."
+    }, 400);
+  }
+
+
+  const ad =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        status
+      FROM ads
+      WHERE id = ?
+      LIMIT 1
+    `)
+    .bind(id)
+    .first();
+
+
+  if (!ad) {
+
+    return json({
+      success: false,
+      error: "Ad not found."
+    }, 404);
+  }
+
+
+  if (ad.status !== "pending") {
+
+    return json({
+      success: false,
+      error:
+        "Only pending ads can be rejected."
+    }, 400);
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE ads
+    SET
+      status = 'rejected',
+      rejection_reason = ?
+    WHERE id = ?
+  `)
+  .bind(reason, id)
+  .run();
+
+
+  return json({
+    success: true,
+    message:
+      "Ad rejected successfully."
+  });
+}
+
+
+/* =========================================================
+   ADMIN PAYMENTS
+   GET /payments
+   ========================================================= */
+
+async function payments(request, env) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  const result =
+    await env.DB.prepare(`
+      SELECT
+        p.id,
+        p.user_id,
+        p.ad_id,
+        p.amount,
+        p.bank_name,
+        p.branch_name,
+        p.account_name,
+        p.account_number,
+        p.deposit_date,
+        p.reference_number,
+        p.slip_url,
+        p.status,
+        p.rejection_reason,
+        p.created_at,
+        p.approved_at,
+
+        u.name AS user_name,
+        u.email AS user_email,
+
+        a.title AS ad_title,
+        a.ad_type AS ad_type,
+        a.status AS ad_status
+
+      FROM payments p
+
+      JOIN users u
+        ON u.id = p.user_id
+
+      LEFT JOIN ads a
+        ON a.id = p.ad_id
+
+      WHERE p.status = 'pending'
+
+      ORDER BY p.id DESC
+    `)
+    .all();
+
+
+  return json({
+    success: true,
+    payments:
+      result.results || []
+  });
+}
+
+
+/* =========================================================
+   APPROVE PAYMENT
+   POST /payments/:id/approve
+   ========================================================= */
+
+async function approvePayment(
+  request,
+  env,
+  id
+) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  const payment =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        ad_id,
+        status
+      FROM payments
+      WHERE id = ?
+      LIMIT 1
+    `)
+    .bind(id)
+    .first();
+
+
+  if (!payment) {
+
+    return json({
+      success: false,
+      error:
+        "Payment not found."
+    }, 404);
+  }
+
+
+  if (payment.status !== "pending") {
+
+    return json({
+      success: false,
+      error:
+        "Only pending payments can be approved."
+    }, 400);
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE payments
+    SET
+      status = 'approved',
+      approved_at = CURRENT_TIMESTAMP,
+      rejection_reason = ''
+    WHERE id = ?
+  `)
+  .bind(id)
+  .run();
+
+
+  if (payment.ad_id) {
+
+    await env.DB.prepare(`
+      UPDATE ads
+      SET
+        payment_status = 'approved'
+      WHERE id = ?
+    `)
+    .bind(payment.ad_id)
+    .run();
+  }
+
+
+  return json({
+    success: true,
+    message:
+      "Payment approved successfully."
+  });
+}
+
+
+/* =========================================================
+   REJECT PAYMENT
+   POST /payments/:id/reject
+   ========================================================= */
+
+async function rejectPayment(
+  request,
+  env,
+  id
+) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  let body = {};
+
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+
+  const reason =
+    String(
+      body.rejection_reason || ""
+    ).trim();
+
+
+  if (!reason) {
+
+    return json({
+      success: false,
+      error:
+        "Rejection reason is required."
+    }, 400);
+  }
+
+
+  const payment =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        ad_id,
+        status
+      FROM payments
+      WHERE id = ?
+      LIMIT 1
+    `)
+    .bind(id)
+    .first();
+
+
+  if (!payment) {
+
+    return json({
+      success: false,
+      error:
+        "Payment not found."
+    }, 404);
+  }
+
+
+  if (payment.status !== "pending") {
+
+    return json({
+      success: false,
+      error:
+        "Only pending payments can be rejected."
+    }, 400);
+  }
+
+
+  await env.DB.prepare(`
+    UPDATE payments
+    SET
+      status = 'rejected',
+      rejection_reason = ?
+    WHERE id = ?
+  `)
+  .bind(reason, id)
+  .run();
+
+
+  /*
+     Reject the linked paid ad too.
+  */
+
+  if (payment.ad_id) {
+
+    await env.DB.prepare(`
+      UPDATE ads
+      SET
+        status = 'rejected',
+        payment_status = 'rejected',
+        rejection_reason = ?
+      WHERE id = ?
+        AND status = 'pending'
+    `)
+    .bind(
+      reason,
+      payment.ad_id
+    )
+    .run();
+  }
+
+
+  return json({
+    success: true,
+    message:
+      "Payment rejected successfully."
+  });
+}
+
+
+/* =========================================================
+   BANK SLIP
+   GET /slip?key=payments/...
+   ========================================================= */
+
+async function slip(request, env) {
+
+  const check =
+    await requireAdmin(request, env);
+
+  if (!check.ok) {
+    return check.response;
+  }
+
+
+  const key =
+    new URL(request.url)
+      .searchParams
+      .get("key");
+
+
+  if (
+    !key ||
+    !key.startsWith("payments/")
+  ) {
+
+    return new Response(
+      "Forbidden",
+      {
+        status: 403,
+        headers: cors
+      }
+    );
+  }
+
+
+  /*
+     Only allow slips that exist
+     in the payments table.
+  */
+
+  const payment =
+    await env.DB.prepare(`
+      SELECT id
+      FROM payments
+      WHERE slip_url = ?
+      LIMIT 1
+    `)
+    .bind(key)
+    .first();
+
+
+  if (!payment) {
+
+    return new Response(
+      "Not found",
+      {
+        status: 404,
+        headers: cors
+      }
+    );
+  }
+
+
+  const object =
+    await env.JOBS_BUCKET.get(key);
+
+
+  if (!object) {
+
+    return new Response(
+      "Not found",
+      {
+        status: 404,
+        headers: cors
+      }
+    );
+  }
+
+
+  return new Response(
+    object.body,
+    {
+      status: 200,
+      headers: {
+        ...cors,
+        "Content-Type":
+          object.httpMetadata?.contentType ||
+          "application/octet-stream",
+
+        "Cache-Control":
+          "private, no-store"
+      }
+    }
+  );
+}
+
+
+/* =========================================================
+   WORKER
+   ========================================================= */
+
+export default {
+
+  async fetch(request, env) {
+
+    /* -------------------------------------------------------
+       CORS
+       ------------------------------------------------------- */
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: cors
+        }
+      );
+    }
+
+
+    try {
+
+      const url =
+        new URL(request.url);
+
+      const path =
+        url.pathname;
+
+
+      /* -----------------------------------------------------
+         HEALTH
+         ----------------------------------------------------- */
+
+      if (
+        path === "/health" &&
+        request.method === "GET"
+      ) {
+
+        return health(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         ADMIN STATS
+         ----------------------------------------------------- */
+
+      if (
+        path === "/stats" &&
+        request.method === "GET"
+      ) {
+
+        return stats(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         ADMIN ADS
+         ----------------------------------------------------- */
+
+      if (
+        path === "/ads" &&
+        request.method === "GET"
+      ) {
+
+        return adminAds(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         APPROVE AD
+         ----------------------------------------------------- */
+
+      const approveAdMatch =
+        path.match(
+          /^\/ads\/(\d+)\/approve$/
+        );
+
+
+      if (
+        approveAdMatch &&
+        request.method === "POST"
+      ) {
+
+        return approveAd(
+          request,
+          env,
+          approveAdMatch[1]
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         REJECT AD
+         ----------------------------------------------------- */
+
+      const rejectAdMatch =
+        path.match(
+          /^\/ads\/(\d+)\/reject$/
+        );
+
+
+      if (
+        rejectAdMatch &&
+        request.method === "POST"
+      ) {
+
+        return rejectAd(
+          request,
+          env,
+          rejectAdMatch[1]
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         ADMIN PAYMENTS
+         ----------------------------------------------------- */
+
+      if (
+        path === "/payments" &&
+        request.method === "GET"
+      ) {
+
+        return payments(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         APPROVE PAYMENT
+         ----------------------------------------------------- */
+
+      const approvePaymentMatch =
+        path.match(
+          /^\/payments\/(\d+)\/approve$/
+        );
+
+
+      if (
+        approvePaymentMatch &&
+        request.method === "POST"
+      ) {
+
+        return approvePayment(
+          request,
+          env,
+          approvePaymentMatch[1]
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         REJECT PAYMENT
+         ----------------------------------------------------- */
+
+      const rejectPaymentMatch =
+        path.match(
+          /^\/payments\/(\d+)\/reject$/
+        );
+
+
+      if (
+        rejectPaymentMatch &&
+        request.method === "POST"
+      ) {
+
+        return rejectPayment(
+          request,
+          env,
+          rejectPaymentMatch[1]
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         BANK SLIP
+         ----------------------------------------------------- */
+
+      if (
+        path === "/slip" &&
+        request.method === "GET"
+      ) {
+
+        return slip(
+          request,
+          env
+        );
+      }
+
+
+      /* -----------------------------------------------------
+         NOT FOUND
+         ----------------------------------------------------- */
+
+      return json({
+        success: false,
+        error: "Endpoint not found."
+      }, 404);
+
+    } catch (error) {
+
+      console.error(
+        "ADMIN WORKER ERROR:",
+        error
+      );
+
+      return json({
+        success: false,
+        error:
+          "Internal server error."
+      }, 500);
+    }
+  }
+};
