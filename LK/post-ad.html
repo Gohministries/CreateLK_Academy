@@ -57,11 +57,8 @@ select:disabled{background:#f1f5f9;color:#94a3b8}
 .secondary{background:#fff;color:#2563eb;border:1px solid #2563eb}
 .dashboard{background:#f1f5f9;color:#172033;border:1px solid #dbe1ea}
 @media(max-width:600px){
-.card{padding:20px}
-h1{font-size:24px}
-.types{grid-template-columns:1fr}
-.bank{display:block}
-.value{text-align:left;margin-top:4px}
+.card{padding:20px}h1{font-size:24px}.types{grid-template-columns:1fr}
+.bank{display:block}.value{text-align:left;margin-top:4px}
 }
 </style>
 </head>
@@ -92,7 +89,7 @@ h1{font-size:24px}
 <input id="photo" type="file" accept="image/jpeg,image/png,image/webp">
 <span class="help">Maximum 5 MB. JPG, PNG or WebP.</span>
 <div id="preview" class="preview">
-<img id="previewImg" alt="Photo Preview">
+<img id="previewImg" alt="Preview">
 </div>
 <span id="photoStatus" class="loading"></span>
 </div>
@@ -150,32 +147,27 @@ h1{font-size:24px}
 <div class="types">
 <label class="option selected">
 <input type="radio" name="type" value="free" checked>
-<span class="name">Free Ad</span>
-<span class="price">LKR 0</span>
+<span class="name">Free Ad</span><span class="price">LKR 0</span>
 </label>
 
 <label class="option">
 <input type="radio" name="type" value="featured">
-<span class="name">Featured Ad</span>
-<span class="price">LKR 500</span>
+<span class="name">Featured Ad</span><span class="price">LKR 500</span>
 </label>
 
 <label class="option">
 <input type="radio" name="type" value="urgent">
-<span class="name">Urgent Ad</span>
-<span class="price">LKR 500</span>
+<span class="name">Urgent Ad</span><span class="price">LKR 500</span>
 </label>
 
 <label class="option">
 <input type="radio" name="type" value="top">
-<span class="name">Top Ad</span>
-<span class="price">LKR 500</span>
+<span class="name">Top Ad</span><span class="price">LKR 500</span>
 </label>
 
 <label class="option">
 <input type="radio" name="type" value="featured_urgent_top">
-<span class="name">Featured + Urgent + Top</span>
-<span class="price">LKR 1,500</span>
+<span class="name">Featured + Urgent + Top</span><span class="price">LKR 1,500</span>
 </label>
 </div>
 </div>
@@ -190,13 +182,13 @@ h1{font-size:24px}
 <div class="bank">
 <span class="label">Account Number</span>
 <span class="value">292200280023178
-<button class="copy" data-copy="292200280023178">Copy</button></span>
+<button type="button" class="copy" data-copy="292200280023178">Copy</button></span>
 </div>
 
 <div class="bank">
 <span class="label">Customer Name</span>
 <span class="value">Thinarathnam Saththiyanadan
-<button class="copy" data-copy="Thinarathnam Saththiyanadan">Copy</button></span>
+<button type="button" class="copy" data-copy="Thinarathnam Saththiyanadan">Copy</button></span>
 </div>
 </div>
 
@@ -239,6 +231,7 @@ const API="https://ads.createlk.workers.dev";
 const LOGIN="https://login.createlk.workers.dev";
 const TOKEN="createlk_session_token";
 const MAX=5*1024*1024;
+
 const TYPES={
   free:0,
   featured:500,
@@ -246,15 +239,27 @@ const TYPES={
   top:500,
   featured_urgent_top:1500
 };
-const IMAGE_TYPES=["image/jpeg","image/png","image/webp"];
+
+const IMAGES=[
+  "image/jpeg",
+  "image/png",
+  "image/webp"
+];
+
+const SLIPS=[
+  ...IMAGES,
+  "application/pdf"
+];
+
 const $=id=>document.getElementById(id);
 
-function getToken(){
-  return localStorage.getItem(TOKEN)||sessionStorage.getItem(TOKEN);
+function token(){
+  return localStorage.getItem(TOKEN)||
+         sessionStorage.getItem(TOKEN);
 }
 
-function showError(text){
-  $("message").textContent=text;
+function error(msg){
+  $("message").textContent=msg;
   $("message").className="message error";
   window.scrollTo({top:0,behavior:"smooth"});
 }
@@ -271,218 +276,261 @@ function logout(){
 }
 
 async function request(url,options={}){
-  let r;
+  const t=token();
 
-  try{
-    r=await fetch(url,options);
-  }catch(e){
-    console.error(e);
-    throw Error("Unable to connect to the server. Please check your internet connection.");
-  }
-
-  const text=await r.text();
-  let data;
-
-  try{
-    data=JSON.parse(text);
-  }catch{
-    data={success:false,error:text};
-  }
-
-  if(r.status===401){
+  if(!t){
     logout();
     throw Error("Your session has expired.");
   }
 
-  if(!r.ok||data.success===false)
-    throw Error(data.error||`Request failed (${r.status})`);
+  try{
+    const r=await fetch(url,{
+      ...options,
+      headers:{
+        ...(options.headers||{}),
+        Authorization:`Bearer ${t}`
+      }
+    });
 
-  return data;
+    const text=await r.text();
+    let data;
+
+    try{data=JSON.parse(text)}
+    catch{data={success:false,error:text}}
+
+    if(r.status===401){
+      logout();
+      throw Error("Your session has expired.");
+    }
+
+    if(!r.ok||data.success===false)
+      throw Error(data.error||`Server error (${r.status})`);
+
+    return data;
+
+  }catch(e){
+
+    console.error("REQUEST:",e);
+
+    if(e instanceof TypeError)
+      throw Error("Unable to connect to the server. Please check the Ads API Worker.");
+
+    throw e;
+  }
 }
 
 async function upload(file,folder){
-  const t=getToken();
-  if(!t)throw Error("Your session has expired.");
+  const t=token();
+
+  if(!t){
+    logout();
+    throw Error("Your session has expired.");
+  }
 
   const fd=new FormData();
   fd.append("file",file);
   fd.append("folder",folder);
 
-  let r;
-
   try{
-    r=await fetch(`${API}/upload`,{
+
+    const r=await fetch(`${API}/upload`,{
       method:"POST",
       headers:{Authorization:`Bearer ${t}`},
       body:fd
     });
+
+    const text=await r.text();
+    let data;
+
+    try{data=JSON.parse(text)}
+    catch{data={success:false,error:text}}
+
+    if(r.status===401){
+      logout();
+      throw Error("Your session has expired.");
+    }
+
+    if(!r.ok||data.success===false)
+      throw Error(data.error||`Upload failed (${r.status})`);
+
+    if(!data.key)
+      throw Error("Upload failed.");
+
+    return data.key;
+
   }catch(e){
+
     console.error("UPLOAD:",e);
-    throw Error("Unable to connect to the upload server. Please check your internet connection.");
+
+    if(e instanceof TypeError)
+      throw Error("Unable to connect to the upload server. Check the Ads API Worker or CORS.");
+
+    throw e;
   }
+}
 
-  const text=await r.text();
-  let data;
-
-  try{
-    data=JSON.parse(text);
-  }catch{
-    data={success:false,error:text};
-  }
-
-  if(r.status===401){
-    logout();
-    throw Error("Your session has expired.");
-  }
-
-  if(!r.ok||data.success===false)
-    throw Error(data.error||`Upload failed (${r.status})`);
-
-  return data.key;
+function valid(file,types){
+  return file&&file.size>0&&file.size<=MAX&&types.includes(file.type);
 }
 
 async function checkLogin(){
-  if(!getToken()){
+
+  if(!token()){
     location.href="login.html";
     return false;
   }
 
   try{
-    await request(`${LOGIN}/me`,{
-      headers:{Authorization:`Bearer ${getToken()}`}
-    });
+    await request(`${LOGIN}/me`);
     return true;
   }catch(e){
-    showError(e.message);
+    error(e.message);
     return false;
   }
 }
 
-async function loadProvinces(){
+async function provinces(){
+
   $("locationLoading").textContent="Loading locations...";
 
   try{
-    const d=await request(`${API}/locations`,{cache:"no-store"});
+
+    const d=await request(
+      `${API}/locations`,
+      {cache:"no-store"}
+    );
 
     $("province").innerHTML=
       '<option value="">Select Province / Location Type</option>'+
-      (d.provinces||[]).map(x=>`<option value="${x}">${x}</option>`).join("");
+      (d.provinces||[])
+      .map(x=>`<option value="${x}">${x}</option>`)
+      .join("");
 
   }catch(e){
-    showError(e.message);
+    error(e.message);
   }
 
   $("locationLoading").textContent="";
 }
 
-async function loadDistricts(province){
-  const d=$("district"),c=$("city");
+async function districts(p){
+
+  const d=$("district");
+  const c=$("city");
 
   d.disabled=true;
   c.disabled=true;
+
+  d.innerHTML='<option value="">Select District</option>';
   c.innerHTML='<option value="">Select City / Town</option>';
 
-  if(!province){
-    d.innerHTML='<option value="">Select District</option>';
-    return;
-  }
-
-  d.innerHTML='<option value="">Loading...</option>';
+  if(!p)return;
 
   try{
+
     const data=await request(
-      `${API}/locations?province=${encodeURIComponent(province)}`,
+      `${API}/locations?province=${encodeURIComponent(p)}`,
       {cache:"no-store"}
     );
 
     d.innerHTML=
       '<option value="">Select District</option>'+
-      (data.districts||[]).map(x=>`<option value="${x}">${x}</option>`).join("");
+      (data.districts||[])
+      .map(x=>`<option value="${x}">${x}</option>`)
+      .join("");
 
-    if(province==="Remote"||province==="Overseas"){
-      d.value=province;
-      await loadCities(province,province);
+    if(p==="Remote"||p==="Overseas"){
+      d.value=p;
+      await cities(p,p);
     }else{
       d.disabled=d.options.length<=1;
     }
 
   }catch(e){
-    d.innerHTML='<option value="">Unable to load</option>';
-    showError(e.message);
+    error(e.message);
   }
 }
 
-async function loadCities(province,district){
+async function cities(p,d){
+
   const c=$("city");
   c.disabled=true;
   c.innerHTML='<option value="">Loading...</option>';
 
   try{
+
     const data=await request(
-      `${API}/locations?province=${encodeURIComponent(province)}&district=${encodeURIComponent(district)}`,
+      `${API}/locations?province=${encodeURIComponent(p)}&district=${encodeURIComponent(d)}`,
       {cache:"no-store"}
     );
 
     c.innerHTML=
       '<option value="">Select City / Town</option>'+
-      (data.cities||[]).map(x=>`<option value="${x}">${x}</option>`).join("");
+      (data.cities||[])
+      .map(x=>`<option value="${x}">${x}</option>`)
+      .join("");
 
-    if(province==="Remote"||province==="Overseas")
-      c.value=province;
+    if(p==="Remote"||p==="Overseas")
+      c.value=p;
 
     c.disabled=c.options.length<=1;
 
   }catch(e){
-    c.innerHTML='<option value="">Unable to load</option>';
-    showError(e.message);
+    error(e.message);
   }
-}
-
-function validFile(file,types){
-  return file&&file.size>0&&file.size<=MAX&&types.includes(file.type);
 }
 
 $("province").onchange=e=>{
   clearError();
-  loadDistricts(e.target.value);
+  districts(e.target.value);
 };
 
 $("district").onchange=e=>{
+  clearError();
   if(e.target.value)
-    loadCities($("province").value,e.target.value);
+    cities($("province").value,e.target.value);
 };
 
 $("photo").onchange=e=>{
-  const file=e.target.files[0];
-  if(!file)return;
 
-  if(!validFile(file,IMAGE_TYPES)){
+  const f=e.target.files[0];
+
+  if(!f)return;
+
+  if(!valid(f,IMAGES)){
     e.target.value="";
-    return showError("Photo must be JPG, PNG or WebP and 5 MB or smaller.");
+    $("preview").style.display="none";
+    return error("Photo must be JPG, PNG or WebP and 5 MB or smaller.");
   }
 
-  $("previewImg").src=URL.createObjectURL(file);
+  $("previewImg").src=URL.createObjectURL(f);
   $("preview").style.display="block";
-  $("photoStatus").textContent="";
 };
 
 document.querySelectorAll('input[name="type"]').forEach(r=>{
+
   r.onchange=()=>{
+
     document.querySelectorAll(".option")
       .forEach(x=>x.classList.remove("selected"));
 
     r.closest(".option").classList.add("selected");
 
     const paid=r.value!=="free";
-    $("paymentSection").classList.toggle("hidden",!paid);
+
+    $("paymentSection")
+      .classList.toggle("hidden",!paid);
 
     if(paid)
-      $("amount").textContent=`Amount: LKR ${TYPES[r.value].toLocaleString()}`;
+      $("amount").textContent=
+        `Amount: LKR ${TYPES[r.value].toLocaleString()}`;
   };
 });
 
 document.querySelectorAll(".copy").forEach(b=>{
+
   b.onclick=async()=>{
+
     try{
       await navigator.clipboard.writeText(b.dataset.copy);
       const old=b.textContent;
@@ -491,50 +539,58 @@ document.querySelectorAll(".copy").forEach(b=>{
     }catch{
       alert("Please copy manually.");
     }
+
   };
+
 });
 
 $("submit").onclick=async()=>{
+
   clearError();
 
   const photo=$("photo").files[0];
-  const type=document.querySelector('input[name="type"]:checked').value;
+  const type=document.querySelector(
+    'input[name="type"]:checked'
+  ).value;
 
-  if(!validFile(photo,IMAGE_TYPES))
-    return showError("Please select a valid JPG, PNG or WebP photo under 5 MB.");
+  if(!valid(photo,IMAGES))
+    return error("Please select a valid photo under 5 MB.");
 
   if(!$("title").value.trim())
-    return showError("Please enter an ad title.");
+    return error("Please enter an ad title.");
 
   if(!$("description").value.trim())
-    return showError("Please enter a description.");
+    return error("Please enter a description.");
 
   if(!$("whatsapp").value.trim())
-    return showError("Please enter a WhatsApp number.");
+    return error("Please enter a WhatsApp number.");
 
   if(!$("call").value.trim())
-    return showError("Please enter a call number.");
+    return error("Please enter a call number.");
 
   if(!$("province").value||!$("district").value||!$("city").value)
-    return showError("Please complete the location.");
+    return error("Please complete the location.");
 
   let slip=null;
 
   if(type!=="free"){
+
     if(!$("depositDate").value)
-      return showError("Please select the deposit date.");
+      return error("Please select the deposit date.");
 
     slip=$("slip").files[0];
 
-    if(!validFile(slip,[...IMAGE_TYPES,"application/pdf"]))
-      return showError("Bank slip must be JPG, PNG, WebP or PDF and 5 MB or smaller.");
+    if(!valid(slip,SLIPS))
+      return error("Bank slip must be JPG, PNG, WebP or PDF and 5 MB or smaller.");
   }
 
-  const button=$("submit");
-  button.disabled=true;
-  button.textContent="Submitting...";
+  const btn=$("submit");
+
+  btn.disabled=true;
+  btn.textContent="Submitting...";
 
   try{
+
     $("photoStatus").textContent="Uploading photo...";
     const photoKey=await upload(photo,"ads");
     $("photoStatus").textContent="Photo uploaded.";
@@ -566,10 +622,7 @@ $("submit").onclick=async()=>{
 
     await request(`${API}/create`,{
       method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        Authorization:`Bearer ${getToken()}`
-      },
+      headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)
     });
 
@@ -584,10 +637,12 @@ $("submit").onclick=async()=>{
     window.scrollTo({top:0,behavior:"smooth"});
 
   }catch(e){
-    console.error(e);
-    showError(e.message||"Something went wrong.");
-    button.disabled=false;
-    button.textContent="Submit Ad";
+
+    console.error("SUBMIT:",e);
+    error(e.message||"Something went wrong.");
+
+    btn.disabled=false;
+    btn.textContent="Submit Ad";
   }
 };
 
@@ -595,7 +650,7 @@ $("anotherAd").onclick=()=>location.reload();
 
 (async()=>{
   if(await checkLogin())
-    await loadProvinces();
+    await provinces();
 })();
 </script>
 
