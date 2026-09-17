@@ -51,6 +51,7 @@ function errorPage(message) {
   return new Response(`
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
 
 <meta charset="UTF-8">
@@ -59,54 +60,65 @@ function errorPage(message) {
 name="viewport"
 content="width=device-width,initial-scale=1">
 
-<title>Admin Login Error | CreateLK Jobs</title>
+<title>Admin Login | CreateLK Jobs</title>
 
 <style>
 
 *{
-box-sizing:border-box;
+  box-sizing:border-box;
 }
 
 body{
-margin:0;
-min-height:100vh;
-display:flex;
-align-items:center;
-justify-content:center;
-padding:20px;
-font-family:Arial,sans-serif;
-background:#f4f7fb;
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  font-family:Arial,sans-serif;
+  background:#f4f7fb;
 }
 
 .box{
-width:100%;
-max-width:430px;
-background:#fff;
-border-radius:16px;
-padding:32px;
-text-align:center;
-box-shadow:0 10px 35px rgba(0,0,0,.08);
+  width:100%;
+  max-width:450px;
+  background:#fff;
+  border-radius:16px;
+  padding:32px;
+  text-align:center;
+  box-shadow:0 10px 35px rgba(0,0,0,.08);
 }
 
 h1{
-font-size:24px;
-margin:0 0 12px;
+  font-size:24px;
+  margin:0 0 12px;
 }
 
 p{
-color:#667085;
-line-height:1.5;
+  color:#667085;
+  line-height:1.5;
+}
+
+.error{
+  margin-top:15px;
+  padding:12px;
+  background:#fff0f0;
+  border-radius:8px;
+  color:#b42318;
+  font-size:14px;
+  text-align:left;
+  word-break:break-word;
 }
 
 a{
-display:inline-block;
-margin-top:18px;
-padding:12px 20px;
-border-radius:8px;
-background:#1261d6;
-color:#fff;
-text-decoration:none;
-font-weight:700;
+  display:inline-block;
+  margin-top:18px;
+  padding:12px 20px;
+  border-radius:8px;
+  background:#1261d6;
+  color:#fff;
+  text-decoration:none;
+  font-weight:700;
 }
 
 </style>
@@ -119,7 +131,13 @@ font-weight:700;
 
 <h1>Admin Login</h1>
 
-<p>${escapeHtml(message)}</p>
+<p>
+Google authentication failed.
+</p>
+
+<div class="error">
+${escapeHtml(message)}
+</div>
 
 <a href="${ADMIN_LOGIN_PAGE}">
 Try Again
@@ -128,10 +146,11 @@ Try Again
 </div>
 
 </body>
+
 </html>
 `,
 {
-  status: 400,
+  status:400,
   headers:{
     "Content-Type":
       "text/html;charset=UTF-8",
@@ -144,17 +163,17 @@ Try Again
 
 
 /* =========================
-   SECURITY HELPERS
+   SECURITY
 ========================= */
 
 function escapeHtml(value) {
 
   return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
 
@@ -167,20 +186,22 @@ function randomToken(bytesLength = 32) {
 
   return Array.from(bytes)
     .map(
-      b => b.toString(16).padStart(2, "0")
+      b =>
+        b.toString(16)
+          .padStart(2,"0")
     )
     .join("");
 }
 
 
-function getCookie(request, name) {
+function getCookie(request,name) {
 
   const cookie =
     request.headers.get("Cookie") || "";
 
-  for (
+  for(
     const part of cookie.split(";")
-  ) {
+  ){
 
     const index =
       part.indexOf("=");
@@ -193,8 +214,12 @@ function getCookie(request, name) {
     const value =
       part.slice(index + 1).trim();
 
-    if(key === name) {
-      return value;
+    if(key === name){
+
+      return decodeURIComponent(
+        value
+      );
+
     }
   }
 
@@ -205,7 +230,7 @@ function getCookie(request, name) {
 function createStateCookie(state) {
 
   return [
-    `${STATE_COOKIE}=${state}`,
+    `${STATE_COOKIE}=${encodeURIComponent(state)}`,
     "Path=/",
     "HttpOnly",
     "Secure",
@@ -229,53 +254,60 @@ function clearStateCookie() {
 
 
 /* =========================
-   GOOGLE LOGIN
+   START GOOGLE LOGIN
 ========================= */
 
-async function startGoogleLogin() {
+function startGoogleLogin() {
 
   const state =
     randomToken(32);
 
-  const url =
-    new URL(GOOGLE_AUTH_URL);
+  const googleUrl =
+    new URL(
+      GOOGLE_AUTH_URL
+    );
 
-  url.searchParams.set(
+  googleUrl.searchParams.set(
     "client_id",
     CLIENT_ID
   );
 
-  url.searchParams.set(
+  googleUrl.searchParams.set(
     "redirect_uri",
     REDIRECT_URI
   );
 
-  url.searchParams.set(
+  googleUrl.searchParams.set(
     "response_type",
     "code"
   );
 
-  url.searchParams.set(
+  googleUrl.searchParams.set(
     "scope",
     "openid email profile"
   );
 
-  url.searchParams.set(
+  googleUrl.searchParams.set(
     "state",
     state
   );
 
-  url.searchParams.set(
+  googleUrl.searchParams.set(
     "access_type",
     "online"
+  );
+
+  googleUrl.searchParams.set(
+    "prompt",
+    "select_account"
   );
 
   return new Response(null,{
     status:302,
 
     headers:{
-      "Location":
-        url.toString(),
+      Location:
+        googleUrl.toString(),
 
       "Set-Cookie":
         createStateCookie(state),
@@ -305,6 +337,17 @@ async function handleCallback(
   const returnedState =
     url.searchParams.get("state");
 
+  const googleError =
+    url.searchParams.get("error");
+
+  if(googleError){
+
+    return errorPage(
+      `Google returned an error: ${googleError}`
+    );
+  }
+
+
   const savedState =
     getCookie(
       request,
@@ -315,12 +358,21 @@ async function handleCallback(
   if(
     !code ||
     !returnedState ||
-    !savedState ||
+    !savedState
+  ){
+
+    return errorPage(
+      "Invalid or expired login request. Please try again."
+    );
+  }
+
+
+  if(
     returnedState !== savedState
   ){
 
     return errorPage(
-      "Invalid or expired login request."
+      "Google security verification failed. Please try again."
     );
   }
 
@@ -328,7 +380,39 @@ async function handleCallback(
   try {
 
     /* =====================
-       EXCHANGE GOOGLE CODE
+       CHECK CONFIGURATION
+    ===================== */
+
+    const adminEmail =
+      String(
+        env.ADMIN_EMAIL || ""
+      )
+      .trim()
+      .toLowerCase();
+
+    if(!adminEmail){
+
+      return errorPage(
+        "ADMIN_EMAIL is not configured."
+      );
+    }
+
+
+    const clientSecret =
+      String(
+        env.GOOGLE_CLIENT_SECRET || ""
+      ).trim();
+
+    if(!clientSecret){
+
+      return errorPage(
+        "GOOGLE_CLIENT_SECRET is not configured."
+      );
+    }
+
+
+    /* =====================
+       GOOGLE CODE EXCHANGE
     ===================== */
 
     const tokenResponse =
@@ -349,10 +433,9 @@ async function handleCallback(
                 CLIENT_ID,
 
               client_secret:
-                env.GOOGLE_CLIENT_SECRET,
+                clientSecret,
 
               code:
-
                 code,
 
               grant_type:
@@ -361,31 +444,68 @@ async function handleCallback(
               redirect_uri:
                 REDIRECT_URI
 
-            })
+            }).toString()
         }
       );
 
 
-    if(!tokenResponse.ok){
+    const tokenText =
+      await tokenResponse.text();
+
+    let googleTokens;
+
+    try{
+
+      googleTokens =
+        JSON.parse(
+          tokenText
+        );
+
+    }catch{
 
       return errorPage(
-        "Google authentication failed."
+        "Google returned an invalid token response."
       );
     }
 
 
-    const googleTokens =
-      await tokenResponse.json();
+    if(!tokenResponse.ok){
+
+      console.error(
+        "GOOGLE TOKEN ERROR:",
+        googleTokens
+      );
+
+      return errorPage(
+        `Google token exchange failed: ${
+          googleTokens.error_description ||
+          googleTokens.error ||
+          "Unknown Google error."
+        }`
+      );
+    }
+
+
+    if(
+      !googleTokens.access_token
+    ){
+
+      return errorPage(
+        "Google did not return an access token."
+      );
+    }
 
 
     /* =====================
-       GET GOOGLE USER
+       GET GOOGLE ACCOUNT
     ===================== */
 
     const userResponse =
       await fetch(
         GOOGLE_USERINFO_URL,
         {
+          method:"GET",
+
           headers:{
             Authorization:
               `Bearer ${googleTokens.access_token}`
@@ -394,7 +514,32 @@ async function handleCallback(
       );
 
 
+    const userText =
+      await userResponse.text();
+
+    let googleUser;
+
+    try{
+
+      googleUser =
+        JSON.parse(
+          userText
+        );
+
+    }catch{
+
+      return errorPage(
+        "Google account information could not be read."
+      );
+    }
+
+
     if(!userResponse.ok){
+
+      console.error(
+        "GOOGLE USERINFO ERROR:",
+        googleUser
+      );
 
       return errorPage(
         "Could not retrieve your Google account."
@@ -402,9 +547,9 @@ async function handleCallback(
     }
 
 
-    const googleUser =
-      await userResponse.json();
-
+    /* =====================
+       ADMIN EMAIL
+    ===================== */
 
     const email =
       String(
@@ -414,36 +559,25 @@ async function handleCallback(
       .toLowerCase();
 
 
-    const adminEmail =
-      String(
-        env.ADMIN_EMAIL || ""
-      )
-      .trim()
-      .toLowerCase();
-
-
-    /* =====================
-       ADMIN CHECK
-    ===================== */
-
-    if(!adminEmail){
+    if(!email){
 
       return errorPage(
-        "ADMIN_EMAIL is not configured in the Worker."
+        "Google did not provide an email address."
       );
     }
 
 
-    if(
-      !email ||
-      email !== adminEmail
-    ){
+    if(email !== adminEmail){
 
       return errorPage(
         "This Google account is not authorized for administrator access."
       );
     }
 
+
+    /* =====================
+       EMAIL VERIFICATION
+    ===================== */
 
     if(
       googleUser.email_verified !== true
@@ -456,7 +590,7 @@ async function handleCallback(
 
 
     /* =====================
-       USER RECORD
+       GOOGLE ID
     ===================== */
 
     const googleId =
@@ -472,6 +606,10 @@ async function handleCallback(
       );
     }
 
+
+    /* =====================
+       CREATE / UPDATE USER
+    ===================== */
 
     await env.DB.prepare(`
       INSERT INTO users
@@ -512,6 +650,10 @@ async function handleCallback(
     )
     .run();
 
+
+    /* =====================
+       GET USER
+    ===================== */
 
     const user =
       await env.DB.prepare(`
@@ -574,19 +716,15 @@ async function handleCallback(
       VALUES (?, ?, ?)
     `)
     .bind(
-
       sessionToken,
-
       user.id,
-
       expiresAt
-
     )
     .run();
 
 
     /* =====================
-       CREATE ONE-TIME TICKET
+       CREATE ADMIN TICKET
     ===================== */
 
     const ticket =
@@ -595,30 +733,6 @@ async function handleCallback(
     const ticketExpires =
       now +
       TICKET_MINUTES * 60;
-
-
-    /*
-     * The ticket stores the session
-     * token temporarily.
-     *
-     * We need this column.
-     */
-
-    try {
-
-      await env.DB.prepare(`
-        ALTER TABLE admin_oauth_tickets
-        ADD COLUMN session_token TEXT
-      `)
-      .run();
-
-    } catch(e) {
-
-      /*
-       * Column probably already exists.
-       * Ignore duplicate-column error.
-       */
-    }
 
 
     await env.DB.prepare(`
@@ -632,21 +746,16 @@ async function handleCallback(
       VALUES (?, ?, ?, ?)
     `)
     .bind(
-
       ticket,
-
       user.id,
-
       ticketExpires,
-
       sessionToken
-
     )
     .run();
 
 
     /* =====================
-       REDIRECT TO ADMIN LOGIN
+       REDIRECT TO ADMIN PAGE
     ===================== */
 
     const redirect =
@@ -676,15 +785,18 @@ async function handleCallback(
     });
 
 
-  } catch(error) {
+  }catch(error){
 
     console.error(
-      "ADMIN LOGIN ERROR",
+      "ADMIN LOGIN ERROR:",
       error
     );
 
     return errorPage(
-      "An unexpected error occurred during administrator login."
+      `Administrator login failed: ${
+        error?.message ||
+        "Unknown error."
+      }`
     );
   }
 }
@@ -699,7 +811,9 @@ async function exchangeTicket(
   env
 ) {
 
-  if(request.method !== "POST"){
+  if(
+    request.method !== "POST"
+  ){
 
     return json({
       success:false,
@@ -780,7 +894,6 @@ async function exchangeTicket(
     .bind(ticket)
     .run();
 
-
     return json({
       success:false,
       error:"Ticket expired."
@@ -792,14 +905,14 @@ async function exchangeTicket(
 
     return json({
       success:false,
-      error:"Invalid ticket."
+      error:"Ticket has no administrator session."
     },401);
   }
 
 
-  /*
-   * Make sure the session still exists.
-   */
+  /* =====================
+     VERIFY SESSION
+  ===================== */
 
   const session =
     await env.DB.prepare(`
@@ -831,10 +944,9 @@ async function exchangeTicket(
     .bind(ticket)
     .run();
 
-
     return json({
       success:false,
-      error:"Session not found."
+      error:"Administrator session was not found."
     },401);
   }
 
@@ -850,10 +962,9 @@ async function exchangeTicket(
     .bind(ticket)
     .run();
 
-
     return json({
       success:false,
-      error:"Session expired."
+      error:"Administrator session expired."
     },401);
   }
 
@@ -880,7 +991,6 @@ async function exchangeTicket(
     .bind(ticket)
     .run();
 
-
     return json({
       success:false,
       error:"Administrator access denied."
@@ -888,10 +998,9 @@ async function exchangeTicket(
   }
 
 
-  /*
-   * Delete ticket immediately.
-   * It can only be exchanged once.
-   */
+  /* =====================
+     ONE-TIME TICKET
+  ===================== */
 
   await env.DB.prepare(`
     DELETE FROM admin_oauth_tickets
@@ -903,28 +1012,40 @@ async function exchangeTicket(
 
   return json({
     success:true,
-    token:row.session_token
+    token:
+      row.session_token
   });
 }
 
 
 /* =========================
-   CLEAN EXPIRED TICKETS
+   CLEAN OLD TICKETS
 ========================= */
 
 async function cleanTickets(env){
 
-  const now =
-    Math.floor(
-      Date.now() / 1000
+  try{
+
+    const now =
+      Math.floor(
+        Date.now() / 1000
+      );
+
+    await env.DB.prepare(`
+      DELETE FROM admin_oauth_tickets
+      WHERE expires_at <= ?
+    `)
+    .bind(now)
+    .run();
+
+  }catch(error){
+
+    console.error(
+      "TICKET CLEANUP ERROR:",
+      error
     );
 
-  await env.DB.prepare(`
-    DELETE FROM admin_oauth_tickets
-    WHERE expires_at <= ?
-  `)
-  .bind(now)
-  .run();
+  }
 }
 
 
@@ -934,7 +1055,10 @@ async function cleanTickets(env){
 
 export default {
 
-  async fetch(request,env) {
+  async fetch(
+    request,
+    env
+  ){
 
     const url =
       new URL(request.url);
@@ -942,6 +1066,10 @@ export default {
 
     await cleanTickets(env);
 
+
+    /* =====================
+       HOME
+    ===================== */
 
     if(
       request.method === "GET" &&
@@ -957,6 +1085,10 @@ export default {
     }
 
 
+    /* =====================
+       HEALTH
+    ===================== */
+
     if(
       request.method === "GET" &&
       url.pathname === "/health"
@@ -971,6 +1103,10 @@ export default {
     }
 
 
+    /* =====================
+       GOOGLE LOGIN
+    ===================== */
+
     if(
       request.method === "GET" &&
       (
@@ -983,6 +1119,10 @@ export default {
     }
 
 
+    /* =====================
+       GOOGLE CALLBACK
+    ===================== */
+
     if(
       request.method === "GET" &&
       url.pathname === "/callback"
@@ -994,6 +1134,10 @@ export default {
       );
     }
 
+
+    /* =====================
+       TICKET EXCHANGE
+    ===================== */
 
     if(
       request.method === "POST" &&
