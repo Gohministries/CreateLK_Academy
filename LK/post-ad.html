@@ -372,7 +372,7 @@ return localStorage.getItem(TOKEN) ||
 sessionStorage.getItem(TOKEN);
 }
 
-function showMessage(text,type){
+function showMessage(text,type="error"){
 const m=$("message");
 m.textContent=text;
 m.className="message "+type;
@@ -385,27 +385,85 @@ m.textContent="";
 m.className="message";
 }
 
+function escapeHTML(value){
+return String(value)
+.replaceAll("&","&amp;")
+.replaceAll("<","&lt;")
+.replaceAll(">","&gt;")
+.replaceAll('"',"&quot;")
+.replaceAll("'","&#039;");
+}
+
+async function apiFetch(url,options={}){
+try{
+
+const response=await fetch(url,options);
+
+let data=null;
+
+try{
+data=await response.json();
+}catch{
+data=null;
+}
+
+if(!response.ok){
+
+if(response.status===401){
+
+localStorage.removeItem(TOKEN);
+sessionStorage.removeItem(TOKEN);
+
+location.href="login.html";
+throw Error("Your session has expired.");
+}
+
+throw Error(
+data?.error ||
+`Request failed (${response.status})`
+);
+}
+
+return data;
+
+}catch(error){
+
+if(error instanceof TypeError){
+
+throw Error(
+"Unable to connect to the server. Please check your internet connection and try again."
+);
+
+}
+
+throw error;
+
+}
+
+}
+
 async function checkLogin(){
 
-const t=getToken();
+const token=getToken();
 
-if(!t){
+if(!token){
+
 location.href="login.html";
 return false;
 }
 
 try{
 
-const r=await fetch(
+const data=await apiFetch(
 `${LOGIN}/me`,
 {
 headers:{
-Authorization:`Bearer ${t}`
+Authorization:`Bearer ${token}`
 }
 }
 );
 
-if(r.status===401 || r.status===403){
+if(data && data.success===false){
 
 localStorage.removeItem(TOKEN);
 sessionStorage.removeItem(TOKEN);
@@ -414,21 +472,32 @@ location.href="login.html";
 return false;
 }
 
-}catch(e){
-console.log("Login check:",e);
-}
-
 return true;
+
+}catch(error){
+
+console.error("Login check:",error);
+
+if(
+error.message.includes("expired") ||
+error.message.includes("Unauthorized")
+){
+
+localStorage.removeItem(TOKEN);
+sessionStorage.removeItem(TOKEN);
+
+location.href="login.html";
+return false;
 }
 
-function escapeHTML(value){
+showMessage(
+"Unable to verify your login session. Please refresh and try again.",
+"error"
+);
 
-return String(value)
-.replaceAll("&","&amp;")
-.replaceAll("<","&lt;")
-.replaceAll(">","&gt;")
-.replaceAll('"',"&quot;")
-.replaceAll("'","&#039;");
+return false;
+
+}
 
 }
 
@@ -438,32 +507,33 @@ try{
 
 $("locationLoading").textContent="Loading locations...";
 
-const r=await fetch(`${API}/locations`,{
+const data=await apiFetch(
+`${API}/locations`,
+{
 cache:"no-store"
-});
+}
+);
 
-const d=await r.json();
-
-if(!r.ok || !d.success){
-throw Error(d.error || "Location error");
+if(!data.success){
+throw Error(data.error||"Could not load locations.");
 }
 
 $("province").innerHTML=
 `<option value="">Select Province / Location Type</option>`+
-(d.provinces||[]).map(x=>
+(data.provinces||[]).map(x=>
 `<option value="${escapeHTML(x)}">${escapeHTML(x)}</option>`
 ).join("");
 
 $("locationLoading").textContent="";
 
-}catch(e){
+}catch(error){
 
-console.error(e);
+console.error("Province error:",error);
 
 $("locationLoading").textContent="";
 
 showMessage(
-"Could not load locations. Please refresh.",
+error.message||"Could not load locations.",
 "error"
 );
 
@@ -495,43 +565,51 @@ district.innerHTML=
 
 try{
 
-const r=await fetch(
+const data=await apiFetch(
 `${API}/locations?province=${encodeURIComponent(province)}`,
-{cache:"no-store"}
+{
+cache:"no-store"
+}
 );
 
-const d=await r.json();
-
-if(!r.ok || !d.success){
-throw Error(d.error || "Location error");
+if(!data.success){
+throw Error(data.error||"Could not load districts.");
 }
 
 district.innerHTML=
 `<option value="">Select District</option>`+
-(d.districts||[]).map(x=>
+(data.districts||[]).map(x=>
 `<option value="${escapeHTML(x)}">${escapeHTML(x)}</option>`
 ).join("");
 
-if(province==="Remote" || province==="Overseas"){
+if(
+province==="Remote" ||
+province==="Overseas"
+){
 
 district.value=province;
 
-await loadCities(province,province);
+await loadCities(
+province,
+province
+);
 
 return;
+
 }
 
-district.disabled=district.options.length<=1;
+district.disabled=
+district.options.length<=1;
 
-}catch(e){
+}catch(error){
 
-console.error(e);
+console.error("District error:",error);
 
 district.innerHTML=
 `<option value="">Unable to load</option>`;
 
 showMessage(
-"Could not load districts.",
+error.message||"Could not load districts.",
 "error"
 );
 
@@ -550,41 +628,46 @@ city.innerHTML=
 
 try{
 
-const r=await fetch(
+const data=await apiFetch(
 `${API}/locations?province=${encodeURIComponent(province)}&district=${encodeURIComponent(district)}`,
-{cache:"no-store"}
+{
+cache:"no-store"
+}
 );
 
-const d=await r.json();
-
-if(!r.ok || !d.success){
-throw Error(d.error || "Location error");
+if(!data.success){
+throw Error(data.error||"Could not load cities.");
 }
 
 city.innerHTML=
 `<option value="">Select City / Town</option>`+
-(d.cities||[]).map(x=>
+(data.cities||[]).map(x=>
 `<option value="${escapeHTML(x)}">${escapeHTML(x)}</option>`
 ).join("");
 
-if(province==="Remote" || province==="Overseas"){
+if(
+province==="Remote" ||
+province==="Overseas"
+){
 
 city.value=province;
 city.disabled=false;
 return;
+
 }
 
-city.disabled=city.options.length<=1;
+city.disabled=
+city.options.length<=1;
 
-}catch(e){
+}catch(error){
 
-console.error(e);
+console.error("City error:",error);
 
 city.innerHTML=
 `<option value="">Unable to load</option>`;
 
 showMessage(
-"Could not load cities.",
+error.message||"Could not load cities.",
 "error"
 );
 
@@ -592,23 +675,35 @@ showMessage(
 
 }
 
-$("province").addEventListener("change",e=>{
+$("province").addEventListener(
+"change",
+e=>{
 clearMessage();
 loadDistricts(e.target.value);
-});
+}
+);
 
-$("district").addEventListener("change",e=>{
+$("district").addEventListener(
+"change",
+e=>{
 
-if($("province").value && e.target.value){
+if(
+$("province").value &&
+e.target.value
+){
+
 loadCities(
 $("province").value,
 e.target.value
 );
+
 }
 
 });
 
-$("photo").addEventListener("change",e=>{
+$("photo").addEventListener(
+"change",
+e=>{
 
 const file=e.target.files[0];
 
@@ -618,16 +713,42 @@ if(file.size>5*1024*1024){
 
 e.target.value="";
 
+$("preview").style.display="none";
+
 showMessage(
 "Photo must be 5 MB or smaller.",
 "error"
 );
 
 return;
+
 }
 
-$("previewImg").src=URL.createObjectURL(file);
+if(![
+"image/jpeg",
+"image/png",
+"image/webp"
+].includes(file.type)){
+
+e.target.value="";
+
+$("preview").style.display="none";
+
+showMessage(
+"Please select a JPG, PNG or WebP image.",
+"error"
+);
+
+return;
+
+}
+
+$("previewImg").src=
+URL.createObjectURL(file);
+
 $("preview").style.display="block";
+
+$("photoStatus").textContent="";
 
 });
 
@@ -635,21 +756,28 @@ document
 .querySelectorAll('input[name="type"]')
 .forEach(r=>{
 
-r.addEventListener("change",()=>{
+r.addEventListener(
+"change",
+()=>{
 
 document
 .querySelectorAll(".option")
-.forEach(x=>x.classList.remove("selected"));
+.forEach(x=>
+x.classList.remove("selected")
+);
 
-r.closest(".option").classList.add("selected");
+r.closest(".option")
+.classList.add("selected");
 
 if(r.value==="free"){
 
-$("paymentSection").classList.add("hidden");
+$("paymentSection")
+.classList.add("hidden");
 
 }else{
 
-$("paymentSection").classList.remove("hidden");
+$("paymentSection")
+.classList.remove("hidden");
 
 $("amount").textContent=
 `Amount: LKR ${prices[r.value].toLocaleString()}`;
@@ -664,7 +792,9 @@ document
 .querySelectorAll(".copy")
 .forEach(button=>{
 
-button.addEventListener("click",async()=>{
+button.addEventListener(
+"click",
+async()=>{
 
 try{
 
@@ -676,13 +806,18 @@ const old=button.textContent;
 
 button.textContent="Copied";
 
-setTimeout(()=>{
+setTimeout(
+()=>{
 button.textContent=old;
-},1200);
+},
+1200
+);
 
 }catch{
 
-alert("Please copy the information manually.");
+alert(
+"Please copy the information manually."
+);
 
 }
 
@@ -692,9 +827,9 @@ alert("Please copy the information manually.");
 
 async function upload(file,folder){
 
-const t=getToken();
+const token=getToken();
 
-if(!t){
+if(!token){
 throw Error("Your session has expired.");
 }
 
@@ -703,41 +838,75 @@ const form=new FormData();
 form.append("file",file);
 form.append("folder",folder);
 
-const r=await fetch(
+try{
+
+const response=await fetch(
 `${API}/upload`,
 {
 method:"POST",
 headers:{
-Authorization:`Bearer ${t}`
+Authorization:`Bearer ${token}`
 },
 body:form
 }
 );
 
-const d=await r.json();
+let data=null;
 
-if(r.status===401){
+try{
+data=await response.json();
+}catch{}
+
+if(response.status===401){
 
 localStorage.removeItem(TOKEN);
 sessionStorage.removeItem(TOKEN);
 
 location.href="login.html";
 
-throw Error("Session expired.");
+throw Error("Your session has expired.");
+
 }
 
-if(!r.ok || !d.success){
+if(!response.ok){
 
 throw Error(
-d.error || "Upload failed."
+data?.error ||
+`Upload failed (${response.status})`
 );
 
 }
 
-return d.key;
+if(!data?.success){
+
+throw Error(
+data?.error ||
+"Upload failed."
+);
+
 }
 
-$("submit").addEventListener("click",async()=>{
+return data.key;
+
+}catch(error){
+
+if(error instanceof TypeError){
+
+throw Error(
+"Unable to connect to the upload server. Please check your internet connection."
+);
+
+}
+
+throw error;
+
+}
+
+}
+
+$("submit").addEventListener(
+"click",
+async()=>{
 
 clearMessage();
 
@@ -832,27 +1001,34 @@ button.textContent="Submitting...";
 
 try{
 
-$("photoStatus").textContent="Uploading photo...";
+$("photoStatus").textContent=
+"Uploading photo...";
 
-const photoKey=await upload(photo,"ads");
+const photoKey=
+await upload(photo,"ads");
 
-$("photoStatus").textContent="Photo uploaded.";
+$("photoStatus").textContent=
+"Photo uploaded.";
 
 let slipKey="";
 let depositDate="";
 
 if(type!=="free"){
 
-$("slipStatus").textContent="Uploading bank slip...";
+$("slipStatus").textContent=
+"Uploading bank slip...";
 
-slipKey=await upload(
+slipKey=
+await upload(
 $("slip").files[0],
 "payments"
 );
 
-depositDate=$("depositDate").value;
+depositDate=
+$("depositDate").value;
 
-$("slipStatus").textContent="Bank slip uploaded.";
+$("slipStatus").textContent=
+"Bank slip uploaded.";
 
 }
 
@@ -875,7 +1051,7 @@ body.deposit_date=depositDate;
 
 }
 
-const r=await fetch(
+const data=await apiFetch(
 `${API}/create`,
 {
 method:"POST",
@@ -887,21 +1063,10 @@ body:JSON.stringify(body)
 }
 );
 
-const d=await r.json();
-
-if(r.status===401){
-
-localStorage.removeItem(TOKEN);
-sessionStorage.removeItem(TOKEN);
-
-location.href="login.html";
-return;
-}
-
-if(!r.ok || !d.success){
+if(!data.success){
 
 throw Error(
-d.error || "Could not submit ad."
+data.error||"Could not submit ad."
 );
 
 }
@@ -926,12 +1091,13 @@ top:0,
 behavior:"smooth"
 });
 
-}catch(e){
+}catch(error){
 
-console.error(e);
+console.error("Submit error:",error);
 
 showMessage(
-e.message || "Something went wrong.",
+error.message||
+"Something went wrong. Please try again.",
 "error"
 );
 
@@ -951,8 +1117,13 @@ location.reload();
 
 (async()=>{
 
-if(await checkLogin()){
+const loggedIn=
+await checkLogin();
+
+if(loggedIn){
+
 await loadProvinces();
+
 }
 
 })();
