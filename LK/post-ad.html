@@ -201,8 +201,8 @@ Select where the job or opportunity is available.
 <div class="bank">
 <span class="label">Customer Name</span>
 <span class="value">
-Thinarathnam Saththiyanadan
-<button class="copy" type="button" data-copy="Thinarathnam Saththiyanadan">Copy</button>
+Thinarathnam Saththiyanan
+<button class="copy" type="button" data-copy="Thinarathnam Saththiyanan">Copy</button>
 </span>
 </div>
 
@@ -284,8 +284,6 @@ async function checkLogin(){
  return true;
 }
 
-/* LOCATION */
-
 async function loadProvinces(){
  try{
    $("locationLoading").textContent="Loading locations...";
@@ -304,7 +302,6 @@ async function loadProvinces(){
 
    $("locationLoading").textContent="";
  }catch(e){
-   console.error(e);
    $("locationLoading").textContent="";
    msg("Could not load locations. Please refresh.","error");
  }
@@ -341,10 +338,9 @@ async function loadDistricts(province){
        `<option value="${esc(x)}">${esc(x)}</option>`
      ).join("");
 
-   district.disabled=district.options.length<=1;
+   district.disabled=false;
 
  }catch(e){
-   console.error(e);
    district.innerHTML='<option value="">Unable to load</option>';
    msg("Could not load districts.","error");
  }
@@ -355,11 +351,6 @@ async function loadCities(province,district){
 
  city.disabled=true;
  city.innerHTML='<option value="">Loading...</option>';
-
- if(!province||!district){
-   city.innerHTML='<option value="">Select City / Town</option>';
-   return;
- }
 
  try{
    const r=await fetch(
@@ -377,10 +368,9 @@ async function loadCities(province,district){
        `<option value="${esc(x)}">${esc(x)}</option>`
      ).join("");
 
-   city.disabled=city.options.length<=1;
+   city.disabled=false;
 
  }catch(e){
-   console.error(e);
    city.innerHTML='<option value="">Unable to load</option>';
    msg("Could not load cities.","error");
  }
@@ -400,10 +390,9 @@ $("province").addEventListener("change",e=>{
 });
 
 $("district").addEventListener("change",e=>{
- loadCities($("province").value,e.target.value);
+ if($("province").value)
+   loadCities($("province").value,e.target.value);
 });
-
-/* PHOTO */
 
 $("photo").addEventListener("change",e=>{
  const f=e.target.files[0];
@@ -419,8 +408,6 @@ $("photo").addEventListener("change",e=>{
  $("previewImg").src=URL.createObjectURL(f);
  $("preview").style.display="block";
 });
-
-/* AD TYPE */
 
 document.querySelectorAll('input[name="type"]').forEach(r=>{
  r.addEventListener("change",()=>{
@@ -439,8 +426,6 @@ document.querySelectorAll('input[name="type"]').forEach(r=>{
  });
 });
 
-/* COPY */
-
 document.querySelectorAll(".copy").forEach(b=>{
  b.addEventListener("click",async()=>{
    await navigator.clipboard.writeText(b.dataset.copy);
@@ -449,8 +434,6 @@ document.querySelectorAll(".copy").forEach(b=>{
    setTimeout(()=>b.textContent=old,1200);
  });
 });
-
-/* UPLOAD */
 
 async function upload(file,folder){
  const t=token();
@@ -480,41 +463,23 @@ async function upload(file,folder){
  return d.key;
 }
 
-/* SUBMIT */
-
 $("submit").addEventListener("click",async()=>{
  const photo=$("photo").files[0];
  const type=document.querySelector('input[name="type"]:checked').value;
 
- if(!photo)
-   return msg("Please select an ad photo.","error");
-
- if(!$("title").value.trim())
-   return msg("Please enter an ad title.","error");
-
- if(!$("description").value.trim())
-   return msg("Please enter a description.","error");
-
- if(!$("whatsapp").value.trim())
-   return msg("Please enter a WhatsApp number.","error");
-
- if(!$("call").value.trim())
-   return msg("Please enter a call number.","error");
-
- if(!$("province").value)
-   return msg("Please select a province or location type.","error");
-
- if(!$("district").value)
-   return msg("Please select a district.","error");
-
- if(!$("city").value)
-   return msg("Please select a city or town.","error");
+ if(!photo)return msg("Please select an ad photo.","error");
+ if(!$("title").value.trim())return msg("Please enter an ad title.","error");
+ if(!$("description").value.trim())return msg("Please enter a description.","error");
+ if(!$("whatsapp").value.trim())return msg("Please enter a WhatsApp number.","error");
+ if(!$("call").value.trim())return msg("Please enter a call number.","error");
+ if(!$("province").value)return msg("Please select a province or location type.","error");
+ if(!$("district").value)return msg("Please select a district.","error");
+ if(!$("city").value)return msg("Please select a city or town.","error");
 
  if(photo.size>5*1024*1024)
    return msg("Photo must be 5 MB or smaller.","error");
 
  if(type!=="free"){
-
    if(!$("depositDate").value)
      return msg("Please select the deposit date.","error");
 
@@ -526,7 +491,6 @@ $("submit").addEventListener("click",async()=>{
  }
 
  const button=$("submit");
-
  button.disabled=true;
  button.textContent="Submitting...";
 
@@ -595,11 +559,8 @@ $("submit").addEventListener("click",async()=>{
    },1800);
 
  }catch(e){
-
    console.error(e);
-
    msg(e.message||"Something went wrong.","error");
-
    button.disabled=false;
    button.textContent="Submit Ad";
  }
