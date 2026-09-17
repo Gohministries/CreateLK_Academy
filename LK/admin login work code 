@@ -1,4 +1,4 @@
-const CLIENT_ID =
+582157960266const CLIENT_ID =
   "582157960266-rsril7394snes3qg1cjpiqnolea7qagp.apps.googleusercontent.com";
 
 const REDIRECT_URI =
@@ -27,7 +27,21 @@ const TICKET_MINUTES = 5;
 
 
 /* =========================
-   RESPONSE HELPERS
+   CORS
+========================= */
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "https://createlk.com",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400"
+  };
+}
+
+
+/* =========================
+   JSON RESPONSE
 ========================= */
 
 function json(data, status = 200) {
@@ -36,190 +50,52 @@ function json(data, status = 200) {
     {
       status,
       headers: {
-        "Content-Type":
-          "application/json;charset=UTF-8",
-        "Cache-Control":
-          "no-store"
+        "Content-Type": "application/json;charset=UTF-8",
+        "Cache-Control": "no-store",
+        ...corsHeaders()
       }
     }
   );
 }
 
 
-function errorPage(message) {
-
-  return new Response(`
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1">
-
-<title>Admin Login | CreateLK Jobs</title>
-
-<style>
-
-*{
-  box-sizing:border-box;
-}
-
-body{
-  margin:0;
-  min-height:100vh;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:20px;
-  font-family:Arial,sans-serif;
-  background:#f4f7fb;
-}
-
-.box{
-  width:100%;
-  max-width:450px;
-  background:#fff;
-  border-radius:16px;
-  padding:32px;
-  text-align:center;
-  box-shadow:0 10px 35px rgba(0,0,0,.08);
-}
-
-h1{
-  font-size:24px;
-  margin:0 0 12px;
-}
-
-p{
-  color:#667085;
-  line-height:1.5;
-}
-
-.error{
-  margin-top:15px;
-  padding:12px;
-  background:#fff0f0;
-  border-radius:8px;
-  color:#b42318;
-  font-size:14px;
-  text-align:left;
-  word-break:break-word;
-}
-
-a{
-  display:inline-block;
-  margin-top:18px;
-  padding:12px 20px;
-  border-radius:8px;
-  background:#1261d6;
-  color:#fff;
-  text-decoration:none;
-  font-weight:700;
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="box">
-
-<h1>Admin Login</h1>
-
-<p>
-Google authentication failed.
-</p>
-
-<div class="error">
-${escapeHtml(message)}
-</div>
-
-<a href="${ADMIN_LOGIN_PAGE}">
-Try Again
-</a>
-
-</div>
-
-</body>
-
-</html>
-`,
-{
-  status:400,
-  headers:{
-    "Content-Type":
-      "text/html;charset=UTF-8",
-    "Cache-Control":
-      "no-store"
-  }
-});
-
-}
-
-
 /* =========================
-   SECURITY
+   RANDOM TOKEN
 ========================= */
 
-function escapeHtml(value) {
+function randomToken(bytes = 32) {
+  const array = new Uint8Array(bytes);
+  crypto.getRandomValues(array);
 
-  return String(value)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-
-function randomToken(bytesLength = 32) {
-
-  const bytes =
-    crypto.getRandomValues(
-      new Uint8Array(bytesLength)
-    );
-
-  return Array.from(bytes)
-    .map(
-      b =>
-        b.toString(16)
-          .padStart(2,"0")
-    )
+  return Array.from(array)
+    .map(b => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
 
-function getCookie(request,name) {
+/* =========================
+   COOKIE PARSER
+========================= */
 
-  const cookie =
+function getCookie(request, name) {
+  const cookieHeader =
     request.headers.get("Cookie") || "";
 
-  for(
-    const part of cookie.split(";")
-  ){
+  const cookies = cookieHeader.split(";");
 
-    const index =
-      part.indexOf("=");
+  for (const cookie of cookies) {
+    const index = cookie.indexOf("=");
 
-    if(index === -1) continue;
+    if (index === -1) continue;
 
     const key =
-      part.slice(0,index).trim();
+      cookie.slice(0, index).trim();
 
     const value =
-      part.slice(index + 1).trim();
+      cookie.slice(index + 1).trim();
 
-    if(key === name){
-
-      return decodeURIComponent(
-        value
-      );
-
+    if (key === name) {
+      return decodeURIComponent(value);
     }
   }
 
@@ -227,23 +103,33 @@ function getCookie(request,name) {
 }
 
 
-function createStateCookie(state) {
+/* =========================
+   SET COOKIE
+========================= */
 
+function setCookie(
+  name,
+  value,
+  maxAge
+) {
   return [
-    `${STATE_COOKIE}=${encodeURIComponent(state)}`,
+    `${name}=${encodeURIComponent(value)}`,
     "Path=/",
     "HttpOnly",
     "Secure",
     "SameSite=Lax",
-    "Max-Age=600"
+    `Max-Age=${maxAge}`
   ].join("; ");
 }
 
 
-function clearStateCookie() {
+/* =========================
+   DELETE COOKIE
+========================= */
 
+function deleteCookie(name) {
   return [
-    `${STATE_COOKIE}=`,
+    `${name}=`,
     "Path=/",
     "HttpOnly",
     "Secure",
@@ -254,7 +140,7 @@ function clearStateCookie() {
 
 
 /* =========================
-   START GOOGLE LOGIN
+   GOOGLE LOGIN
 ========================= */
 
 function startGoogleLogin() {
@@ -262,58 +148,53 @@ function startGoogleLogin() {
   const state =
     randomToken(32);
 
-  const googleUrl =
-    new URL(
-      GOOGLE_AUTH_URL
-    );
+  const authUrl =
+    new URL(GOOGLE_AUTH_URL);
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "client_id",
     CLIENT_ID
   );
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "redirect_uri",
     REDIRECT_URI
   );
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "response_type",
     "code"
   );
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "scope",
     "openid email profile"
   );
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "state",
     state
   );
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "access_type",
-    "online"
+    "offline"
   );
 
-  googleUrl.searchParams.set(
+  authUrl.searchParams.set(
     "prompt",
     "select_account"
   );
 
-  return new Response(null,{
-    status:302,
-
-    headers:{
-      Location:
-        googleUrl.toString(),
-
-      "Set-Cookie":
-        createStateCookie(state),
-
-      "Cache-Control":
-        "no-store"
+  return new Response(null, {
+    status: 302,
+    headers: {
+      "Location": authUrl.toString(),
+      "Set-Cookie": setCookie(
+        STATE_COOKIE,
+        state,
+        600
+      )
     }
   });
 }
@@ -337,283 +218,203 @@ async function handleCallback(
   const returnedState =
     url.searchParams.get("state");
 
-  const googleError =
-    url.searchParams.get("error");
-
-  if(googleError){
-
-    return errorPage(
-      `Google returned an error: ${googleError}`
-    );
-  }
-
-
   const savedState =
     getCookie(
       request,
       STATE_COOKIE
     );
 
+  if (!code) {
+    return new Response(
+      "Google authentication failed: authorization code missing.",
+      { status: 400 }
+    );
+  }
 
-  if(
-    !code ||
+  if (
     !returnedState ||
-    !savedState
-  ){
-
-    return errorPage(
-      "Invalid or expired login request. Please try again."
-    );
-  }
-
-
-  if(
+    !savedState ||
     returnedState !== savedState
-  ){
+  ) {
+    return new Response(
+      "Google authentication failed: invalid OAuth state.",
+      { status: 400 }
+    );
+  }
 
-    return errorPage(
-      "Google security verification failed. Please try again."
+  if (!env.GOOGLE_CLIENT_SECRET) {
+    return new Response(
+      "GOOGLE_CLIENT_SECRET is not configured.",
+      { status: 500 }
+    );
+  }
+
+  if (!env.DB) {
+    return new Response(
+      "D1 database binding DB is not configured.",
+      { status: 500 }
     );
   }
 
 
-  try {
+  /* =========================
+     EXCHANGE GOOGLE CODE
+  ========================= */
 
-    /* =====================
-       CHECK CONFIGURATION
-    ===================== */
-
-    const adminEmail =
-      String(
-        env.ADMIN_EMAIL || ""
-      )
-      .trim()
-      .toLowerCase();
-
-    if(!adminEmail){
-
-      return errorPage(
-        "ADMIN_EMAIL is not configured."
-      );
-    }
-
-
-    const clientSecret =
-      String(
-        env.GOOGLE_CLIENT_SECRET || ""
-      ).trim();
-
-    if(!clientSecret){
-
-      return errorPage(
-        "GOOGLE_CLIENT_SECRET is not configured."
-      );
-    }
+  const tokenResponse =
+    await fetch(
+      GOOGLE_TOKEN_URL,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded"
+        },
+        body:
+          new URLSearchParams({
+            client_id: CLIENT_ID,
+            client_secret:
+              env.GOOGLE_CLIENT_SECRET,
+            code,
+            grant_type:
+              "authorization_code",
+            redirect_uri:
+              REDIRECT_URI
+          })
+      }
+    );
 
 
-    /* =====================
-       GOOGLE CODE EXCHANGE
-    ===================== */
+  if (!tokenResponse.ok) {
 
-    const tokenResponse =
-      await fetch(
-        GOOGLE_TOKEN_URL,
-        {
-          method:"POST",
-
-          headers:{
-            "Content-Type":
-              "application/x-www-form-urlencoded"
-          },
-
-          body:
-            new URLSearchParams({
-
-              client_id:
-                CLIENT_ID,
-
-              client_secret:
-                clientSecret,
-
-              code:
-                code,
-
-              grant_type:
-                "authorization_code",
-
-              redirect_uri:
-                REDIRECT_URI
-
-            }).toString()
-        }
-      );
-
-
-    const tokenText =
+    const errorText =
       await tokenResponse.text();
 
-    let googleTokens;
-
-    try{
-
-      googleTokens =
-        JSON.parse(
-          tokenText
-        );
-
-    }catch{
-
-      return errorPage(
-        "Google returned an invalid token response."
-      );
-    }
+    return new Response(
+      "Google token exchange failed: " +
+      errorText,
+      { status: 401 }
+    );
+  }
 
 
-    if(!tokenResponse.ok){
+  const tokenData =
+    await tokenResponse.json();
 
-      console.error(
-        "GOOGLE TOKEN ERROR:",
-        googleTokens
-      );
+  const accessToken =
+    tokenData.access_token;
 
-      return errorPage(
-        `Google token exchange failed: ${
-          googleTokens.error_description ||
-          googleTokens.error ||
-          "Unknown Google error."
-        }`
-      );
-    }
+  if (!accessToken) {
+    return new Response(
+      "Google authentication failed: access token missing.",
+      { status: 401 }
+    );
+  }
 
 
-    if(
-      !googleTokens.access_token
-    ){
+  /* =========================
+     GOOGLE USER INFO
+  ========================= */
 
-      return errorPage(
-        "Google did not return an access token."
-      );
-    }
-
-
-    /* =====================
-       GET GOOGLE ACCOUNT
-    ===================== */
-
-    const userResponse =
-      await fetch(
-        GOOGLE_USERINFO_URL,
-        {
-          method:"GET",
-
-          headers:{
-            Authorization:
-              `Bearer ${googleTokens.access_token}`
-          }
+  const userResponse =
+    await fetch(
+      GOOGLE_USERINFO_URL,
+      {
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`
         }
-      );
+      }
+    );
 
 
-    const userText =
+  if (!userResponse.ok) {
+
+    const errorText =
       await userResponse.text();
 
-    let googleUser;
-
-    try{
-
-      googleUser =
-        JSON.parse(
-          userText
-        );
-
-    }catch{
-
-      return errorPage(
-        "Google account information could not be read."
-      );
-    }
+    return new Response(
+      "Google user information failed: " +
+      errorText,
+      { status: 401 }
+    );
+  }
 
 
-    if(!userResponse.ok){
-
-      console.error(
-        "GOOGLE USERINFO ERROR:",
-        googleUser
-      );
-
-      return errorPage(
-        "Could not retrieve your Google account."
-      );
-    }
+  const googleUser =
+    await userResponse.json();
 
 
-    /* =====================
-       ADMIN EMAIL
-    ===================== */
+  const googleId =
+    String(
+      googleUser.sub || ""
+    ).trim();
 
-    const email =
-      String(
-        googleUser.email || ""
-      )
-      .trim()
-      .toLowerCase();
+  const name =
+    String(
+      googleUser.name || ""
+    ).trim();
 
+  const email =
+    String(
+      googleUser.email || ""
+    ).trim()
+    .toLowerCase();
 
-    if(!email){
+  const photoUrl =
+    String(
+      googleUser.picture || ""
+    ).trim();
 
-      return errorPage(
-        "Google did not provide an email address."
-      );
-    }
-
-
-    if(email !== adminEmail){
-
-      return errorPage(
-        "This Google account is not authorized for administrator access."
-      );
-    }
-
-
-    /* =====================
-       EMAIL VERIFICATION
-    ===================== */
-
-    if(
-      googleUser.email_verified !== true
-    ){
-
-      return errorPage(
-        "The administrator Google email must be verified."
-      );
-    }
+  const emailVerified =
+    googleUser.email_verified
+      ? 1
+      : 0;
 
 
-    /* =====================
-       GOOGLE ID
-    ===================== */
-
-    const googleId =
-      String(
-        googleUser.sub || ""
-      );
+  if (!googleId || !email) {
+    return new Response(
+      "Google account information is incomplete.",
+      { status: 400 }
+    );
+  }
 
 
-    if(!googleId){
+  /* =========================
+     ADMIN EMAIL CHECK
+  ========================= */
 
-      return errorPage(
-        "Google account information is incomplete."
-      );
-    }
+  const adminEmail =
+    String(
+      env.ADMIN_EMAIL || ""
+    )
+    .trim()
+    .toLowerCase();
 
 
-    /* =====================
-       CREATE / UPDATE USER
-    ===================== */
+  if (!adminEmail) {
+    return new Response(
+      "ADMIN_EMAIL is not configured.",
+      { status: 500 }
+    );
+  }
 
-    await env.DB.prepare(`
-      INSERT INTO users
-      (
+
+  if (email !== adminEmail) {
+    return new Response(
+      "Administrator login denied. This Google account is not authorized.",
+      { status: 403 }
+    );
+  }
+
+
+  /* =========================
+     CREATE / UPDATE USER
+  ========================= */
+
+  await env.DB
+    .prepare(`
+      INSERT INTO users (
         google_id,
         name,
         email,
@@ -632,35 +433,29 @@ async function handleCallback(
         last_login = CURRENT_TIMESTAMP
     `)
     .bind(
-
       googleId,
-
-      String(
-        googleUser.name || ""
-      ),
-
+      name,
       email,
-
-      String(
-        googleUser.picture || ""
-      ),
-
-      1
-
+      photoUrl,
+      emailVerified
     )
     .run();
 
 
-    /* =====================
-       GET USER
-    ===================== */
+  /* =========================
+     GET USER ID
+  ========================= */
 
-    const user =
-      await env.DB.prepare(`
+  const user =
+    await env.DB
+      .prepare(`
         SELECT
           id,
+          google_id,
           name,
-          email
+          email,
+          photo_url,
+          email_verified
         FROM users
         WHERE google_id = ?
         LIMIT 1
@@ -669,19 +464,32 @@ async function handleCallback(
       .first();
 
 
-    if(!user){
+  if (!user) {
+    return new Response(
+      "Administrator user could not be created.",
+      { status: 500 }
+    );
+  }
 
-      return errorPage(
-        "Could not create the administrator account."
-      );
-    }
+
+  /* =========================
+     CREATE ADMIN SESSION
+  ========================= */
+
+  const sessionToken =
+    randomToken(32);
+
+  const expiresAt =
+    Math.floor(
+      Date.now() / 1000
+    ) +
+    SESSION_DAYS * 24 * 60 * 60;
 
 
-    /* =====================
-       REMOVE OLD SESSIONS
-    ===================== */
+  /* Remove old sessions for this user */
 
-    await env.DB.prepare(`
+  await env.DB
+    .prepare(`
       DELETE FROM sessions
       WHERE user_id = ?
     `)
@@ -689,26 +497,11 @@ async function handleCallback(
     .run();
 
 
-    /* =====================
-       CREATE SESSION
-    ===================== */
+  /* Create new session */
 
-    const sessionToken =
-      randomToken(32);
-
-    const now =
-      Math.floor(
-        Date.now() / 1000
-      );
-
-    const expiresAt =
-      now +
-      SESSION_DAYS * 86400;
-
-
-    await env.DB.prepare(`
-      INSERT INTO sessions
-      (
+  await env.DB
+    .prepare(`
+      INSERT INTO sessions (
         id,
         user_id,
         expires_at
@@ -723,21 +516,23 @@ async function handleCallback(
     .run();
 
 
-    /* =====================
-       CREATE ADMIN TICKET
-    ===================== */
+  /* =========================
+     CREATE ONE-TIME TICKET
+  ========================= */
 
-    const ticket =
-      randomToken(32);
+  const ticket =
+    randomToken(32);
 
-    const ticketExpires =
-      now +
-      TICKET_MINUTES * 60;
+  const ticketExpires =
+    Math.floor(
+      Date.now() / 1000
+    ) +
+    TICKET_MINUTES * 60;
 
 
-    await env.DB.prepare(`
-      INSERT INTO admin_oauth_tickets
-      (
+  await env.DB
+    .prepare(`
+      INSERT INTO admin_oauth_tickets (
         id,
         user_id,
         expires_at,
@@ -754,51 +549,61 @@ async function handleCallback(
     .run();
 
 
-    /* =====================
-       REDIRECT TO ADMIN PAGE
-    ===================== */
+  /* =========================
+     CLEAN OLD TICKETS
+  ========================= */
 
-    const redirect =
-      new URL(
-        ADMIN_LOGIN_PAGE
-      );
-
-    redirect.searchParams.set(
-      "ticket",
-      ticket
-    );
+  await cleanTickets(env);
 
 
-    return new Response(null,{
-      status:302,
+  /* =========================
+     REDIRECT TO ADMIN LOGIN
+  ========================= */
 
-      headers:{
-        Location:
-          redirect.toString(),
+  const redirectUrl =
+    new URL(ADMIN_LOGIN_PAGE);
 
-        "Set-Cookie":
-          clearStateCookie(),
-
-        "Cache-Control":
-          "no-store"
-      }
-    });
+  redirectUrl.searchParams.set(
+    "ticket",
+    ticket
+  );
 
 
-  }catch(error){
+  return new Response(null, {
+    status: 302,
+    headers: {
+      "Location":
+        redirectUrl.toString(),
 
-    console.error(
-      "ADMIN LOGIN ERROR:",
-      error
-    );
+      "Set-Cookie":
+        deleteCookie(
+          STATE_COOKIE
+        ),
 
-    return errorPage(
-      `Administrator login failed: ${
-        error?.message ||
-        "Unknown error."
-      }`
-    );
-  }
+      "Cache-Control":
+        "no-store"
+    }
+  });
+}
+
+
+/* =========================
+   CLEAN EXPIRED TICKETS
+========================= */
+
+async function cleanTickets(env) {
+
+  await env.DB
+    .prepare(`
+      DELETE FROM admin_oauth_tickets
+      WHERE expires_at <= ?
+    `)
+    .bind(
+      Math.floor(
+        Date.now() / 1000
+      )
+    )
+    .run();
 }
 
 
@@ -811,246 +616,253 @@ async function exchangeTicket(
   env
 ) {
 
-  if(
-    request.method !== "POST"
-  ){
+  try {
 
-    return json({
-      success:false,
-      error:"POST required."
-    },405);
-  }
-
-
-  let body;
-
-  try{
-
-    body =
+    const body =
       await request.json();
 
-  }catch{
-
-    return json({
-      success:false,
-      error:"Invalid JSON."
-    },400);
-  }
+    const ticket =
+      String(
+        body.ticket || ""
+      ).trim();
 
 
-  const ticket =
-    String(
-      body.ticket || ""
-    ).trim();
+    if (!ticket) {
+      return json({
+        success: false,
+        error: "Ticket is required."
+      }, 400);
+    }
 
 
-  if(!ticket){
+    /* =========================
+       FIND TICKET
+    ========================= */
 
-    return json({
-      success:false,
-      error:"Ticket is required."
-    },400);
-  }
+    const row =
+      await env.DB
+        .prepare(`
+          SELECT
+            t.id,
+            t.user_id,
+            t.expires_at,
+            t.session_token,
+            u.name,
+            u.email,
+            u.photo_url
+          FROM admin_oauth_tickets t
 
+          JOIN users u
+            ON u.id = t.user_id
 
-  const now =
-    Math.floor(
-      Date.now() / 1000
-    );
+          WHERE t.id = ?
 
-
-  const row =
-    await env.DB.prepare(`
-      SELECT
-        id,
-        user_id,
-        expires_at,
-        session_token
-      FROM admin_oauth_tickets
-      WHERE id = ?
-      LIMIT 1
-    `)
-    .bind(ticket)
-    .first();
+          LIMIT 1
+        `)
+        .bind(ticket)
+        .first();
 
 
-  if(!row){
-
-    return json({
-      success:false,
-      error:"Invalid or expired ticket."
-    },401);
-  }
-
-
-  if(
-    Number(row.expires_at) <= now
-  ){
-
-    await env.DB.prepare(`
-      DELETE FROM admin_oauth_tickets
-      WHERE id = ?
-    `)
-    .bind(ticket)
-    .run();
-
-    return json({
-      success:false,
-      error:"Ticket expired."
-    },401);
-  }
+    if (!row) {
+      return json({
+        success: false,
+        error:
+          "Invalid or expired administrator ticket."
+      }, 401);
+    }
 
 
-  if(!row.session_token){
-
-    return json({
-      success:false,
-      error:"Ticket has no administrator session."
-    },401);
-  }
-
-
-  /* =====================
-     VERIFY SESSION
-  ===================== */
-
-  const session =
-    await env.DB.prepare(`
-      SELECT
-        s.id,
-        s.user_id,
-        s.expires_at,
-        u.email
-      FROM sessions s
-      INNER JOIN users u
-        ON u.id = s.user_id
-      WHERE s.id = ?
-      AND s.user_id = ?
-      LIMIT 1
-    `)
-    .bind(
-      row.session_token,
-      row.user_id
-    )
-    .first();
-
-
-  if(!session){
-
-    await env.DB.prepare(`
-      DELETE FROM admin_oauth_tickets
-      WHERE id = ?
-    `)
-    .bind(ticket)
-    .run();
-
-    return json({
-      success:false,
-      error:"Administrator session was not found."
-    },401);
-  }
-
-
-  if(
-    Number(session.expires_at) <= now
-  ){
-
-    await env.DB.prepare(`
-      DELETE FROM admin_oauth_tickets
-      WHERE id = ?
-    `)
-    .bind(ticket)
-    .run();
-
-    return json({
-      success:false,
-      error:"Administrator session expired."
-    },401);
-  }
-
-
-  const adminEmail =
-    String(
-      env.ADMIN_EMAIL || ""
-    )
-    .trim()
-    .toLowerCase();
-
-
-  if(
-    String(session.email || "")
-      .trim()
-      .toLowerCase()
-      !== adminEmail
-  ){
-
-    await env.DB.prepare(`
-      DELETE FROM admin_oauth_tickets
-      WHERE id = ?
-    `)
-    .bind(ticket)
-    .run();
-
-    return json({
-      success:false,
-      error:"Administrator access denied."
-    },403);
-  }
-
-
-  /* =====================
-     ONE-TIME TICKET
-  ===================== */
-
-  await env.DB.prepare(`
-    DELETE FROM admin_oauth_tickets
-    WHERE id = ?
-  `)
-  .bind(ticket)
-  .run();
-
-
-  return json({
-    success:true,
-    token:
-      row.session_token
-  });
-}
-
-
-/* =========================
-   CLEAN OLD TICKETS
-========================= */
-
-async function cleanTickets(env){
-
-  try{
+    /* =========================
+       CHECK EXPIRATION
+    ========================= */
 
     const now =
       Math.floor(
         Date.now() / 1000
       );
 
-    await env.DB.prepare(`
-      DELETE FROM admin_oauth_tickets
-      WHERE expires_at <= ?
-    `)
-    .bind(now)
-    .run();
 
-  }catch(error){
+    if (
+      Number(row.expires_at) <= now
+    ) {
 
-    console.error(
-      "TICKET CLEANUP ERROR:",
-      error
-    );
+      await env.DB
+        .prepare(`
+          DELETE FROM admin_oauth_tickets
+          WHERE id = ?
+        `)
+        .bind(ticket)
+        .run();
 
+
+      return json({
+        success: false,
+        error:
+          "Administrator ticket expired."
+      }, 401);
+    }
+
+
+    /* =========================
+       CHECK ADMIN EMAIL
+    ========================= */
+
+    const adminEmail =
+      String(
+        env.ADMIN_EMAIL || ""
+      )
+      .trim()
+      .toLowerCase();
+
+
+    const userEmail =
+      String(
+        row.email || ""
+      )
+      .trim()
+      .toLowerCase();
+
+
+    if (
+      !adminEmail ||
+      userEmail !== adminEmail
+    ) {
+
+      await env.DB
+        .prepare(`
+          DELETE FROM admin_oauth_tickets
+          WHERE id = ?
+        `)
+        .bind(ticket)
+        .run();
+
+
+      return json({
+        success: false,
+        error:
+          "Admin access required."
+      }, 403);
+    }
+
+
+    /* =========================
+       CHECK SESSION
+    ========================= */
+
+    if (!row.session_token) {
+
+      return json({
+        success: false,
+        error:
+          "Administrator session was not created."
+      }, 500);
+    }
+
+
+    const session =
+      await env.DB
+        .prepare(`
+          SELECT
+            id,
+            user_id,
+            expires_at
+          FROM sessions
+          WHERE id = ?
+          LIMIT 1
+        `)
+        .bind(row.session_token)
+        .first();
+
+
+    if (!session) {
+
+      return json({
+        success: false,
+        error:
+          "Administrator session not found."
+      }, 401);
+    }
+
+
+    if (
+      Number(session.expires_at) <= now
+    ) {
+
+      await env.DB
+        .prepare(`
+          DELETE FROM sessions
+          WHERE id = ?
+        `)
+        .bind(row.session_token)
+        .run();
+
+
+      await env.DB
+        .prepare(`
+          DELETE FROM admin_oauth_tickets
+          WHERE id = ?
+        `)
+        .bind(ticket)
+        .run();
+
+
+      return json({
+        success: false,
+        error:
+          "Administrator session expired."
+      }, 401);
+    }
+
+
+    /* =========================
+       ONE-TIME TICKET
+    ========================= */
+
+    await env.DB
+      .prepare(`
+        DELETE FROM admin_oauth_tickets
+        WHERE id = ?
+      `)
+      .bind(ticket)
+      .run();
+
+
+    /* =========================
+       SUCCESS
+    ========================= */
+
+    return json({
+      success: true,
+
+      token:
+        row.session_token,
+
+      user: {
+        name:
+          row.name || "",
+
+        email:
+          row.email || "",
+
+        photo_url:
+          row.photo_url || ""
+      }
+    });
+
+  } catch (error) {
+
+    return json({
+      success: false,
+      error:
+        error?.message ||
+        "Administrator login failed."
+    }, 500);
   }
 }
 
 
 /* =========================
-   MAIN ROUTER
+   MAIN WORKER
 ========================= */
 
 export default {
@@ -1058,75 +870,100 @@ export default {
   async fetch(
     request,
     env
-  ){
+  ) {
+
+    /* =========================
+       CORS PREFLIGHT
+    ========================= */
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers:
+            corsHeaders()
+        }
+      );
+    }
+
 
     const url =
       new URL(request.url);
 
-
-    await cleanTickets(env);
-
-
-    /* =====================
-       HOME
-    ===================== */
-
-    if(
-      request.method === "GET" &&
-      url.pathname === "/"
-    ){
-
-      return json({
-        success:true,
-        service:
-          "CreateLK Jobs Admin Login",
-        status:"online"
-      });
-    }
+    const path =
+      url.pathname;
 
 
-    /* =====================
+    /* =========================
        HEALTH
-    ===================== */
+    ========================= */
 
-    if(
-      request.method === "GET" &&
-      url.pathname === "/health"
-    ){
+    if (
+      path === "/health" &&
+      request.method === "GET"
+    ) {
 
       return json({
-        success:true,
+        success: true,
         service:
           "CreateLK Jobs Admin Login",
-        status:"online"
+        status: "online"
       });
     }
 
 
-    /* =====================
-       GOOGLE LOGIN
-    ===================== */
+    /* =========================
+       ROOT
+    ========================= */
 
-    if(
-      request.method === "GET" &&
-      (
-        url.pathname === "/login" ||
-        url.pathname === "/auth/google"
-      )
-    ){
+    if (
+      path === "/" &&
+      request.method === "GET"
+    ) {
+
+      return json({
+        success: true,
+        service:
+          "CreateLK Jobs Admin Login",
+        status: "online"
+      });
+    }
+
+
+    /* =========================
+       GOOGLE LOGIN
+    ========================= */
+
+    if (
+      path === "/login" &&
+      request.method === "GET"
+    ) {
 
       return startGoogleLogin();
     }
 
 
-    /* =====================
-       GOOGLE CALLBACK
-    ===================== */
+    if (
+      path === "/auth/google" &&
+      request.method === "GET"
+    ) {
 
-    if(
-      request.method === "GET" &&
-      url.pathname === "/callback"
-    ){
+      return startGoogleLogin();
+    }
+
+
+    /* =========================
+       GOOGLE CALLBACK
+    ========================= */
+
+    if (
+      path === "/callback" &&
+      request.method === "GET"
+    ) {
 
       return handleCallback(
         request,
@@ -1135,14 +972,14 @@ export default {
     }
 
 
-    /* =====================
+    /* =========================
        TICKET EXCHANGE
-    ===================== */
+    ========================= */
 
-    if(
-      request.method === "POST" &&
-      url.pathname === "/exchange"
-    ){
+    if (
+      path === "/exchange" &&
+      request.method === "POST"
+    ) {
 
       return exchangeTicket(
         request,
@@ -1151,10 +988,58 @@ export default {
     }
 
 
-    return json({
-      success:false,
-      error:"Not found"
-    },404);
-  }
+    /* =========================
+       LOGOUT
+    ========================= */
 
+    if (
+      path === "/logout" &&
+      request.method === "GET"
+    ) {
+
+      const token =
+        getCookie(
+          request,
+          "createlk_admin_session"
+        );
+
+
+      if (token && env.DB) {
+
+        await env.DB
+          .prepare(`
+            DELETE FROM sessions
+            WHERE id = ?
+          `)
+          .bind(token)
+          .run();
+      }
+
+
+      return new Response(
+        "Logged out.",
+        {
+          status: 302,
+          headers: {
+            "Location":
+              ADMIN_LOGIN_PAGE,
+            "Set-Cookie":
+              deleteCookie(
+                "createlk_admin_session"
+              )
+          }
+        }
+      );
+    }
+
+
+    /* =========================
+       NOT FOUND
+    ========================= */
+
+    return json({
+      success: false,
+      error: "Not found."
+    }, 404);
+  }
 };
