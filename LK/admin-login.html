@@ -1,8 +1,22 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Login | CreateLK Jobs</title><link rel="icon"
-href="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"><style>
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1">
+
+<title>Admin Login | CreateLK Jobs</title>
+
+<link
+  rel="icon"
+  href="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png">
+
+<style>
+
 *{
   box-sizing:border-box;
   margin:0;
@@ -65,6 +79,11 @@ h1{
   background:#f7f9fc;
 }
 
+.google:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
+
 .notice{
   display:none;
   margin-bottom:18px;
@@ -92,39 +111,64 @@ h1{
   font-size:14px;
   font-weight:700;
 }
-</style></head><body><div class="card"><img
-class="logo"
-src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
-alt="CreateLK Jobs">
 
-<h1>Admin Login</h1><p class="sub">
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+
+<img
+  class="logo"
+  src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
+  alt="CreateLK Jobs">
+
+<h1>Admin Login</h1>
+
+<p class="sub">
 Sign in with the authorized Google account to access the CreateLK Jobs Admin Dashboard.
-</p><div id="notice" class="notice"></div><button
-id="googleLogin"
-class="google"
-type="button">
+</p>
+
+<div
+  id="notice"
+  class="notice">
+</div>
+
+<button
+  id="googleLogin"
+  class="google"
+  type="button">
 Continue with Google
 </button>
 
-<div id="loading" class="loading">
+<div
+  id="loading"
+  class="loading">
 Signing in...
-</div><a
-class="back"
-href="../index.html">
+</div>
+
+<a
+  class="back"
+  href="../index.html">
 ← Back to CreateLK Jobs
 </a>
 
-</div><script>
+</div>
+
+<script>
 
 const ADMIN_LOGIN =
-"https://admin-login.createlk.workers.dev";
-
-const ADMIN_API =
-"https://admin.createlk.workers.dev";
+  "https://admin-login.createlk.workers.dev";
 
 const TOKEN =
-"createlk_session_token";
+  "createlk_session_token";
 
+
+/* =========================
+   ERROR
+========================= */
 
 function showError(message){
 
@@ -138,6 +182,10 @@ function showError(message){
     "block";
 }
 
+
+/* =========================
+   TOKEN
+========================= */
 
 function saveToken(token){
 
@@ -155,11 +203,19 @@ function saveToken(token){
 
 function removeToken(){
 
-  localStorage.removeItem(TOKEN);
+  localStorage.removeItem(
+    TOKEN
+  );
 
-  sessionStorage.removeItem(TOKEN);
+  sessionStorage.removeItem(
+    TOKEN
+  );
 }
 
+
+/* =========================
+   EXCHANGE TICKET
+========================= */
 
 async function exchangeTicket(ticket){
 
@@ -169,11 +225,16 @@ async function exchangeTicket(ticket){
   const button =
     document.getElementById("googleLogin");
 
+
   loading.style.display =
     "block";
 
+  button.disabled =
+    true;
+
   button.style.display =
     "none";
+
 
   try{
 
@@ -188,16 +249,26 @@ async function exchangeTicket(ticket){
               "application/json"
           },
 
-          body:JSON.stringify({
-            ticket:ticket
-          })
+          body:
+            JSON.stringify({
+              ticket:ticket
+            })
         }
       );
 
 
-    const data =
-      await response.json()
-        .catch(()=>({}));
+    let data = {};
+
+    try{
+
+      data =
+        await response.json();
+
+    }catch{
+
+      data = {};
+
+    }
 
 
     if(
@@ -209,6 +280,7 @@ async function exchangeTicket(ticket){
         data.error ||
         "Administrator login failed."
       );
+
     }
 
 
@@ -217,13 +289,27 @@ async function exchangeTicket(ticket){
       throw new Error(
         "No administrator session was returned."
       );
+
     }
 
+
+    /*
+      The Worker has already verified:
+      - ticket
+      - ticket expiry
+      - session
+      - session expiry
+      - administrator email
+    */
 
     saveToken(
       data.token
     );
 
+
+    /*
+      Remove ticket from browser URL.
+    */
 
     history.replaceState(
       {},
@@ -232,36 +318,9 @@ async function exchangeTicket(ticket){
     );
 
 
-    const verify =
-      await fetch(
-        ADMIN_API + "/stats",
-        {
-          method:"GET",
-
-          headers:{
-            Authorization:
-              "Bearer " + data.token
-          }
-        }
-      );
-
-
-    if(!verify.ok){
-
-      removeToken();
-
-      if(verify.status === 403){
-
-        throw new Error(
-          "Admin access is not authorized."
-        );
-      }
-
-      throw new Error(
-        "Administrator session could not be verified."
-      );
-    }
-
+    /*
+      Go directly to admin dashboard.
+    */
 
     location.replace(
       "admin.html"
@@ -273,33 +332,46 @@ async function exchangeTicket(ticket){
     removeToken();
 
     showError(
-      error.message ||
+      error?.message ||
       "Administrator login failed."
     );
 
     button.style.display =
       "block";
 
+    button.disabled =
+      false;
+
   }finally{
 
     loading.style.display =
       "none";
+
   }
+
 }
 
 
+/* =========================
+   GOOGLE LOGIN BUTTON
+========================= */
+
 document
-.getElementById("googleLogin")
-.addEventListener(
-  "click",
-  function(){
+  .getElementById("googleLogin")
+  .addEventListener(
+    "click",
+    function(){
 
-    window.location.href =
-      ADMIN_LOGIN + "/login";
+      window.location.href =
+        ADMIN_LOGIN + "/login";
 
-  }
-);
+    }
+  );
 
+
+/* =========================
+   READ TICKET
+========================= */
 
 const params =
   new URLSearchParams(
@@ -318,5 +390,9 @@ if(ticket){
 
 }
 
-</script></body>
+</script>
+
+</body>
+
 </html>
+
