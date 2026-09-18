@@ -1,61 +1,166 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://createlk.com",
+  "Access-Control-Allow-Credentials": "true",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400"
 };
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-      ...corsHeaders
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json; charset=UTF-8"
+      }
     }
-  });
+  );
 }
 
-function getToken(request) {
-  const auth = request.headers.get("Authorization") || "";
 
-  if (!auth.startsWith("Bearer ")) {
-    return null;
-  }
+// ======================================================
+// COOKIE PARSER
+// ======================================================
 
-  return auth.slice(7).trim();
+function parseCookies(header) {
+
+  const cookies = {};
+
+  String(header || "")
+    .split(";")
+    .forEach(part => {
+
+      const index = part.indexOf("=");
+
+      if (index === -1) {
+        return;
+      }
+
+      const key =
+        part
+          .slice(0, index)
+          .trim();
+
+      const value =
+        part
+          .slice(index + 1)
+          .trim();
+
+      if (key) {
+        cookies[key] = value;
+      }
+    });
+
+  return cookies;
 }
+
+
+// ======================================================
+// GET LOGGED-IN USER
+// ======================================================
 
 async function getUser(request, env) {
-  const token = getToken(request);
 
-  if (!token) {
+  const cookies =
+    parseCookies(
+      request.headers.get("Cookie") || ""
+    );
+
+  const sessionId =
+    cookies["createlk_session"];
+
+  if (!sessionId) {
     return null;
   }
 
-  const result = await env.DB.prepare(`
-    SELECT
-      sessions.user_id AS user_id,
-      users.name AS name,
-      users.email AS email
-    FROM sessions
-    INNER JOIN users
-      ON users.id = sessions.user_id
-    WHERE sessions.id = ?
-      AND datetime(sessions.expires_at) > datetime('now')
-    LIMIT 1
-  `).bind(token).first();
+  try {
 
-  return result || null;
+    const user =
+      await env.DB.prepare(`
+        SELECT
+          users.id,
+          users.google_id,
+          users.name,
+          users.email,
+          users.photo_url,
+          users.email_verified,
+          sessions.id AS session_id,
+          sessions.expires_at
+        FROM sessions
+        INNER JOIN users
+          ON users.id = sessions.user_id
+        WHERE sessions.id = ?
+        LIMIT 1
+      `)
+      .bind(sessionId)
+      .first();
+
+    if (!user) {
+      return null;
+    }
+
+    const now =
+      Math.floor(
+        Date.now() / 1000
+      );
+
+    if (
+      Number(user.expires_at) <= now
+    ) {
+
+      await env.DB.prepare(`
+        DELETE FROM sessions
+        WHERE id = ?
+      `)
+      .bind(sessionId)
+      .run();
+
+      return null;
+    }
+
+    return user;
+
+  } catch (error) {
+
+    console.error(
+      "Authentication error:",
+      error
+    );
+
+    return null;
+  }
 }
 
+
+// ======================================================
+// FILE NAME
+// ======================================================
+
 function safeFilename(name) {
-  return String(name || "file")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .replace(/_+/g, "_")
+
+  return String(
+    name || "file"
+  )
+    .replace(
+      /[^a-zA-Z0-9._-]/g,
+      "_"
+    )
+    .replace(
+      /_+/g,
+      "_"
+    )
     .slice(0, 150);
 }
 
+
+// ======================================================
+// FILE EXTENSION
+// ======================================================
+
 function extensionFromType(type) {
+
   const map = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -66,20 +171,29 @@ function extensionFromType(type) {
   return map[type] || "bin";
 }
 
+
+// ======================================================
+// ALLOWED FILE TYPES
+// ======================================================
+
 function allowedType(type, folder) {
-  const imageTypes = [
+
+  const images = [
     "image/jpeg",
     "image/png",
     "image/webp"
   ];
 
   if (folder === "ads") {
-    return imageTypes.includes(type);
+    return images.includes(type);
   }
 
   if (folder === "payments") {
+
     return [
-      ...imageTypes,
+      "image/jpeg",
+      "image/png",
+      "image/webp",
       "application/pdf"
     ].includes(type);
   }
@@ -87,52 +201,104 @@ function allowedType(type, folder) {
   return false;
 }
 
+
+// ======================================================
+// MAIN
+// ======================================================
+
 export default {
+
   async fetch(request, env) {
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders
+    // --------------------------------------------------
+    // OPTIONS / CORS
+    // --------------------------------------------------
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: corsHeaders
+        }
+      );
+    }
+
+
+    const url =
+      new URL(request.url);
+
+
+    // ==================================================
+    // HOME
+    // ==================================================
+
+    if (
+      request.method === "GET" &&
+      url.pathname === "/"
+    ) {
+
+      return json({
+        success: true,
+        worker:
+          "CreateLK Jobs Upload Worker",
+        status: "online"
       });
     }
 
-    const url = new URL(request.url);
 
-    /*
-     * HEALTH
-     */
+    // ==================================================
+    // HEALTH
+    // ==================================================
+
     if (
       request.method === "GET" &&
       url.pathname === "/health"
     ) {
+
       let db = false;
       let r2 = false;
 
       try {
-        await env.DB.prepare(
-          "SELECT 1"
-        ).first();
+
+        await env.DB
+          .prepare("SELECT 1")
+          .first();
 
         db = true;
+
       } catch (error) {
+
         db = false;
       }
 
+
       try {
+
+        const key =
+          "health/" +
+          crypto.randomUUID() +
+          ".txt";
+
         await env.JOBS_BUCKET.put(
-          "health/test.txt",
+          key,
           "CreateLK Jobs Upload Worker"
         );
 
         await env.JOBS_BUCKET.delete(
-          "health/test.txt"
+          key
         );
 
         r2 = true;
+
       } catch (error) {
+
         r2 = false;
       }
+
 
       return json({
         success: true,
@@ -142,17 +308,21 @@ export default {
       });
     }
 
-    /*
-     * R2 TEST
-     */
+
+    // ==================================================
+    // R2 TEST
+    // ==================================================
+
     if (
       request.method === "GET" &&
       url.pathname === "/test-r2"
     ) {
+
       try {
+
         const key =
-          "test/r2-test-" +
-          Date.now() +
+          "test/" +
+          crypto.randomUUID() +
           ".txt";
 
         await env.JOBS_BUCKET.put(
@@ -172,58 +342,84 @@ export default {
           success: false,
           error:
             error?.message ||
-            "R2 upload failed."
+            "R2 test failed."
         }, 500);
       }
     }
 
-    /*
-     * ROOT
-     */
+
+    // ==================================================
+    // AUTH TEST
+    // ==================================================
+
     if (
       request.method === "GET" &&
-      url.pathname === "/"
+      url.pathname === "/auth-test"
     ) {
+
+      const user =
+        await getUser(
+          request,
+          env
+        );
+
+      if (!user) {
+
+        return json({
+          success: false,
+          loggedIn: false,
+          error:
+            "createlk_session cookie was not accepted."
+        }, 401);
+      }
+
+
       return json({
         success: true,
-        worker: "CreateLK Jobs Upload Worker",
-        endpoints: [
-          "/health",
-          "/test-r2",
-          "/upload"
-        ]
+        loggedIn: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        }
       });
     }
 
-    /*
-     * UPLOAD
-     */
+
+    // ==================================================
+    // UPLOAD
+    // ==================================================
+
     if (
       request.method === "POST" &&
       url.pathname === "/upload"
     ) {
 
+      // ----------------------------------------------
+      // CHECK LOGIN
+      // ----------------------------------------------
+
+      const user =
+        await getUser(
+          request,
+          env
+        );
+
+      if (!user) {
+
+        return json({
+          success: false,
+          error: "Unauthorized."
+        }, 401);
+      }
+
+
       try {
 
-        /*
-         * LOGIN CHECK
-         */
-        const user =
-          await getUser(
-            request,
-            env
-          );
+        // --------------------------------------------
+        // FORM DATA
+        // --------------------------------------------
 
-        if (!user) {
-          return json({
-            success: false,
-            error: "Unauthorized."
-          }, 401);
-        }
-
-        /*
-         * FORM DATA
-         */
         const form =
           await request.formData();
 
@@ -232,65 +428,89 @@ export default {
 
         const folder =
           String(
-            form.get("folder") ||
-            "ads"
-          ).trim().toLowerCase();
+            form.get("folder") || ""
+          )
+            .trim()
+            .toLowerCase();
 
-        /*
-         * VALIDATE FOLDER
-         */
+
+        // --------------------------------------------
+        // FOLDER CHECK
+        // --------------------------------------------
+
         if (
           folder !== "ads" &&
           folder !== "payments"
         ) {
+
           return json({
             success: false,
-            error: "Invalid upload folder."
+            error:
+              "Invalid upload folder."
           }, 400);
         }
 
-        /*
-         * VALIDATE FILE
-         */
+
+        // --------------------------------------------
+        // FILE CHECK
+        // --------------------------------------------
+
         if (
           !file ||
           typeof file !== "object" ||
-          typeof file.arrayBuffer !== "function"
+          typeof file.arrayBuffer !==
+            "function"
         ) {
+
           return json({
             success: false,
-            error: "No file was provided."
+            error:
+              "No file was provided."
           }, 400);
         }
 
-        /*
-         * FILE SIZE
-         */
+
+        // --------------------------------------------
+        // SIZE CHECK
+        // --------------------------------------------
+
         const MAX_SIZE =
           5 * 1024 * 1024;
 
-        if (file.size > MAX_SIZE) {
+        if (
+          file.size > MAX_SIZE
+        ) {
+
           return json({
             success: false,
-            error: "File size cannot exceed 5 MB."
+            error:
+              "File size cannot exceed 5 MB."
           }, 400);
         }
 
-        if (file.size <= 0) {
+
+        if (
+          file.size <= 0
+        ) {
+
           return json({
             success: false,
-            error: "The uploaded file is empty."
+            error:
+              "The uploaded file is empty."
           }, 400);
         }
 
-        /*
-         * FILE TYPE
-         */
+
+        // --------------------------------------------
+        // TYPE CHECK
+        // --------------------------------------------
+
         const contentType =
           String(
-            file.type ||
-            ""
-          ).toLowerCase();
+            file.type || ""
+          )
+            .toLowerCase();
+
 
         if (
           !allowedType(
@@ -298,6 +518,7 @@ export default {
             folder
           )
         ) {
+
           return json({
             success: false,
             error:
@@ -307,27 +528,44 @@ export default {
           }, 400);
         }
 
-        /*
-         * FILE NAME
-         */
+
+        // --------------------------------------------
+        // USER ID
+        // --------------------------------------------
+
+        const userId =
+          user.id;
+
+
+        // --------------------------------------------
+        // FILE NAME
+        // --------------------------------------------
+
         const originalName =
           safeFilename(
             file.name ||
             "upload"
           );
 
+
+        // --------------------------------------------
+        // EXTENSION
+        // --------------------------------------------
+
         const extension =
           extensionFromType(
             contentType
           );
 
-        /*
-         * UNIQUE KEY
-         */
+
+        // --------------------------------------------
+        // R2 KEY
+        // --------------------------------------------
+
         const key =
           folder +
           "/" +
-          user.user_id +
+          String(userId) +
           "/" +
           Date.now() +
           "-" +
@@ -340,15 +578,19 @@ export default {
           "." +
           extension;
 
-        /*
-         * FILE DATA
-         */
+
+        // --------------------------------------------
+        // FILE DATA
+        // --------------------------------------------
+
         const body =
           await file.arrayBuffer();
 
-        /*
-         * R2 UPLOAD
-         */
+
+        // --------------------------------------------
+        // R2 UPLOAD
+        // --------------------------------------------
+
         await env.JOBS_BUCKET.put(
           key,
           body,
@@ -358,10 +600,9 @@ export default {
             },
 
             customMetadata: {
+
               user_id:
-                String(
-                  user.user_id
-                ),
+                String(userId),
 
               original_name:
                 originalName,
@@ -369,27 +610,30 @@ export default {
               folder,
 
               uploaded_at:
-                new Date()
-                  .toISOString()
+                new Date().toISOString()
             }
           }
         );
 
-        /*
-         * PUBLIC URL
-         *
-         * R2 object is stored safely.
-         * The application can use the returned key.
-         */
+
+        // --------------------------------------------
+        // SUCCESS
+        // --------------------------------------------
+
         return json({
           success: true,
           key,
-          filename: originalName,
-          content_type: contentType,
-          size: file.size,
+          filename:
+            originalName,
+          content_type:
+            contentType,
+          size:
+            file.size,
           folder,
-          user_id: user.user_id
+          user_id:
+            userId
         });
+
 
       } catch (error) {
 
@@ -407,9 +651,11 @@ export default {
       }
     }
 
-    /*
-     * NOT FOUND
-     */
+
+    // ==================================================
+    // NOT FOUND
+    // ==================================================
+
     return json({
       success: false,
       error: "Not Found"
