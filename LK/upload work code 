@@ -1,0 +1,418 @@
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "https://createlk.com",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      ...corsHeaders
+    }
+  });
+}
+
+function getToken(request) {
+  const auth = request.headers.get("Authorization") || "";
+
+  if (!auth.startsWith("Bearer ")) {
+    return null;
+  }
+
+  return auth.slice(7).trim();
+}
+
+async function getUser(request, env) {
+  const token = getToken(request);
+
+  if (!token) {
+    return null;
+  }
+
+  const result = await env.DB.prepare(`
+    SELECT
+      sessions.user_id AS user_id,
+      users.name AS name,
+      users.email AS email
+    FROM sessions
+    INNER JOIN users
+      ON users.id = sessions.user_id
+    WHERE sessions.id = ?
+      AND datetime(sessions.expires_at) > datetime('now')
+    LIMIT 1
+  `).bind(token).first();
+
+  return result || null;
+}
+
+function safeFilename(name) {
+  return String(name || "file")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 150);
+}
+
+function extensionFromType(type) {
+  const map = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "application/pdf": "pdf"
+  };
+
+  return map[type] || "bin";
+}
+
+function allowedType(type, folder) {
+  const imageTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ];
+
+  if (folder === "ads") {
+    return imageTypes.includes(type);
+  }
+
+  if (folder === "payments") {
+    return [
+      ...imageTypes,
+      "application/pdf"
+    ].includes(type);
+  }
+
+  return false;
+}
+
+export default {
+  async fetch(request, env) {
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
+    }
+
+    const url = new URL(request.url);
+
+    /*
+     * HEALTH
+     */
+    if (
+      request.method === "GET" &&
+      url.pathname === "/health"
+    ) {
+      let db = false;
+      let r2 = false;
+
+      try {
+        await env.DB.prepare(
+          "SELECT 1"
+        ).first();
+
+        db = true;
+      } catch (error) {
+        db = false;
+      }
+
+      try {
+        await env.JOBS_BUCKET.put(
+          "health/test.txt",
+          "CreateLK Jobs Upload Worker"
+        );
+
+        await env.JOBS_BUCKET.delete(
+          "health/test.txt"
+        );
+
+        r2 = true;
+      } catch (error) {
+        r2 = false;
+      }
+
+      return json({
+        success: true,
+        worker: "upload",
+        db,
+        r2
+      });
+    }
+
+    /*
+     * R2 TEST
+     */
+    if (
+      request.method === "GET" &&
+      url.pathname === "/test-r2"
+    ) {
+      try {
+        const key =
+          "test/r2-test-" +
+          Date.now() +
+          ".txt";
+
+        await env.JOBS_BUCKET.put(
+          key,
+          "CreateLK Jobs R2 test"
+        );
+
+        return json({
+          success: true,
+          message: "R2 is working",
+          key
+        });
+
+      } catch (error) {
+
+        return json({
+          success: false,
+          error:
+            error?.message ||
+            "R2 upload failed."
+        }, 500);
+      }
+    }
+
+    /*
+     * ROOT
+     */
+    if (
+      request.method === "GET" &&
+      url.pathname === "/"
+    ) {
+      return json({
+        success: true,
+        worker: "CreateLK Jobs Upload Worker",
+        endpoints: [
+          "/health",
+          "/test-r2",
+          "/upload"
+        ]
+      });
+    }
+
+    /*
+     * UPLOAD
+     */
+    if (
+      request.method === "POST" &&
+      url.pathname === "/upload"
+    ) {
+
+      try {
+
+        /*
+         * LOGIN CHECK
+         */
+        const user =
+          await getUser(
+            request,
+            env
+          );
+
+        if (!user) {
+          return json({
+            success: false,
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        /*
+         * FORM DATA
+         */
+        const form =
+          await request.formData();
+
+        const file =
+          form.get("file");
+
+        const folder =
+          String(
+            form.get("folder") ||
+            "ads"
+          ).trim().toLowerCase();
+
+        /*
+         * VALIDATE FOLDER
+         */
+        if (
+          folder !== "ads" &&
+          folder !== "payments"
+        ) {
+          return json({
+            success: false,
+            error: "Invalid upload folder."
+          }, 400);
+        }
+
+        /*
+         * VALIDATE FILE
+         */
+        if (
+          !file ||
+          typeof file !== "object" ||
+          typeof file.arrayBuffer !== "function"
+        ) {
+          return json({
+            success: false,
+            error: "No file was provided."
+          }, 400);
+        }
+
+        /*
+         * FILE SIZE
+         */
+        const MAX_SIZE =
+          5 * 1024 * 1024;
+
+        if (file.size > MAX_SIZE) {
+          return json({
+            success: false,
+            error: "File size cannot exceed 5 MB."
+          }, 400);
+        }
+
+        if (file.size <= 0) {
+          return json({
+            success: false,
+            error: "The uploaded file is empty."
+          }, 400);
+        }
+
+        /*
+         * FILE TYPE
+         */
+        const contentType =
+          String(
+            file.type ||
+            ""
+          ).toLowerCase();
+
+        if (
+          !allowedType(
+            contentType,
+            folder
+          )
+        ) {
+          return json({
+            success: false,
+            error:
+              folder === "ads"
+                ? "Ads accept JPG, PNG or WebP files only."
+                : "Payment slips accept JPG, PNG, WebP or PDF files only."
+          }, 400);
+        }
+
+        /*
+         * FILE NAME
+         */
+        const originalName =
+          safeFilename(
+            file.name ||
+            "upload"
+          );
+
+        const extension =
+          extensionFromType(
+            contentType
+          );
+
+        /*
+         * UNIQUE KEY
+         */
+        const key =
+          folder +
+          "/" +
+          user.user_id +
+          "/" +
+          Date.now() +
+          "-" +
+          crypto.randomUUID() +
+          "-" +
+          originalName.replace(
+            /\.[^.]+$/,
+            ""
+          ) +
+          "." +
+          extension;
+
+        /*
+         * FILE DATA
+         */
+        const body =
+          await file.arrayBuffer();
+
+        /*
+         * R2 UPLOAD
+         */
+        await env.JOBS_BUCKET.put(
+          key,
+          body,
+          {
+            httpMetadata: {
+              contentType
+            },
+
+            customMetadata: {
+              user_id:
+                String(
+                  user.user_id
+                ),
+
+              original_name:
+                originalName,
+
+              folder,
+
+              uploaded_at:
+                new Date()
+                  .toISOString()
+            }
+          }
+        );
+
+        /*
+         * PUBLIC URL
+         *
+         * R2 object is stored safely.
+         * The application can use the returned key.
+         */
+        return json({
+          success: true,
+          key,
+          filename: originalName,
+          content_type: contentType,
+          size: file.size,
+          folder,
+          user_id: user.user_id
+        });
+
+      } catch (error) {
+
+        console.error(
+          "Upload error:",
+          error
+        );
+
+        return json({
+          success: false,
+          error:
+            error?.message ||
+            "Upload failed."
+        }, 500);
+      }
+    }
+
+    /*
+     * NOT FOUND
+     */
+    return json({
+      success: false,
+      error: "Not Found"
+    }, 404);
+  }
+};
