@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK Jobs | Admin</title>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#f5f7fb;color:#172033}
+header{background:#fff;padding:14px 20px;border-bottom:1px solid #ddd}
+.nav{max-width:1100px;margin:auto;display:flex;justify-content:space-between;align-items:center}
+.brand{display:flex;align-items:center;gap:10px;font-weight:bold}
+.brand img{width:40px;height:40px;object-fit:contain}
+button{border:0;border-radius:7px;padding:9px 13px;font-weight:bold;cursor:pointer}
+.logout{background:#172033;color:#fff}
+.container{max-width:1100px;margin:auto;padding:25px 15px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
+.stat,.section,.card{background:#fff;border:1px solid #e1e5eb;border-radius:10px}
+.stat{padding:18px}
+.stat small{color:#687386}
+.stat b{display:block;font-size:25px;margin-top:5px}
+.section{padding:18px;margin-bottom:20px}
+.card{padding:16px;margin-bottom:12px}
+.card h3{margin:0 0 10px}
+.card p{margin:5px 0;color:#596579}
+.actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
+.view{background:#1261d6;color:#fff}
+.slip{background:#7040b8;color:#fff}
+.approve{background:#16803c;color:#fff}
+.reject{background:#c62828;color:#fff}
+.media{display:none;margin-top:12px;padding:10px;background:#f5f7fb;border-radius:8px}
+.media img{display:block;max-width:100%;max-height:550px;margin:auto}
+.media iframe{width:100%;height:550px;border:0}
+.empty{color:#687386}
+.error{display:none;background:#ffe7e7;color:#b42318;padding:10px;border-radius:7px;margin-bottom:15px}
+.badge{display:inline-block;padding:4px 8px;border-radius:5px;font-size:11px;font-weight:bold}
+.free{background:#e7f6ea;color:#237a35}
+.premium{background:#fff0c2;color:#856404}
+.modal{display:none;position:fixed;inset:0;background:#0008;align-items:center;justify-content:center;padding:15px}
+.modal-box{background:#fff;padding:20px;border-radius:10px;width:100%;max-width:450px}
+.reason{display:grid;gap:8px;margin:15px 0}
+.reason label{padding:8px;border:1px solid #ddd;border-radius:6px}
+#custom{display:none;width:100%;min-height:80px}
+@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:450px){.stats{grid-template-columns:1fr}}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="nav">
+
+<div class="brand">
+<img src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png">
+<span>CreateLK Jobs Admin</span>
+</div>
+
+<button class="logout" onclick="logout()">Logout</button>
+
+</div>
+</header>
+
+
+<div class="container">
+
+<h1>Admin Dashboard</h1>
+
+<div id="error" class="error"></div>
+
+
+<div class="stats">
+
+<div class="stat">
+<small>Pending Ads</small>
+<b id="pendingAds">0</b>
+</div>
+
+<div class="stat">
+<small>Approved Ads</small>
+<b id="approvedAds">0</b>
+</div>
+
+<div class="stat">
+<small>Rejected Ads</small>
+<b id="rejectedAds">0</b>
+</div>
+
+<div class="stat">
+<small>Pending Payments</small>
+<b id="pendingPayments">0</b>
+</div>
+
+</div>
+
+
+<section class="section">
+
+<h2>Pending Advertisements</h2>
+
+<div id="adsList">
+<p class="empty">Loading...</p>
+</div>
+
+</section>
+
+
+<section class="section">
+
+<h2>Pending Payments</h2>
+
+<div id="paymentsList">
+<p class="empty">Loading...</p>
+</div>
+
+</section>
+
+</div>
+
+
+<!-- REJECTION MODAL -->
+
+<div id="modal" class="modal">
+
+<div class="modal-box">
+
+<h2 id="modalTitle">Reject</h2>
+
+<div class="reason">
+
+<label>
+<input type="radio" name="reason"
+value="Invalid job information">
+Invalid job information
+</label>
+
+<label>
+<input type="radio" name="reason"
+value="Photo not acceptable">
+Photo not acceptable
+</label>
+
+<label>
+<input type="radio" name="reason"
+value="Duplicate advertisement">
+Duplicate advertisement
+</label>
+
+<label>
+<input type="radio" name="reason"
+value="Payment issue">
+Payment issue
+</label>
+
+<label>
+<input type="radio" name="reason"
+value="Other">
+Other
+</label>
+
+</div>
+
+<textarea id="custom"
+placeholder="Enter reason..."></textarea>
+
+<div class="actions">
+
+<button onclick="closeModal()">Cancel</button>
+
+<button class="reject"
+onclick="confirmReject()">
+Reject
+</button>
+
+</div>
+
+</div>
+</div>
+
+
+<script>
+
+const API="https://admin.createlk.workers.dev";
+const TOKEN="createlk_session_token";
+
+let rejectType="";
+let rejectId="";
+
+
+function getToken(){
+return localStorage.getItem(TOKEN)||
+sessionStorage.getItem(TOKEN)||"";
+}
+
+
+async function api(path,opt={}){
+
+const token=getToken();
+
+if(!token){
+location.href="admin-login.html";
+return;
+}
+
+opt.headers={
+...(opt.headers||{}),
+Authorization:"Bearer "+token,
+"Content-Type":"application/json"
+};
+
+const r=await fetch(API+path,opt);
+
+if(r.status===401||r.status===403){
+localStorage.removeItem(TOKEN);
+sessionStorage.removeItem(TOKEN);
+location.href="admin-login.html";
+return;
+}
+
+let d={};
+
+try{d=await r.json()}catch{}
+
+if(!r.ok)
+throw new Error(d.error||"Request failed");
+
+return d;
+}
+
+
+function esc(v){
+return String(v??"")
+.replace(/&/g,"&amp;")
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;")
+.replace(/"/g,"&quot;")
+.replace(/'/g,"&#039;");
+}
+
+
+function isPremium(type){
+return [
+"featured",
+"urgent",
+"top",
+"featured_urgent_top"
+].includes(String(type||"").toLowerCase());
+}
+
+
+/* STATS */
+
+async function loadStats(){
+
+const d=await api("/stats");
+if(!d)return;
+
+pendingAds.textContent=d.pending_ads||0;
+approvedAds.textContent=d.approved_ads||0;
+rejectedAds.textContent=d.rejected_ads||0;
+pendingPayments.textContent=d.pending_payments||0;
+
+}
+
+
+/* ADS */
+
+async function loadAds(){
+
+const box=document.getElementById("adsList");
+
+try{
+
+const d=await api("/ads");
+if(!d)return;
+
+const ads=d.ads||[];
+
+if(!ads.length){
+box.innerHTML='<p class="empty">No pending advertisements.</p>';
+return;
+}
+
+box.innerHTML=ads.map(ad=>{
+
+const paid=isPremium(ad.ad_type);
+
+const photoId="photo_"+ad.id;
+const slipId="slip_"+ad.id;
+
+return `
+
+<div class="card">
+
+<span class="badge ${paid?"premium":"free"}">
+${paid?"PREMIUM AD":"FREE AD"}
+</span>
+
+<h3>${esc(ad.title||"Untitled Ad")}</h3>
+
+<p><b>Ad ID:</b> ${esc(ad.id)}</p>
+<p><b>Type:</b> ${esc(ad.ad_type)}</p>
+<p><b>User:</b> ${esc(ad.user_name)}</p>
+<p><b>Email:</b> ${esc(ad.user_email)}</p>
+
+<div class="actions">
+
+<button class="view"
+onclick="showPhoto(
+'${photoId}',
+'${encodeURIComponent(ad.photo_url||"")}'
+)">
+View Ad Photo
+</button>
+
+${
+paid&&ad.slip_url
+?
+`
+<button class="slip"
+onclick="showSlip(
+'${slipId}',
+'${encodeURIComponent(ad.slip_url)}'
+)">
+View Payment Slip
+</button>
+`
+:""
+}
+
+<button class="approve"
+onclick="approveAd('${ad.id}')">
+Approve
+</button>
+
+<button class="reject"
+onclick="openModal('ad','${ad.id}')">
+Reject
+</button>
+
+</div>
+
+<div id="${photoId}" class="media"></div>
+
+${
+paid&&ad.slip_url
+?
+`<div id="${slipId}" class="media"></div>`
+:""
+}
+
+</div>
+
+`;
+
+}).join("");
+
+}catch(e){
+
+box.innerHTML=
+'<p class="empty">Failed to load advertisements.</p>';
+
+showError(e.message);
+
+}
+
+}
+
+
+/* PHOTO */
+
+async function showPhoto(id,encoded){
+
+const box=document.getElementById(id);
+
+if(box.style.display==="block"){
+box.style.display="none";
+box.innerHTML="";
+return;
+}
+
+try{
+
+const key=decodeURIComponent(encoded);
+
+const r=await fetch(
+API+"/photo?key="+encodeURIComponent(key),
+{
+headers:{
+Authorization:"Bearer "+getToken()
+}
+}
+);
+
+if(!r.ok)
+throw new Error("Unable to load ad photo.");
+
+const blob=await r.blob();
+const url=URL.createObjectURL(blob);
+
+box.innerHTML=
+`<img src="${url}" alt="Ad photo">`;
+
+box.style.display="block";
+
+}catch(e){
+
+box.innerHTML=
+`<p class="empty">${esc(e.message)}</p>`;
+
+box.style.display="block";
+
+}
+
+}
+
+
+/* SLIP */
+
+async function showSlip(id,encoded){
+
+const box=document.getElementById(id);
+
+if(box.style.display==="block"){
+box.style.display="none";
+box.innerHTML="";
+return;
+}
+
+try{
+
+const key=decodeURIComponent(encoded);
+
+const r=await fetch(
+API+"/slip?key="+encodeURIComponent(key),
+{
+headers:{
+Authorization:"Bearer "+getToken()
+}
+}
+);
+
+if(!r.ok)
+throw new Error("Unable to load payment slip.");
+
+const blob=await r.blob();
+const url=URL.createObjectURL(blob);
+
+if(blob.type.includes("pdf"))
+box.innerHTML=`<iframe src="${url}"></iframe>`;
+else
+box.innerHTML=`<img src="${url}" alt="Payment slip">`;
+
+box.style.display="block";
+
+}catch(e){
+
+box.innerHTML=
+`<p class="empty">${esc(e.message)}</p>`;
+
+box.style.display="block";
+
+}
+
+}
+
+
+/* APPROVE AD */
+
+async function approveAd(id){
+
+if(!confirm("Approve this advertisement?"))
+return;
+
+try{
+
+await api(
+"/ads/"+id+"/approve",
+{method:"POST"}
+);
+
+await load();
+
+}catch(e){
+
+showError(e.message);
+
+}
+
+}
+
+
+/* PENDING PAYMENTS */
+
+async function loadPayments(){
+
+const box=document.getElementById("paymentsList");
+
+try{
+
+const d=await api("/payments");
+if(!d)return;
+
+const payments=d.payments||[];
+
+if(!payments.length){
+
+box.innerHTML=
+'<p class="empty">No pending payments.</p>';
+
+return;
+}
+
+box.innerHTML=payments.map(p=>{
+
+const id="payment_"+p.id;
+
+return `
+
+<div class="card">
+
+<h3>Payment #${esc(p.id)}</h3>
+
+<p><b>Ad:</b> ${esc(p.ad_title)}</p>
+<p><b>Ad ID:</b> ${esc(p.ad_id)}</p>
+<p><b>Amount:</b> LKR ${esc(p.amount)}</p>
+<p><b>User:</b> ${esc(p.user_name)}</p>
+
+<div class="actions">
+
+${
+p.slip_url
+?
+`
+<button class="slip"
+onclick="showSlip(
+'${id}',
+'${encodeURIComponent(p.slip_url)}'
+)">
+View Payment Slip
+</button>
+`
+:""
+}
+
+<button class="approve"
+onclick="approvePayment('${p.id}')">
+Approve Payment
+</button>
+
+<button class="reject"
+onclick="openModal(
+'payment',
+'${p.id}'
+)">
+Reject Payment
+</button>
+
+</div>
+
+<div id="${id}" class="media"></div>
+
+</div>
+
+`;
+
+}).join("");
+
+}catch(e){
+
+box.innerHTML=
+'<p class="empty">Failed to load payments.</p>';
+
+showError(e.message);
+
+}
+
+}
+
+
+/* PAYMENT APPROVAL */
+
+async function approvePayment(id){
+
+if(!confirm("Approve this payment?"))
+return;
+
+try{
+
+await api(
+"/payments/"+id+"/approve",
+{method:"POST"}
+);
+
+await load();
+
+}catch(e){
+
+showError(e.message);
+
+}
+
+}
+
+
+/* REJECT */
+
+function openModal(type,id){
+
+rejectType=type;
+rejectId=id;
+
+modalTitle.textContent=
+type==="ad"
+?"Reject Advertisement"
+:"Reject Payment";
+
+document.querySelectorAll(
+'input[name="reason"]'
+).forEach(x=>x.checked=false);
+
+custom.value="";
+custom.style.display="none";
+
+modal.style.display="flex";
+
+}
+
+
+function closeModal(){
+
+modal.style.display="none";
+rejectType="";
+rejectId="";
+
+}
+
+
+document.addEventListener("change",e=>{
+
+if(e.target.name!=="reason")
+return;
+
+custom.style.display=
+e.target.value==="Other"
+?"block"
+:"none";
+
+});
+
+
+async function confirmReject(){
+
+const selected=document.querySelector(
+'input[name="reason"]:checked'
+);
+
+if(!selected){
+alert("Select a reason.");
+return;
+}
+
+let reason=selected.value;
+
+if(reason==="Other"){
+
+reason=custom.value.trim();
+
+if(!reason){
+alert("Enter a reason.");
+return;
+}
+
+}
+
+const path=
+rejectType==="ad"
+?"/ads/"+rejectId+"/reject"
+:"/payments/"+rejectId+"/reject";
+
+try{
+
+await api(
+path,
+{
+method:"POST",
+body:JSON.stringify({
+rejection_reason:reason
+})
+}
+);
+
+closeModal();
+await load();
+
+}catch(e){
+
+showError(e.message);
+
+}
+
+}
+
+
+/* LOAD */
+
+async function load(){
+
+error.style.display="none";
+
+await Promise.all([
+loadStats(),
+loadAds(),
+loadPayments()
+]);
+
+}
+
+
+function showError(msg){
+
+error.textContent=msg;
+error.style.display="block";
+
+}
+
+
+function logout(){
+
+localStorage.removeItem(TOKEN);
+sessionStorage.removeItem(TOKEN);
+
+location.href="admin-login.html";
+
+}
+
+
+if(getToken())
+load();
+else
+location.href="admin-login.html";
+
+</script>
+
+</body>
+</html>
