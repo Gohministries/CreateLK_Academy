@@ -470,16 +470,70 @@ return data;
 
 /* LOCATIONS */
 
+function normalizeLocations(data){
+
+let list=[];
+
+if(Array.isArray(data)){
+list=data;
+}else if(data&&Array.isArray(data.locations)){
+list=data.locations;
+}else if(data&&Array.isArray(data.data)){
+list=data.data;
+}else if(data&&Array.isArray(data.results)){
+list=data.results;
+}else if(data&&Array.isArray(data.rows)){
+list=data.rows;
+}else if(data&&data.locations&&typeof data.locations==="object"){
+list=Object.values(data.locations).flat();
+}
+
+return list.map(x=>{
+
+if(typeof x==="string"){
+return {
+province:x,
+district:"",
+city:""
+};
+}
+
+return {
+province:
+x.province||
+x.province_name||
+x.provinceName||
+"",
+district:
+x.district||
+x.district_name||
+x.districtName||
+"",
+city:
+x.city||
+x.city_name||
+x.cityName||
+x.area||
+x.area_name||
+""
+};
+
+}).filter(x=>x.province);
+}
+
 async function loadLocations(){
+
+province.innerHTML=
+'<option value="">Loading provinces...</option>';
+
+district.disabled=true;
+city.disabled=true;
 
 try{
 
 const data=await getJSON(API+"/locations");
 
-locations=
-Array.isArray(data.locations)
-?data.locations
-:[];
+locations=normalizeLocations(data);
 
 if(!locations.length)
 throw Error("No locations found");
@@ -487,10 +541,10 @@ throw Error("No locations found");
 const provinces=[
 ...new Set(
 locations
-.map(x=>x.province)
+.map(x=>x.province.trim())
 .filter(Boolean)
 )
-].sort();
+].sort((a,b)=>a.localeCompare(b));
 
 province.innerHTML=
 '<option value="">Select Province</option>';
@@ -507,13 +561,13 @@ province.innerHTML=
 '<option value="">Unable to load locations</option>';
 
 showMessage(
-"Unable to load locations.",
+"Unable to load locations. Please refresh and try again.",
 "error"
 );
 }
 }
 
-province.onchange=()=>{
+province.addEventListener("change",()=>{
 
 const p=province.value;
 
@@ -523,30 +577,28 @@ district.innerHTML=
 city.innerHTML=
 '<option value="">Select City / Area</option>';
 
+district.disabled=true;
 city.disabled=true;
 
-if(!p){
-district.disabled=true;
-return;
-}
+if(!p)return;
 
 const districts=[
 ...new Set(
 locations
 .filter(x=>x.province===p)
-.map(x=>x.district)
+.map(x=>x.district.trim())
 .filter(Boolean)
 )
-].sort();
+].sort((a,b)=>a.localeCompare(b));
 
 districts.forEach(x=>{
 district.add(new Option(x,x));
 });
 
 district.disabled=!districts.length;
-};
+});
 
-district.onchange=()=>{
+district.addEventListener("change",()=>{
 
 const p=province.value;
 const d=district.value;
@@ -554,10 +606,9 @@ const d=district.value;
 city.innerHTML=
 '<option value="">Select City / Area</option>';
 
-if(!p||!d){
 city.disabled=true;
-return;
-}
+
+if(!p||!d)return;
 
 const cities=[
 ...new Set(
@@ -566,17 +617,17 @@ locations
 x.province===p &&
 x.district===d
 )
-.map(x=>x.city)
+.map(x=>x.city.trim())
 .filter(Boolean)
 )
-].sort();
+].sort((a,b)=>a.localeCompare(b));
 
 cities.forEach(x=>{
 city.add(new Option(x,x));
 });
 
 city.disabled=!cities.length;
-};
+});
 
 
 /* CATEGORIES */
@@ -806,8 +857,6 @@ submitBtn.textContent="Uploading...";
 
 try{
 
-/* JOB PHOTO */
-
 const photo=
 await upload(
 $("jobPhoto").files[0],
@@ -823,12 +872,7 @@ photo.path||
 "";
 
 if(!photoUrl)
-throw Error(
-"Job photo upload failed."
-);
-
-
-/* PAYMENT */
+throw Error("Job photo upload failed.");
 
 let slip="";
 
@@ -853,13 +897,8 @@ result.path||
 "";
 
 if(!slip)
-throw Error(
-"Payment slip upload failed."
-);
+throw Error("Payment slip upload failed.");
 }
-
-
-/* CREATE */
 
 submitBtn.textContent=
 "Posting Advertisement...";
