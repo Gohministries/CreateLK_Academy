@@ -49,10 +49,10 @@ select:disabled{background:#f1f5f9;color:#94a3b8}
 .submit{width:100%;margin-top:10px;padding:14px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
 .submit:disabled{opacity:.6}
 @media(max-width:600px){
-  .card{padding:20px}
-  .types{grid-template-columns:1fr}
-  .bank{display:block}
-  .value{text-align:left;margin-top:4px}
+.card{padding:20px}
+.types{grid-template-columns:1fr}
+.bank{display:block}
+.value{text-align:left;margin-top:4px}
 }
 </style>
 </head>
@@ -233,7 +233,6 @@ Submit Ad
 
 <script>
 const API="https://ads.createlk.workers.dev";
-const LOC="https://locations.createlk.workers.dev";
 const LOGIN="https://login.createlk.workers.dev";
 const TOKEN="createlk_session_token";
 
@@ -258,6 +257,15 @@ function msg(text,type){
  window.scrollTo({top:0,behavior:"smooth"});
 }
 
+function esc(v){
+ return String(v)
+ .replaceAll("&","&amp;")
+ .replaceAll("<","&lt;")
+ .replaceAll(">","&gt;")
+ .replaceAll('"',"&quot;")
+ .replaceAll("'","&#039;");
+}
+
 async function checkLogin(){
  const t=token();
 
@@ -268,7 +276,8 @@ async function checkLogin(){
 
  try{
    const r=await fetch(`${LOGIN}/me`,{
-     headers:{Authorization:`Bearer ${t}`}
+     headers:{Authorization:`Bearer ${t}`},
+     cache:"no-store"
    });
 
    if(r.status===401||r.status===403){
@@ -284,15 +293,33 @@ async function checkLogin(){
  return true;
 }
 
+async function getJSON(url){
+ const r=await fetch(url,{
+   method:"GET",
+   cache:"no-store",
+   mode:"cors"
+ });
+
+ const text=await r.text();
+
+ let d;
+ try{
+   d=text?JSON.parse(text):{};
+ }catch{
+   throw Error("Invalid API response.");
+ }
+
+ if(!r.ok||d.success===false)
+   throw Error(d.error||d.message||"API request failed.");
+
+ return d;
+}
+
 async function loadProvinces(){
  try{
    $("locationLoading").textContent="Loading locations...";
 
-   const r=await fetch(`${LOC}/provinces`);
-   const d=await r.json();
-
-   if(!r.ok||!d.success)
-     throw Error(d.error||"Location error");
+   const d=await getJSON(`${API}/locations`);
 
    $("province").innerHTML=
      `<option value="">Select Province / Location Type</option>`+
@@ -303,7 +330,7 @@ async function loadProvinces(){
    $("locationLoading").textContent="";
  }catch(e){
    $("locationLoading").textContent="";
-   msg("Could not load locations. Please refresh.","error");
+   msg(e.message||"Could not load locations. Please refresh.","error");
  }
 }
 
@@ -313,6 +340,7 @@ async function loadDistricts(province){
 
  district.disabled=true;
  city.disabled=true;
+
  city.innerHTML='<option value="">Select City / Town</option>';
 
  if(!province){
@@ -323,14 +351,9 @@ async function loadDistricts(province){
  district.innerHTML='<option value="">Loading...</option>';
 
  try{
-   const r=await fetch(
-     `${LOC}/districts?province=${encodeURIComponent(province)}`
+   const d=await getJSON(
+     `${API}/locations?province=${encodeURIComponent(province)}`
    );
-
-   const d=await r.json();
-
-   if(!r.ok||!d.success)
-     throw Error();
 
    district.innerHTML=
      '<option value="">Select District</option>'+
@@ -342,7 +365,7 @@ async function loadDistricts(province){
 
  }catch(e){
    district.innerHTML='<option value="">Unable to load</option>';
-   msg("Could not load districts.","error");
+   msg(e.message||"Could not load districts.","error");
  }
 }
 
@@ -353,14 +376,9 @@ async function loadCities(province,district){
  city.innerHTML='<option value="">Loading...</option>';
 
  try{
-   const r=await fetch(
-     `${LOC}/cities?province=${encodeURIComponent(province)}&district=${encodeURIComponent(district)}`
+   const d=await getJSON(
+     `${API}/locations?province=${encodeURIComponent(province)}&district=${encodeURIComponent(district)}`
    );
-
-   const d=await r.json();
-
-   if(!r.ok||!d.success)
-     throw Error();
 
    city.innerHTML=
      '<option value="">Select City / Town</option>'+
@@ -372,17 +390,8 @@ async function loadCities(province,district){
 
  }catch(e){
    city.innerHTML='<option value="">Unable to load</option>';
-   msg("Could not load cities.","error");
+   msg(e.message||"Could not load cities.","error");
  }
-}
-
-function esc(v){
- return String(v)
-   .replaceAll("&","&amp;")
-   .replaceAll("<","&lt;")
-   .replaceAll(">","&gt;")
-   .replaceAll('"',"&quot;")
-   .replaceAll("'","&#039;");
 }
 
 $("province").addEventListener("change",e=>{
@@ -390,8 +399,11 @@ $("province").addEventListener("change",e=>{
 });
 
 $("district").addEventListener("change",e=>{
- if($("province").value)
-   loadCities($("province").value,e.target.value);
+ const province=$("province").value;
+ const district=e.target.value;
+
+ if(province&&district)
+   loadCities(province,district);
 });
 
 $("photo").addEventListener("change",e=>{
@@ -401,6 +413,7 @@ $("photo").addEventListener("change",e=>{
 
  if(f.size>5*1024*1024){
    e.target.value="";
+   $("preview").style.display="none";
    msg("Photo must be 5 MB or smaller.","error");
    return;
  }
@@ -428,27 +441,49 @@ document.querySelectorAll('input[name="type"]').forEach(r=>{
 
 document.querySelectorAll(".copy").forEach(b=>{
  b.addEventListener("click",async()=>{
-   await navigator.clipboard.writeText(b.dataset.copy);
-   const old=b.textContent;
-   b.textContent="Copied";
-   setTimeout(()=>b.textContent=old,1200);
+   try{
+     await navigator.clipboard.writeText(b.dataset.copy);
+     const old=b.textContent;
+     b.textContent="Copied";
+     setTimeout(()=>b.textContent=old,1200);
+   }catch{
+     msg("Unable to copy.","error");
+   }
  });
 });
 
 async function upload(file,folder){
  const t=token();
 
+ if(!t)
+   throw Error("Session expired.");
+
  const form=new FormData();
  form.append("file",file);
  form.append("folder",folder);
 
- const r=await fetch(`${API}/upload`,{
-   method:"POST",
-   headers:{Authorization:`Bearer ${t}`},
-   body:form
- });
+ let r;
 
- const d=await r.json();
+ try{
+   r=await fetch(`${API}/upload`,{
+     method:"POST",
+     headers:{
+       Authorization:`Bearer ${t}`
+     },
+     body:form
+   });
+ }catch{
+   throw Error("Unable to connect to the upload server.");
+ }
+
+ const text=await r.text();
+
+ let d;
+ try{
+   d=text?JSON.parse(text):{};
+ }catch{
+   throw Error("Invalid upload response.");
+ }
 
  if(r.status===401){
    localStorage.removeItem(TOKEN);
@@ -457,8 +492,11 @@ async function upload(file,folder){
    throw Error("Session expired.");
  }
 
- if(!r.ok||!d.success)
+ if(!r.ok||d.success===false)
    throw Error(d.error||"Upload failed.");
+
+ if(!d.key)
+   throw Error("Upload completed but no file key was returned.");
 
  return d.key;
 }
@@ -467,26 +505,45 @@ $("submit").addEventListener("click",async()=>{
  const photo=$("photo").files[0];
  const type=document.querySelector('input[name="type"]:checked').value;
 
- if(!photo)return msg("Please select an ad photo.","error");
- if(!$("title").value.trim())return msg("Please enter an ad title.","error");
- if(!$("description").value.trim())return msg("Please enter a description.","error");
- if(!$("whatsapp").value.trim())return msg("Please enter a WhatsApp number.","error");
- if(!$("call").value.trim())return msg("Please enter a call number.","error");
- if(!$("province").value)return msg("Please select a province or location type.","error");
- if(!$("district").value)return msg("Please select a district.","error");
- if(!$("city").value)return msg("Please select a city or town.","error");
+ if(!photo)
+   return msg("Please select an ad photo.","error");
+
+ if(!$("title").value.trim())
+   return msg("Please enter an ad title.","error");
+
+ if(!$("description").value.trim())
+   return msg("Please enter a description.","error");
+
+ if(!$("whatsapp").value.trim())
+   return msg("Please enter a WhatsApp number.","error");
+
+ if(!$("call").value.trim())
+   return msg("Please enter a call number.","error");
+
+ if(!$("province").value)
+   return msg("Please select a province or location type.","error");
+
+ if(!$("district").value)
+   return msg("Please select a district.","error");
+
+ if(!$("city").value)
+   return msg("Please select a city or town.","error");
 
  if(photo.size>5*1024*1024)
    return msg("Photo must be 5 MB or smaller.","error");
+
+ let slipFile=null;
 
  if(type!=="free"){
    if(!$("depositDate").value)
      return msg("Please select the deposit date.","error");
 
-   if(!$("slip").files[0])
+   slipFile=$("slip").files[0];
+
+   if(!slipFile)
      return msg("Please upload the bank slip.","error");
 
-   if($("slip").files[0].size>5*1024*1024)
+   if(slipFile.size>5*1024*1024)
      return msg("Bank slip must be 5 MB or smaller.","error");
  }
 
@@ -495,7 +552,6 @@ $("submit").addEventListener("click",async()=>{
  button.textContent="Submitting...";
 
  try{
-
    const photoKey=await upload(photo,"ads");
 
    let slipKey="";
@@ -503,7 +559,7 @@ $("submit").addEventListener("click",async()=>{
 
    if(type!=="free"){
      $("slipStatus").textContent="Uploading bank slip...";
-     slipKey=await upload($("slip").files[0],"payments");
+     slipKey=await upload(slipFile,"payments");
      deposit=$("depositDate").value;
    }
 
@@ -524,7 +580,7 @@ $("submit").addEventListener("click",async()=>{
      body.deposit_date=deposit;
    }
 
-   const r=await fetch(`${API}/ads`,{
+   const r=await fetch(`${API}/create`,{
      method:"POST",
      headers:{
        "Content-Type":"application/json",
@@ -533,17 +589,24 @@ $("submit").addEventListener("click",async()=>{
      body:JSON.stringify(body)
    });
 
-   const d=await r.json();
+   const text=await r.text();
 
-   if(r.status===401){
+   let d;
+   try{
+     d=text?JSON.parse(text):{};
+   }catch{
+     throw Error("Invalid API response.");
+   }
+
+   if(r.status===401||r.status===403){
      localStorage.removeItem(TOKEN);
      sessionStorage.removeItem(TOKEN);
      location.href="login.html";
      return;
    }
 
-   if(!r.ok||!d.success)
-     throw Error(d.error||"Could not submit ad.");
+   if(!r.ok||d.success===false)
+     throw Error(d.error||d.message||"Could not submit ad.");
 
    msg(
      type==="free"
@@ -563,6 +626,7 @@ $("submit").addEventListener("click",async()=>{
    msg(e.message||"Something went wrong.","error");
    button.disabled=false;
    button.textContent="Submit Ad";
+   $("slipStatus").textContent="";
  }
 });
 
@@ -574,3 +638,4 @@ $("submit").addEventListener("click",async()=>{
 
 </body>
 </html>
+
