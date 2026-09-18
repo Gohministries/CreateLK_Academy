@@ -43,10 +43,20 @@ function cors(r) {
   const origin = r.headers.get("Origin");
 
   const h = {
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin"
+    "Access-Control-Allow-Methods":
+      "GET,POST,OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization, Accept",
+
+    "Access-Control-Allow-Credentials":
+      "true",
+
+    "Access-Control-Max-Age":
+      "86400",
+
+    "Vary":
+      "Origin"
   };
 
   if (ORIGINS.includes(origin)) {
@@ -57,18 +67,28 @@ function cors(r) {
 }
 
 function json(data, status = 200, r) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...cors(r),
-      "Content-Type": "application/json;charset=utf-8",
-      "Cache-Control": "no-store"
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        ...cors(r),
+
+        "Content-Type":
+          "application/json;charset=utf-8",
+
+        "Cache-Control":
+          "no-store"
+      }
     }
-  });
+  );
 }
 
 function token(r) {
-  const h = r.headers.get("Authorization") || "";
+
+  const h =
+    r.headers.get("Authorization") || "";
 
   if (!h.startsWith("Bearer ")) {
     return null;
@@ -78,29 +98,31 @@ function token(r) {
 }
 
 async function user(r, e) {
+
   const t = token(r);
 
   if (!t) {
     return null;
   }
 
-  const u = await e.DB.prepare(`
-    SELECT
-      users.id,
-      users.name,
-      users.email,
-      users.photo_url,
-      users.email_verified,
-      sessions.id AS session_id,
-      sessions.expires_at
-    FROM sessions
-    JOIN users
-      ON users.id = sessions.user_id
-    WHERE sessions.id = ?
-    LIMIT 1
-  `)
-    .bind(t)
-    .first();
+  const u =
+    await e.DB.prepare(`
+      SELECT
+        users.id,
+        users.name,
+        users.email,
+        users.photo_url,
+        users.email_verified,
+        sessions.id AS session_id,
+        sessions.expires_at
+      FROM sessions
+      JOIN users
+        ON users.id = sessions.user_id
+      WHERE sessions.id = ?
+      LIMIT 1
+    `)
+      .bind(t)
+      .first();
 
   if (!u) {
     return null;
@@ -120,41 +142,52 @@ function uuid() {
   return crypto.randomUUID();
 }
 
+
+/* UPLOAD */
+
 async function upload(r, e) {
+
   const u = await user(r, e);
 
   if (!u) {
     return json(
       {
-        success: false,
-        error: "Unauthorized"
+        success:false,
+        error:"Unauthorized"
       },
       401,
       r
     );
   }
 
-  const form = await r.formData();
+  const form =
+    await r.formData();
 
-  const file = form.get("file");
-  const folder = form.get("folder");
+  const file =
+    form.get("file");
+
+  const folder =
+    form.get("folder");
 
   if (!(file instanceof File)) {
     return json(
       {
-        success: false,
-        error: "File is required"
+        success:false,
+        error:"File is required"
       },
       400,
       r
     );
   }
 
-  if (!["ads", "payments"].includes(folder)) {
+  if (
+    !["ads","payments"]
+      .includes(folder)
+  ) {
     return json(
       {
-        success: false,
-        error: "Invalid upload folder"
+        success:false,
+        error:"Invalid upload folder"
       },
       400,
       r
@@ -164,8 +197,8 @@ async function upload(r, e) {
   if (file.size <= 0) {
     return json(
       {
-        success: false,
-        error: "Empty file"
+        success:false,
+        error:"Empty file"
       },
       400,
       r
@@ -175,8 +208,8 @@ async function upload(r, e) {
   if (file.size > MAX) {
     return json(
       {
-        success: false,
-        error: "Maximum file size is 5 MB"
+        success:false,
+        error:"Maximum file size is 5 MB"
       },
       400,
       r
@@ -188,11 +221,13 @@ async function upload(r, e) {
       ? IMAGES
       : SLIPS;
 
-  if (!allowed.includes(file.type)) {
+  if (
+    !allowed.includes(file.type)
+  ) {
     return json(
       {
-        success: false,
-        error: "Unsupported file type"
+        success:false,
+        error:"Unsupported file type"
       },
       400,
       r
@@ -201,10 +236,21 @@ async function upload(r, e) {
 
   let ext = "bin";
 
-  if (file.type === "image/jpeg") ext = "jpg";
-  if (file.type === "image/png") ext = "png";
-  if (file.type === "image/webp") ext = "webp";
-  if (file.type === "application/pdf") ext = "pdf";
+  if (
+    file.type === "image/jpeg"
+  ) ext = "jpg";
+
+  if (
+    file.type === "image/png"
+  ) ext = "png";
+
+  if (
+    file.type === "image/webp"
+  ) ext = "webp";
+
+  if (
+    file.type === "application/pdf"
+  ) ext = "pdf";
 
   const key =
     `${folder}/${u.id}/${uuid()}.${ext}`;
@@ -213,45 +259,61 @@ async function upload(r, e) {
     key,
     file.stream(),
     {
-      httpMetadata: {
-        contentType: file.type,
-        cacheControl: "public, max-age=31536000"
+      httpMetadata:{
+        contentType:file.type,
+        cacheControl:
+          "public, max-age=31536000"
       }
     }
   );
 
   return json(
     {
-      success: true,
+      success:true,
       key,
       url:
-        `/photo?key=${encodeURIComponent(key)}`
+        `/photo?key=` +
+        encodeURIComponent(key)
     },
     200,
     r
   );
 }
 
-async function locations(r, e) {
-  const q = new URL(r.url).searchParams;
 
-  const province = q.get("province");
-  const district = q.get("district");
+/* LOCATIONS */
+
+async function locations(r, e) {
+
+  const q =
+    new URL(r.url)
+      .searchParams;
+
+  const province =
+    q.get("province");
+
+  const district =
+    q.get("district");
 
   if (district) {
-    const rows = await e.DB.prepare(`
-      SELECT DISTINCT city
-      FROM locations
-      WHERE province = ?
-        AND district = ?
-      ORDER BY city
-    `)
-      .bind(province, district)
-      .all();
+
+    const rows =
+      await e.DB.prepare(`
+        SELECT DISTINCT city
+        FROM locations
+        WHERE province = ?
+          AND district = ?
+        ORDER BY city
+      `)
+        .bind(
+          province,
+          district
+        )
+        .all();
 
     return json(
       {
-        success: true,
+        success:true,
         cities:
           (rows.results || [])
             .map(x => x.city)
@@ -263,18 +325,20 @@ async function locations(r, e) {
   }
 
   if (province) {
-    const rows = await e.DB.prepare(`
-      SELECT DISTINCT district
-      FROM locations
-      WHERE province = ?
-      ORDER BY district
-    `)
-      .bind(province)
-      .all();
+
+    const rows =
+      await e.DB.prepare(`
+        SELECT DISTINCT district
+        FROM locations
+        WHERE province = ?
+        ORDER BY district
+      `)
+        .bind(province)
+        .all();
 
     return json(
       {
-        success: true,
+        success:true,
         districts:
           (rows.results || [])
             .map(x => x.district)
@@ -285,15 +349,17 @@ async function locations(r, e) {
     );
   }
 
-  const rows = await e.DB.prepare(`
-    SELECT DISTINCT province
-    FROM locations
-    ORDER BY province
-  `).all();
+  const rows =
+    await e.DB.prepare(`
+      SELECT DISTINCT province
+      FROM locations
+      ORDER BY province
+    `)
+      .all();
 
   return json(
     {
-      success: true,
+      success:true,
       provinces:
         (rows.results || [])
           .map(x => x.province)
@@ -304,14 +370,19 @@ async function locations(r, e) {
   );
 }
 
+
+/* CREATE AD */
+
 async function createAd(r, e) {
-  const u = await user(r, e);
+
+  const u =
+    await user(r, e);
 
   if (!u) {
     return json(
       {
-        success: false,
-        error: "Unauthorized"
+        success:false,
+        error:"Unauthorized"
       },
       401,
       r
@@ -321,12 +392,16 @@ async function createAd(r, e) {
   let body;
 
   try {
-    body = await r.json();
+
+    body =
+      await r.json();
+
   } catch {
+
     return json(
       {
-        success: false,
-        error: "Invalid JSON"
+        success:false,
+        error:"Invalid JSON"
       },
       400,
       r
@@ -358,16 +433,22 @@ async function createAd(r, e) {
     String(body.photo_url || "").trim();
 
   const paymentSlip =
-    String(body.payment_slip_url || "").trim();
+    String(
+      body.payment_slip_url || ""
+    ).trim();
 
   const adType =
-    String(body.ad_type || "free").trim();
+    String(
+      body.ad_type || "free"
+    ).trim();
 
   const categoryId =
     Number(body.category_id);
 
   const depositDate =
-    String(body.deposit_date || "").trim();
+    String(
+      body.deposit_date || ""
+    ).trim();
 
   const depositorName =
     String(
@@ -406,6 +487,7 @@ async function createAd(r, e) {
       ""
     ).trim();
 
+
   if (
     !title ||
     !description ||
@@ -415,9 +497,10 @@ async function createAd(r, e) {
     !district ||
     !city
   ) {
+
     return json(
       {
-        success: false,
+        success:false,
         error:
           "Please complete all required fields"
       },
@@ -426,30 +509,40 @@ async function createAd(r, e) {
     );
   }
 
-  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+
+  if (
+    !Number.isInteger(categoryId) ||
+    categoryId <= 0
+  ) {
+
     return json(
       {
-        success: false,
-        error: "Invalid category"
+        success:false,
+        error:"Invalid category"
       },
       400,
       r
     );
   }
 
-  if (!Object.prototype.hasOwnProperty.call(
-    META,
-    adType
-  )) {
+
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      META,
+      adType
+    )
+  ) {
+
     return json(
       {
-        success: false,
-        error: "Invalid ad type"
+        success:false,
+        error:"Invalid ad type"
       },
       400,
       r
     );
   }
+
 
   const category =
     await e.DB.prepare(`
@@ -462,15 +555,17 @@ async function createAd(r, e) {
       .first();
 
   if (!category) {
+
     return json(
       {
-        success: false,
-        error: "Category not found"
+        success:false,
+        error:"Category not found"
       },
       400,
       r
     );
   }
+
 
   const location =
     await e.DB.prepare(`
@@ -489,9 +584,10 @@ async function createAd(r, e) {
       .first();
 
   if (!location) {
+
     return json(
       {
-        success: false,
+        success:false,
         error:
           "Invalid province, district or city"
       },
@@ -500,12 +596,15 @@ async function createAd(r, e) {
     );
   }
 
+
   if (photo) {
+
     if (!photo.startsWith("ads/")) {
+
       return json(
         {
-          success: false,
-          error: "Invalid job photo"
+          success:false,
+          error:"Invalid job photo"
         },
         400,
         r
@@ -513,13 +612,16 @@ async function createAd(r, e) {
     }
 
     const photoObject =
-      await e.JOBS_BUCKET.head(photo);
+      await e.JOBS_BUCKET.head(
+        photo
+      );
 
     if (!photoObject) {
+
       return json(
         {
-          success: false,
-          error: "Job photo not found"
+          success:false,
+          error:"Job photo not found"
         },
         400,
         r
@@ -527,11 +629,14 @@ async function createAd(r, e) {
     }
   }
 
+
   if (PAID.includes(adType)) {
+
     if (!paymentSlip) {
+
       return json(
         {
-          success: false,
+          success:false,
           error:
             "Payment slip is required"
         },
@@ -540,10 +645,15 @@ async function createAd(r, e) {
       );
     }
 
-    if (!paymentSlip.startsWith("payments/")) {
+    if (
+      !paymentSlip.startsWith(
+        "payments/"
+      )
+    ) {
+
       return json(
         {
-          success: false,
+          success:false,
           error:
             "Invalid payment slip"
         },
@@ -558,9 +668,10 @@ async function createAd(r, e) {
       );
 
     if (!slipObject) {
+
       return json(
         {
-          success: false,
+          success:false,
           error:
             "Payment slip not found"
         },
@@ -570,9 +681,10 @@ async function createAd(r, e) {
     }
 
     if (!depositDate) {
+
       return json(
         {
-          success: false,
+          success:false,
           error:
             "Deposit date is required"
         },
@@ -582,23 +694,27 @@ async function createAd(r, e) {
     }
   }
 
+
   if (adType === "free") {
+
     const existing =
       await e.DB.prepare(`
         SELECT id
         FROM ads
         WHERE user_id = ?
           AND ad_type = 'free'
-          AND status IN ('pending','approved')
+          AND status IN
+            ('pending','approved')
         LIMIT 1
       `)
         .bind(u.id)
         .first();
 
     if (existing) {
+
       return json(
         {
-          success: false,
+          success:false,
           error:
             "You already have a free ad"
         },
@@ -607,6 +723,7 @@ async function createAd(r, e) {
       );
     }
   }
+
 
   const now =
     new Date().toISOString();
@@ -617,14 +734,6 @@ async function createAd(r, e) {
       30 * 24 * 60 * 60 * 1000
     ).toISOString();
 
-  /*
-   * IMPORTANT:
-   * This INSERT matches the actual
-   * ads table exactly.
-   *
-   * There is NO price column.
-   * There is NO label column.
-   */
 
   const adResult =
     await e.DB.prepare(`
@@ -672,13 +781,16 @@ async function createAd(r, e) {
       )
       .run();
 
+
   const adId =
     adResult.meta?.last_row_id;
 
+
   if (!adId) {
+
     return json(
       {
-        success: false,
+        success:false,
         error:
           "Unable to create advertisement"
       },
@@ -687,9 +799,12 @@ async function createAd(r, e) {
     );
   }
 
+
   let paymentId = null;
 
+
   if (PAID.includes(adType)) {
+
     const amount =
       PRICES[adType];
 
@@ -731,10 +846,13 @@ async function createAd(r, e) {
         )
         .run();
 
+
     paymentId =
       paymentResult.meta?.last_row_id;
 
+
     if (paymentId) {
+
       await e.DB.prepare(`
         UPDATE ads
         SET payment_id = ?
@@ -748,83 +866,131 @@ async function createAd(r, e) {
     }
   }
 
+
   return json(
     {
-      success: true,
+      success:true,
+
       message:
         PAID.includes(adType)
           ? "Advertisement submitted. Payment is pending admin approval."
           : "Advertisement submitted for approval.",
-      ad_id: adId,
-      payment_id: paymentId,
-      ad_type: adType,
-      amount: PRICES[adType]
+
+      ad_id:adId,
+
+      payment_id:paymentId,
+
+      ad_type:adType,
+
+      amount:PRICES[adType]
     },
     200,
     r
   );
 }
 
+
+/* MY ADS */
+
 async function myAds(r, e) {
-  const u = await user(r, e);
+
+  const u =
+    await user(r, e);
 
   if (!u) {
+
     return json(
       {
-        success: false,
-        error: "Unauthorized"
+        success:false,
+        error:"Unauthorized"
       },
       401,
       r
     );
   }
 
+
   const rows =
     await e.DB.prepare(`
       SELECT
-        ads.id,
-        ads.user_id,
-        ads.photo_url,
-        ads.title,
-        ads.description,
-        ads.whatsapp_no,
-        ads.call_no,
-        ads.province,
-        ads.district,
-        ads.city,
-        ads.ad_type,
-        ads.status,
-        ads.payment_status,
-        ads.payment_id,
-        ads.rejection_reason,
-        ads.created_at,
-        ads.approved_at,
-        ads.expires_at,
-        ads.category_id,
-        ads.priority,
-        categories.name AS category_name
+        id,
+        user_id,
+        photo_url,
+        title,
+        description,
+        whatsapp_no,
+        call_no,
+        province,
+        district,
+        city,
+        ad_type,
+        status,
+        payment_status,
+        payment_id,
+        rejection_reason,
+        created_at,
+        approved_at,
+        expires_at,
+        category_id,
+        priority
       FROM ads
-      LEFT JOIN categories
-        ON categories.id = ads.category_id
-      WHERE ads.user_id = ?
+      WHERE user_id = ?
       ORDER BY
-        ads.priority DESC,
-        ads.created_at DESC
+        priority DESC,
+        created_at DESC
     `)
       .bind(u.id)
       .all();
 
+
+  const ads =
+    (rows.results || [])
+      .map(ad => ({
+
+        ...ad,
+
+        label:
+          ad.ad_type === "featured"
+            ? "FEATURED"
+            : ad.ad_type === "urgent"
+            ? "URGENT"
+            : ad.ad_type === "top"
+            ? "TOP"
+            : ad.ad_type ===
+              "featured_urgent_top"
+            ? "FEATURED • URGENT • TOP"
+            : "FREE",
+
+        amount:
+          ad.ad_type === "featured"
+            ? 500
+            : ad.ad_type === "urgent"
+            ? 500
+            : ad.ad_type === "top"
+            ? 500
+            : ad.ad_type ===
+              "featured_urgent_top"
+            ? 1500
+            : 0
+
+      }));
+
+
   return json(
     {
-      success: true,
-      ads: rows.results || []
+      success:true,
+      ads
     },
     200,
     r
   );
 }
 
+
+/* LATEST */
+
 async function latest(r, e) {
+
   const rows =
     await e.DB.prepare(`
       SELECT
@@ -862,158 +1028,218 @@ async function latest(r, e) {
       )
       .all();
 
+
   return json(
     {
-      success: true,
-      ads: rows.results || []
+      success:true,
+      ads:rows.results || []
     },
     200,
     r
   );
 }
 
-async function photo(r, e) {
-  const q =
-    new URL(r.url).searchParams;
 
-  const key = q.get("key");
+/* PHOTO */
+
+async function photo(r, e) {
+
+  const q =
+    new URL(r.url)
+      .searchParams;
+
+  const key =
+    q.get("key");
+
 
   if (!key) {
+
     return new Response(
       "Missing key",
       {
-        status: 400,
-        headers: cors(r)
+        status:400,
+        headers:cors(r)
       }
     );
   }
+
 
   if (
     !key.startsWith("ads/") &&
     !key.startsWith("payments/")
   ) {
+
     return new Response(
       "Invalid key",
       {
-        status: 400,
-        headers: cors(r)
+        status:400,
+        headers:cors(r)
       }
     );
   }
+
 
   const object =
     await e.JOBS_BUCKET.get(key);
 
+
   if (!object) {
+
     return new Response(
       "Not found",
       {
-        status: 404,
-        headers: cors(r)
+        status:404,
+        headers:cors(r)
       }
     );
   }
 
-  const headers =
-    new Headers(cors(r));
 
-  object.writeHttpMetadata(headers);
+  const headers =
+    new Headers(
+      cors(r)
+    );
+
+
+  object.writeHttpMetadata(
+    headers
+  );
+
 
   headers.set(
     "ETag",
     object.httpEtag
   );
 
+
   headers.set(
     "Cache-Control",
     "public, max-age=31536000"
   );
 
+
   return new Response(
     object.body,
     {
-      status: 200,
+      status:200,
       headers
     }
   );
 }
 
+
+/* HEALTH */
+
 async function health(r) {
+
   return json(
     {
-      success: true,
-      worker: "ads",
-      status: "ok"
+      success:true,
+      worker:"ads",
+      status:"ok"
     },
     200,
     r
   );
 }
 
+
+/* CLEANUP */
+
 async function cleanup(e) {
+
   try {
+
     await e.DB.prepare(`
       DELETE FROM sessions
       WHERE expires_at <= ?
     `)
       .bind(
-        Math.floor(Date.now() / 1000)
+        Math.floor(
+          Date.now() / 1000
+        )
       )
       .run();
-  } catch (err) {
+
+  } catch(error) {
+
     console.error(
       "Session cleanup error:",
-      err
+      error
     );
+
   }
+
 }
 
+
+/* FETCH */
+
 export default {
+
   async fetch(request, env) {
-    if (request.method === "OPTIONS") {
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+
       return new Response(
         null,
         {
-          status: 204,
-          headers: cors(request)
+          status:204,
+          headers:cors(request)
         }
       );
     }
 
+
     const url =
       new URL(request.url);
 
+
     const path =
-      url.pathname.replace(/\/+$/, "") ||
-      "/";
+      url.pathname
+        .replace(/\/+$/, "") ||
+        "/";
+
 
     try {
+
       if (
         request.method === "GET" &&
         path === "/health"
       ) {
+
         return health(request);
+
       }
+
 
       if (
         request.method === "POST" &&
         path === "/upload"
       ) {
+
         return upload(
           request,
           env
         );
+
       }
+
 
       if (
         request.method === "GET" &&
         path === "/locations"
       ) {
+
         return locations(
           request,
           env
         );
+
       }
+
 
       if (
         request.method === "POST" &&
@@ -1022,68 +1248,91 @@ export default {
           path === "/ads"
         )
       ) {
+
         return createAd(
           request,
           env
         );
+
       }
+
 
       if (
         request.method === "GET" &&
         path === "/my-ads"
       ) {
+
         return myAds(
           request,
           env
         );
+
       }
+
 
       if (
         request.method === "GET" &&
         path === "/latest"
       ) {
+
         return latest(
           request,
           env
         );
+
       }
+
 
       if (
         request.method === "GET" &&
         path === "/photo"
       ) {
+
         return photo(
           request,
           env
         );
+
       }
+
 
       return json(
         {
-          success: false,
-          error: "Not found"
+          success:false,
+          error:"Not found"
         },
         404,
         request
       );
 
-    } catch (err) {
-      console.error(err);
+
+    } catch(error) {
+
+      console.error(error);
 
       return json(
         {
-          success: false,
+          success:false,
           error:
-            err?.message ||
+            error?.message ||
             "Internal server error"
         },
         500,
         request
       );
+
     }
+
   },
 
-  async scheduled(event, env) {
+
+  async scheduled(
+    event,
+    env
+  ) {
+
     await cleanup(env);
+
   }
+
 };
