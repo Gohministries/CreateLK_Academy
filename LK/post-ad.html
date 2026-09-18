@@ -211,8 +211,6 @@ Reach job seekers across Sri Lanka.
 <div id="message" class="message"></div>
 
 
-<!-- PHOTO -->
-
 <div class="field">
 
 <label>Ad Photo *</label>
@@ -237,8 +235,6 @@ alt="Preview">
 </div>
 
 
-<!-- TITLE -->
-
 <div class="field">
 
 <label>Ad Title *</label>
@@ -250,8 +246,6 @@ placeholder="Example: Experienced Electrician Available">
 
 </div>
 
-
-<!-- DESCRIPTION -->
 
 <div class="field">
 
@@ -265,8 +259,6 @@ placeholder="Describe the job or opportunity..."></textarea>
 </div>
 
 
-<!-- WHATSAPP -->
-
 <div class="field">
 
 <label>WhatsApp Number *</label>
@@ -279,8 +271,6 @@ placeholder="0771234567">
 </div>
 
 
-<!-- CALL -->
-
 <div class="field">
 
 <label>Call Number *</label>
@@ -292,8 +282,6 @@ placeholder="0771234567">
 
 </div>
 
-
-<!-- LOCATION -->
 
 <div class="section">
 
@@ -310,50 +298,6 @@ Province / Location Type *
 
 <option value="">
 Select Province
-</option>
-
-<option value="Western Province">
-Western Province
-</option>
-
-<option value="Central Province">
-Central Province
-</option>
-
-<option value="Southern Province">
-Southern Province
-</option>
-
-<option value="Northern Province">
-Northern Province
-</option>
-
-<option value="Eastern Province">
-Eastern Province
-</option>
-
-<option value="North Western Province">
-North Western Province
-</option>
-
-<option value="North Central Province">
-North Central Province
-</option>
-
-<option value="Uva Province">
-Uva Province
-</option>
-
-<option value="Sabaragamuwa Province">
-Sabaragamuwa Province
-</option>
-
-<option value="Remote">
-Remote
-</option>
-
-<option value="Overseas">
-Overseas
 </option>
 
 </select>
@@ -392,8 +336,6 @@ Select City / Town
 
 </div>
 
-
-<!-- AD TYPE -->
 
 <div class="section">
 
@@ -480,8 +422,6 @@ LKR 500
 </div>
 
 
-<!-- PAYMENT -->
-
 <div
 id="paymentSection"
 class="section hidden">
@@ -490,7 +430,6 @@ class="section hidden">
 
 
 <div class="payment">
-
 
 <div class="bank">
 
@@ -554,7 +493,6 @@ Thinarathnam Saththiyanan
 
 </div>
 
-
 </div>
 
 
@@ -616,7 +554,6 @@ Submit Ad
 
 <script>
 
-
 /* API */
 
 const LOGIN_API =
@@ -627,9 +564,6 @@ const UPLOAD_API =
 
 const ADS_API =
 "https://ads.createlk.workers.dev";
-
-const LOCATIONS_API =
-"https://ads.createlk.workers.dev/locations";
 
 const LOGIN_PAGE =
 "https://createlk.com/LK/login.html";
@@ -791,10 +725,123 @@ return false;
 }
 
 
+/* GET JSON */
+
+async function getJSON(url){
+
+const response =
+await fetch(
+url,
+{
+method:"GET",
+cache:"no-store"
+}
+);
+
+if(!response.ok){
+
+throw new Error(
+"HTTP " + response.status
+);
+
+}
+
+return response.json();
+
+}
+
+
+/* LOAD PROVINCES */
+/* EXACT SAME API AS WORKING INDEX.HTML */
+
+async function loadProvinces(){
+
+const province =
+$("province");
+
+try{
+
+const data =
+await getJSON(
+ADS_API + "/locations"
+);
+
+const list =
+Array.isArray(
+data.provinces
+)
+? data.provinces
+: [];
+
+province.innerHTML =
+'<option value="">Select Province</option>';
+
+list.forEach(item=>{
+
+const option =
+document.createElement(
+"option"
+);
+
+if(
+typeof item === "object"
+){
+
+option.value =
+item.name ??
+item.province ??
+"";
+
+option.textContent =
+item.name ??
+item.province ??
+"";
+
+}else{
+
+option.value =
+String(item);
+
+option.textContent =
+String(item);
+
+}
+
+if(option.value){
+
+province.appendChild(
+option
+);
+
+}
+
+});
+
+}catch(error){
+
+console.error(
+"Province loading error:",
+error
+);
+
+province.innerHTML =
+'<option value="">Unable to load provinces</option>';
+
+show(
+"Unable to load provinces.",
+"error"
+);
+
+}
+
+}
+
+
 /* LOAD DISTRICTS */
+/* EXACT SAME API AS WORKING INDEX.HTML */
 
 async function loadDistricts(
-province
+name
 ){
 
 const district =
@@ -804,6 +851,12 @@ const city =
 $("city");
 
 
+district.innerHTML =
+'<option value="">All Districts</option>';
+
+city.innerHTML =
+'<option value="">All Cities</option>';
+
 district.disabled =
 true;
 
@@ -811,14 +864,7 @@ city.disabled =
 true;
 
 
-district.innerHTML =
-'<option value="">Loading districts...</option>';
-
-city.innerHTML =
-'<option value="">Select City / Town</option>';
-
-
-if(!province){
+if(!name){
 
 district.innerHTML =
 '<option value="">Select District</option>';
@@ -833,40 +879,16 @@ return;
 
 try{
 
-const response =
-await fetch(
-LOCATIONS_API +
-"?province=" +
-encodeURIComponent(
-province
-),
-{
-method:"GET",
-cache:"no-store"
-}
-);
-
-
 const data =
-await response
-.json()
-.catch(()=>({}));
-
-
-if(
-!response.ok ||
-!data.success
-){
-
-throw new Error(
-data.error ||
-"Unable to load districts."
+await getJSON(
+ADS_API +
+"/locations?province=" +
+encodeURIComponent(
+name
+)
 );
 
-}
-
-
-const districts =
+const list =
 Array.isArray(
 data.districts
 )
@@ -878,35 +900,56 @@ district.innerHTML =
 '<option value="">Select District</option>';
 
 
-districts.forEach(
-name => {
+list.forEach(item=>{
 
 const option =
 document.createElement(
 "option"
 );
 
+if(
+typeof item === "object"
+){
+
 option.value =
-name;
+item.name ??
+item.district ??
+"";
 
 option.textContent =
-name;
+item.name ??
+item.district ??
+"";
+
+}else{
+
+option.value =
+String(item);
+
+option.textContent =
+String(item);
+
+}
+
+if(option.value){
 
 district.appendChild(
 option
 );
 
+}
+
 });
 
 
 district.disabled =
-false;
+district.options.length <= 1;
 
 
 }catch(error){
 
 console.error(
-"DISTRICT ERROR:",
+"District loading error:",
 error
 );
 
@@ -927,26 +970,25 @@ show(
 
 
 /* LOAD CITIES */
+/* EXACT SAME API AS WORKING INDEX.HTML */
 
 async function loadCities(
-province,
+provinceName,
 districtName
 ){
 
 const city =
 $("city");
 
+city.innerHTML =
+'<option value="">All Cities</option>';
 
 city.disabled =
 true;
 
 
-city.innerHTML =
-'<option value="">Loading cities...</option>';
-
-
 if(
-!province ||
+!provinceName ||
 !districtName
 ){
 
@@ -960,44 +1002,20 @@ return;
 
 try{
 
-const response =
-await fetch(
-LOCATIONS_API +
-"?province=" +
+const data =
+await getJSON(
+ADS_API +
+"/locations?province=" +
 encodeURIComponent(
-province
+provinceName
 ) +
 "&district=" +
 encodeURIComponent(
 districtName
-),
-{
-method:"GET",
-cache:"no-store"
-}
+)
 );
 
-
-const data =
-await response
-.json()
-.catch(()=>({}));
-
-
-if(
-!response.ok ||
-!data.success
-){
-
-throw new Error(
-data.error ||
-"Unable to load cities."
-);
-
-}
-
-
-const cities =
+const list =
 Array.isArray(
 data.cities
 )
@@ -1009,35 +1027,56 @@ city.innerHTML =
 '<option value="">Select City / Town</option>';
 
 
-cities.forEach(
-name => {
+list.forEach(item=>{
 
 const option =
 document.createElement(
 "option"
 );
 
+if(
+typeof item === "object"
+){
+
 option.value =
-name;
+item.name ??
+item.city ??
+"";
 
 option.textContent =
-name;
+item.name ??
+item.city ??
+"";
+
+}else{
+
+option.value =
+String(item);
+
+option.textContent =
+String(item);
+
+}
+
+if(option.value){
 
 city.appendChild(
 option
 );
 
+}
+
 });
 
 
 city.disabled =
-false;
+city.options.length <= 1;
 
 
 }catch(error){
 
 console.error(
-"CITY ERROR:",
+"City loading error:",
 error
 );
 
@@ -1056,31 +1095,27 @@ show(
 
 /* PROVINCE CHANGE */
 
-$("province").addEventListener(
-"change",
-function(){
+$("province").onchange =
+async function(){
 
-loadDistricts(
+await loadDistricts(
 this.value
 );
 
-}
-);
+};
 
 
 /* DISTRICT CHANGE */
 
-$("district").addEventListener(
-"change",
-function(){
+$("district").onchange =
+async function(){
 
-loadCities(
+await loadCities(
 $("province").value,
 this.value
 );
 
-}
-);
+};
 
 
 /* PHOTO PREVIEW */
@@ -1100,7 +1135,8 @@ file.size >
 5 * 1024 * 1024
 ){
 
-event.target.value = "";
+event.target.value =
+"";
 
 $("preview").style.display =
 "none";
@@ -1114,9 +1150,11 @@ return show(
 
 
 const allowed = [
+
 "image/jpeg",
 "image/png",
 "image/webp"
+
 ];
 
 
@@ -1126,7 +1164,8 @@ file.type
 )
 ){
 
-event.target.value = "";
+event.target.value =
+"";
 
 $("preview").style.display =
 "none";
@@ -1298,7 +1337,6 @@ folder
 const token =
 getToken();
 
-
 if(!token){
 
 throw new Error(
@@ -1310,7 +1348,6 @@ throw new Error(
 
 const form =
 new FormData();
-
 
 form.append(
 "file",
@@ -1359,7 +1396,6 @@ throw new Error(
 
 const text =
 await response.text();
-
 
 let data;
 
@@ -1439,7 +1475,6 @@ adData
 const token =
 getToken();
 
-
 if(!token){
 
 throw new Error(
@@ -1491,7 +1526,6 @@ throw new Error(
 
 const text =
 await response.text();
-
 
 let data;
 
@@ -1558,10 +1592,8 @@ return data;
 $("submit").onclick =
 async () => {
 
-
 const loggedIn =
 await checkLogin();
-
 
 if(!loggedIn)
 return;
@@ -1570,13 +1602,10 @@ return;
 const photo =
 $("photo").files[0];
 
-
 const type =
-document
-.querySelector(
+document.querySelector(
 'input[name="type"]:checked'
-)
-.value;
+).value;
 
 
 /* VALIDATION */
@@ -1768,7 +1797,6 @@ return show(
 const button =
 $("submit");
 
-
 button.disabled =
 true;
 
@@ -1788,7 +1816,7 @@ photo,
 );
 
 
-/* SLIP */
+/* PAYMENT SLIP */
 
 let slipKey =
 null;
@@ -1800,7 +1828,6 @@ type !== "free"
 
 button.textContent =
 "Uploading bank slip...";
-
 
 slipKey =
 await upload(
@@ -1905,13 +1932,11 @@ console.error(
 error
 );
 
-
 show(
 error.message ||
 "Unable to submit the ad.",
 "error"
 );
-
 
 button.disabled =
 false;
@@ -1926,7 +1951,17 @@ button.textContent =
 
 /* START */
 
-checkLogin();
+(async()=>{
+
+const loggedIn =
+await checkLogin();
+
+if(!loggedIn)
+return;
+
+await loadProvinces();
+
+})();
 
 </script>
 
