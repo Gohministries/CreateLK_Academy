@@ -372,11 +372,9 @@ h1{
 }
 
 @media(max-width:800px){
-
   .grid{
     grid-template-columns:1fr
   }
-
 }
 
 @media(max-width:600px){
@@ -419,7 +417,6 @@ h1{
     width:100%;
     height:190px
   }
-
 }
 </style>
 </head>
@@ -458,7 +455,6 @@ Post Ad
 
 </header>
 
-
 <main>
 
 <div class="top">
@@ -483,12 +479,10 @@ class="post">
 
 </div>
 
-
 <div
 id="message"
 class="message">
 </div>
-
 
 <div
 id="loading"
@@ -497,7 +491,6 @@ class="loading">
 Loading your ads...
 
 </div>
-
 
 <div
 id="empty"
@@ -521,7 +514,6 @@ Post Your First Ad
 
 </div>
 
-
 <div
 id="ads"
 class="grid">
@@ -529,14 +521,13 @@ class="grid">
 
 </main>
 
-
 <script>
 
 const API =
 "https://ads.createlk.workers.dev";
 
-const LOGIN =
-"https://login.createlk.workers.dev";
+const META_API =
+"https://ad-meta.createlk.workers.dev";
 
 const TOKEN =
 "createlk_session_token";
@@ -603,7 +594,9 @@ if(!value)
 return "-";
 
 const d =
-new Date(value.replace(" ","T"));
+new Date(
+String(value).replace(" ","T")
+);
 
 if(
 Number.isNaN(d.getTime())
@@ -618,30 +611,6 @@ month:"short",
 year:"numeric"
 }
 );
-
-}
-
-
-function typeName(type){
-
-switch(type){
-
-case "featured":
-return "Featured Ad";
-
-case "urgent":
-return "Urgent Ad";
-
-case "top":
-return "Top Ad";
-
-case "featured_urgent_top":
-return "Featured + Urgent + Top";
-
-default:
-return "Free Ad";
-
-}
 
 }
 
@@ -731,9 +700,7 @@ if(
 key.startsWith("http://") ||
 key.startsWith("https://")
 ){
-
 return key;
-
 }
 
 return `${API}/photo?key=${encodeURIComponent(key)}`;
@@ -741,7 +708,60 @@ return `${API}/photo?key=${encodeURIComponent(key)}`;
 }
 
 
-function renderAd(ad){
+/*
+  Load labels, prices and priorities
+  from the separate Ad Meta Worker.
+*/
+async function loadMeta(){
+
+const response =
+await fetch(
+`${META_API}/types`
+);
+
+if(!response.ok){
+
+throw Error(
+"Could not load ad information."
+);
+
+}
+
+const data =
+await response.json();
+
+if(
+!data.success ||
+!Array.isArray(data.types)
+){
+
+throw Error(
+"Invalid ad information."
+);
+
+}
+
+const meta = {};
+
+data.types.forEach(item => {
+  meta[item.type] = item;
+});
+
+return meta;
+
+}
+
+
+function renderAd(ad,meta){
+
+const info =
+meta[ad.ad_type] ||
+{
+  label:"FREE",
+  amount:0,
+  priority:0,
+  position:"standard"
+};
 
 const photo =
 photoURL(
@@ -749,7 +769,6 @@ ad.photo_url ||
 ad.photo_key ||
 ""
 );
-
 
 const location = [
 ad.city,
@@ -789,7 +808,9 @@ ad.rejection_reason
 rejection = `
 <div class="rejection">
 <strong>Rejection reason:</strong>
-${escapeHTML(ad.rejection_reason)}
+${escapeHTML(
+ad.rejection_reason
+)}
 </div>
 `;
 
@@ -855,7 +876,11 @@ ${escapeHTML(ad.description)}
 <div class="badges">
 
 <span class="badge ${typeClass(ad.ad_type)}">
-${escapeHTML(typeName(ad.ad_type))}
+${escapeHTML(info.label)}
+</span>
+
+<span class="badge">
+LKR ${escapeHTML(info.amount)}
 </span>
 
 <span class="badge ${statusClass(ad.status)}">
@@ -870,8 +895,31 @@ ${payment}
 
 </div>
 
-
 <div class="details">
+
+<div class="detail">
+
+<span class="detail-label">
+Position
+</span>
+
+<span class="detail-value">
+${escapeHTML(info.position)}
+</span>
+
+</div>
+
+<div class="detail">
+
+<span class="detail-label">
+Priority
+</span>
+
+<span class="detail-value">
+${escapeHTML(info.priority)}
+</span>
+
+</div>
 
 <div class="detail">
 
@@ -885,7 +933,6 @@ ${escapeHTML(location || "-")}
 
 </div>
 
-
 <div class="detail">
 
 <span class="detail-label">
@@ -898,7 +945,6 @@ ${escapeHTML(ad.whatsapp_no || "-")}
 
 </div>
 
-
 <div class="detail">
 
 <span class="detail-label">
@@ -910,7 +956,6 @@ ${escapeHTML(ad.call_no || "-")}
 </span>
 
 </div>
-
 
 <div class="detail">
 
@@ -925,7 +970,6 @@ formatDate(ad.created_at)
 </span>
 
 </div>
-
 
 ${
 ad.approved_at
@@ -949,7 +993,6 @@ formatDate(ad.approved_at)
 ""
 }
 
-
 ${
 ad.expires_at
 ?
@@ -972,11 +1015,9 @@ formatDate(ad.expires_at)
 ""
 }
 
-
 ${rejection}
 
 </div>
-
 
 <div class="actions">
 
@@ -1004,7 +1045,6 @@ async function loadAds(){
 const token =
 getToken();
 
-
 if(!token){
 
 location.href =
@@ -1013,7 +1053,6 @@ location.href =
 return;
 
 }
-
 
 $("loading").style.display =
 "block";
@@ -1024,11 +1063,15 @@ $("empty").style.display =
 $("ads").innerHTML =
 "";
 
-
 try{
 
-const r =
-await fetch(
+/* Load metadata and ads */
+const [meta,adsResponse] =
+await Promise.all([
+
+loadMeta(),
+
+fetch(
 `${API}/my-ads`,
 {
 headers:{
@@ -1036,7 +1079,9 @@ Authorization:
 `Bearer ${token}`
 }
 }
-);
+)
+
+]);
 
 
 let data = {};
@@ -1044,7 +1089,7 @@ let data = {};
 try{
 
 data =
-await r.json();
+await adsResponse.json();
 
 }catch{
 
@@ -1054,8 +1099,8 @@ data = {};
 
 
 if(
-r.status===401 ||
-r.status===403
+adsResponse.status===401 ||
+adsResponse.status===403
 ){
 
 logout();
@@ -1065,7 +1110,7 @@ return;
 }
 
 
-if(!r.ok){
+if(!adsResponse.ok){
 
 throw Error(
 data.error ||
@@ -1097,8 +1142,21 @@ return;
 }
 
 
+/*
+  Sort using the priority supplied
+  by the Ad Meta Worker.
+*/
+ads.sort(
+(a,b) =>
+(meta[b.ad_type]?.priority || 0) -
+(meta[a.ad_type]?.priority || 0)
+);
+
+
 $("ads").innerHTML =
-ads.map(renderAd).join("");
+ads.map(
+ad => renderAd(ad,meta)
+).join("");
 
 
 }catch(error){
@@ -1114,8 +1172,6 @@ error.message ||
 
 }
 
-
-/* START */
 
 loadAds();
 
