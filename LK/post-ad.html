@@ -41,10 +41,16 @@ textarea{min-height:140px;resize:vertical}
 .message{display:none;padding:12px;border-radius:9px;margin-bottom:17px;font-weight:600}
 .error{display:block;background:#fef2f2;color:#991b1b}
 .success{display:block;background:#f0fdf4;color:#166534}
-.preview{display:none;margin-top:10px}.preview img{width:100%;max-height:300px;object-fit:cover;border-radius:10px}
+.preview{display:none;margin-top:10px}
+.preview img{width:100%;max-height:300px;object-fit:cover;border-radius:10px}
 .submit{width:100%;margin-top:10px;padding:14px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
 .submit:disabled{opacity:.6}
-@media(max-width:600px){.card{padding:20px}.types{grid-template-columns:1fr}.bank{display:block}.value{text-align:left;margin-top:4px}}
+@media(max-width:600px){
+.card{padding:20px}
+.types{grid-template-columns:1fr}
+.bank{display:block}
+.value{text-align:left;margin-top:4px}
+}
 </style>
 </head>
 
@@ -54,7 +60,9 @@ textarea{min-height:140px;resize:vertical}
 <div class="header">
 
 <a href="index.html" class="brand">
-<img src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png" alt="CreateLK Jobs">
+<img
+src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
+alt="CreateLK Jobs">
 <span>CreateLK Jobs</span>
 </a>
 
@@ -72,6 +80,7 @@ textarea{min-height:140px;resize:vertical}
 <div id="message" class="message"></div>
 
 <div class="field">
+
 <label>Ad Photo *</label>
 
 <input
@@ -79,7 +88,9 @@ id="photo"
 type="file"
 accept="image/jpeg,image/png,image/webp">
 
-<span class="help">Maximum 5 MB.</span>
+<span class="help">
+Maximum 5 MB.
+</span>
 
 <div id="preview" class="preview">
 <img id="previewImg" alt="Preview">
@@ -88,6 +99,7 @@ accept="image/jpeg,image/png,image/webp">
 </div>
 
 <div class="field">
+
 <label>Ad Title *</label>
 
 <input
@@ -98,6 +110,7 @@ placeholder="Example: Experienced Electrician Available">
 </div>
 
 <div class="field">
+
 <label>Description *</label>
 
 <textarea
@@ -108,6 +121,7 @@ placeholder="Describe the job or opportunity..."></textarea>
 </div>
 
 <div class="field">
+
 <label>WhatsApp Number *</label>
 
 <input
@@ -118,6 +132,7 @@ placeholder="0771234567">
 </div>
 
 <div class="field">
+
 <label>Call Number *</label>
 
 <input
@@ -138,6 +153,7 @@ placeholder="0771234567">
 <select id="province">
 
 <option value="">Select</option>
+
 <option>Western Province</option>
 <option>Central Province</option>
 <option>Southern Province</option>
@@ -253,7 +269,9 @@ value="top">
 
 <div class="bank">
 
-<span class="label">Account Number</span>
+<span class="label">
+Account Number
+</span>
 
 <span class="value">
 
@@ -263,9 +281,7 @@ value="top">
 class="copy"
 data-copy="292200280023178"
 type="button">
-
 Copy
-
 </button>
 
 </span>
@@ -274,7 +290,9 @@ Copy
 
 <div class="bank">
 
-<span class="label">Customer Name</span>
+<span class="label">
+Customer Name
+</span>
 
 <span class="value">
 Thinarathnam Saththiyanan
@@ -317,7 +335,8 @@ Maximum 5 MB.
 
 <button
 id="submit"
-class="submit">
+class="submit"
+type="button">
 
 Submit Ad
 
@@ -337,19 +356,30 @@ const UPLOAD_API =
 const ADS_API =
 "https://ads.createlk.workers.dev";
 
-const $ = id =>
-document.getElementById(id);
+const LOGIN_PAGE =
+"https://createlk.com/LK/login.html";
 
-let session = null;
+const TOKEN_KEY =
+"createlk_session_token";
+
+const CUSTOMER_KEY =
+"createlk_customer";
+
+const $ =
+id => document.getElementById(id);
+
+let currentUser = null;
 
 
 /* MESSAGE */
 
 function show(text,type){
 
-const box = $("message");
+const box =
+$("message");
 
-box.textContent = text;
+box.textContent =
+text;
 
 box.className =
 "message " + type;
@@ -357,70 +387,146 @@ box.className =
 }
 
 
-/* LOGIN SESSION */
+/* TOKEN */
 
-async function getSession(){
+function getToken(){
+
+return sessionStorage.getItem(
+TOKEN_KEY
+);
+
+}
+
+
+/* USER */
+
+function getSavedUser(){
 
 try{
+
+const value =
+sessionStorage.getItem(
+CUSTOMER_KEY
+);
+
+return value
+? JSON.parse(value)
+: null;
+
+}catch{
+
+return null;
+
+}
+
+}
+
+
+/* CHECK LOGIN */
+
+async function getMe(token){
 
 const response =
 await fetch(
-`${LOGIN_API}/session`,
+LOGIN_API + "/me",
 {
 method:"GET",
-credentials:"include",
 headers:{
-"Accept":"application/json"
-}
+Authorization:
+"Bearer " + token
+},
+cache:"no-store"
 }
 );
 
-const text =
-await response.text();
-
-let data = {};
-
-try{
-data = text
-? JSON.parse(text)
-: {};
-}catch{
-data = {};
-}
+const data =
+await response.json()
+.catch(()=>({}));
 
 if(
+response.status === 401 ||
 !response.ok ||
-!data.success ||
-!data.token
+!data.success
 ){
 
-location.href =
-"login.html";
-
-return null;
+throw new Error(
+data.error ||
+"Your session has expired."
+);
 
 }
 
 return data;
 
+}
+
+
+/* INITIAL LOGIN CHECK */
+
+async function checkLogin(){
+
+const token =
+getToken();
+
+if(!token){
+
+location.replace(
+LOGIN_PAGE
+);
+
+return false;
+
+}
+
+try{
+
+const result =
+await getMe(token);
+
+if(!result.user){
+
+throw new Error(
+"User information is missing."
+);
+
+}
+
+currentUser =
+result.user;
+
+try{
+
+sessionStorage.setItem(
+CUSTOMER_KEY,
+JSON.stringify(
+result.user
+)
+);
+
+}catch{}
+
+return true;
+
 }catch(error){
 
 console.error(
-"SESSION ERROR:",
+"LOGIN CHECK:",
 error
 );
 
-show(
-"Please log in first.",
-"error"
+sessionStorage.removeItem(
+TOKEN_KEY
 );
 
-setTimeout(()=>{
-location.href =
-"login.html";
-},1000);
+sessionStorage.removeItem(
+CUSTOMER_KEY
+);
 
-return null;
+location.replace(
+LOGIN_PAGE
+);
+
+return false;
 
 }
 
@@ -429,18 +535,21 @@ return null;
 
 /* PHOTO PREVIEW */
 
-$("photo").onchange = e => {
+$("photo").onchange =
+event => {
 
 const file =
-e.target.files[0];
+event.target.files[0];
 
 if(!file)
 return;
 
-if(file.size >
-5 * 1024 * 1024){
+if(
+file.size >
+5 * 1024 * 1024
+){
 
-e.target.value = "";
+event.target.value = "";
 
 $("preview").style.display =
 "none";
@@ -458,9 +567,13 @@ const allowed = [
 "image/webp"
 ];
 
-if(!allowed.includes(file.type)){
+if(
+!allowed.includes(
+file.type
+)
+){
 
-e.target.value = "";
+event.target.value = "";
 
 $("preview").style.display =
 "none";
@@ -475,10 +588,11 @@ return show(
 const reader =
 new FileReader();
 
-reader.onload = x => {
+reader.onload =
+event => {
 
 $("previewImg").src =
-x.target.result;
+event.target.result;
 
 $("preview").style.display =
 "block";
@@ -495,11 +609,8 @@ reader.readAsDataURL(file);
 const prices = {
 
 free:0,
-
 featured:500,
-
 urgent:500,
-
 top:500
 
 };
@@ -509,46 +620,65 @@ document
 .querySelectorAll(
 'input[name="type"]'
 )
-.forEach(r => {
+.forEach(
+radio => {
 
-r.onchange = () => {
+radio.onchange = () => {
 
 document
-.querySelectorAll(".option")
-.forEach(x =>
-x.classList.remove(
+.querySelectorAll(
+".option"
+)
+.forEach(
+option =>
+option.classList.remove(
 "selected"
-));
+)
+);
 
-r.closest(".option")
-.classList.add("selected");
+radio
+.closest(".option")
+.classList.add(
+"selected"
+);
 
-if(r.value === "free"){
+if(
+radio.value === "free"
+){
 
 $("paymentSection")
-.classList.add("hidden");
+.classList.add(
+"hidden"
+);
 
 }else{
 
 $("paymentSection")
-.classList.remove("hidden");
+.classList.remove(
+"hidden"
+);
 
-$("amount").textContent =
+$("amount")
+.textContent =
 "Amount: LKR " +
-prices[r.value];
+prices[radio.value];
 
 }
 
 };
 
-});
+}
+);
 
 
-/* COPY */
+/* COPY ACCOUNT */
 
 document
-.querySelectorAll(".copy")
-.forEach(button => {
+.querySelectorAll(
+".copy"
+)
+.forEach(
+button => {
 
 button.onclick =
 async () => {
@@ -564,15 +694,20 @@ button.dataset.copy
 button.textContent =
 "Copied";
 
-setTimeout(()=>{
+setTimeout(
+() => {
+
 button.textContent =
 "Copy";
-},1200);
+
+},
+1200
+);
 
 }catch{
 
 show(
-"Unable to copy.",
+"Unable to copy the account number.",
 "error"
 );
 
@@ -580,18 +715,24 @@ show(
 
 };
 
-});
+}
+);
 
 
-/* UPLOAD TO R2 */
+/* UPLOAD */
 
-async function upload(file,folder){
+async function upload(
+file,
+folder
+){
 
-if(!session ||
-!session.token){
+const token =
+getToken();
+
+if(!token){
 
 throw new Error(
-"Session expired."
+"Your login session has expired."
 );
 
 }
@@ -615,14 +756,13 @@ try{
 
 response =
 await fetch(
-`${UPLOAD_API}/upload`,
+UPLOAD_API + "/upload",
 {
 method:"POST",
 
 headers:{
 Authorization:
-"Bearer " +
-session.token
+"Bearer " + token
 },
 
 body:form
@@ -630,6 +770,11 @@ body:form
 );
 
 }catch(error){
+
+console.error(
+"UPLOAD CONNECTION:",
+error
+);
 
 throw new Error(
 "Unable to connect to the upload server."
@@ -640,29 +785,41 @@ throw new Error(
 const text =
 await response.text();
 
-let data = {};
+let data;
 
 try{
 
-data = text
+data =
+text
 ? JSON.parse(text)
 : {};
 
 }catch{
 
 throw new Error(
-"Invalid upload response."
+"Invalid upload server response."
 );
 
 }
 
-if(response.status === 401){
+if(
+response.status === 401
+){
 
-location.href =
-"login.html";
+sessionStorage.removeItem(
+TOKEN_KEY
+);
+
+sessionStorage.removeItem(
+CUSTOMER_KEY
+);
+
+location.replace(
+LOGIN_PAGE
+);
 
 throw new Error(
-"Session expired."
+"Your login session has expired."
 );
 
 }
@@ -694,13 +851,17 @@ return data.key;
 
 /* CREATE AD */
 
-async function createAd(data){
+async function createAd(
+adData
+){
 
-if(!session ||
-!session.token){
+const token =
+getToken();
+
+if(!token){
 
 throw new Error(
-"Session expired."
+"Your login session has expired."
 );
 
 }
@@ -711,7 +872,7 @@ try{
 
 response =
 await fetch(
-`${ADS_API}/create`,
+ADS_API + "/create",
 {
 method:"POST",
 
@@ -720,16 +881,22 @@ headers:{
 "application/json",
 
 Authorization:
-"Bearer " +
-session.token
+"Bearer " + token
 },
 
 body:
-JSON.stringify(data)
+JSON.stringify(
+adData
+)
 }
 );
 
-}catch{
+}catch(error){
+
+console.error(
+"ADS CONNECTION:",
+error
+);
 
 throw new Error(
 "Unable to connect to the ads server."
@@ -740,11 +907,12 @@ throw new Error(
 const text =
 await response.text();
 
-let result = {};
+let data;
 
 try{
 
-result = text
+data =
+text
 ? JSON.parse(text)
 : {};
 
@@ -756,30 +924,41 @@ throw new Error(
 
 }
 
-if(response.status === 401){
+if(
+response.status === 401
+){
 
-location.href =
-"login.html";
+sessionStorage.removeItem(
+TOKEN_KEY
+);
+
+sessionStorage.removeItem(
+CUSTOMER_KEY
+);
+
+location.replace(
+LOGIN_PAGE
+);
 
 throw new Error(
-"Session expired."
+"Your login session has expired."
 );
 
 }
 
 if(
 !response.ok ||
-result.success === false
+data.success === false
 ){
 
 throw new Error(
-result.error ||
+data.error ||
 "Unable to create the ad."
 );
 
 }
 
-return result;
+return data;
 
 }
 
@@ -789,15 +968,11 @@ return result;
 $("submit").onclick =
 async () => {
 
-if(!session){
+const loggedIn =
+await checkLogin();
 
-session =
-await getSession();
-
-if(!session)
+if(!loggedIn)
 return;
-
-}
 
 const photo =
 $("photo").files[0];
@@ -806,92 +981,154 @@ const type =
 document
 .querySelector(
 'input[name="type"]:checked'
-).value;
+)
+.value;
 
 
-if(!photo)
+/* VALIDATION */
+
+if(!photo){
+
 return show(
 "Please select an ad photo.",
 "error"
 );
 
+}
 
-if(!$("title").value.trim())
+if(
+photo.size >
+5 * 1024 * 1024
+){
+
+return show(
+"Photo must be 5 MB or smaller.",
+"error"
+);
+
+}
+
+if(
+!$("title").value.trim()
+){
+
 return show(
 "Please enter an ad title.",
 "error"
 );
 
+}
 
-if(!$("description").value.trim())
+if(
+!$("description").value.trim()
+){
+
 return show(
 "Please enter a description.",
 "error"
 );
 
+}
 
-if(!$("whatsapp").value.trim())
+if(
+!$("whatsapp").value.trim()
+){
+
 return show(
 "Please enter a WhatsApp number.",
 "error"
 );
 
+}
 
-if(!$("call").value.trim())
+if(
+!$("call").value.trim()
+){
+
 return show(
 "Please enter a call number.",
 "error"
 );
 
+}
 
-if(!$("province").value)
+if(
+!$("province").value
+){
+
 return show(
 "Please select a province.",
 "error"
 );
 
+}
 
-if(!$("district").value.trim())
+if(
+!$("district").value.trim()
+){
+
 return show(
 "Please enter the district.",
 "error"
 );
 
+}
 
-if(!$("city").value.trim())
+if(
+!$("city").value.trim()
+){
+
 return show(
 "Please enter the city.",
 "error"
 );
 
+}
 
-let slipFile = null;
 
-if(type !== "free"){
+/* PAYMENT VALIDATION */
 
-if(!$("depositDate").value)
+let slipFile =
+null;
+
+if(
+type !== "free"
+){
+
+if(
+!$("depositDate").value
+){
+
 return show(
 "Please select the deposit date.",
 "error"
 );
 
+}
+
 slipFile =
 $("slip").files[0];
 
-if(!slipFile)
+if(!slipFile){
+
 return show(
 "Please upload the bank slip.",
 "error"
 );
 
+}
+
 if(
 slipFile.size >
 5 * 1024 * 1024
-)
+){
+
 return show(
 "Bank slip must be 5 MB or smaller.",
 "error"
 );
+
+}
 
 const allowedSlip = [
 
@@ -902,9 +1139,12 @@ const allowedSlip = [
 
 ];
 
-if(!allowedSlip.includes(
+if(
+!allowedSlip.includes(
 slipFile.type
-))
+)
+){
+
 return show(
 "Only JPG, PNG, WebP or PDF bank slips are allowed.",
 "error"
@@ -912,6 +1152,10 @@ return show(
 
 }
 
+}
+
+
+/* BUTTON */
 
 const button =
 $("submit");
@@ -925,7 +1169,7 @@ button.textContent =
 
 try{
 
-/* UPLOAD PHOTO */
+/* PHOTO */
 
 const photoKey =
 await upload(
@@ -934,14 +1178,17 @@ photo,
 );
 
 
-/* UPLOAD PAYMENT SLIP */
+/* PAYMENT SLIP */
 
-let slipKey = null;
+let slipKey =
+null;
 
-if(type !== "free"){
+if(
+type !== "free"
+){
 
 button.textContent =
-"Uploading slip...";
+"Uploading bank slip...";
 
 slipKey =
 await upload(
@@ -1011,11 +1258,12 @@ type === "free"
 };
 
 
-const result =
 await createAd(
 adData
 );
 
+
+/* SUCCESS */
 
 show(
 type === "free"
@@ -1028,12 +1276,15 @@ button.textContent =
 "Submitted";
 
 
-setTimeout(() => {
+setTimeout(
+() => {
 
 location.href =
 "my-ads.html";
 
-},1500);
+},
+1500
+);
 
 
 }catch(error){
@@ -1060,14 +1311,9 @@ button.textContent =
 };
 
 
-/* CHECK LOGIN */
+/* START */
 
-(async()=>{
-
-session =
-await getSession();
-
-})();
+checkLogin();
 
 </script>
 
