@@ -416,6 +416,7 @@ Post Advertisement
 </footer>
 
 <script>
+
 const API="https://ads.createlk.workers.dev";
 const CATEGORY_API="https://categories.createlk.workers.dev";
 const TOKEN_KEY="createlk_session_token";
@@ -437,137 +438,126 @@ const submitBtn=$("submitBtn");
 
 let locations=[];
 
+
 function getToken(){
+
 return sessionStorage.getItem(TOKEN_KEY)||
 localStorage.getItem(TOKEN_KEY)||"";
+
 }
 
+
 function showMessage(text,type){
+
 message.textContent=text;
 message.className=type;
 message.style.display="block";
-window.scrollTo({top:0,behavior:"smooth"});
+
+window.scrollTo({
+top:0,
+behavior:"smooth"
+});
+
 }
 
+
 async function getJSON(url,options={}){
+
 const r=await fetch(url,options);
+
 const text=await r.text();
 
 let data={};
 
 try{
+
 data=text?JSON.parse(text):{};
+
 }catch{
+
 data={raw:text};
+
 }
 
-if(!r.ok)
-throw Error(data.error||data.message||data.raw||"Request failed");
+if(!r.ok){
+
+throw Error(
+data.error||
+data.message||
+data.raw||
+"Request failed"
+);
+
+}
 
 return data;
+
 }
 
 
-/* LOCATIONS */
-
-function normalizeLocations(data){
-
-let list=[];
-
-if(Array.isArray(data)){
-list=data;
-}else if(data&&Array.isArray(data.locations)){
-list=data.locations;
-}else if(data&&Array.isArray(data.data)){
-list=data.data;
-}else if(data&&Array.isArray(data.results)){
-list=data.results;
-}else if(data&&Array.isArray(data.rows)){
-list=data.rows;
-}else if(data&&data.locations&&typeof data.locations==="object"){
-list=Object.values(data.locations).flat();
-}
-
-return list.map(x=>{
-
-if(typeof x==="string"){
-return {
-province:x,
-district:"",
-city:""
-};
-}
-
-return {
-province:
-x.province||
-x.province_name||
-x.provinceName||
-"",
-district:
-x.district||
-x.district_name||
-x.districtName||
-"",
-city:
-x.city||
-x.city_name||
-x.cityName||
-x.area||
-x.area_name||
-""
-};
-
-}).filter(x=>x.province);
-}
+/* LOCATIONS - ORIGINAL WORKING METHOD */
 
 async function loadLocations(){
 
-province.innerHTML=
-'<option value="">Loading provinces...</option>';
-
-district.disabled=true;
-city.disabled=true;
-
 try{
 
-const data=await getJSON(API+"/locations");
+const data=await getJSON(
+API+"/locations"
+);
 
-locations=normalizeLocations(data);
+locations=
+Array.isArray(data.locations)
+?data.locations
+:[];
 
-if(!locations.length)
-throw Error("No locations found");
+if(!locations.length){
+
+throw Error(
+"No locations found"
+);
+
+}
 
 const provinces=[
 ...new Set(
 locations
-.map(x=>x.province.trim())
+.map(x=>x.province)
 .filter(Boolean)
 )
-].sort((a,b)=>a.localeCompare(b));
+].sort();
 
 province.innerHTML=
 '<option value="">Select Province</option>';
 
 provinces.forEach(x=>{
-province.add(new Option(x,x));
+
+province.add(
+new Option(x,x)
+);
+
 });
 
 }catch(e){
 
-console.error("Location error:",e);
+console.error(
+"Location error:",
+e
+);
 
 province.innerHTML=
 '<option value="">Unable to load locations</option>';
 
 showMessage(
-"Unable to load locations. Please refresh and try again.",
+"Unable to load locations.",
 "error"
 );
-}
+
 }
 
-province.addEventListener("change",()=>{
+}
+
+
+province.onchange=()=>{
 
 const p=province.value;
 
@@ -577,28 +567,42 @@ district.innerHTML=
 city.innerHTML=
 '<option value="">Select City / Area</option>';
 
-district.disabled=true;
 city.disabled=true;
 
-if(!p)return;
+if(!p){
+
+district.disabled=true;
+
+return;
+
+}
 
 const districts=[
 ...new Set(
 locations
-.filter(x=>x.province===p)
-.map(x=>x.district.trim())
+.filter(
+x=>x.province===p
+)
+.map(x=>x.district)
 .filter(Boolean)
 )
-].sort((a,b)=>a.localeCompare(b));
+].sort();
 
 districts.forEach(x=>{
-district.add(new Option(x,x));
+
+district.add(
+new Option(x,x)
+);
+
 });
 
-district.disabled=!districts.length;
-});
+district.disabled=
+!districts.length;
 
-district.addEventListener("change",()=>{
+};
+
+
+district.onchange=()=>{
 
 const p=province.value;
 const d=district.value;
@@ -606,9 +610,13 @@ const d=district.value;
 city.innerHTML=
 '<option value="">Select City / Area</option>';
 
+if(!p||!d){
+
 city.disabled=true;
 
-if(!p||!d)return;
+return;
+
+}
 
 const cities=[
 ...new Set(
@@ -617,17 +625,23 @@ locations
 x.province===p &&
 x.district===d
 )
-.map(x=>x.city.trim())
+.map(x=>x.city)
 .filter(Boolean)
 )
-].sort((a,b)=>a.localeCompare(b));
+].sort();
 
 cities.forEach(x=>{
-city.add(new Option(x,x));
+
+city.add(
+new Option(x,x)
+);
+
 });
 
-city.disabled=!cities.length;
-});
+city.disabled=
+!cities.length;
+
+};
 
 
 /* CATEGORIES */
@@ -639,19 +653,25 @@ try{
 let data;
 
 try{
+
 data=await getJSON(
 CATEGORY_API+"/categories"
 );
+
 }catch{
+
 data=await getJSON(
 CATEGORY_API
 );
+
 }
 
 const list=
 Array.isArray(data)
 ?data
-:data.categories||data.data||[];
+:data.categories||
+data.data||
+[];
 
 category.innerHTML=
 '<option value="">Select Category</option>';
@@ -668,17 +688,28 @@ typeof x==="object"
 ?(x.name??x.category_name??x.title)
 :x;
 
-if(id!=null&&name)
-category.add(new Option(name,id));
+if(id!=null&&name){
+
+category.add(
+new Option(name,id)
+);
+
+}
+
 });
 
 }catch(e){
 
-console.error("Category error:",e);
+console.error(
+"Category error:",
+e
+);
 
 category.innerHTML=
 '<option value="">Unable to load categories</option>';
+
 }
+
 }
 
 
@@ -697,7 +728,9 @@ type==="top"
 return 500;
 
 return 0;
+
 }
+
 
 function updatePrice(){
 
@@ -706,10 +739,12 @@ document.querySelector(
 '[name="ad_type"]:checked'
 ).value;
 
-const paid=getPrice(type)>0;
+const paid=
+getPrice(type)>0;
 
 price.textContent=
-"Rs. "+getPrice(type).toLocaleString();
+"Rs. "+
+getPrice(type).toLocaleString();
 
 bankBox.style.display=
 paid?"block":"none";
@@ -719,11 +754,17 @@ paid?"block":"none";
 
 depositDate.required=paid;
 paymentSlip.required=paid;
+
 }
 
-document.querySelectorAll('[name="ad_type"]')
-.forEach(x=>
-x.addEventListener("change",updatePrice)
+
+document.querySelectorAll(
+'[name="ad_type"]'
+).forEach(x=>
+x.addEventListener(
+"change",
+updatePrice
+)
 );
 
 
@@ -731,52 +772,97 @@ x.addEventListener("change",updatePrice)
 
 async function upload(file,folder){
 
-if(!file)
-throw Error("Please select a file.");
+if(!file){
 
-if(file.size>5242880)
-throw Error("File must be 5MB or smaller.");
+throw Error(
+"Please select a file."
+);
+
+}
+
+if(file.size>5242880){
+
+throw Error(
+"File must be 5MB or smaller."
+);
+
+}
 
 const fd=new FormData();
 
-fd.append("file",file);
-fd.append("folder",folder);
+fd.append(
+"file",
+file
+);
+
+fd.append(
+"folder",
+folder
+);
 
 return getJSON(
 API+"/upload",
 {
 method:"POST",
+
 headers:{
-Authorization:"Bearer "+getToken()
+Authorization:
+"Bearer "+getToken()
 },
+
 body:fd
 }
 );
+
 }
 
 
 /* COPY */
 
-async function copyText(value,button){
+async function copyText(
+value,
+button
+){
 
 try{
-await navigator.clipboard.writeText(value);
+
+await navigator.clipboard.writeText(
+value
+);
+
 }catch{
 
-const t=document.createElement("textarea");
+const t=
+document.createElement(
+"textarea"
+);
+
 t.value=value;
+
 document.body.appendChild(t);
+
 t.select();
-document.execCommand("copy");
+
+document.execCommand(
+"copy"
+);
+
 t.remove();
+
 }
 
-const old=button.textContent;
-button.textContent="Copied!";
+const old=
+button.textContent;
+
+button.textContent=
+"Copied!";
 
 setTimeout(()=>{
+
 button.textContent=old;
+
 },1000);
+
 }
 
 
@@ -796,11 +882,14 @@ showMessage(
 );
 
 setTimeout(()=>{
+
 location.href=
 "https://createlk.com/LK/login.html";
+
 },1000);
 
 return;
+
 }
 
 const adType=
@@ -808,11 +897,14 @@ document.querySelector(
 '[name="ad_type"]:checked'
 ).value;
 
-const paid=getPrice(adType)>0;
+const paid=
+getPrice(adType)>0;
 
-if(!province.value||
+if(
+!province.value||
 !district.value||
-!city.value){
+!city.value
+){
 
 showMessage(
 "Please select the complete job location.",
@@ -820,6 +912,7 @@ showMessage(
 );
 
 return;
+
 }
 
 if(!category.value){
@@ -830,9 +923,13 @@ showMessage(
 );
 
 return;
+
 }
 
-if(paid&&!depositDate.value){
+if(
+paid &&
+!depositDate.value
+){
 
 showMessage(
 "Please enter the deposit date.",
@@ -840,9 +937,13 @@ showMessage(
 );
 
 return;
+
 }
 
-if(paid&&!paymentSlip.files[0]){
+if(
+paid &&
+!paymentSlip.files[0]
+){
 
 showMessage(
 "Please upload the payment slip.",
@@ -850,12 +951,17 @@ showMessage(
 );
 
 return;
+
 }
 
 submitBtn.disabled=true;
-submitBtn.textContent="Uploading...";
+
+submitBtn.textContent=
+"Uploading...";
 
 try{
+
+/* JOB PHOTO */
 
 const photo=
 await upload(
@@ -871,8 +977,16 @@ photo.file_url||
 photo.path||
 "";
 
-if(!photoUrl)
-throw Error("Job photo upload failed.");
+if(!photoUrl){
+
+throw Error(
+"Job photo upload failed."
+);
+
+}
+
+
+/* PAYMENT SLIP */
 
 let slip="";
 
@@ -896,9 +1010,18 @@ result.file_url||
 result.path||
 "";
 
-if(!slip)
-throw Error("Payment slip upload failed.");
+if(!slip){
+
+throw Error(
+"Payment slip upload failed."
+);
+
 }
+
+}
+
+
+/* CREATE */
 
 submitBtn.textContent=
 "Posting Advertisement...";
@@ -936,38 +1059,55 @@ photo_url:
 photoUrl,
 
 deposit_date:
-paid?depositDate.value:"",
+paid
+?depositDate.value
+:"",
 
 payment_slip_url:
 slip,
 
 slip_url:
 slip
+
 };
+
 
 await getJSON(
 API+"/create",
 {
 method:"POST",
+
 headers:{
-"Content-Type":"application/json",
-Authorization:"Bearer "+token
+"Content-Type":
+"application/json",
+
+Authorization:
+"Bearer "+token
 },
-body:JSON.stringify(payload)
+
+body:
+JSON.stringify(payload)
 }
 );
 
+
 showMessage(
 paid
-?"Advertisement submitted successfully. Payment and advertisement will be reviewed by admin."
-:"Advertisement submitted successfully. It will be reviewed by admin.",
+?
+"Advertisement submitted successfully. Payment and advertisement will be reviewed by admin."
+:
+"Advertisement submitted successfully. It will be reviewed by admin.",
 "success"
 );
 
+
 setTimeout(()=>{
+
 location.href=
 "https://createlk.com/LK/my-ads.html";
+
 },1800);
+
 
 }catch(e){
 
@@ -982,17 +1122,23 @@ e.message||
 }finally{
 
 submitBtn.disabled=false;
+
 submitBtn.textContent=
 "Post Advertisement";
+
 }
+
 };
 
 
 /* START */
 
 updatePrice();
+
 loadLocations();
+
 loadCategories();
+
 </script>
 
 </body>
