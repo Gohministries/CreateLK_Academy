@@ -1,561 +1,337 @@
-const ORIGINS = [
-  "https://createlk.com",
-  "https://www.createlk.com"
-];
+const ORIGINS=["https://createlk.com","https://www.createlk.com"];
+const MAX=5*1024*1024;
+const IMAGES=["image/jpeg","image/png","image/webp"];
+const SLIPS=[...IMAGES,"application/pdf"];
 
-const MAX = 5 * 1024 * 1024;
-
-const IMAGES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp"
-];
-
-const SLIPS = [
-  ...IMAGES,
-  "application/pdf"
-];
-
-const PRICES = {
-  free: 0,
-  featured: 500,
-  urgent: 500,
-  top: 500,
-  featured_urgent_top: 1500
+const PRICES={
+  free:0,
+  featured:500,
+  urgent:500,
+  top:500,
+  featured_urgent_top:1500
 };
 
-const PAID = [
-  "featured",
-  "urgent",
-  "top",
-  "featured_urgent_top"
-];
+const PAID=["featured","urgent","top","featured_urgent_top"];
 
-const META = {
-  free: ["FREE", 0],
-  featured: ["FEATURED", 2],
-  urgent: ["URGENT", 1],
-  top: ["TOP", 3],
-  featured_urgent_top: ["FEATURED • URGENT • TOP", 4]
+const META={
+  free:["FREE",0],
+  featured:["FEATURED",2],
+  urgent:["URGENT",1],
+  top:["TOP",3],
+  featured_urgent_top:["FEATURED • URGENT • TOP",4]
 };
 
-function cors(r) {
-  const origin = r.headers.get("Origin");
-
-  const headers = {
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin"
+function cors(r){
+  const o=r.headers.get("Origin");
+  const h={
+    "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers":"Content-Type, Authorization",
+    "Access-Control-Max-Age":"86400",
+    "Vary":"Origin"
   };
-
-  if (ORIGINS.includes(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-  }
-
-  return headers;
+  if(ORIGINS.includes(o))h["Access-Control-Allow-Origin"]=o;
+  return h;
 }
 
-function json(data, status = 200, r) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
+function json(d,s=200,r){
+  return new Response(JSON.stringify(d),{
+    status:s,
+    headers:{
       ...cors(r),
-      "Content-Type": "application/json;charset=utf-8"
+      "Content-Type":"application/json;charset=utf-8",
+      "Cache-Control":"no-store"
     }
   });
 }
 
-function token(r) {
-  const h = r.headers.get("Authorization") || "";
-
-  return h.startsWith("Bearer ")
-    ? h.slice(7).trim()
-    : null;
+function token(r){
+  const h=r.headers.get("Authorization")||"";
+  return h.startsWith("Bearer ")?h.slice(7).trim():null;
 }
 
-async function user(r, e) {
-  const t = token(r);
+async function user(r,e){
+  const t=token(r);
+  if(!t)return null;
 
-  if (!t) return null;
-
-  const u = await e.DB.prepare(`
-    SELECT
-      users.id,
-      users.name,
-      users.email,
-      sessions.token,
-      sessions.expires_at
+  const u=await e.DB.prepare(`
+    SELECT users.id,users.name,users.email,sessions.expires_at
     FROM sessions
-    JOIN users
-      ON users.id=sessions.user_id
+    JOIN users ON users.id=sessions.user_id
     WHERE sessions.token=?
     LIMIT 1
   `).bind(t).first();
 
-  if (
-    !u ||
-    Number(u.expires_at) <= Math.floor(Date.now() / 1000)
-  ) {
-    return null;
-  }
-
-  return u;
+  return u&&Number(u.expires_at)>Math.floor(Date.now()/1000)?u:null;
 }
 
-async function auth(r, e) {
-  const u = await user(r, e);
-
-  if (u) return u;
-
-  return json({
-    success: false,
-    error: "Unauthorized"
-  }, 401, r);
+async function auth(r,e){
+  const u=await user(r,e);
+  return u||json({success:false,error:"Unauthorized"},401,r);
 }
 
-function ext(type) {
+function ext(t){
   return {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "application/pdf": "pdf"
-  }[type] || "bin";
+    "image/jpeg":"jpg",
+    "image/png":"png",
+    "image/webp":"webp",
+    "application/pdf":"pdf"
+  }[t]||"bin";
 }
 
-async function upload(r, e) {
-  const u = await auth(r, e);
+async function upload(r,e){
+  const u=await auth(r,e);
+  if(u instanceof Response)return u;
 
-  if (u instanceof Response) return u;
-
-  let form;
-
-  try {
-    form = await r.formData();
-  } catch {
-    return json({
-      success: false,
-      error: "Invalid upload form"
-    }, 400, r);
+  let f;
+  try{f=await r.formData()}catch{
+    return json({success:false,error:"Invalid upload form"},400,r);
   }
 
-  const file = form.get("file");
-  const folder = String(
-    form.get("folder") || "ads"
-  ).trim();
+  const file=f.get("file");
+  const folder=String(f.get("folder")||"ads").trim();
 
-  if (!(file instanceof File)) {
-    return json({
-      success: false,
-      error: "File is required"
-    }, 400, r);
-  }
+  if(!(file instanceof File))
+    return json({success:false,error:"File is required"},400,r);
 
-  if (!["ads", "payments"].includes(folder)) {
-    return json({
-      success: false,
-      error: "Invalid upload folder"
-    }, 400, r);
-  }
+  if(!["ads","payments"].includes(folder))
+    return json({success:false,error:"Invalid upload folder"},400,r);
 
-  if (file.size <= 0 || file.size > MAX) {
-    return json({
-      success: false,
-      error: "Maximum file size is 5MB"
-    }, 400, r);
-  }
+  if(file.size<=0||file.size>MAX)
+    return json({success:false,error:"Maximum file size is 5MB"},400,r);
 
-  if (
-    folder === "ads" &&
-    !IMAGES.includes(file.type)
-  ) {
-    return json({
-      success: false,
-      error: "Only JPG, PNG and WebP images are allowed"
-    }, 400, r);
-  }
+  if(folder==="ads"&&!IMAGES.includes(file.type))
+    return json({success:false,error:"Only JPG, PNG and WebP images are allowed"},400,r);
 
-  if (
-    folder === "payments" &&
-    !SLIPS.includes(file.type)
-  ) {
-    return json({
-      success: false,
-      error: "Only JPG, PNG, WebP and PDF files are allowed"
-    }, 400, r);
-  }
+  if(folder==="payments"&&!SLIPS.includes(file.type))
+    return json({success:false,error:"Only JPG, PNG, WebP and PDF files are allowed"},400,r);
 
-  const key =
-    `${folder}/${u.id}/${crypto.randomUUID()}.${ext(file.type)}`;
+  const key=`${folder}/${u.id}/${crypto.randomUUID()}.${ext(file.type)}`;
 
-  try {
-    await e.JOBS_BUCKET.put(
-      key,
-      file.stream(),
-      {
-        httpMetadata: {
-          contentType: file.type
-        }
-      }
-    );
-  } catch (error) {
-    console.error("R2 UPLOAD ERROR:", error);
-
-    return json({
-      success: false,
-      error: "Unable to upload file"
-    }, 500, r);
+  try{
+    await e.JOBS_BUCKET.put(key,file.stream(),{
+      httpMetadata:{contentType:file.type}
+    });
+  }catch(error){
+    console.error(error);
+    return json({success:false,error:"Unable to upload file"},500,r);
   }
 
   return json({
-    success: true,
+    success:true,
     key,
-    url: `/photo?key=${encodeURIComponent(key)}`
-  }, 200, r);
+    url:`/photo?key=${encodeURIComponent(key)}`
+  },200,r);
 }
 
-async function locations(r, e) {
-  const url = new URL(r.url);
+async function locations(r,e){
+  const u=new URL(r.url);
+  const p=u.searchParams.get("province")?.trim()||"";
+  const d=u.searchParams.get("district")?.trim()||"";
 
-  const p =
-    url.searchParams.get("province")?.trim() || "";
-
-  const d =
-    url.searchParams.get("district")?.trim() || "";
-
-  if (!p) {
-    const x = await e.DB.prepare(`
+  if(!p){
+    const x=await e.DB.prepare(`
       SELECT DISTINCT province
       FROM locations
-      WHERE province IS NOT NULL
-        AND province<>''
+      WHERE province IS NOT NULL AND province<>''
       ORDER BY
-        CASE province
-          WHEN 'Western Province' THEN 1
-          WHEN 'Central Province' THEN 2
-          WHEN 'Southern Province' THEN 3
-          WHEN 'Northern Province' THEN 4
-          WHEN 'Eastern Province' THEN 5
-          WHEN 'North Western Province' THEN 6
-          WHEN 'North Central Province' THEN 7
-          WHEN 'Uva Province' THEN 8
-          WHEN 'Sabaragamuwa Province' THEN 9
-          ELSE 10
-        END,
-        province
+      CASE province
+        WHEN 'Western Province' THEN 1
+        WHEN 'Central Province' THEN 2
+        WHEN 'Southern Province' THEN 3
+        WHEN 'Northern Province' THEN 4
+        WHEN 'Eastern Province' THEN 5
+        WHEN 'North Western Province' THEN 6
+        WHEN 'North Central Province' THEN 7
+        WHEN 'Uva Province' THEN 8
+        WHEN 'Sabaragamuwa Province' THEN 9
+        ELSE 10
+      END,province
     `).all();
 
-    const provinces =
-      (x.results || []).map(x => x.province);
+    const provinces=(x.results||[]).map(x=>x.province).filter(Boolean);
 
-    if (!provinces.includes("Remote")) {
-      provinces.push("Remote");
-    }
+    if(!provinces.includes("Remote"))provinces.push("Remote");
+    if(!provinces.includes("Overseas"))provinces.push("Overseas");
 
-    if (!provinces.includes("Overseas")) {
-      provinces.push("Overseas");
-    }
-
-    return json({
-      success: true,
-      provinces
-    }, 200, r);
+    return json({success:true,provinces},200,r);
   }
 
-  if (p === "Remote" || p === "Overseas") {
-    if (!d) {
-      return json({
-        success: true,
-        districts: [p]
-      }, 200, r);
-    }
-
-    if (d !== p) {
-      return json({
-        success: false,
-        error: "Invalid location"
-      }, 400, r);
-    }
-
-    return json({
-      success: true,
-      cities: [p]
-    }, 200, r);
+  if(p==="Remote"||p==="Overseas"){
+    if(!d)return json({success:true,districts:[p]},200,r);
+    if(d!==p)return json({success:false,error:"Invalid location"},400,r);
+    return json({success:true,cities:[p]},200,r);
   }
 
-  if (!d) {
-    const x = await e.DB.prepare(`
+  if(!d){
+    const x=await e.DB.prepare(`
       SELECT DISTINCT district
       FROM locations
-      WHERE province=?
-        AND district IS NOT NULL
-        AND district<>''
+      WHERE province=? AND district IS NOT NULL AND district<>''
       ORDER BY district
     `).bind(p).all();
 
     return json({
-      success: true,
-      districts:
-        (x.results || []).map(x => x.district)
-    }, 200, r);
+      success:true,
+      districts:(x.results||[]).map(x=>x.district).filter(Boolean)
+    },200,r);
   }
 
-  const x = await e.DB.prepare(`
+  const x=await e.DB.prepare(`
     SELECT DISTINCT city
     FROM locations
-    WHERE province=?
-      AND district=?
-      AND city IS NOT NULL
-      AND city<>''
+    WHERE province=? AND district=? AND city IS NOT NULL AND city<>''
     ORDER BY city
-  `).bind(p, d).all();
+  `).bind(p,d).all();
 
   return json({
-    success: true,
-    cities:
-      (x.results || []).map(x => x.city)
-  }, 200, r);
+    success:true,
+    cities:(x.results||[]).map(x=>x.city).filter(Boolean)
+  },200,r);
 }
 
-async function validLocation(e, p, d, c) {
-  if (
-    (p === "Remote" || p === "Overseas") &&
-    p === d &&
-    p === c
-  ) {
-    return true;
-  }
+async function validLocation(e,p,d,c){
+  if((p==="Remote"||p==="Overseas")&&p===d&&p===c)return true;
 
   return !!await e.DB.prepare(`
-    SELECT id
-    FROM locations
-    WHERE province=?
-      AND district=?
-      AND city=?
+    SELECT id FROM locations
+    WHERE province=? AND district=? AND city=?
     LIMIT 1
-  `).bind(p, d, c).first();
+  `).bind(p,d,c).first();
 }
 
-async function createAd(r, e) {
-  const u = await auth(r, e);
+async function category(e,id){
+  if(!Number.isInteger(id)||id<=0)return null;
 
-  if (u instanceof Response) return u;
+  return await e.DB.prepare(`
+    SELECT id,name,slug
+    FROM categories
+    WHERE id=?
+    LIMIT 1
+  `).bind(id).first();
+}
+
+async function createAd(r,e){
+  const u=await auth(r,e);
+  if(u instanceof Response)return u;
 
   let b;
-
-  try {
-    b = await r.json();
-  } catch {
-    return json({
-      success: false,
-      error: "Invalid JSON"
-    }, 400, r);
+  try{b=await r.json()}catch{
+    return json({success:false,error:"Invalid JSON"},400,r);
   }
 
-  const title =
-    String(b.title || "").trim();
+  const title=String(b.title||"").trim();
+  const description=String(b.description||"").trim();
+  const whatsapp_no=String(b.whatsapp_no||b.whatsapp_number||"").trim();
+  const call_no=String(
+    b.call_no||b.call_number||b.phone||b.phone_number||""
+  ).trim();
 
-  const description =
-    String(b.description || "").trim();
+  const province=String(b.province||"").trim();
+  const district=String(b.district||"").trim();
+  const city=String(b.city||"").trim();
 
-  const whatsapp_no =
-    String(
-      b.whatsapp_no ||
-      b.whatsapp_number ||
-      ""
-    ).trim();
+  const photo_url=String(b.photo_url||b.photo||"").trim();
+  const ad_type=String(b.ad_type||"free").trim().toLowerCase();
+  const slip_url=String(b.slip_url||b.payment_slip||"").trim();
+  const deposit_date=String(b.deposit_date||"").trim();
+  const category_id=Number(b.category_id||b.category||0);
 
-  const call_no =
-    String(
-      b.call_no ||
-      b.call_number ||
-      b.phone ||
-      b.phone_number ||
-      ""
-    ).trim();
+  if(!title||!description||!whatsapp_no||!call_no||
+     !province||!district||!city||!photo_url)
+    return json({success:false,error:"All required fields must be completed"},400,r);
 
-  const province =
-    String(b.province || "").trim();
+  if(!(ad_type in PRICES))
+    return json({success:false,error:"Invalid ad type"},400,r);
 
-  const district =
-    String(b.district || "").trim();
+  const cat=await category(e,category_id);
+  if(!cat)
+    return json({success:false,error:"Invalid category"},400,r);
 
-  const city =
-    String(b.city || "").trim();
+  if(!await validLocation(e,province,district,city))
+    return json({success:false,error:"Invalid location"},400,r);
 
-  const photo_url =
-    String(
-      b.photo_url ||
-      b.photo ||
-      ""
-    ).trim();
+  if(!photo_url.startsWith("ads/")||
+     !await e.JOBS_BUCKET.head(photo_url))
+    return json({success:false,error:"Ad photo not found"},400,r);
 
-  const ad_type =
-    String(
-      b.ad_type ||
-      "free"
-    ).trim().toLowerCase();
-
-  const slip_url =
-    String(
-      b.slip_url ||
-      b.payment_slip ||
-      ""
-    ).trim();
-
-  const deposit_date =
-    String(
-      b.deposit_date ||
-      ""
-    ).trim();
-
-  if (
-    !title ||
-    !description ||
-    !whatsapp_no ||
-    !call_no ||
-    !province ||
-    !district ||
-    !city ||
-    !photo_url
-  ) {
-    return json({
-      success: false,
-      error: "All required fields must be completed"
-    }, 400, r);
-  }
-
-  if (!(ad_type in PRICES)) {
-    return json({
-      success: false,
-      error: "Invalid ad type"
-    }, 400, r);
-  }
-
-  if (
-    !await validLocation(
-      e,
-      province,
-      district,
-      city
-    )
-  ) {
-    return json({
-      success: false,
-      error: "Invalid location"
-    }, 400, r);
-  }
-
-  if (!photo_url.startsWith("ads/")) {
-    return json({
-      success: false,
-      error: "Invalid ad photo"
-    }, 400, r);
-  }
-
-  if (!await e.JOBS_BUCKET.head(photo_url)) {
-    return json({
-      success: false,
-      error: "Ad photo not found"
-    }, 400, r);
-  }
-
-  if (ad_type === "free") {
-    const pending = await e.DB.prepare(`
-      SELECT id
-      FROM ads
-      WHERE user_id=?
-        AND ad_type='free'
-        AND status='pending'
+  if(ad_type==="free"){
+    const pending=await e.DB.prepare(`
+      SELECT id FROM ads
+      WHERE user_id=? AND ad_type='free' AND status='pending'
       LIMIT 1
     `).bind(u.id).first();
 
-    if (pending) {
+    if(pending)
       return json({
-        success: false,
-        error:
-          "You already have a free ad waiting for approval"
-      }, 400, r);
-    }
+        success:false,
+        error:"You already have a free ad waiting for approval."
+      },400,r);
 
-    const recent = await e.DB.prepare(`
-      SELECT id
-      FROM ads
+    const recent=await e.DB.prepare(`
+      SELECT id FROM ads
       WHERE user_id=?
         AND ad_type='free'
-        AND datetime(created_at)>
-            datetime('now','-30 days')
+        AND status='approved'
+        AND datetime(created_at)>datetime('now','-30 days')
       LIMIT 1
     `).bind(u.id).first();
 
-    if (recent) {
+    if(recent)
       return json({
-        success: false,
-        error:
-          "You can post another free ad after 30 days"
-      }, 400, r);
-    }
+        success:false,
+        error:"You can post another free ad after 30 days."
+      },400,r);
   }
 
-  const paid = PAID.includes(ad_type);
-  const price = PRICES[ad_type];
-  const [label, priority] = META[ad_type];
+  const paid=PAID.includes(ad_type);
+  const price=PRICES[ad_type];
+  const [label,priority]=META[ad_type];
 
-  if (paid) {
-    if (!slip_url || !deposit_date) {
+  if(paid){
+    if(!slip_url||!deposit_date)
       return json({
-        success: false,
-        error:
-          "Payment slip and deposit date are required"
-      }, 400, r);
-    }
+        success:false,
+        error:"Payment slip and deposit date are required"
+      },400,r);
 
-    if (!slip_url.startsWith("payments/")) {
+    if(!slip_url.startsWith("payments/")||
+       !await e.JOBS_BUCKET.head(slip_url))
       return json({
-        success: false,
-        error: "Invalid payment slip"
-      }, 400, r);
-    }
-
-    if (!await e.JOBS_BUCKET.head(slip_url)) {
-      return json({
-        success: false,
-        error: "Payment slip not found"
-      }, 400, r);
-    }
+        success:false,
+        error:"Payment slip not found"
+      },400,r);
   }
 
-  const adId =
-    crypto.randomUUID();
+  let adId=null;
+  let paymentId=null;
 
-  const paymentId =
-    crypto.randomUUID();
+  try{
+    const ad=await e.DB.prepare(`
+      INSERT INTO ads(
+        user_id,photo_url,title,description,whatsapp_no,call_no,
+        province,district,city,category_id,ad_type,price,label,priority,
+        status,payment_status,payment_id,created_at
+      )
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,NULL,CURRENT_TIMESTAMP)
+      RETURNING id
+    `).bind(
+      u.id,photo_url,title,description,whatsapp_no,call_no,
+      province,district,city,category_id,ad_type,price,label,priority,
+      paid?"pending":"not_required"
+    ).first();
 
-  try {
-    if (paid) {
-      await e.DB.prepare(`
-        INSERT INTO payments
-        (
-          id,
-          user_id,
-          ad_id,
-          amount,
-          bank_name,
-          branch,
-          account_name,
-          account_number,
-          slip_url,
-          deposit_date,
-          status,
-          created_at
+    adId=Number(ad.id);
+
+    if(paid){
+      const payment=await e.DB.prepare(`
+        INSERT INTO payments(
+          user_id,ad_id,amount,bank_name,branch_name,
+          account_name,account_number,depositor_name,
+          deposit_date,reference_number,slip_url,status,created_at
         )
-        VALUES(
-          ?,?,?,?,?,?,?,?,?,?,
-          'pending',
-          CURRENT_TIMESTAMP
-        )
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,'pending',CURRENT_TIMESTAMP)
+        RETURNING id
       `).bind(
-        paymentId,
         u.id,
         adId,
         price,
@@ -563,140 +339,110 @@ async function createAd(r, e) {
         "Udapussellawa",
         "Thinarathnam Saththiyanadan",
         "292200280023178",
-        slip_url,
-        deposit_date
-      ).run();
+        u.name||"",
+        deposit_date,
+        "",
+        slip_url
+      ).first();
+
+      paymentId=Number(payment.id);
+
+      await e.DB.prepare(`
+        UPDATE ads SET payment_id=? WHERE id=?
+      `).bind(paymentId,adId).run();
     }
 
-    await e.DB.prepare(`
-      INSERT INTO ads
-      (
-        id,
-        user_id,
-        photo_url,
-        title,
-        description,
-        whatsapp_no,
-        call_no,
-        province,
-        district,
-        city,
-        ad_type,
-        price,
-        label,
-        priority,
-        status,
-        payment_status,
-        payment_id,
-        created_at
-      )
-      VALUES(
-        ?,?,?,?,?,?,?,?,?,?,
-        ?,?,?,?,?,?,
-        ?,?,
-        CURRENT_TIMESTAMP
-      )
-    `).bind(
-      adId,
-      u.id,
-      photo_url,
-      title,
-      description,
-      whatsapp_no,
-      call_no,
-      province,
-      district,
-      city,
-      ad_type,
-      price,
-      label,
-      priority,
-      "pending",
-      paid ? "pending" : "not_required",
-      paid ? paymentId : null
-    ).run();
-
     return json({
-      success: true,
-      id: adId,
-      payment_id: paid ? paymentId : null,
+      success:true,
+      id:adId,
+      payment_id:paymentId,
+      category_id,
+      category_name:cat.name,
+      category_slug:cat.slug,
       ad_type,
       label,
       priority,
-      amount: price,
-      payment_required: paid,
-      payment_status:
-        paid ? "pending" : "not_required",
-      status: "pending"
-    }, 200, r);
+      amount:price,
+      payment_required:paid,
+      payment_status:paid?"pending":"not_required",
+      status:"pending"
+    },200,r);
 
-  } catch (error) {
-    console.error("CREATE AD ERROR:", error);
+  }catch(error){
+    console.error("CREATE AD ERROR:",error);
 
-    if (paid) {
-      try {
+    if(paymentId)
+      try{
         await e.DB.prepare(
           `DELETE FROM payments WHERE id=?`
         ).bind(paymentId).run();
-      } catch {}
-    }
+      }catch{}
+
+    if(adId)
+      try{
+        await e.DB.prepare(
+          `DELETE FROM ads WHERE id=?`
+        ).bind(adId).run();
+      }catch{}
 
     return json({
-      success: false,
-      error: "Unable to create ad"
-    }, 500, r);
+      success:false,
+      error:"Unable to create ad"
+    },500,r);
   }
 }
 
-async function myAds(r, e) {
-  const u = await auth(r, e);
+async function myAds(r,e){
+  const u=await auth(r,e);
+  if(u instanceof Response)return u;
 
-  if (u instanceof Response) return u;
-
-  const x = await e.DB.prepare(`
+  const x=await e.DB.prepare(`
     SELECT
       ads.*,
+      categories.name AS category_name,
+      categories.slug AS category_slug,
       payments.amount AS payment_amount,
       payments.status AS payment_status_current,
       payments.deposit_date,
       payments.slip_url,
-      payments.rejection_reason
-        AS payment_rejection_reason
+      payments.rejection_reason AS payment_rejection_reason
     FROM ads
-    LEFT JOIN payments
-      ON payments.id=ads.payment_id
+    LEFT JOIN categories ON categories.id=ads.category_id
+    LEFT JOIN payments ON payments.id=ads.payment_id
     WHERE ads.user_id=?
     ORDER BY datetime(ads.created_at) DESC
   `).bind(u.id).all();
 
-  return json({
-    success: true,
-    ads: x.results || []
-  }, 200, r);
+  return json({success:true,ads:x.results||[]},200,r);
 }
 
-async function latest(r, e) {
-  const x = await e.DB.prepare(`
+async function latest(r,e){
+  const id=Number(
+    new URL(r.url).searchParams.get("category_id")||0
+  );
+
+  let q=`
     SELECT
       ads.*,
-      users.name AS user_name
+      users.name AS user_name,
+      categories.name AS category_name,
+      categories.slug AS category_slug
     FROM ads
-    JOIN users
-      ON users.id=ads.user_id
+    JOIN users ON users.id=ads.user_id
+    LEFT JOIN categories ON categories.id=ads.category_id
     WHERE ads.status='approved'
       AND ads.approved_at IS NOT NULL
-      AND (
-        (
-          ads.expires_at IS NOT NULL
-          AND datetime(ads.expires_at)>datetime('now')
-        )
-        OR
-        (
-          ads.expires_at IS NULL
-          AND datetime(ads.approved_at)>
-              datetime('now','-30 days')
-        )
-      )
+      AND datetime(ads.created_at)>datetime('now','-30 days')
+  `;
+
+  const p=[];
+
+  if(Number.isInteger(id)&&id>0){
+    q+=` AND ads.category_id=?`;
+    p.push(id);
+  }
+
+  q+=`
     ORDER BY
       CASE ads.ad_type
         WHEN 'featured_urgent_top' THEN 4
@@ -707,259 +453,134 @@ async function latest(r, e) {
       END DESC,
       datetime(ads.approved_at) DESC
     LIMIT 50
-  `).all();
+  `;
 
-  return json({
-    success: true,
-    ads: x.results || []
-  }, 200, r);
+  const x=await e.DB.prepare(q).bind(...p).all();
+
+  return json({success:true,ads:x.results||[]},200,r);
 }
 
-async function photo(r, e) {
-  const key =
-    new URL(r.url)
-      .searchParams
-      .get("key") || "";
+async function photo(r,e){
+  const key=new URL(r.url).searchParams.get("key")||"";
 
-  if (!key.startsWith("ads/")) {
-    return new Response(
-      "Invalid photo",
-      {
-        status: 400,
-        headers: cors(r)
-      }
-    );
-  }
+  if(!key.startsWith("ads/"))
+    return new Response("Invalid photo",{status:400,headers:cors(r)});
 
-  const ad = await e.DB.prepare(`
-    SELECT id
-    FROM ads
+  const ad=await e.DB.prepare(`
+    SELECT id FROM ads
     WHERE photo_url=?
       AND status='approved'
       AND approved_at IS NOT NULL
-      AND (
-        (
-          expires_at IS NOT NULL
-          AND datetime(expires_at)>datetime('now')
-        )
-        OR
-        (
-          expires_at IS NULL
-          AND datetime(approved_at)>
-              datetime('now','-30 days')
-        )
-      )
+      AND datetime(created_at)>datetime('now','-30 days')
     LIMIT 1
   `).bind(key).first();
 
-  if (!ad) {
-    return new Response(
-      "Photo not available",
-      {
-        status: 404,
-        headers: cors(r)
-      }
-    );
-  }
+  if(!ad)
+    return new Response("Photo not available",{
+      status:404,headers:cors(r)
+    });
 
-  const object =
-    await e.JOBS_BUCKET.get(key);
+  const object=await e.JOBS_BUCKET.get(key);
 
-  if (!object) {
-    return new Response(
-      "Photo not found",
-      {
-        status: 404,
-        headers: cors(r)
-      }
-    );
-  }
+  if(!object)
+    return new Response("Photo not found",{
+      status:404,headers:cors(r)
+    });
 
-  const headers =
-    new Headers(cors(r));
+  const h=new Headers(cors(r));
+  object.writeHttpMetadata(h);
+  h.set("Cache-Control","public,max-age=3600");
 
-  object.writeHttpMetadata(headers);
-
-  headers.set(
-    "Cache-Control",
-    "public,max-age=3600"
-  );
-
-  return new Response(
-    object.body,
-    {
-      status: 200,
-      headers
-    }
-  );
+  return new Response(object.body,{status:200,headers:h});
 }
 
-async function cleanup(e) {
-  const x = await e.DB.prepare(`
-    SELECT
-      id,
-      photo_url,
-      payment_id
+async function cleanup(e){
+  const x=await e.DB.prepare(`
+    SELECT id,photo_url,payment_id
     FROM ads
-    WHERE
-      (
-        expires_at IS NOT NULL
-        AND datetime(expires_at)<=datetime('now')
-      )
-      OR
-      (
-        expires_at IS NULL
-        AND approved_at IS NOT NULL
-        AND status='approved'
-        AND datetime(approved_at)<=
-            datetime('now','-30 days')
-      )
+    WHERE datetime(created_at)<=datetime('now','-30 days')
   `).all();
 
-  for (const ad of x.results || []) {
+  for(const ad of x.results||[]){
+    if(ad.photo_url?.startsWith("ads/"))
+      try{await e.JOBS_BUCKET.delete(ad.photo_url)}catch{}
 
-    if (ad.photo_url?.startsWith("ads/")) {
-      try {
-        await e.JOBS_BUCKET.delete(
-          ad.photo_url
-        );
-      } catch {}
-    }
-
-    if (ad.payment_id) {
-
-      const p = await e.DB.prepare(`
-        SELECT slip_url
-        FROM payments
-        WHERE id=?
-        LIMIT 1
+    if(ad.payment_id){
+      const p=await e.DB.prepare(`
+        SELECT slip_url FROM payments
+        WHERE id=? LIMIT 1
       `).bind(ad.payment_id).first();
 
-      if (p?.slip_url?.startsWith("payments/")) {
-        try {
-          await e.JOBS_BUCKET.delete(
-            p.slip_url
-          );
-        } catch {}
-      }
+      if(p?.slip_url?.startsWith("payments/"))
+        try{await e.JOBS_BUCKET.delete(p.slip_url)}catch{}
 
-      try {
+      try{
         await e.DB.prepare(
           `DELETE FROM payments WHERE id=?`
         ).bind(ad.payment_id).run();
-      } catch {}
+      }catch{}
     }
 
-    try {
+    try{
       await e.DB.prepare(
         `DELETE FROM ads WHERE id=?`
       ).bind(ad.id).run();
-    } catch {}
+    }catch{}
   }
 }
 
-export default {
-
-  async fetch(r, e) {
-
-    if (r.method === "OPTIONS") {
-
-      const origin =
-        r.headers.get("Origin");
-
-      if (
-        origin &&
-        !ORIGINS.includes(origin)
-      ) {
-        return new Response(
-          "Forbidden",
-          { status: 403 }
-        );
-      }
-
-      return new Response(null, {
-        status: 204,
-        headers: cors(r)
-      });
+export default{
+  async fetch(r,e){
+    if(r.method==="OPTIONS"){
+      const o=r.headers.get("Origin");
+      if(o&&!ORIGINS.includes(o))
+        return new Response("Forbidden",{status:403});
+      return new Response(null,{status:204,headers:cors(r)});
     }
 
-    try {
+    try{
+      const p=new URL(r.url).pathname;
 
-      const p =
-        new URL(r.url).pathname;
-
-      if (p === "/health") {
+      if(p==="/health"&&r.method==="GET")
         return json({
-          success: true,
-          service:
-            "CreateLK Jobs Ads API"
-        }, 200, r);
-      }
+          success:true,
+          service:"CreateLK Jobs Ads API",
+          status:"online"
+        },200,r);
 
-      if (
-        p === "/upload" &&
-        r.method === "POST"
-      ) {
-        return upload(r, e);
-      }
+      if(p==="/upload"&&r.method==="POST")
+        return upload(r,e);
 
-      if (
-        p === "/locations" &&
-        r.method === "GET"
-      ) {
-        return locations(r, e);
-      }
+      if(p==="/locations"&&r.method==="GET")
+        return locations(r,e);
 
-      if (
-        (p === "/create" || p === "/ads") &&
-        r.method === "POST"
-      ) {
-        return createAd(r, e);
-      }
+      if((p==="/create"||p==="/ads")&&r.method==="POST")
+        return createAd(r,e);
 
-      if (
-        p === "/my-ads" &&
-        r.method === "GET"
-      ) {
-        return myAds(r, e);
-      }
+      if(p==="/my-ads"&&r.method==="GET")
+        return myAds(r,e);
 
-      if (
-        p === "/latest" &&
-        r.method === "GET"
-      ) {
-        return latest(r, e);
-      }
+      if(p==="/latest"&&r.method==="GET")
+        return latest(r,e);
 
-      if (
-        p === "/photo" &&
-        r.method === "GET"
-      ) {
-        return photo(r, e);
-      }
+      if(p==="/photo"&&r.method==="GET")
+        return photo(r,e);
 
       return json({
-        success: false,
-        error: "Not found"
-      }, 404, r);
+        success:false,
+        error:"Not found"
+      },404,r);
 
-    } catch (error) {
-
-      console.error(
-        "WORKER ERROR:",
-        error
-      );
-
+    }catch(error){
+      console.error("WORKER ERROR:",error);
       return json({
-        success: false,
-        error: "Internal server error"
-      }, 500, r);
+        success:false,
+        error:"Internal server error"
+      },500,r);
     }
   },
 
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(
-      cleanup(env)
-    );
+  async scheduled(event,env,ctx){
+    ctx.waitUntil(cleanup(env));
   }
 };
