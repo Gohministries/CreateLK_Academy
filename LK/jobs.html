@@ -292,7 +292,8 @@ font-weight:700
 display:flex;
 justify-content:center;
 gap:8px;
-margin-top:25px
+margin-top:25px;
+flex-wrap:wrap
 }
 
 .pagination button{
@@ -398,7 +399,9 @@ placeholder="Search jobs, titles or descriptions...">
 <option value="featured">Featured</option>
 <option value="urgent">Urgent</option>
 <option value="top">Top</option>
-<option value="featured_urgent_top">Featured + Urgent + Top</option>
+<option value="featured_urgent_top">
+Featured + Urgent + Top
+</option>
 </select>
 
 <button id="searchBtn" class="search-btn">
@@ -449,6 +452,7 @@ return String(value??"")
 }
 
 function photoURL(key){
+
 if(!key)return "";
 
 if(
@@ -459,15 +463,26 @@ key.startsWith("https://")
 return `${API}/photo?key=${encodeURIComponent(key)}`;
 }
 
+function normalizeType(type){
+return String(type||"").toLowerCase().trim();
+}
+
 function typeName(type){
+
+type=normalizeType(type);
+
 return type==="featured"?"Featured":
 type==="urgent"?"Urgent":
 type==="top"?"Top":
-type==="featured_urgent_top"?"Featured + Urgent + Top":
+type==="featured_urgent_top"
+?"Featured + Urgent + Top":
 "Free";
 }
 
 function typeClass(type){
+
+type=normalizeType(type);
+
 return type==="featured"?"featured":
 type==="urgent"?"urgent":
 type==="top"?"top-ad":
@@ -475,13 +490,49 @@ type==="featured_urgent_top"?"combined":
 "free";
 }
 
+/*
+Premium priority.
+
+featured_urgent_top = 4
+top                   = 3
+featured              = 2
+urgent                = 1
+free                  = 0
+
+The value from the Worker is used when available.
+The fallback below keeps the correct order
+if priority is missing from an API response.
+*/
+
+function adPriority(ad){
+
+const serverPriority=Number(ad.priority);
+
+if(Number.isFinite(serverPriority))
+return serverPriority;
+
+const type=normalizeType(ad.ad_type);
+
+return type==="featured_urgent_top"?4:
+type==="top"?3:
+type==="featured"?2:
+type==="urgent"?1:
+0;
+}
+
 function locationText(ad){
-return [ad.city,ad.district,ad.province]
+
+return [
+ad.city,
+ad.district,
+ad.province
+]
 .filter(Boolean)
 .join(", ");
 }
 
 function whatsappURL(number){
+
 let phone=String(number||"").replace(/\D/g,"");
 
 if(!phone)return "#";
@@ -495,14 +546,19 @@ return `https://wa.me/${phone}`;
 }
 
 function callURL(number){
-const clean=String(number||"").replace(/[^\d+]/g,"");
+
+const clean=String(number||"")
+.replace(/[^\d+]/g,"");
+
 return clean?`tel:${clean}`:"#";
 }
 
 function renderAd(ad){
 
 const photo=photoURL(
-ad.photo_url||ad.photo_key||""
+ad.photo_url||
+ad.photo_key||
+""
 );
 
 const photoHTML=photo
@@ -533,9 +589,11 @@ ${escapeHTML(ad.description)}
 </div>
 
 <div class="badges">
+
 <span class="badge ${typeClass(ad.ad_type)}">
 ${escapeHTML(typeName(ad.ad_type))}
 </span>
+
 </div>
 
 <div class="location">
@@ -582,12 +640,16 @@ $("province").innerHTML=
 `<option value="">All Provinces / Locations</option>`+
 (d.provinces||[])
 .map(x=>`
-<option value="${escapeHTML(x)}">${escapeHTML(x)}</option>
+<option value="${escapeHTML(x)}">
+${escapeHTML(x)}
+</option>
 `)
 .join("");
 
 }catch(e){
+
 console.error("Province error",e);
+
 }
 }
 
@@ -599,10 +661,14 @@ const city=$("city");
 district.disabled=true;
 city.disabled=true;
 
-district.innerHTML=`<option value="">All Districts</option>`;
-city.innerHTML=`<option value="">All Cities / Towns</option>`;
+district.innerHTML=
+`<option value="">All Districts</option>`;
+
+city.innerHTML=
+`<option value="">All Cities / Towns</option>`;
 
 if(!province){
+
 applyFilters();
 return;
 }
@@ -622,22 +688,35 @@ district.innerHTML=
 `<option value="">All Districts</option>`+
 (d.districts||[])
 .map(x=>`
-<option value="${escapeHTML(x)}">${escapeHTML(x)}</option>
+<option value="${escapeHTML(x)}">
+${escapeHTML(x)}
+</option>
 `)
 .join("");
 
 district.disabled=false;
 
-if(province==="Remote"||province==="Overseas"){
+if(
+province==="Remote"||
+province==="Overseas"
+){
+
 district.value=province;
-await loadCities(province,province);
+
+await loadCities(
+province,
+province
+);
+
 }
 
 applyFilters();
 
 }catch(e){
+
 console.error("District error",e);
 applyFilters();
+
 }
 }
 
@@ -646,11 +725,15 @@ async function loadCities(province,district){
 const city=$("city");
 
 city.disabled=true;
-city.innerHTML=`<option value="">All Cities / Towns</option>`;
+
+city.innerHTML=
+`<option value="">All Cities / Towns</option>`;
 
 if(!province||!district){
+
 applyFilters();
 return;
+
 }
 
 try{
@@ -668,24 +751,31 @@ city.innerHTML=
 `<option value="">All Cities / Towns</option>`+
 (d.cities||[])
 .map(x=>`
-<option value="${escapeHTML(x)}">${escapeHTML(x)}</option>
+<option value="${escapeHTML(x)}">
+${escapeHTML(x)}
+</option>
 `)
 .join("");
 
 city.disabled=false;
 
-if(province==="Remote"||province==="Overseas")
+if(
+province==="Remote"||
+province==="Overseas"
+)
 city.value=province;
 
 applyFilters();
 
 }catch(e){
+
 console.error("City error",e);
 applyFilters();
+
 }
 }
 
-/* FILTER */
+/* FILTER + PREMIUM SORT */
 
 function applyFilters(){
 
@@ -705,21 +795,62 @@ ad.category_name
 .join(" ")
 .toLowerCase();
 
-if(q&&!text.includes(q))return false;
+if(q&&!text.includes(q))
+return false;
 
-if(province&&ad.province!==province)return false;
+if(province&&ad.province!==province)
+return false;
 
-if(district&&ad.district!==district)return false;
+if(district&&ad.district!==district)
+return false;
 
-if(city&&ad.city!==city)return false;
+if(city&&ad.city!==city)
+return false;
 
-if(type&&ad.ad_type!==type)return false;
+if(type&&normalizeType(ad.ad_type)!==type)
+return false;
 
 return true;
+
+});
+
+/*
+IMPORTANT:
+Always place premium ads before free ads.
+
+Priority:
+4 = Featured + Urgent + Top
+3 = Top
+2 = Featured
+1 = Urgent
+0 = Free
+
+If two ads have the same priority,
+the newest ad appears first.
+*/
+
+filteredAds.sort((a,b)=>{
+
+const priorityA=adPriority(a);
+const priorityB=adPriority(b);
+
+if(priorityA!==priorityB)
+return priorityB-priorityA;
+
+const dateA=
+new Date(a.created_at||0).getTime();
+
+const dateB=
+new Date(b.created_at||0).getTime();
+
+return dateB-dateA;
+
 });
 
 currentPage=1;
+
 render();
+
 }
 
 /* RENDER */
@@ -730,7 +861,9 @@ $("loading").style.display="none";
 
 $("count").textContent=
 `${filteredAds.length} ${
-filteredAds.length===1?"job":"jobs"
+filteredAds.length===1
+?"job"
+:"jobs"
 } found`;
 
 $("grid").innerHTML="";
@@ -739,12 +872,15 @@ if(!filteredAds.length){
 
 $("empty").style.display="block";
 $("pagination").innerHTML="";
+
 return;
+
 }
 
 $("empty").style.display="none";
 
-const start=(currentPage-1)*PER_PAGE;
+const start=
+(currentPage-1)*PER_PAGE;
 
 $("grid").innerHTML=
 filteredAds
@@ -753,17 +889,21 @@ filteredAds
 .join("");
 
 renderPagination();
+
 }
 
 /* PAGINATION */
 
 function renderPagination(){
 
-const pages=Math.ceil(filteredAds.length/PER_PAGE);
+const pages=
+Math.ceil(filteredAds.length/PER_PAGE);
 
 if(pages<=1){
+
 $("pagination").innerHTML="";
 return;
+
 }
 
 let html=`
@@ -781,6 +921,7 @@ class="${i===currentPage?"active":""}"
 onclick="changePage(${i})">
 ${i}
 </button>`;
+
 }
 
 html+=`
@@ -791,21 +932,26 @@ Next
 </button>`;
 
 $("pagination").innerHTML=html;
+
 }
 
 function changePage(page){
 
-const pages=Math.ceil(filteredAds.length/PER_PAGE);
+const pages=
+Math.ceil(filteredAds.length/PER_PAGE);
 
-if(page<1||page>pages)return;
+if(page<1||page>pages)
+return;
 
 currentPage=page;
+
 render();
 
 window.scrollTo({
 top:0,
 behavior:"smooth"
 });
+
 }
 
 /* LOAD ADS */
@@ -818,15 +964,19 @@ $("error").style.display="none";
 
 try{
 
-/* Correct endpoint: /latest */
+const r=
+await fetch(`${API}/latest`);
 
-const r=await fetch(`${API}/latest`);
-const d=await r.json();
+const d=
+await r.json();
 
 if(!r.ok||!d.success)
-throw Error(d.error||"Could not load jobs.");
+throw Error(
+d.error||"Could not load jobs."
+);
 
-allAds=Array.isArray(d.ads)
+allAds=
+Array.isArray(d.ads)
 ?d.ads
 :Array.isArray(d.data)
 ?d.data
@@ -839,12 +989,15 @@ applyFilters();
 console.error("Jobs error:",e);
 
 $("loading").style.display="none";
+
 $("count").textContent="";
 
 $("error").textContent=
-e.message||"Could not load approved jobs.";
+e.message||
+"Could not load approved jobs.";
 
 $("error").style.display="block";
+
 }
 }
 
@@ -892,26 +1045,30 @@ $("province").value="";
 
 $("district").innerHTML=
 `<option value="">All Districts</option>`;
+
 $("district").disabled=true;
 
 $("city").innerHTML=
 `<option value="">All Cities / Towns</option>`;
+
 $("city").disabled=true;
 
 $("type").value="";
 
 applyFilters();
+
 }
 );
 
 /* START */
 
 (async()=>{
+
 await loadProvinces();
 await loadAds();
+
 })();
 </script>
 
 </body>
 </html>
-
