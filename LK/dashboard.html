@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <title>CreateLK Jobs Dashboard</title>
-
-<meta name="description"
-content="CreateLK Jobs user dashboard">
+<meta name="description" content="CreateLK Jobs user dashboard">
 
 <style>
 *{
@@ -200,6 +198,28 @@ background:#d4a72c;
 color:#111
 }
 
+.refresh{
+margin-top:15px;
+border:0;
+background:#0b1f3a;
+color:#fff;
+padding:10px 18px;
+border-radius:7px;
+cursor:pointer;
+font-weight:600
+}
+
+.api-error{
+display:none;
+background:#fff4f4;
+color:#b42318;
+border:1px solid #f3b4b4;
+padding:12px 15px;
+border-radius:8px;
+margin-bottom:20px;
+line-height:1.5
+}
+
 .status{
 position:fixed;
 inset:0;
@@ -308,7 +328,9 @@ Please sign in to your CreateLK Jobs account.
 <a
 class="btn"
 href="https://createlk.com/LK/login.html">
+
 Sign In
+
 </a>
 
 </div>
@@ -362,6 +384,13 @@ Manage your ads and CreateLK Jobs account.
 </p>
 
 </section>
+
+
+<!-- API ERROR -->
+<div
+id="apiError"
+class="api-error">
+</div>
 
 
 <!-- PROFILE -->
@@ -456,8 +485,18 @@ class="status-number rejected">
 </div>
 
 
+<button
+id="refreshBtn"
+class="refresh"
+type="button">
+
+Refresh Ads
+
+</button>
+
+
 <!-- ACTIONS -->
-<section class="grid">
+<section class="grid" style="margin-top:20px">
 
 <div class="card">
 
@@ -528,7 +567,7 @@ const $ =
 id => document.getElementById(id);
 
 
-/* ERROR */
+/* ERROR SCREEN */
 
 function showError(message){
 
@@ -583,7 +622,7 @@ JSON.stringify(user)
 }catch(error){
 
 console.error(
-"Could not save user",
+"Could not save user:",
 error
 );
 
@@ -592,7 +631,7 @@ error
 }
 
 
-/* GOOGLE TICKET */
+/* GOOGLE LOGIN EXCHANGE */
 
 async function exchangeTicket(ticket){
 
@@ -641,7 +680,7 @@ return data;
 }
 
 
-/* GET USER */
+/* GET CURRENT USER */
 
 async function getMe(token){
 
@@ -651,7 +690,7 @@ LOGIN_API + "/me",
 {
 method:"GET",
 headers:{
-Authorization:
+"Authorization":
 "Bearer " + token
 },
 cache:"no-store"
@@ -661,6 +700,12 @@ cache:"no-store"
 const data =
 await response.json().catch(
 ()=>({})
+);
+
+console.log(
+"Login /me:",
+response.status,
+data
 );
 
 if(
@@ -740,11 +785,22 @@ async function loadMyAds(){
 const token =
 getToken();
 
+console.log(
+"Dashboard token exists:",
+!!token
+);
+
 if(!token){
 
-return false;
+throw new Error(
+"Login session not found."
+);
 
 }
+
+
+$("apiError").style.display =
+"none";
 
 
 try{
@@ -758,6 +814,8 @@ headers:{
 "Authorization":
 "Bearer " + token,
 "Content-Type":
+"application/json",
+"Accept":
 "application/json"
 },
 cache:"no-store"
@@ -765,10 +823,28 @@ cache:"no-store"
 );
 
 
-const data =
-await response.json().catch(
-()=>({})
+const text =
+await response.text();
+
+let data = {};
+
+try{
+
+data =
+text ? JSON.parse(text) : {};
+
+}catch(error){
+
+console.error(
+"Invalid JSON from Ads Worker:",
+text
 );
+
+throw new Error(
+"Ads Worker returned an invalid response."
+);
+
+}
 
 
 console.log(
@@ -784,7 +860,7 @@ response.status === 403
 ){
 
 throw new Error(
-"Your login session has expired."
+"Ads Worker rejected your login session."
 );
 
 }
@@ -829,19 +905,26 @@ String(ad.status || "")
 .toLowerCase();
 
 
+console.log(
+"Ad status:",
+ad.id,
+status
+);
+
+
 if(status === "pending"){
 
 pending++;
 
 }
 
-if(status === "approved"){
+else if(status === "approved"){
 
 approved++;
 
 }
 
-if(status === "rejected"){
+else if(status === "rejected"){
 
 rejected++;
 
@@ -861,12 +944,12 @@ String(rejected);
 
 
 console.log(
-"CreateLK Jobs ad counts:",
+"CreateLK Jobs counts:",
 {
 total:ads.length,
-pending,
-approved,
-rejected
+pending:pending,
+approved:approved,
+rejected:rejected
 }
 );
 
@@ -882,11 +965,6 @@ error
 );
 
 
-/*
- * Do not silently pretend there
- * are zero ads when the API failed.
- */
-
 $("pendingCount").textContent =
 "—";
 
@@ -895,6 +973,15 @@ $("approvedCount").textContent =
 
 $("rejectedCount").textContent =
 "—";
+
+
+$("apiError").textContent =
+"Unable to load your advertisements: " +
+(error.message || "Unknown error");
+
+
+$("apiError").style.display =
+"block";
 
 
 return false;
@@ -944,7 +1031,7 @@ LOGIN_API + "/logout",
 {
 method:"GET",
 headers:{
-Authorization:
+"Authorization":
 "Bearer " + token
 },
 cache:"no-store"
@@ -956,7 +1043,7 @@ cache:"no-store"
 }catch(error){
 
 console.error(
-"Logout request failed",
+"Logout request failed:",
 error
 );
 
@@ -977,6 +1064,30 @@ LOGIN_PAGE
 
 }
 
+
+/* REFRESH */
+
+$("refreshBtn").addEventListener(
+"click",
+async function(){
+
+this.disabled = true;
+
+this.textContent =
+"Refreshing...";
+
+await loadMyAds();
+
+this.disabled = false;
+
+this.textContent =
+"Refresh Ads";
+
+}
+);
+
+
+/* LOGOUT BUTTON */
 
 $("logoutBtn").addEventListener(
 "click",
@@ -1002,9 +1113,7 @@ let token =
 getToken();
 
 
-/*
- * OAuth login
- */
+/* OAuth ticket */
 
 if(ticket){
 
@@ -1019,9 +1128,7 @@ removeTicketFromURL();
 }
 
 
-/*
- * No session
- */
+/* No token */
 
 if(!token){
 
@@ -1034,9 +1141,7 @@ return;
 }
 
 
-/*
- * Verify session
- */
+/* Verify login */
 
 const result =
 await getMe(token);
@@ -1061,14 +1166,13 @@ result.user
 
 
 /*
- * Load ads before showing
- * the dashboard.
+ * Show dashboard first.
+ * Then load ads.
  */
 
-await loadMyAds();
-
-
 showApp();
+
+await loadMyAds();
 
 
 }catch(error){
@@ -1078,7 +1182,6 @@ console.error(
 error
 );
 
-
 sessionStorage.removeItem(
 TOKEN_KEY
 );
@@ -1086,7 +1189,6 @@ TOKEN_KEY
 sessionStorage.removeItem(
 CUSTOMER_KEY
 );
-
 
 showError(
 error.message ||
