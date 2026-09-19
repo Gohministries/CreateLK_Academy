@@ -195,7 +195,8 @@ inset:0;
 background:#0008;
 align-items:center;
 justify-content:center;
-padding:15px
+padding:15px;
+z-index:9999
 }
 
 .modal-box{
@@ -221,7 +222,11 @@ border-radius:6px
 #custom{
 display:none;
 width:100%;
-min-height:80px
+min-height:80px;
+padding:10px;
+border:1px solid #ddd;
+border-radius:7px;
+resize:vertical
 }
 
 @media(max-width:700px){
@@ -313,8 +318,6 @@ Review the ad photo and payment slip when applicable, then approve or reject the
 </div>
 
 
-<!-- REJECTION MODAL -->
-
 <div id="modal" class="modal">
 
 <div class="modal-box">
@@ -322,7 +325,6 @@ Review the ad photo and payment slip when applicable, then approve or reject the
 <h2 id="modalTitle">
 Reject Advertisement
 </h2>
-
 
 <div class="reason">
 
@@ -334,7 +336,6 @@ value="Invalid job information">
 Invalid job information
 </label>
 
-
 <label>
 <input
 type="radio"
@@ -342,7 +343,6 @@ name="reason"
 value="Photo not acceptable">
 Photo not acceptable
 </label>
-
 
 <label>
 <input
@@ -352,7 +352,6 @@ value="Duplicate advertisement">
 Duplicate advertisement
 </label>
 
-
 <label>
 <input
 type="radio"
@@ -360,7 +359,6 @@ name="reason"
 value="Payment issue">
 Payment issue
 </label>
-
 
 <label>
 <input
@@ -372,11 +370,9 @@ Other
 
 </div>
 
-
 <textarea
 id="custom"
 placeholder="Enter reason..."></textarea>
-
 
 <div class="actions">
 
@@ -400,23 +396,22 @@ Reject
 
 <script>
 
-const API=
-"https://admin.createlk.workers.dev";
-
-const TOKEN=
-"createlk_session_token";
+const API="https://admin.createlk.workers.dev";
+const TOKEN="createlk_session_token";
 
 let rejectId="";
 
 
+/* GET SAVED ADMIN TOKEN */
+
 function getToken(){
 
-return localStorage.getItem(TOKEN)||
-sessionStorage.getItem(TOKEN)||
-"";
+return localStorage.getItem(TOKEN)||"";
 
 }
 
+
+/* API */
 
 async function api(path,opt={}){
 
@@ -429,22 +424,15 @@ return;
 
 }
 
-
 opt.headers={
 ...(opt.headers||{}),
 Authorization:"Bearer "+token,
 "Content-Type":"application/json"
 };
 
+const r=await fetch(API+path,opt);
 
-const r=
-await fetch(API+path,opt);
-
-
-if(
-r.status===401||
-r.status===403
-){
+if(r.status===401||r.status===403){
 
 localStorage.removeItem(TOKEN);
 sessionStorage.removeItem(TOKEN);
@@ -455,7 +443,6 @@ return;
 
 }
 
-
 let d={};
 
 try{
@@ -463,7 +450,6 @@ try{
 d=await r.json();
 
 }catch{}
-
 
 if(!r.ok){
 
@@ -474,11 +460,12 @@ d.error||
 
 }
 
-
 return d;
 
 }
 
+
+/* ESCAPE */
 
 function esc(v){
 
@@ -491,6 +478,8 @@ return String(v??"")
 
 }
 
+
+/* PREMIUM */
 
 function isPremium(type){
 
@@ -510,43 +499,30 @@ String(type||"").toLowerCase()
 
 async function loadStats(){
 
-const d=
-await api("/stats");
+const d=await api("/stats");
 
 if(!d)return;
 
-
-pendingAds.textContent=
-d.pending_ads||0;
-
-approvedAds.textContent=
-d.approved_ads||0;
-
-rejectedAds.textContent=
-d.rejected_ads||0;
+pendingAds.textContent=d.pending_ads||0;
+approvedAds.textContent=d.approved_ads||0;
+rejectedAds.textContent=d.rejected_ads||0;
 
 }
 
 
-/* ADS */
+/* LOAD ADS */
 
 async function loadAds(){
 
-const box=
-document.getElementById("adsList");
-
+const box=document.getElementById("adsList");
 
 try{
 
-const d=
-await api("/ads");
+const d=await api("/ads");
 
 if(!d)return;
 
-
-const ads=
-d.ads||[];
-
+const ads=d.ads||[];
 
 if(!ads.length){
 
@@ -557,19 +533,12 @@ return;
 
 }
 
+box.innerHTML=ads.map(ad=>{
 
-box.innerHTML=
-ads.map(ad=>{
+const paid=isPremium(ad.ad_type);
 
-const paid=
-isPremium(ad.ad_type);
-
-const photoId=
-"photo_"+ad.id;
-
-const slipId=
-"slip_"+ad.id;
-
+const photoId="photo_"+ad.id;
+const slipId="slip_"+ad.id;
 
 return `
 
@@ -595,14 +564,53 @@ ${esc(ad.ad_type)}
 
 <p>
 <b>User:</b>
-${esc(ad.user_name)}
+${esc(ad.user_name||"")}
 </p>
 
 <p>
 <b>Email:</b>
-${esc(ad.user_email)}
+${esc(ad.user_email||"")}
 </p>
 
+${
+ad.listing_type
+?
+`
+<p>
+<b>Listing:</b>
+${esc(ad.listing_type)}
+</p>
+`
+:""
+}
+
+${
+ad.category_name
+?
+`
+<p>
+<b>Category:</b>
+${esc(ad.category_name)}
+</p>
+`
+:""
+}
+
+${
+ad.province||ad.district||ad.city
+?
+`
+<p>
+<b>Location:</b>
+${esc([
+ad.province,
+ad.district,
+ad.city
+].filter(Boolean).join(" • "))}
+</p>
+`
+:""
+}
 
 <div class="actions">
 
@@ -614,7 +622,6 @@ onclick="showPhoto(
 )">
 View Ad Photo
 </button>
-
 
 ${
 paid&&ad.slip_url
@@ -632,13 +639,11 @@ View Payment Slip
 :""
 }
 
-
 <button
 class="approve"
 onclick="approveAd('${ad.id}')">
 Approve
 </button>
-
 
 <button
 class="reject"
@@ -648,12 +653,10 @@ Reject
 
 </div>
 
-
 <div
 id="${photoId}"
 class="media">
 </div>
-
 
 ${
 paid&&ad.slip_url
@@ -673,7 +676,6 @@ class="media">
 
 }).join("");
 
-
 }catch(e){
 
 box.innerHTML=
@@ -690,9 +692,7 @@ showError(e.message);
 
 async function showPhoto(id,encoded){
 
-const box=
-document.getElementById(id);
-
+const box=document.getElementById(id);
 
 if(box.style.display==="block"){
 
@@ -703,15 +703,17 @@ return;
 
 }
 
-
 try{
 
-const key=
-decodeURIComponent(encoded);
+const key=decodeURIComponent(encoded);
 
+if(!key){
 
-const r=
-await fetch(
+throw new Error("No ad photo available.");
+
+}
+
+const r=await fetch(
 API+
 "/photo?key="+
 encodeURIComponent(key),
@@ -723,7 +725,6 @@ Authorization:
 }
 );
 
-
 if(!r.ok){
 
 throw new Error(
@@ -732,29 +733,21 @@ throw new Error(
 
 }
 
+const blob=await r.blob();
 
-const blob=
-await r.blob();
+const url=URL.createObjectURL(blob);
 
-const url=
-URL.createObjectURL(blob);
-
-
-box.innerHTML=
-`
+box.innerHTML=`
 <img
 src="${url}"
 alt="Ad photo">
 `;
 
-
 box.style.display="block";
-
 
 }catch(e){
 
-box.innerHTML=
-`
+box.innerHTML=`
 <p class="empty">
 ${esc(e.message)}
 </p>
@@ -767,13 +760,11 @@ box.style.display="block";
 }
 
 
-/* PAYMENT SLIP VIEW ONLY */
+/* PAYMENT SLIP */
 
 async function showSlip(id,encoded){
 
-const box=
-document.getElementById(id);
-
+const box=document.getElementById(id);
 
 if(box.style.display==="block"){
 
@@ -784,15 +775,19 @@ return;
 
 }
 
-
 try{
 
-const key=
-decodeURIComponent(encoded);
+const key=decodeURIComponent(encoded);
 
+if(!key){
 
-const r=
-await fetch(
+throw new Error(
+"No payment slip available."
+);
+
+}
+
+const r=await fetch(
 API+
 "/slip?key="+
 encodeURIComponent(key),
@@ -804,7 +799,6 @@ Authorization:
 }
 );
 
-
 if(!r.ok){
 
 throw new Error(
@@ -813,17 +807,11 @@ throw new Error(
 
 }
 
+const blob=await r.blob();
 
-const blob=
-await r.blob();
+const url=URL.createObjectURL(blob);
 
-const url=
-URL.createObjectURL(blob);
-
-
-if(
-blob.type.includes("pdf")
-){
+if(blob.type.includes("pdf")){
 
 box.innerHTML=
 `<iframe src="${url}"></iframe>`;
@@ -839,9 +827,7 @@ alt="Payment slip">
 
 }
 
-
 box.style.display="block";
-
 
 }catch(e){
 
@@ -859,17 +845,13 @@ box.style.display="block";
 }
 
 
-/* APPROVE AD */
+/* APPROVE */
 
 async function approveAd(id){
 
-if(
-!confirm(
+if(!confirm(
 "Approve this advertisement?"
-)
-)
-return;
-
+))return;
 
 try{
 
@@ -880,9 +862,7 @@ method:"POST"
 }
 );
 
-
 await load();
-
 
 }catch(e){
 
@@ -893,7 +873,7 @@ showError(e.message);
 }
 
 
-/* REJECT */
+/* OPEN REJECT MODAL */
 
 function openModal(id){
 
@@ -902,13 +882,11 @@ rejectId=id;
 modalTitle.textContent=
 "Reject Advertisement";
 
-
 document.querySelectorAll(
 'input[name="reason"]'
 ).forEach(
 x=>x.checked=false
 );
-
 
 custom.value="";
 custom.style.display="none";
@@ -918,24 +896,24 @@ modal.style.display="flex";
 }
 
 
+/* CLOSE MODAL */
+
 function closeModal(){
 
 modal.style.display="none";
-
 rejectId="";
 
 }
 
 
+/* REASON CHANGE */
+
 document.addEventListener(
 "change",
 e=>{
 
-if(
-e.target.name!=="reason"
-)
+if(e.target.name!=="reason")
 return;
-
 
 custom.style.display=
 e.target.value==="Other"
@@ -952,41 +930,38 @@ e.target.value==="Other"
 
 async function confirmReject(){
 
+if(!rejectId){
+
+return;
+
+}
+
 const selected=
 document.querySelector(
 'input[name="reason"]:checked'
 );
 
-
 if(!selected){
 
 alert("Select a reason.");
-
 return;
 
 }
 
-
-let reason=
-selected.value;
-
+let reason=selected.value;
 
 if(reason==="Other"){
 
-reason=
-custom.value.trim();
-
+reason=custom.value.trim();
 
 if(!reason){
 
 alert("Enter a reason.");
-
 return;
 
 }
 
 }
-
 
 try{
 
@@ -994,20 +969,15 @@ await api(
 "/ads/"+rejectId+"/reject",
 {
 method:"POST",
-
-body:
-JSON.stringify({
-rejection_reason:
-reason
+body:JSON.stringify({
+rejection_reason:reason
 })
 }
 );
 
-
 closeModal();
 
 await load();
-
 
 }catch(e){
 
@@ -1018,17 +988,24 @@ showError(e.message);
 }
 
 
-/* LOAD */
+/* LOAD EVERYTHING */
 
 async function load(){
 
 error.style.display="none";
 
+try{
 
 await Promise.all([
 loadStats(),
 loadAds()
 ]);
+
+}catch(e){
+
+showError(e.message);
+
+}
 
 }
 
@@ -1050,8 +1027,7 @@ function logout(){
 localStorage.removeItem(TOKEN);
 sessionStorage.removeItem(TOKEN);
 
-location.href=
-"admin-login.html";
+location.href="admin-login.html";
 
 }
 
@@ -1064,8 +1040,7 @@ load();
 
 }else{
 
-location.href=
-"admin-login.html";
+location.href="admin-login.html";
 
 }
 
