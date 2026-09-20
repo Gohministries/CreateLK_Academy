@@ -1,12 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#102a56">
-<title>Private Google Drive Manager</title>
-
-<style>
+<title>Private Google Drive Manager</title><style>
 *{box-sizing:border-box}
 
 body{
@@ -204,13 +201,13 @@ button.gray{
 }
 
 @media(max-width:600px){
-
   .toolbar{
     grid-template-columns:1fr;
   }
 
   .file{
     align-items:flex-start;
+    flex-wrap:wrap;
   }
 
   .actions{
@@ -222,127 +219,88 @@ button.gray{
     flex:1;
   }
 }
-</style>
-</head>
-
-<body>
-
-<header>
+</style></head><body><header>
   <h1>Private Google Drive Manager</h1>
   <p>CreateLK Admin</p>
-</header>
-
-<main>
-
-<!-- LOGIN -->
-<section id="loginCard" class="card">
-
-  <h2>Admin Login</h2>
-
-  <p>
+</header><main><section id="loginCard" class="card">  <h2>Admin Login</h2>  <p>
     Enter your private admin secret to access Drive.
-  </p>
-
-  <input
-    id="secret"
-    type="password"
-    autocomplete="current-password"
-    placeholder="Admin Secret">
+  </p><input
+id="secret"
+type="password"
+autocomplete="current-password"
+placeholder="Admin Secret">
 
   <button onclick="login()">
     🔐 Login
+  </button>  <div id="loginMessage" class="message"></div></section><section id="app" class="hidden">  <div class="card"><h3>Google Drive</h3>
+
+<div id="status" class="status">
+  Checking connection...
+</div>
+
+<button
+  id="connectButton"
+  class="gold"
+  onclick="connectGoogle()">
+  🔗 Connect Google Drive
+</button>
+
+<button
+  class="gray"
+  onclick="logout()">
+  🚪 Logout
+</button>
+
+  </div>  <div class="card"><h3>Drive Files</h3>
+
+<div class="toolbar">
+
+  <input
+    id="search"
+    type="search"
+    placeholder="Search files..."
+    onkeydown="if(event.key==='Enter')loadFiles()">
+
+  <button onclick="loadFiles()">
+    🔍 Search
   </button>
 
-  <div id="loginMessage"
-       class="message"></div>
+</div>
 
-</section>
+<button
+  class="gold"
+  onclick="newFolder()">
+  📁 Create Folder
+</button>
 
+<label id="uploadLabel" for="upload">
+  ⬆️ Select File to Upload
+</label>
 
-<!-- APPLICATION -->
-<section id="app"
-         class="hidden">
+<input
+  id="upload"
+  type="file"
+  onchange="uploadFile()">
 
-  <div class="card">
+<div id="message" class="message"></div>
 
-    <h3>Google Drive</h3>
-
-    <div id="status"
-         class="status">
-      Checking connection...
-    </div>
-
-    <button
-      id="connectButton"
-      class="gold"
-      onclick="connectGoogle()">
-      🔗 Connect Google Drive
-    </button>
-
-    <button
-      class="gray"
-      onclick="logout()">
-      🚪 Logout
-    </button>
-
+<div id="files">
+  <div class="loading">
+    Loading...
   </div>
+</div>
 
+  </div></section></main><script>
 
-  <div class="card">
+/*
+  SAME-ORIGIN MODE
 
-    <h3>Drive Files</h3>
+  Host this HTML at:
+  https://drive.createlk.workers.dev/
 
-    <div class="toolbar">
-
-      <input
-        id="search"
-        type="search"
-        placeholder="Search files..."
-        onkeydown="if(event.key==='Enter')loadFiles()">
-
-      <button onclick="loadFiles()">
-        🔍 Search
-      </button>
-
-    </div>
-
-    <button
-      class="gold"
-      onclick="newFolder()">
-      📁 Create Folder
-    </button>
-
-    <label id="uploadLabel"
-           for="upload">
-      ⬆️ Select File to Upload
-    </label>
-
-    <input
-      id="upload"
-      type="file"
-      onchange="uploadFile()">
-
-    <div id="message"
-         class="message"></div>
-
-    <div id="files">
-      <div class="loading">
-        Loading...
-      </div>
-    </div>
-
-  </div>
-
-</section>
-
-</main>
-
-
-<script>
-
-/* YOUR CLOUDFLARE WORKER */
-const API =
-  "https://drive.createlk.workers.dev";
+  No separate API origin is used.
+*/
+const API = "";
 
 
 /* -------------------------
@@ -351,17 +309,15 @@ const API =
 
 async function request(path,options={}){
 
-  const response =
-    await fetch(
-      API + path,
-      {
-        credentials:"include",
-        ...options
-      }
-    );
+  const response = await fetch(
+    API + path,
+    {
+      credentials:"include",
+      ...options
+    }
+  );
 
-  const text =
-    await response.text();
+  const text = await response.text();
 
   let data={};
 
@@ -369,22 +325,18 @@ async function request(path,options={}){
     data=JSON.parse(text);
   }catch{
     data={
-      error:
-        text || "Server error"
+      error:text || "Server error"
     };
   }
 
   if(!response.ok){
 
     if(response.status===401){
-
       showLogin();
-
     }
 
     throw new Error(
-      data.error ||
-      "Request failed"
+      data.error || "Request failed"
     );
   }
 
@@ -405,9 +357,7 @@ async function login(){
     input.value.trim();
 
   const box =
-    document.getElementById(
-      "loginMessage"
-    );
+    document.getElementById("loginMessage");
 
   if(!secret){
 
@@ -419,8 +369,7 @@ async function login(){
   }
 
   box.style.display="block";
-  box.textContent=
-    "Signing in...";
+  box.textContent="Signing in...";
 
   try{
 
@@ -429,24 +378,23 @@ async function login(){
       {
         method:"POST",
         headers:{
-          "Content-Type":
-            "application/json"
+          "Content-Type":"application/json"
         },
-        body:
-          JSON.stringify({
-            secret
-          })
+        body:JSON.stringify({
+          secret
+        })
       }
     );
 
     input.value="";
 
+    box.style.display="none";
+
     await checkStatus();
 
   }catch(error){
 
-    box.textContent=
-      error.message;
+    box.textContent=error.message;
 
   }
 }
@@ -461,9 +409,7 @@ async function checkStatus(){
   try{
 
     const data =
-      await request(
-        "/api/status"
-      );
+      await request("/api/status");
 
     if(!data.loggedIn){
 
@@ -480,40 +426,33 @@ async function checkStatus(){
       .classList.remove("hidden");
 
     const status =
-      document.getElementById(
-        "status"
-      );
+      document.getElementById("status");
 
     const connect =
-      document.getElementById(
-        "connectButton"
-      );
+      document.getElementById("connectButton");
 
     if(data.googleConnected){
 
-      status.innerHTML =
+      status.innerHTML=
         "✅ Google Drive connected";
 
-      connect.textContent =
+      connect.textContent=
         "🔄 Reconnect Google Drive";
 
       loadFiles();
 
     }else{
 
-      status.innerHTML =
+      status.innerHTML=
         "⚠️ Google Drive is not connected";
 
-      connect.textContent =
+      connect.textContent=
         "🔗 Connect Google Drive";
 
-      document.getElementById(
-        "files"
-      ).innerHTML =
+      document.getElementById("files").innerHTML=
         '<div class="empty">' +
         'Connect Google Drive first.' +
         '</div>';
-
     }
 
   }catch(error){
@@ -537,7 +476,6 @@ function showLogin(){
   document
     .getElementById("loginCard")
     .classList.remove("hidden");
-
 }
 
 
@@ -548,9 +486,7 @@ function showLogin(){
 function connectGoogle(){
 
   window.location.href =
-    API +
     "/api/oauth/start";
-
 }
 
 
@@ -561,11 +497,9 @@ function connectGoogle(){
 async function loadFiles(){
 
   const box =
-    document.getElementById(
-      "files"
-    );
+    document.getElementById("files");
 
-  box.innerHTML =
+  box.innerHTML=
     '<div class="loading">' +
     'Loading files...' +
     '</div>';
@@ -573,9 +507,8 @@ async function loadFiles(){
   try{
 
     const q =
-      document.getElementById(
-        "search"
-      ).value.trim();
+      document.getElementById("search")
+      .value.trim();
 
     const data =
       await request(
@@ -583,19 +516,14 @@ async function loadFiles(){
         encodeURIComponent(q)
       );
 
-    renderFiles(
-      data.files || []
-    );
+    renderFiles(data.files || []);
 
   }catch(error){
 
-    box.innerHTML =
+    box.innerHTML=
       '<div class="empty">' +
-      escapeHtml(
-        error.message
-      ) +
+      escapeHtml(error.message) +
       '</div>';
-
   }
 }
 
@@ -607,15 +535,13 @@ async function loadFiles(){
 function renderFiles(files){
 
   const box =
-    document.getElementById(
-      "files"
-    );
+    document.getElementById("files");
 
   box.innerHTML="";
 
   if(!files.length){
 
-    box.innerHTML =
+    box.innerHTML=
       '<div class="empty">' +
       'No files found.' +
       '</div>';
@@ -626,20 +552,15 @@ function renderFiles(files){
   files.forEach(file=>{
 
     const row =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
     row.className="file";
 
 
     const icon =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    icon.className=
-      "file-icon";
+    icon.className="file-icon";
 
     icon.textContent =
       file.mimeType ===
@@ -649,56 +570,36 @@ function renderFiles(files){
 
 
     const info =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    info.className=
-      "file-info";
+    info.className="file-info";
 
 
     const name =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    name.className=
-      "file-name";
-
-    name.textContent=
-      file.name;
+    name.className="file-name";
+    name.textContent=file.name;
 
 
     const meta =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    meta.className=
-      "file-meta";
+    meta.className="file-meta";
 
     meta.textContent =
       file.mimeType ===
       "application/vnd.google-apps.folder"
       ? "Folder"
-      : formatFileSize(
-          file.size
-        );
+      : formatFileSize(file.size);
 
-
-    info.append(
-      name,
-      meta
-    );
+    info.append(name,meta);
 
 
     const actions =
-      document.createElement(
-        "div"
-      );
+      document.createElement("div");
 
-    actions.className=
-      "actions";
+    actions.className="actions";
 
 
     if(
@@ -706,30 +607,23 @@ function renderFiles(files){
       "application/vnd.google-apps.folder"
     ){
 
-      const download =
+      actions.appendChild(
         makeButton(
           "Download",
           "gray",
           ()=>{
             window.open(
-              API +
               "/api/download?id=" +
-              encodeURIComponent(
-                file.id
-              ),
+              encodeURIComponent(file.id),
               "_blank"
             );
           }
-        );
-
-      actions.appendChild(
-        download
+        )
       );
-
     }
 
 
-    const rename =
+    actions.append(
       makeButton(
         "Rename",
         "",
@@ -739,10 +633,8 @@ function renderFiles(files){
             file.name
           );
         }
-      );
+      ),
 
-
-    const del =
       makeButton(
         "Delete",
         "red",
@@ -752,12 +644,7 @@ function renderFiles(files){
             file.name
           );
         }
-      );
-
-
-    actions.append(
-      rename,
-      del
+      )
     );
 
 
@@ -767,12 +654,9 @@ function renderFiles(files){
       actions
     );
 
-    box.appendChild(
-      row
-    );
+    box.appendChild(row);
 
   });
-
 }
 
 
@@ -787,17 +671,13 @@ function makeButton(
 ){
 
   const button =
-    document.createElement(
-      "button"
-    );
+    document.createElement("button");
 
-  button.textContent=
-    text;
+  button.textContent=text;
 
-  if(className)
-    button.classList.add(
-      className
-    );
+  if(className){
+    button.classList.add(className);
+  }
 
   button.onclick=action;
 
@@ -812,46 +692,35 @@ function makeButton(
 async function newFolder(){
 
   const name =
-    prompt(
-      "Enter folder name:"
-    );
+    prompt("Enter folder name:");
 
-  if(!name ||
-     !name.trim())
+  if(!name || !name.trim())
     return;
 
   try{
 
-    showMessage(
-      "Creating folder..."
-    );
+    showMessage("Creating folder...");
 
     await request(
       "/api/folder",
       {
         method:"POST",
         headers:{
-          "Content-Type":
-            "application/json"
+          "Content-Type":"application/json"
         },
-        body:
-          JSON.stringify({
-            name:name.trim()
-          })
+        body:JSON.stringify({
+          name:name.trim()
+        })
       }
     );
 
-    showMessage(
-      "Folder created."
-    );
+    showMessage("Folder created.");
 
     loadFiles();
 
   }catch(error){
 
-    showMessage(
-      error.message
-    );
+    showMessage(error.message);
 
   }
 }
@@ -861,10 +730,7 @@ async function newFolder(){
    RENAME
 ------------------------- */
 
-async function renameFile(
-  id,
-  oldName
-){
+async function renameFile(id,oldName){
 
   const name =
     prompt(
@@ -872,29 +738,24 @@ async function renameFile(
       oldName
     );
 
-  if(!name ||
-     !name.trim())
+  if(!name || !name.trim())
     return;
 
   try{
 
-    showMessage(
-      "Renaming..."
-    );
+    showMessage("Renaming...");
 
     await request(
       "/api/rename",
       {
         method:"POST",
         headers:{
-          "Content-Type":
-            "application/json"
+          "Content-Type":"application/json"
         },
-        body:
-          JSON.stringify({
-            id,
-            name:name.trim()
-          })
+        body:JSON.stringify({
+          id,
+          name:name.trim()
+        })
       }
     );
 
@@ -906,9 +767,7 @@ async function renameFile(
 
   }catch(error){
 
-    showMessage(
-      error.message
-    );
+    showMessage(error.message);
 
   }
 }
@@ -918,10 +777,7 @@ async function renameFile(
    DELETE
 ------------------------- */
 
-async function deleteFile(
-  id,
-  name
-){
+async function deleteFile(id,name){
 
   const confirmed =
     confirm(
@@ -935,36 +791,26 @@ async function deleteFile(
 
   try{
 
-    showMessage(
-      "Deleting..."
-    );
+    showMessage("Deleting...");
 
     await request(
       "/api/delete",
       {
         method:"POST",
         headers:{
-          "Content-Type":
-            "application/json"
+          "Content-Type":"application/json"
         },
-        body:
-          JSON.stringify({
-            id
-          })
+        body:JSON.stringify({id})
       }
     );
 
-    showMessage(
-      "Moved to Trash."
-    );
+    showMessage("Moved to Trash.");
 
     loadFiles();
 
   }catch(error){
 
-    showMessage(
-      error.message
-    );
+    showMessage(error.message);
 
   }
 }
@@ -977,9 +823,7 @@ async function deleteFile(
 async function uploadFile(){
 
   const input =
-    document.getElementById(
-      "upload"
-    );
+    document.getElementById("upload");
 
   const file =
     input.files[0];
@@ -987,8 +831,6 @@ async function uploadFile(){
   if(!file)
     return;
 
-
-  /* Worker currently allows 20 MB */
   if(
     file.size >
     20 * 1024 * 1024
@@ -1002,15 +844,10 @@ async function uploadFile(){
     return;
   }
 
-
   const form =
     new FormData();
 
-  form.append(
-    "file",
-    file
-  );
-
+  form.append("file",file);
 
   try{
 
@@ -1028,9 +865,7 @@ async function uploadFile(){
       }
     );
 
-    showMessage(
-      "Upload complete."
-    );
+    showMessage("Upload complete.");
 
     input.value="";
 
@@ -1038,9 +873,7 @@ async function uploadFile(){
 
   }catch(error){
 
-    showMessage(
-      error.message
-    );
+    showMessage(error.message);
 
   }
 }
@@ -1068,7 +901,6 @@ async function logout(){
   }
 
   location.reload();
-
 }
 
 
@@ -1079,14 +911,10 @@ async function logout(){
 function showMessage(text){
 
   const box =
-    document.getElementById(
-      "message"
-    );
+    document.getElementById("message");
 
   box.style.display="block";
-
   box.textContent=text;
-
 }
 
 
@@ -1099,31 +927,26 @@ function formatFileSize(size){
   if(!size)
     return "";
 
-  size =
-    Number(size);
+  size=Number(size);
 
   if(size < 1024)
     return size+" B";
 
   if(size < 1024*1024)
     return (
-      (size/1024)
-      .toFixed(1)
-      +" KB"
+      (size/1024).toFixed(1) +
+      " KB"
     );
 
-  if(size <
-     1024*1024*1024)
+  if(size < 1024*1024*1024)
     return (
-      (size/1024/1024)
-      .toFixed(1)
-      +" MB"
+      (size/1024/1024).toFixed(1) +
+      " MB"
     );
 
   return (
-    (size/1024/1024/1024)
-    .toFixed(1)
-    +" GB"
+    (size/1024/1024/1024).toFixed(1) +
+    " GB"
   );
 }
 
@@ -1140,7 +963,6 @@ function escapeHtml(value){
     .replace(/>/g,"&gt;")
     .replace(/"/g,"&quot;")
     .replace(/'/g,"&#039;");
-
 }
 
 
@@ -1150,7 +972,5 @@ function escapeHtml(value){
 
 checkStatus();
 
-</script>
-
-</body>
+</script></body>
 </html>
