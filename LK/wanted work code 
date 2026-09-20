@@ -1,0 +1,668 @@
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization"
+};
+
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...CORS
+    }
+  });
+
+const error = (message, status = 400, details = null) =>
+  json({
+    success: false,
+    error: message,
+    ...(details ? { details } : {})
+  }, status);
+
+const ok = (data = {}) =>
+  json({ success: true, ...data });
+
+const clean = v => String(v ?? "").trim();
+
+function cors(response) {
+  const headers = new Headers(response.headers);
+  Object.entries(CORS).forEach(([k, v]) => headers.set(k, v));
+  return new Response(response.body, {
+    status: response.status,
+    headers
+  });
+}
+
+function ext(filename) {
+  const m = clean(filename).toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : "bin";
+}
+
+function admin(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  return !!env.ADMIN_KEY &&
+    auth.startsWith("Bearer ") &&
+    auth.slice(7).trim() === env.ADMIN_KEY;
+}
+
+function addInfo(p) {
+  if (!p) return p;
+
+  p.profile_label = "JOB SEEKER PROFILE";
+
+  if (p.expires_at) {
+    p.expires_at_label = new Date(p.expires_at)
+      .toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Colombo"
+      });
+  }
+
+  return p;
+}
+
+async function expireOld(env) {
+  try {
+    await env.DB.prepare(`
+      UPDATE wanted_profiles
+      SET status='expired'
+      WHERE status='approved'
+      AND expires_at IS NOT NULL
+      AND expires_at <= datetime('now')
+    `).run();
+  } catch (e) {
+    console.error("Expiry:", e);
+  }
+}
+
+
+/* =========================
+   SUBMIT
+========================= */
+
+async function submit(request, env) {
+  let form;
+
+  try {
+    form = await request.formData();
+  } catch {
+    return error("Invalid form data.");
+  }
+
+  const fields = [
+    "name",
+    "position",
+    "province",
+    "district",
+    "city",
+    "salary",
+    "skills",
+    "experience",
+    "education",
+    "description",
+    "phone",
+    "whatsapp"
+  ];
+
+  const data = {};
+
+  fields.forEach(key => {
+    data[key] = clean(form.get(key));
+  });
+
+  const required = {
+    name: "Full name",
+    position: "Position",
+    province: "Province",
+    district: "District",
+    skills: "Skills",
+    experience: "Experience",
+    education: "Education",
+    phone: "Phone number"
+  };
+
+  for (const [key, label] of Object.entries(required)) {
+    if (!data[key]) return error(`${label} is required.`);
+  }
+
+  const contact_allowed =
+    ["on", "1", "true"].includes(
+      clean(form.get("contact_allowed")).toLowerCase()
+    ) ? 1 : 0;
+
+  const cv = form.get("cv");
+  const slip = form.get("slip");
+
+  if (!(cv instanceof File))
+    return error("CV is required.");
+
+  if (!(slip instanceof File))
+    return error("Bank payment slip is required.");
+
+  if (cv.size > 5 * 1024 * 1024)
+    return error("CV must be 5 MB or smaller.");
+
+  if (slip.size > 5 * 1024 * 1024)
+    return error("Payment slip must be 5 MB or smaller.");
+
+  const cvExt = ext(cv.name);
+  const slipExt = ext(slip.name);
+
+  if (!["pdf", "doc", "docx"].includes(cvExt))
+    return error("CV must be PDF, DOC or DOCX.");
+
+  if (!["jpg", "jpeg", "png", "pdf"].includes(slipExt))
+    return error("Payment slip must be JPG, JPEG, PNG or PDF.");
+
+  const id = crypto.randomUUID();
+
+  const cvKey = `wanted/cv/${id}.${cvExt}`;
+  const slipKey = `wanted/slips/${id}.${slipExt}`;
+
+  try {
+    await env.JOBS_BUCKET.put(cvKey, cv.stream(), {
+      httpMetadata: {
+        contentType: cv.type || "application/octet-stream"
+      }
+    });
+
+    await env.JOBS_BUCKET.put(slipKey, slip.stream(), {
+      httpMetadata: {
+        contentType: slip.type || "application/octet-stream"
+      }
+    });
+
+    await env.DB.prepare(`
+      INSERT INTO wanted_profiles (
+        id,name,position,province,district,city,salary,
+        skills,experience,education,description,phone,whatsapp,
+        contact_allowed,cv_key,cv_name,slip_key,slip_name,
+        amount,duration_days,payment_status,status,created_at,
+        approved_at,expires_at
+      )
+      VALUES (
+        ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+        500,30,'pending','pending',?,NULL,NULL
+      )
+    `).bind(
+      id,
+      data.name,
+      data.position,
+      data.province,
+      data.district,
+      data.city,
+      data.salary,
+      data.skills,
+      data.experience,
+      data.education,
+      data.description,
+      data.phone,
+      data.whatsapp,
+      contact_allowed,
+      cvKey,
+      cv.name,
+      slipKey,
+      slip.name,
+      new Date().toISOString()
+    ).run();
+
+    return ok({
+      message:
+        "Job Seeker Profile submitted successfully. Payment verification and admin approval are required before publication.",
+      id,
+      label: "JOB SEEKER PROFILE",
+      amount: 500,
+      duration_days: 30,
+      status: "pending",
+      payment_status: "pending"
+    });
+
+  } catch (e) {
+    try {
+      await env.JOBS_BUCKET.delete(cvKey);
+      await env.JOBS_BUCKET.delete(slipKey);
+    } catch {}
+
+    return error(
+      "Unable to submit Job Seeker Profile.",
+      500,
+      e?.message || String(e)
+    );
+  }
+}
+
+
+/* =========================
+   PUBLIC LIST
+========================= */
+
+async function publicList(request, env) {
+  await expireOld(env);
+
+  const u = new URL(request.url);
+  const province = clean(u.searchParams.get("province"));
+  const district = clean(u.searchParams.get("district"));
+  const city = clean(u.searchParams.get("city"));
+  const search = clean(u.searchParams.get("search"));
+
+  let sql = `
+    SELECT id,name,position,province,district,city,salary,
+    skills,experience,education,description,phone,whatsapp,
+    contact_allowed,amount,duration_days,created_at,
+    approved_at,expires_at
+    FROM wanted_profiles
+    WHERE status='approved'
+    AND payment_status='verified'
+    AND expires_at > datetime('now')
+  `;
+
+  const params = [];
+
+  if (province) {
+    sql += ` AND LOWER(province)=LOWER(?)`;
+    params.push(province);
+  }
+
+  if (district) {
+    sql += ` AND LOWER(district)=LOWER(?)`;
+    params.push(district);
+  }
+
+  if (city) {
+    sql += ` AND LOWER(city)=LOWER(?)`;
+    params.push(city);
+  }
+
+  if (search) {
+    sql += `
+      AND (
+        LOWER(name) LIKE LOWER(?)
+        OR LOWER(position) LIKE LOWER(?)
+        OR LOWER(skills) LIKE LOWER(?)
+        OR LOWER(experience) LIKE LOWER(?)
+        OR LOWER(education) LIKE LOWER(?)
+        OR LOWER(description) LIKE LOWER(?)
+      )
+    `;
+
+    const q = `%${search}%`;
+    params.push(q, q, q, q, q, q);
+  }
+
+  sql += ` ORDER BY datetime(created_at) DESC`;
+
+  const result = await env.DB
+    .prepare(sql)
+    .bind(...params)
+    .all();
+
+  const profiles = (result.results || []).map(addInfo);
+
+  return ok({
+    label: "JOB SEEKER PROFILE",
+    profiles,
+    count: profiles.length
+  });
+}
+
+
+/* =========================
+   PUBLIC PROFILE
+========================= */
+
+async function publicProfile(id, env) {
+  await expireOld(env);
+
+  const profile = await env.DB.prepare(`
+    SELECT id,name,position,province,district,city,salary,
+    skills,experience,education,description,phone,whatsapp,
+    contact_allowed,amount,duration_days,created_at,
+    approved_at,expires_at
+    FROM wanted_profiles
+    WHERE id=?
+    AND status='approved'
+    AND payment_status='verified'
+    AND expires_at > datetime('now')
+    LIMIT 1
+  `).bind(id).first();
+
+  if (!profile)
+    return error("Job Seeker Profile not found or expired.", 404);
+
+  return ok({
+    label: "JOB SEEKER PROFILE",
+    profile: addInfo(profile)
+  });
+}
+
+
+/* =========================
+   FILE RESPONSE
+========================= */
+
+async function fileResponse(object, filename) {
+  const headers = new Headers();
+
+  object.writeHttpMetadata(headers);
+
+  headers.set(
+    "Content-Disposition",
+    `inline; filename="${String(filename || "file").replace(/"/g, "")}"`
+  );
+
+  Object.entries(CORS).forEach(([k, v]) => headers.set(k, v));
+
+  return new Response(object.body, {
+    status: 200,
+    headers
+  });
+}
+
+
+/* =========================
+   ADMIN LIST
+========================= */
+
+async function adminList(request, env) {
+  if (!admin(request, env))
+    return error("Unauthorized.", 401);
+
+  const u = new URL(request.url);
+  const status = clean(u.searchParams.get("status")) || "pending";
+
+  const result = await env.DB.prepare(`
+    SELECT
+      id,name,position,province,district,city,salary,
+      skills,experience,education,description,phone,whatsapp,
+      contact_allowed,cv_name,slip_name,amount,duration_days,
+      payment_status,status,created_at,approved_at,expires_at
+    FROM wanted_profiles
+    WHERE status=?
+    ORDER BY datetime(created_at) DESC
+  `).bind(status).all();
+
+  return ok({
+    label: "JOB SEEKER PROFILE",
+    profiles: (result.results || []).map(addInfo)
+  });
+}
+
+
+/* =========================
+   ADMIN FILE
+========================= */
+
+async function adminFile(id, env, field, nameField, notFound) {
+  const row = await env.DB.prepare(`
+    SELECT ${field},${nameField}
+    FROM wanted_profiles
+    WHERE id=?
+    LIMIT 1
+  `).bind(id).first();
+
+  if (!row)
+    return error("Profile not found.", 404);
+
+  const object = await env.JOBS_BUCKET.get(row[field]);
+
+  if (!object)
+    return error(notFound, 404);
+
+  return fileResponse(object, row[nameField]);
+}
+
+
+/* =========================
+   PUBLIC CV
+========================= */
+
+async function publicCV(id, env) {
+  await expireOld(env);
+
+  const row = await env.DB.prepare(`
+    SELECT cv_key,cv_name
+    FROM wanted_profiles
+    WHERE id=?
+    AND status='approved'
+    AND payment_status='verified'
+    AND expires_at > datetime('now')
+    LIMIT 1
+  `).bind(id).first();
+
+  if (!row)
+    return error(
+      "CV is unavailable because the Job Seeker Profile is expired or not approved.",
+      404
+    );
+
+  const object = await env.JOBS_BUCKET.get(row.cv_key);
+
+  if (!object)
+    return error("CV not found.", 404);
+
+  return fileResponse(object, row.cv_name);
+}
+
+
+/* =========================
+   APPROVE
+========================= */
+
+async function approve(id, env) {
+  const profile = await env.DB.prepare(`
+    SELECT id FROM wanted_profiles
+    WHERE id=? LIMIT 1
+  `).bind(id).first();
+
+  if (!profile)
+    return error("Profile not found.", 404);
+
+  const approved = new Date();
+  const expires = new Date(
+    approved.getTime() + 30 * 24 * 60 * 60 * 1000
+  );
+
+  await env.DB.prepare(`
+    UPDATE wanted_profiles
+    SET payment_status='verified',
+        status='approved',
+        approved_at=?,
+        expires_at=?
+    WHERE id=?
+  `).bind(
+    approved.toISOString(),
+    expires.toISOString(),
+    id
+  ).run();
+
+  return ok({
+    message: "Job Seeker Profile approved.",
+    id,
+    label: "JOB SEEKER PROFILE",
+    status: "approved",
+    payment_status: "verified",
+    approved_at: approved.toISOString(),
+    expires_at: expires.toISOString(),
+    duration_days: 30
+  });
+}
+
+
+/* =========================
+   REJECT
+========================= */
+
+async function reject(id, env) {
+  const profile = await env.DB.prepare(`
+    SELECT id FROM wanted_profiles
+    WHERE id=? LIMIT 1
+  `).bind(id).first();
+
+  if (!profile)
+    return error("Profile not found.", 404);
+
+  await env.DB.prepare(`
+    UPDATE wanted_profiles
+    SET status='rejected'
+    WHERE id=?
+  `).bind(id).run();
+
+  return ok({
+    message: "Job Seeker Profile rejected.",
+    id,
+    status: "rejected"
+  });
+}
+
+
+/* =========================
+   ROUTER
+========================= */
+
+export default {
+  async fetch(request, env) {
+
+    if (request.method === "OPTIONS")
+      return new Response(null, {
+        status: 204,
+        headers: CORS
+      });
+
+    const path =
+      new URL(request.url).pathname.replace(/\/+$/, "") || "/";
+
+    try {
+
+      /* HEALTH */
+
+      if (request.method === "GET" && path === "/")
+        return ok({
+          service: "CreateLK Job Seeker Profile",
+          status: "online",
+          label: "JOB SEEKER PROFILE",
+          price: "LKR 500 / 30 Days"
+        });
+
+
+      /* SUBMIT */
+
+      if (request.method === "POST" && path === "/api/wanted")
+        return cors(await submit(request, env));
+
+
+      /* PUBLIC LIST */
+
+      if (request.method === "GET" && path === "/api/wanted")
+        return cors(await publicList(request, env));
+
+
+      /* PUBLIC PROFILE */
+
+      let m = path.match(/^\/api\/wanted\/([^/]+)$/);
+
+      if (request.method === "GET" && m)
+        return cors(await publicProfile(m[1], env));
+
+
+      /* PUBLIC CV */
+
+      m = path.match(/^\/api\/cv\/([^/]+)$/);
+
+      if (request.method === "GET" && m)
+        return cors(await publicCV(m[1], env));
+
+
+      /* ADMIN LIST */
+
+      if (
+        request.method === "GET" &&
+        path === "/api/admin/wanted"
+      )
+        return cors(await adminList(request, env));
+
+
+      /* ADMIN CV */
+
+      m = path.match(/^\/api\/admin\/cv\/([^/]+)$/);
+
+      if (request.method === "GET" && m) {
+        if (!admin(request, env))
+          return error("Unauthorized.", 401);
+
+        return cors(
+          await adminFile(
+            m[1],
+            env,
+            "cv_key",
+            "cv_name",
+            "CV not found."
+          )
+        );
+      }
+
+
+      /* ADMIN SLIP */
+
+      m = path.match(/^\/api\/admin\/slip\/([^/]+)$/);
+
+      if (request.method === "GET" && m) {
+        if (!admin(request, env))
+          return error("Unauthorized.", 401);
+
+        return cors(
+          await adminFile(
+            m[1],
+            env,
+            "slip_key",
+            "slip_name",
+            "Payment slip not found."
+          )
+        );
+      }
+
+
+      /* APPROVE */
+
+      m = path.match(
+        /^\/api\/admin\/wanted\/([^/]+)\/approve$/
+      );
+
+      if (request.method === "POST" && m) {
+        if (!admin(request, env))
+          return error("Unauthorized.", 401);
+
+        return cors(await approve(m[1], env));
+      }
+
+
+      /* REJECT */
+
+      m = path.match(
+        /^\/api\/admin\/wanted\/([^/]+)\/reject$/
+      );
+
+      if (request.method === "POST" && m) {
+        if (!admin(request, env))
+          return error("Unauthorized.", 401);
+
+        return cors(await reject(m[1], env));
+      }
+
+
+      return error("Not found.", 404);
+
+    } catch (e) {
+
+      console.error("Worker error:", e);
+
+      return error(
+        "Internal server error.",
+        500,
+        e?.message || String(e)
+      );
+    }
+  }
+};
