@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
+<title>Private Google Drive Manager</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:#f1f5f9;
+  color:#172033;
+  font-family:Arial,Helvetica,sans-serif;
+}
+
+header{
+  background:#102a56;
+  color:#fff;
+  padding:20px 16px;
+  text-align:center;
+}
+
+header h1{
+  margin:0;
+  font-size:22px;
+}
+
+header p{
+  margin:6px 0 0;
+  font-size:13px;
+  opacity:.85;
+}
+
+main{
+  width:100%;
+  max-width:1000px;
+  margin:auto;
+  padding:16px;
+}
+
+.card{
+  background:#fff;
+  border-radius:16px;
+  padding:18px;
+  margin-bottom:16px;
+  box-shadow:0 4px 18px rgba(0,0,0,.07);
+}
+
+h2,h3{
+  margin-top:0;
+}
+
+input,
+button{
+  width:100%;
+  padding:13px;
+  border-radius:10px;
+  font-size:15px;
+}
+
+input{
+  border:1px solid #cbd5e1;
+  background:#fff;
+}
+
+button{
+  border:0;
+  background:#102a56;
+  color:#fff;
+  cursor:pointer;
+  margin-top:8px;
+  font-weight:600;
+}
+
+button:hover{
+  opacity:.92;
+}
+
+button.gold{
+  background:#d69b16;
+}
+
+button.red{
+  background:#b42318;
+}
+
+button.gray{
+  background:#64748b;
+}
+
+.hidden{
+  display:none!important;
+}
+
+.status{
+  padding:12px;
+  border-radius:10px;
+  margin-top:12px;
+  background:#f1f5f9;
+  font-size:14px;
+}
+
+.message{
+  padding:12px;
+  border-radius:10px;
+  margin:12px 0;
+  background:#eef4ff;
+  display:none;
+  font-size:14px;
+}
+
+.toolbar{
+  display:grid;
+  grid-template-columns:1fr 130px;
+  gap:8px;
+}
+
+.toolbar button{
+  margin:0;
+}
+
+.file{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 0;
+  border-bottom:1px solid #e5e7eb;
+}
+
+.file:last-child{
+  border-bottom:0;
+}
+
+.file-icon{
+  width:42px;
+  height:42px;
+  border-radius:10px;
+  background:#eef2ff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:21px;
+  flex-shrink:0;
+}
+
+.file-info{
+  flex:1;
+  min-width:0;
+}
+
+.file-name{
+  font-weight:600;
+  word-break:break-word;
+}
+
+.file-meta{
+  margin-top:4px;
+  font-size:12px;
+  color:#64748b;
+}
+
+.actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  justify-content:flex-end;
+}
+
+.actions button{
+  width:auto;
+  margin:0;
+  padding:8px 10px;
+  font-size:12px;
+}
+
+.empty{
+  text-align:center;
+  color:#64748b;
+  padding:30px 10px;
+}
+
+.loading{
+  text-align:center;
+  padding:20px;
+  color:#64748b;
+}
+
+#uploadLabel{
+  display:block;
+  padding:13px;
+  margin-top:8px;
+  border:2px dashed #cbd5e1;
+  border-radius:10px;
+  text-align:center;
+  cursor:pointer;
+  color:#475569;
+}
+
+#upload{
+  display:none;
+}
+
+@media(max-width:600px){
+
+  .toolbar{
+    grid-template-columns:1fr;
+  }
+
+  .file{
+    align-items:flex-start;
+  }
+
+  .actions{
+    width:100%;
+    justify-content:flex-start;
+  }
+
+  .actions button{
+    flex:1;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>Private Google Drive Manager</h1>
+  <p>CreateLK Admin</p>
+</header>
+
+<main>
+
+<!-- LOGIN -->
+<section id="loginCard" class="card">
+
+  <h2>Admin Login</h2>
+
+  <p>
+    Enter your private admin secret to access Drive.
+  </p>
+
+  <input
+    id="secret"
+    type="password"
+    autocomplete="current-password"
+    placeholder="Admin Secret">
+
+  <button onclick="login()">
+    🔐 Login
+  </button>
+
+  <div id="loginMessage"
+       class="message"></div>
+
+</section>
+
+
+<!-- APPLICATION -->
+<section id="app"
+         class="hidden">
+
+  <div class="card">
+
+    <h3>Google Drive</h3>
+
+    <div id="status"
+         class="status">
+      Checking connection...
+    </div>
+
+    <button
+      id="connectButton"
+      class="gold"
+      onclick="connectGoogle()">
+      🔗 Connect Google Drive
+    </button>
+
+    <button
+      class="gray"
+      onclick="logout()">
+      🚪 Logout
+    </button>
+
+  </div>
+
+
+  <div class="card">
+
+    <h3>Drive Files</h3>
+
+    <div class="toolbar">
+
+      <input
+        id="search"
+        type="search"
+        placeholder="Search files..."
+        onkeydown="if(event.key==='Enter')loadFiles()">
+
+      <button onclick="loadFiles()">
+        🔍 Search
+      </button>
+
+    </div>
+
+    <button
+      class="gold"
+      onclick="newFolder()">
+      📁 Create Folder
+    </button>
+
+    <label id="uploadLabel"
+           for="upload">
+      ⬆️ Select File to Upload
+    </label>
+
+    <input
+      id="upload"
+      type="file"
+      onchange="uploadFile()">
+
+    <div id="message"
+         class="message"></div>
+
+    <div id="files">
+      <div class="loading">
+        Loading...
+      </div>
+    </div>
+
+  </div>
+
+</section>
+
+</main>
+
+
+<script>
+
+/* YOUR CLOUDFLARE WORKER */
+const API =
+  "https://drive.createlk.workers.dev";
+
+
+/* -------------------------
+   GENERAL REQUEST
+------------------------- */
+
+async function request(path,options={}){
+
+  const response =
+    await fetch(
+      API + path,
+      {
+        credentials:"include",
+        ...options
+      }
+    );
+
+  const text =
+    await response.text();
+
+  let data={};
+
+  try{
+    data=JSON.parse(text);
+  }catch{
+    data={
+      error:
+        text || "Server error"
+    };
+  }
+
+  if(!response.ok){
+
+    if(response.status===401){
+
+      showLogin();
+
+    }
+
+    throw new Error(
+      data.error ||
+      "Request failed"
+    );
+  }
+
+  return data;
+}
+
+
+/* -------------------------
+   LOGIN
+------------------------- */
+
+async function login(){
+
+  const input =
+    document.getElementById("secret");
+
+  const secret =
+    input.value.trim();
+
+  const box =
+    document.getElementById(
+      "loginMessage"
+    );
+
+  if(!secret){
+
+    box.style.display="block";
+    box.textContent=
+      "Please enter your admin secret.";
+
+    return;
+  }
+
+  box.style.display="block";
+  box.textContent=
+    "Signing in...";
+
+  try{
+
+    await request(
+      "/api/login",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            secret
+          })
+      }
+    );
+
+    input.value="";
+
+    await checkStatus();
+
+  }catch(error){
+
+    box.textContent=
+      error.message;
+
+  }
+}
+
+
+/* -------------------------
+   STATUS
+------------------------- */
+
+async function checkStatus(){
+
+  try{
+
+    const data =
+      await request(
+        "/api/status"
+      );
+
+    if(!data.loggedIn){
+
+      showLogin();
+      return;
+    }
+
+    document
+      .getElementById("loginCard")
+      .classList.add("hidden");
+
+    document
+      .getElementById("app")
+      .classList.remove("hidden");
+
+    const status =
+      document.getElementById(
+        "status"
+      );
+
+    const connect =
+      document.getElementById(
+        "connectButton"
+      );
+
+    if(data.googleConnected){
+
+      status.innerHTML =
+        "✅ Google Drive connected";
+
+      connect.textContent =
+        "🔄 Reconnect Google Drive";
+
+      loadFiles();
+
+    }else{
+
+      status.innerHTML =
+        "⚠️ Google Drive is not connected";
+
+      connect.textContent =
+        "🔗 Connect Google Drive";
+
+      document.getElementById(
+        "files"
+      ).innerHTML =
+        '<div class="empty">' +
+        'Connect Google Drive first.' +
+        '</div>';
+
+    }
+
+  }catch(error){
+
+    console.error(error);
+
+  }
+}
+
+
+/* -------------------------
+   SHOW LOGIN
+------------------------- */
+
+function showLogin(){
+
+  document
+    .getElementById("app")
+    .classList.add("hidden");
+
+  document
+    .getElementById("loginCard")
+    .classList.remove("hidden");
+
+}
+
+
+/* -------------------------
+   GOOGLE OAUTH
+------------------------- */
+
+function connectGoogle(){
+
+  window.location.href =
+    API +
+    "/api/oauth/start";
+
+}
+
+
+/* -------------------------
+   LOAD FILES
+------------------------- */
+
+async function loadFiles(){
+
+  const box =
+    document.getElementById(
+      "files"
+    );
+
+  box.innerHTML =
+    '<div class="loading">' +
+    'Loading files...' +
+    '</div>';
+
+  try{
+
+    const q =
+      document.getElementById(
+        "search"
+      ).value.trim();
+
+    const data =
+      await request(
+        "/api/files?q=" +
+        encodeURIComponent(q)
+      );
+
+    renderFiles(
+      data.files || []
+    );
+
+  }catch(error){
+
+    box.innerHTML =
+      '<div class="empty">' +
+      escapeHtml(
+        error.message
+      ) +
+      '</div>';
+
+  }
+}
+
+
+/* -------------------------
+   RENDER FILES
+------------------------- */
+
+function renderFiles(files){
+
+  const box =
+    document.getElementById(
+      "files"
+    );
+
+  box.innerHTML="";
+
+  if(!files.length){
+
+    box.innerHTML =
+      '<div class="empty">' +
+      'No files found.' +
+      '</div>';
+
+    return;
+  }
+
+  files.forEach(file=>{
+
+    const row =
+      document.createElement(
+        "div"
+      );
+
+    row.className="file";
+
+
+    const icon =
+      document.createElement(
+        "div"
+      );
+
+    icon.className=
+      "file-icon";
+
+    icon.textContent =
+      file.mimeType ===
+      "application/vnd.google-apps.folder"
+      ? "📁"
+      : "📄";
+
+
+    const info =
+      document.createElement(
+        "div"
+      );
+
+    info.className=
+      "file-info";
+
+
+    const name =
+      document.createElement(
+        "div"
+      );
+
+    name.className=
+      "file-name";
+
+    name.textContent=
+      file.name;
+
+
+    const meta =
+      document.createElement(
+        "div"
+      );
+
+    meta.className=
+      "file-meta";
+
+    meta.textContent =
+      file.mimeType ===
+      "application/vnd.google-apps.folder"
+      ? "Folder"
+      : formatFileSize(
+          file.size
+        );
+
+
+    info.append(
+      name,
+      meta
+    );
+
+
+    const actions =
+      document.createElement(
+        "div"
+      );
+
+    actions.className=
+      "actions";
+
+
+    if(
+      file.mimeType !==
+      "application/vnd.google-apps.folder"
+    ){
+
+      const download =
+        makeButton(
+          "Download",
+          "gray",
+          ()=>{
+            window.open(
+              API +
+              "/api/download?id=" +
+              encodeURIComponent(
+                file.id
+              ),
+              "_blank"
+            );
+          }
+        );
+
+      actions.appendChild(
+        download
+      );
+
+    }
+
+
+    const rename =
+      makeButton(
+        "Rename",
+        "",
+        ()=>{
+          renameFile(
+            file.id,
+            file.name
+          );
+        }
+      );
+
+
+    const del =
+      makeButton(
+        "Delete",
+        "red",
+        ()=>{
+          deleteFile(
+            file.id,
+            file.name
+          );
+        }
+      );
+
+
+    actions.append(
+      rename,
+      del
+    );
+
+
+    row.append(
+      icon,
+      info,
+      actions
+    );
+
+    box.appendChild(
+      row
+    );
+
+  });
+
+}
+
+
+/* -------------------------
+   BUTTON
+------------------------- */
+
+function makeButton(
+  text,
+  className,
+  action
+){
+
+  const button =
+    document.createElement(
+      "button"
+    );
+
+  button.textContent=
+    text;
+
+  if(className)
+    button.classList.add(
+      className
+    );
+
+  button.onclick=action;
+
+  return button;
+}
+
+
+/* -------------------------
+   CREATE FOLDER
+------------------------- */
+
+async function newFolder(){
+
+  const name =
+    prompt(
+      "Enter folder name:"
+    );
+
+  if(!name ||
+     !name.trim())
+    return;
+
+  try{
+
+    showMessage(
+      "Creating folder..."
+    );
+
+    await request(
+      "/api/folder",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            name:name.trim()
+          })
+      }
+    );
+
+    showMessage(
+      "Folder created."
+    );
+
+    loadFiles();
+
+  }catch(error){
+
+    showMessage(
+      error.message
+    );
+
+  }
+}
+
+
+/* -------------------------
+   RENAME
+------------------------- */
+
+async function renameFile(
+  id,
+  oldName
+){
+
+  const name =
+    prompt(
+      "Enter new name:",
+      oldName
+    );
+
+  if(!name ||
+     !name.trim())
+    return;
+
+  try{
+
+    showMessage(
+      "Renaming..."
+    );
+
+    await request(
+      "/api/rename",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            id,
+            name:name.trim()
+          })
+      }
+    );
+
+    showMessage(
+      "Renamed successfully."
+    );
+
+    loadFiles();
+
+  }catch(error){
+
+    showMessage(
+      error.message
+    );
+
+  }
+}
+
+
+/* -------------------------
+   DELETE
+------------------------- */
+
+async function deleteFile(
+  id,
+  name
+){
+
+  const confirmed =
+    confirm(
+      'Move "' +
+      name +
+      '" to Google Drive Trash?'
+    );
+
+  if(!confirmed)
+    return;
+
+  try{
+
+    showMessage(
+      "Deleting..."
+    );
+
+    await request(
+      "/api/delete",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            id
+          })
+      }
+    );
+
+    showMessage(
+      "Moved to Trash."
+    );
+
+    loadFiles();
+
+  }catch(error){
+
+    showMessage(
+      error.message
+    );
+
+  }
+}
+
+
+/* -------------------------
+   UPLOAD
+------------------------- */
+
+async function uploadFile(){
+
+  const input =
+    document.getElementById(
+      "upload"
+    );
+
+  const file =
+    input.files[0];
+
+  if(!file)
+    return;
+
+
+  /* Worker currently allows 20 MB */
+  if(
+    file.size >
+    20 * 1024 * 1024
+  ){
+
+    showMessage(
+      "Maximum file size is 20 MB."
+    );
+
+    input.value="";
+    return;
+  }
+
+
+  const form =
+    new FormData();
+
+  form.append(
+    "file",
+    file
+  );
+
+
+  try{
+
+    showMessage(
+      "Uploading " +
+      file.name +
+      "..."
+    );
+
+    await request(
+      "/api/upload",
+      {
+        method:"POST",
+        body:form
+      }
+    );
+
+    showMessage(
+      "Upload complete."
+    );
+
+    input.value="";
+
+    loadFiles();
+
+  }catch(error){
+
+    showMessage(
+      error.message
+    );
+
+  }
+}
+
+
+/* -------------------------
+   LOGOUT
+------------------------- */
+
+async function logout(){
+
+  try{
+
+    await request(
+      "/api/logout",
+      {
+        method:"POST"
+      }
+    );
+
+  }catch(error){
+
+    console.error(error);
+
+  }
+
+  location.reload();
+
+}
+
+
+/* -------------------------
+   MESSAGE
+------------------------- */
+
+function showMessage(text){
+
+  const box =
+    document.getElementById(
+      "message"
+    );
+
+  box.style.display="block";
+
+  box.textContent=text;
+
+}
+
+
+/* -------------------------
+   FILE SIZE
+------------------------- */
+
+function formatFileSize(size){
+
+  if(!size)
+    return "";
+
+  size =
+    Number(size);
+
+  if(size < 1024)
+    return size+" B";
+
+  if(size < 1024*1024)
+    return (
+      (size/1024)
+      .toFixed(1)
+      +" KB"
+    );
+
+  if(size <
+     1024*1024*1024)
+    return (
+      (size/1024/1024)
+      .toFixed(1)
+      +" MB"
+    );
+
+  return (
+    (size/1024/1024/1024)
+    .toFixed(1)
+    +" GB"
+  );
+}
+
+
+/* -------------------------
+   HTML ESCAPE
+------------------------- */
+
+function escapeHtml(value){
+
+  return String(value)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+
+}
+
+
+/* -------------------------
+   START
+------------------------- */
+
+checkStatus();
+
+</script>
+
+</body>
+</html>
