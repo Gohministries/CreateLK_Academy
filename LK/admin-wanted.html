@@ -119,6 +119,7 @@ h1{
 }
 
 .message.show{display:block}
+
 .message.error{
   background:#fff0f0;
   color:#a32121;
@@ -243,6 +244,8 @@ h1{
   text-decoration:none;
   font-size:13px;
   font-weight:800;
+  border:0;
+  cursor:pointer;
 }
 
 .cv{
@@ -355,18 +358,25 @@ h1{
 
 <header>
   <div class="header">
+
     <a class="brand" href="/jobs">
-      <img src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png" alt="CreateLK Jobs">
+      <img
+        src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png"
+        alt="CreateLK Jobs">
       <span>CreateLK Jobs</span>
     </a>
 
-    <button class="logout" onclick="logout()">Logout</button>
+    <button class="logout" onclick="logout()">
+      Logout
+    </button>
+
   </div>
 </header>
 
 <main>
 
   <h1>Job Seeker Approval</h1>
+
   <p class="subtitle">
     Review submitted Job Seeker Profiles and verify payments before publication.
   </p>
@@ -374,12 +384,21 @@ h1{
   <div id="message" class="message"></div>
 
   <div class="toolbar">
-    <div class="count" id="count">Loading...</div>
-    <button class="refresh" onclick="loadProfiles()">Refresh</button>
+
+    <div class="count" id="count">
+      Loading...
+    </div>
+
+    <button class="refresh" onclick="loadProfiles()">
+      Refresh
+    </button>
+
   </div>
 
   <div id="list">
-    <div class="spinner">Loading pending profiles...</div>
+    <div class="spinner">
+      Loading pending profiles...
+    </div>
   </div>
 
 </main>
@@ -387,14 +406,13 @@ h1{
 <script>
 const API = "https://wanted.createlk.workers.dev";
 
-/*
-  IMPORTANT:
-  Do NOT put the real ADMIN_KEY in this HTML.
-  This page asks for it only when needed and keeps it
-  in browser memory for the current page session.
-*/
+let ADMIN_KEY =
+  sessionStorage.getItem("createlk_wanted_admin_key") || "";
 
-let ADMIN_KEY = sessionStorage.getItem("createlk_wanted_admin_key") || "";
+
+/* =========================
+   HELPERS
+========================= */
 
 function esc(value){
   return String(value ?? "")
@@ -405,23 +423,33 @@ function esc(value){
     .replace(/'/g,"&#039;");
 }
 
-function value(v, fallback="Not provided"){
-  if(v === null || v === undefined || String(v).trim()===""){
+function value(v,fallback="Not provided"){
+  if(
+    v === null ||
+    v === undefined ||
+    String(v).trim() === ""
+  ){
     return fallback;
   }
+
   return String(v).trim();
 }
 
 function showMessage(text,type){
-  const box = document.getElementById("message");
+  const box =
+    document.getElementById("message");
+
   box.textContent = text;
-  box.className = "message show " + type;
+  box.className =
+    "message show " + type;
 }
 
 function clearMessage(){
-  const box = document.getElementById("message");
-  box.className = "message";
+  const box =
+    document.getElementById("message");
+
   box.textContent = "";
+  box.className = "message";
 }
 
 function askAdminKey(){
@@ -430,7 +458,8 @@ function askAdminKey(){
     return true;
   }
 
-  const key = prompt("Enter Admin Key:");
+  const key =
+    prompt("Enter Admin Key:");
 
   if(!key || !key.trim()){
     return false;
@@ -447,14 +476,19 @@ function askAdminKey(){
 }
 
 function headers(){
+
   return {
     "Accept":"application/json",
-    "Authorization":"Bearer " + ADMIN_KEY
+    "Authorization":
+      "Bearer " + ADMIN_KEY
   };
 }
 
 function formatDate(date){
-  if(!date) return "Not available";
+
+  if(!date){
+    return "Not available";
+  }
 
   const d = new Date(date);
 
@@ -472,46 +506,67 @@ function formatDate(date){
 }
 
 function profileLocation(p){
+
   return [
     p.city,
     p.district,
     p.province
-  ].filter(Boolean).join(" • ") || "Sri Lanka";
+  ]
+  .filter(Boolean)
+  .join(" • ") || "Sri Lanka";
 }
+
+
+/* =========================
+   LOAD PENDING PROFILES
+========================= */
 
 async function loadProfiles(){
 
   clearMessage();
 
   if(!askAdminKey()){
-    showMessage("Admin key is required.","error");
+
+    showMessage(
+      "Admin key is required.",
+      "error"
+    );
+
     return;
   }
 
-  const list = document.getElementById("list");
-  const count = document.getElementById("count");
+  const list =
+    document.getElementById("list");
+
+  const count =
+    document.getElementById("count");
 
   list.innerHTML =
     '<div class="spinner">Loading pending profiles...</div>';
 
   try{
 
-    const response = await fetch(
-      API + "/api/admin/wanted?status=pending",
-      {
-        method:"GET",
-        headers:headers()
-      }
-    );
+    const response =
+      await fetch(
+        API +
+        "/api/admin/wanted?status=pending",
+        {
+          method:"GET",
+          headers:headers()
+        }
+      );
 
-    const data = await response.json();
+    const data =
+      await response.json();
 
     if(!response.ok){
 
       if(response.status === 401){
+
         sessionStorage.removeItem(
           "createlk_wanted_admin_key"
         );
+
         ADMIN_KEY = "";
       }
 
@@ -533,9 +588,11 @@ async function loadProfiles(){
 
     count.textContent =
       profiles.length +
-      (profiles.length === 1
-        ? " pending profile"
-        : " pending profiles");
+      (
+        profiles.length === 1
+          ? " pending profile"
+          : " pending profiles"
+      );
 
     if(!profiles.length){
 
@@ -556,33 +613,50 @@ async function loadProfiles(){
 
     console.error(error);
 
-    list.innerHTML =
-      `<div class="empty">
-        Unable to load pending profiles.<br>
+    list.innerHTML = `
+      <div class="empty">
+        <strong>Unable to load pending profiles.</strong><br>
         ${esc(error.message)}
-      </div>`;
+      </div>
+    `;
 
-    count.textContent = "Unable to load";
+    count.textContent =
+      "Unable to load";
   }
 }
 
+
+/* =========================
+   PROFILE CARD
+========================= */
+
 function renderProfile(p){
 
-  const id = value(p.id,"");
+  const id =
+    value(p.id,"");
 
   return `
-    <div class="card" id="card-${esc(id)}">
+    <div
+      class="card"
+      id="card-${esc(id)}">
 
       <div class="card-head">
 
         <div>
-          <div class="name">${esc(value(p.name))}</div>
+
+          <div class="name">
+            ${esc(value(p.name))}
+          </div>
+
           <div class="position">
             ${esc(value(p.position))}
           </div>
+
         </div>
 
-        <div class="badge">PENDING APPROVAL</div>
+        <div class="badge">
+          PENDING APPROVAL
+        </div>
 
       </div>
 
@@ -591,56 +665,80 @@ function renderProfile(p){
         <div class="grid">
 
           <div class="item">
-            <span class="label">Location</span>
+            <span class="label">
+              Location
+            </span>
+
             <span class="value">
               ${esc(profileLocation(p))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">Expected Salary</span>
+            <span class="label">
+              Expected Salary
+            </span>
+
             <span class="value">
               ${esc(value(p.salary))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">Phone</span>
+            <span class="label">
+              Phone
+            </span>
+
             <span class="value">
               ${esc(value(p.phone))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">WhatsApp</span>
+            <span class="label">
+              WhatsApp
+            </span>
+
             <span class="value">
               ${esc(value(p.whatsapp))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">Experience</span>
+            <span class="label">
+              Experience
+            </span>
+
             <span class="value">
               ${esc(value(p.experience))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">Education</span>
+            <span class="label">
+              Education
+            </span>
+
             <span class="value">
               ${esc(value(p.education))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">Amount</span>
+            <span class="label">
+              Amount
+            </span>
+
             <span class="value">
               LKR ${esc(value(p.amount,"500"))}
             </span>
           </div>
 
           <div class="item">
-            <span class="label">Submitted</span>
+            <span class="label">
+              Submitted
+            </span>
+
             <span class="value">
               ${esc(formatDate(p.created_at))}
             </span>
@@ -648,27 +746,49 @@ function renderProfile(p){
 
         </div>
 
-        <div class="section">
-          <h3>Skills</h3>
-          <div class="text">${esc(value(p.skills))}</div>
-        </div>
 
         <div class="section">
-          <h3>Short Introduction</h3>
+
+          <h3>
+            Skills
+          </h3>
+
           <div class="text">
-            ${esc(value(p.description,"No introduction provided."))}
+            ${esc(value(p.skills))}
           </div>
+
         </div>
+
+
+        <div class="section">
+
+          <h3>
+            Short Introduction
+          </h3>
+
+          <div class="text">
+            ${esc(
+              value(
+                p.description,
+                "No introduction provided."
+              )
+            )}
+          </div>
+
+        </div>
+
 
         <div class="files">
 
+          <!-- ADMIN CV ENDPOINT -->
           <a
             class="file-btn cv"
-            href="${API}/api/cv/${encodeURIComponent(id)}"
+            href="${API}/api/admin/cv/${encodeURIComponent(id)}"
             target="_blank"
             rel="noopener">
             View CV
           </a>
+
 
           <button
             class="file-btn slip"
@@ -678,6 +798,7 @@ function renderProfile(p){
           </button>
 
         </div>
+
 
         <div class="actions">
 
@@ -698,9 +819,15 @@ function renderProfile(p){
         </div>
 
       </div>
+
     </div>
   `;
 }
+
+
+/* =========================
+   VIEW BANK SLIP
+========================= */
 
 async function viewSlip(encodedId){
 
@@ -708,18 +835,21 @@ async function viewSlip(encodedId){
     return;
   }
 
-  const id = decodeURIComponent(encodedId);
+  const id =
+    decodeURIComponent(encodedId);
 
   try{
 
-    const response = await fetch(
-      API + "/api/admin/slip/" +
-      encodeURIComponent(id),
-      {
-        method:"GET",
-        headers:headers()
-      }
-    );
+    const response =
+      await fetch(
+        API +
+        "/api/admin/slip/" +
+        encodeURIComponent(id),
+        {
+          method:"GET",
+          headers:headers()
+        }
+      );
 
     if(!response.ok){
 
@@ -735,11 +865,17 @@ async function viewSlip(encodedId){
       );
     }
 
-    const blob = await response.blob();
+    const blob =
+      await response.blob();
 
-    const url = URL.createObjectURL(blob);
+    const url =
+      URL.createObjectURL(blob);
 
-    window.open(url,"_blank","noopener");
+    window.open(
+      url,
+      "_blank",
+      "noopener"
+    );
 
     setTimeout(()=>{
       URL.revokeObjectURL(url);
@@ -748,61 +884,81 @@ async function viewSlip(encodedId){
   }catch(error){
 
     showMessage(
-      error.message || "Unable to open bank slip.",
+      error.message ||
+      "Unable to open bank slip.",
       "error"
     );
   }
 }
 
+
+/* =========================
+   APPROVE
+========================= */
+
 async function approveProfile(encodedId){
 
-  const id = decodeURIComponent(encodedId);
+  const id =
+    decodeURIComponent(encodedId);
 
   if(!askAdminKey()){
     return;
   }
 
-  if(!confirm(
-    "Approve this Job Seeker Profile?\n\n" +
-    "Payment will be marked as verified and the profile " +
-    "will become public for 30 days."
-  )){
+  const confirmed =
+    confirm(
+      "Approve this Job Seeker Profile?\n\n" +
+      "Payment will be marked as verified and " +
+      "the profile will become public for 30 days."
+    );
+
+  if(!confirmed){
     return;
   }
 
   const approve =
-    document.getElementById("approve-" + id);
+    document.getElementById(
+      "approve-" + id
+    );
 
   const reject =
-    document.getElementById("reject-" + id);
+    document.getElementById(
+      "reject-" + id
+    );
 
   if(approve) approve.disabled = true;
   if(reject) reject.disabled = true;
 
   try{
 
-    const response = await fetch(
-      API + "/api/admin/wanted/" +
-      encodeURIComponent(id) +
-      "/approve",
-      {
-        method:"POST",
-        headers:{
-          ...headers(),
-          "Content-Type":"application/json"
-        },
-        body:"{}"
-      }
-    );
+    const response =
+      await fetch(
+        API +
+        "/api/admin/wanted/" +
+        encodeURIComponent(id) +
+        "/approve",
+        {
+          method:"POST",
+          headers:{
+            ...headers(),
+            "Content-Type":
+              "application/json"
+          },
+          body:"{}"
+        }
+      );
 
-    const data = await response.json();
+    const data =
+      await response.json();
 
     if(!response.ok){
 
       if(response.status === 401){
+
         sessionStorage.removeItem(
           "createlk_wanted_admin_key"
         );
+
         ADMIN_KEY = "";
       }
 
@@ -819,7 +975,9 @@ async function approveProfile(encodedId){
     );
 
     const card =
-      document.getElementById("card-" + id);
+      document.getElementById(
+        "card-" + id
+      );
 
     if(card){
       card.remove();
@@ -830,7 +988,8 @@ async function approveProfile(encodedId){
   }catch(error){
 
     showMessage(
-      error.message || "Approval failed.",
+      error.message ||
+      "Approval failed.",
       "error"
     );
 
@@ -839,63 +998,83 @@ async function approveProfile(encodedId){
   }
 }
 
+
+/* =========================
+   REJECT
+========================= */
+
 async function rejectProfile(encodedId){
 
-  const id = decodeURIComponent(encodedId);
+  const id =
+    decodeURIComponent(encodedId);
 
   if(!askAdminKey()){
     return;
   }
 
-  const reason = prompt(
-    "Optional rejection reason:"
-  );
+  const reason =
+    prompt(
+      "Optional rejection reason:"
+    );
 
   if(reason === null){
     return;
   }
 
-  if(!confirm(
-    "Reject this Job Seeker Profile?"
-  )){
+  const confirmed =
+    confirm(
+      "Reject this Job Seeker Profile?"
+    );
+
+  if(!confirmed){
     return;
   }
 
   const approve =
-    document.getElementById("approve-" + id);
+    document.getElementById(
+      "approve-" + id
+    );
 
   const reject =
-    document.getElementById("reject-" + id);
+    document.getElementById(
+      "reject-" + id
+    );
 
   if(approve) approve.disabled = true;
   if(reject) reject.disabled = true;
 
   try{
 
-    const response = await fetch(
-      API + "/api/admin/wanted/" +
-      encodeURIComponent(id) +
-      "/reject",
-      {
-        method:"POST",
-        headers:{
-          ...headers(),
-          "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-          reason:reason.trim()
-        })
-      }
-    );
+    const response =
+      await fetch(
+        API +
+        "/api/admin/wanted/" +
+        encodeURIComponent(id) +
+        "/reject",
+        {
+          method:"POST",
+          headers:{
+            ...headers(),
+            "Content-Type":
+              "application/json"
+          },
+          body:JSON.stringify({
+            reason:reason.trim()
+          })
+        }
+      );
 
-    const data = await response.json();
+    const data =
+      await response.json();
 
     if(!response.ok){
 
       if(response.status === 401){
+
         sessionStorage.removeItem(
           "createlk_wanted_admin_key"
         );
+
         ADMIN_KEY = "";
       }
 
@@ -912,7 +1091,9 @@ async function rejectProfile(encodedId){
     );
 
     const card =
-      document.getElementById("card-" + id);
+      document.getElementById(
+        "card-" + id
+      );
 
     if(card){
       card.remove();
@@ -923,7 +1104,8 @@ async function rejectProfile(encodedId){
   }catch(error){
 
     showMessage(
-      error.message || "Rejection failed.",
+      error.message ||
+      "Rejection failed.",
       "error"
     );
 
@@ -932,23 +1114,36 @@ async function rejectProfile(encodedId){
   }
 }
 
+
+/* =========================
+   UPDATE COUNT
+========================= */
+
 function updateCount(){
 
   const cards =
-    document.querySelectorAll(".card").length;
+    document.querySelectorAll(
+      ".card"
+    ).length;
 
   const count =
-    document.getElementById("count");
+    document.getElementById(
+      "count"
+    );
 
   count.textContent =
     cards +
-    (cards === 1
-      ? " pending profile"
-      : " pending profiles");
+    (
+      cards === 1
+        ? " pending profile"
+        : " pending profiles"
+    );
 
   if(cards === 0){
 
-    document.getElementById("list").innerHTML = `
+    document.getElementById(
+      "list"
+    ).innerHTML = `
       <div class="empty">
         <strong>No pending profiles</strong><br>
         All submitted profiles have been processed.
@@ -956,6 +1151,11 @@ function updateCount(){
     `;
   }
 }
+
+
+/* =========================
+   LOGOUT
+========================= */
 
 function logout(){
 
@@ -965,20 +1165,28 @@ function logout(){
 
   ADMIN_KEY = "";
 
-  document.getElementById("list").innerHTML = `
+  document.getElementById(
+    "list"
+  ).innerHTML = `
     <div class="empty">
       Admin session cleared.<br>
       Click <strong>Refresh</strong> and enter the Admin Key again.
     </div>
   `;
 
-  document.getElementById("count").textContent =
+  document.getElementById(
+    "count"
+  ).textContent =
     "Admin session ended";
 
   clearMessage();
 }
 
-/* Load automatically */
+
+/* =========================
+   START
+========================= */
+
 loadProfiles();
 </script>
 
