@@ -1,43 +1,98 @@
+const AUTH_URL = "https://academy-auth.createlk.workers.dev";
+const SITE_URL = "https://createlk.com";
+const SUCCESS_URL = "https://createlk.com/fb/dashboard.html";
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "https://createlk.com",
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+    };
+
     try {
-      // Health check
-      if (url.pathname === "/health") {
-        return json({ ok: true, service: "academy-auth" });
+
+      /* CORS */
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: corsHeaders
+        });
       }
 
-      // Start Google login
+
+      /* HEALTH */
+
+      if (url.pathname === "/health") {
+        return json({
+          ok: true,
+          service: "academy-auth"
+        }, 200, corsHeaders);
+      }
+
+
+      /* GOOGLE LOGIN */
+
       if (url.pathname === "/login") {
-        const course = url.searchParams.get("course") || "facebook";
+
+        const course =
+          url.searchParams.get("course") ||
+          "facebook";
 
         const state = crypto.randomUUID();
 
         const redirectUri =
-          `${env.AUTH_URL}/callback`;
+          `${AUTH_URL}/callback`;
 
         const googleUrl = new URL(
           "https://accounts.google.com/o/oauth2/v2/auth"
         );
 
-        googleUrl.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
-        googleUrl.searchParams.set("redirect_uri", redirectUri);
-        googleUrl.searchParams.set("response_type", "code");
+        googleUrl.searchParams.set(
+          "client_id",
+          env.GOOGLE_CLIENT_ID
+        );
+
+        googleUrl.searchParams.set(
+          "redirect_uri",
+          redirectUri
+        );
+
+        googleUrl.searchParams.set(
+          "response_type",
+          "code"
+        );
+
         googleUrl.searchParams.set(
           "scope",
           "openid email profile"
         );
-        googleUrl.searchParams.set("access_type", "online");
-        googleUrl.searchParams.set("state", state);
 
-        const headers = new Headers();
+        googleUrl.searchParams.set(
+          "access_type",
+          "online"
+        );
+
+        googleUrl.searchParams.set(
+          "state",
+          state
+        );
+
+        const headers =
+          new Headers(corsHeaders);
 
         headers.set(
           "Set-Cookie",
           [
             `academy_oauth_state=${encodeURIComponent(
-              JSON.stringify({ state, course })
+              JSON.stringify({
+                state,
+                course
+              })
             )}`,
             "HttpOnly",
             "Secure",
@@ -47,7 +102,10 @@ export default {
           ].join("; ")
         );
 
-        headers.set("Location", googleUrl.toString());
+        headers.set(
+          "Location",
+          googleUrl.toString()
+        );
 
         return new Response(null, {
           status: 302,
@@ -55,91 +113,166 @@ export default {
         });
       }
 
-      // Google callback
+
+      /* GOOGLE CALLBACK */
+
       if (url.pathname === "/callback") {
-        const code = url.searchParams.get("code");
-        const returnedState = url.searchParams.get("state");
+
+        const code =
+          url.searchParams.get("code");
+
+        const returnedState =
+          url.searchParams.get("state");
 
         if (!code || !returnedState) {
-          return error("Missing Google authorization data.", 400);
+          return error(
+            "Missing Google authorization data.",
+            400,
+            corsHeaders
+          );
         }
 
-        const cookie = getCookie(
-          request.headers.get("Cookie"),
-          "academy_oauth_state"
-        );
+        const cookie =
+          getCookie(
+            request.headers.get("Cookie"),
+            "academy_oauth_state"
+          );
 
         if (!cookie) {
-          return error("Login session expired. Please try again.", 400);
+          return error(
+            "Login session expired. Please try again.",
+            400,
+            corsHeaders
+          );
         }
 
         let oauth;
 
         try {
-          oauth = JSON.parse(decodeURIComponent(cookie));
+          oauth = JSON.parse(
+            decodeURIComponent(cookie)
+          );
         } catch {
-          return error("Invalid login session.", 400);
+          return error(
+            "Invalid login session.",
+            400,
+            corsHeaders
+          );
         }
 
-        if (!oauth.state || oauth.state !== returnedState) {
-          return error("Invalid OAuth state.", 400);
+        if (
+          !oauth.state ||
+          oauth.state !== returnedState
+        ) {
+          return error(
+            "Invalid OAuth state.",
+            400,
+            corsHeaders
+          );
         }
 
-        const course = oauth.course || "facebook";
+        const course =
+          oauth.course ||
+          "facebook";
 
-        // Exchange Google authorization code for tokens
-        const tokenResponse = await fetch(
-          "https://oauth2.googleapis.com/token",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body: new URLSearchParams({
-              code,
-              client_id: env.GOOGLE_CLIENT_ID,
-              client_secret: env.GOOGLE_CLIENT_SECRET,
-              redirect_uri: `${env.AUTH_URL}/callback`,
-              grant_type: "authorization_code"
-            })
-          }
-        );
+
+        /* GOOGLE TOKEN */
+
+        const tokenResponse =
+          await fetch(
+            "https://oauth2.googleapis.com/token",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/x-www-form-urlencoded"
+              },
+
+              body: new URLSearchParams({
+                code,
+                client_id:
+                  env.GOOGLE_CLIENT_ID,
+                client_secret:
+                  env.GOOGLE_CLIENT_SECRET,
+                redirect_uri:
+                  `${AUTH_URL}/callback`,
+                grant_type:
+                  "authorization_code"
+              })
+            }
+          );
 
         if (!tokenResponse.ok) {
-          const details = await tokenResponse.text();
-          console.error("Google token error:", details);
-          return error("Google login failed.", 400);
+
+          console.error(
+            "Google token error:",
+            await tokenResponse.text()
+          );
+
+          return error(
+            "Google login failed.",
+            400,
+            corsHeaders
+          );
         }
 
-        const tokens = await tokenResponse.json();
+        const tokens =
+          await tokenResponse.json();
 
         if (!tokens.access_token) {
-          return error("Google did not return an access token.", 400);
+          return error(
+            "Google did not return an access token.",
+            400,
+            corsHeaders
+          );
         }
 
-        // Get Google profile
-        const profileResponse = await fetch(
-          "https://www.googleapis.com/oauth2/v2/userinfo",
-          {
-            headers: {
-              Authorization: `Bearer ${tokens.access_token}`
+
+        /* GOOGLE PROFILE */
+
+        const profileResponse =
+          await fetch(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            {
+              headers: {
+                Authorization:
+                  `Bearer ${tokens.access_token}`
+              }
             }
-          }
-        );
+          );
 
         if (!profileResponse.ok) {
-          return error("Unable to retrieve Google profile.", 400);
+          return error(
+            "Unable to retrieve Google profile.",
+            400,
+            corsHeaders
+          );
         }
 
-        const profile = await profileResponse.json();
+        const profile =
+          await profileResponse.json();
 
-        if (!profile.id || !profile.email) {
-          return error("Google account information is incomplete.", 400);
+        if (
+          !profile.id ||
+          !profile.email
+        ) {
+          return error(
+            "Google account information is incomplete.",
+            400,
+            corsHeaders
+          );
         }
 
-        const studentId = `google_${profile.id}`;
 
-        // Create table if it does not already exist
+        /* STUDENT */
+
+        const studentId =
+          `google_${profile.id}`;
+
+
+        /* DATABASE */
+
         await env.DB.prepare(`
           CREATE TABLE IF NOT EXISTS academy_students (
             id TEXT PRIMARY KEY,
@@ -153,13 +286,44 @@ export default {
           )
         `).run();
 
-        const now = new Date().toISOString();
 
-        // Save/update student
+        /* MEMBERSHIP COLUMNS */
+
+        try {
+          await env.DB.prepare(`
+            ALTER TABLE academy_students
+            ADD COLUMN membership_status TEXT DEFAULT 'FREE'
+          `).run();
+        } catch {}
+
+        try {
+          await env.DB.prepare(`
+            ALTER TABLE academy_students
+            ADD COLUMN membership_expiry TEXT
+          `).run();
+        } catch {}
+
+
+        const now =
+          new Date().toISOString();
+
+
+        /* SAVE STUDENT */
+
         await env.DB.prepare(`
           INSERT INTO academy_students
-          (id, google_id, name, email, picture, course, created_at, last_login)
+          (
+            id,
+            google_id,
+            name,
+            email,
+            picture,
+            course,
+            created_at,
+            last_login
+          )
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+
           ON CONFLICT(google_id)
           DO UPDATE SET
             name = excluded.name,
@@ -180,28 +344,59 @@ export default {
           )
           .run();
 
-        // Create signed session
+
+        /* SESSION */
+
         const session = {
+
           id: studentId,
-          google_id: profile.id,
-          name: profile.name || "",
-          email: profile.email,
-          picture: profile.picture || "",
+
+          google_id:
+            profile.id,
+
+          name:
+            profile.name || "",
+
+          email:
+            profile.email,
+
+          picture:
+            profile.picture || "",
+
           course,
-          iat: Date.now(),
-          exp: Date.now() + 7 * 24 * 60 * 60 * 1000
+
+          iat:
+            Date.now(),
+
+          exp:
+            Date.now() +
+            7 * 24 * 60 * 60 * 1000
         };
 
-        const token = await signSession(session, env.SESSION_SECRET);
 
-        // Success URL
-        const successUrl = new URL(env.SUCCESS_URL);
+        const token =
+          await signSession(
+            session,
+            env.SESSION_SECRET
+          );
 
-        successUrl.searchParams.set("course", course);
 
-        const headers = new Headers();
+        /* SUCCESS */
 
-        headers.set(
+        const successUrl =
+          new URL(SUCCESS_URL);
+
+        successUrl.searchParams.set(
+          "course",
+          course
+        );
+
+
+        const headers =
+          new Headers(corsHeaders);
+
+
+        headers.append(
           "Set-Cookie",
           [
             `academy_session=${token}`,
@@ -212,6 +407,7 @@ export default {
             "Max-Age=604800"
           ].join("; ")
         );
+
 
         headers.append(
           "Set-Cookie",
@@ -225,7 +421,12 @@ export default {
           ].join("; ")
         );
 
-        headers.set("Location", successUrl.toString());
+
+        headers.set(
+          "Location",
+          successUrl.toString()
+        );
+
 
         return new Response(null, {
           status: 302,
@@ -233,45 +434,88 @@ export default {
         });
       }
 
-      // Current logged-in student
+
+      /* CURRENT USER */
+
       if (url.pathname === "/me") {
-        const token = getCookie(
-          request.headers.get("Cookie"),
-          "academy_session"
-        );
 
-        if (!token) {
-          return json(
-            {
-              authenticated: false
-            },
-            401
+        const session =
+          await getSession(
+            request,
+            env
           );
-        }
-
-        const session = await verifySession(
-          token,
-          env.SESSION_SECRET
-        );
 
         if (!session) {
-          return json(
-            {
-              authenticated: false
-            },
-            401
+
+          return json({
+            authenticated: false
+          }, 401, corsHeaders);
+        }
+
+
+        let membershipStatus =
+          "FREE";
+
+        let membershipExpiry =
+          null;
+
+
+        try {
+
+          const student =
+            await env.DB.prepare(`
+              SELECT
+                membership_status,
+                membership_expiry
+              FROM academy_students
+              WHERE id = ?
+              LIMIT 1
+            `)
+              .bind(session.id)
+              .first();
+
+          if (student) {
+
+            membershipStatus =
+              student.membership_status ||
+              "FREE";
+
+            membershipExpiry =
+              student.membership_expiry ||
+              null;
+          }
+
+        } catch (e) {
+
+          console.error(
+            "Membership read error:",
+            e
           );
         }
+
 
         return json({
           authenticated: true,
-          student: session
-        });
+
+          student: {
+            ...session,
+
+            membership_status:
+              membershipStatus,
+
+            membership_expiry:
+              membershipExpiry
+          }
+        }, 200, corsHeaders);
       }
 
-      // Logout
+
+      /* LOGOUT */
+
       if (url.pathname === "/logout") {
-        const headers = new Headers();
+
+        const headers =
+          new Headers(corsHeaders);
 
         headers.set(
           "Set-Cookie",
@@ -287,7 +531,7 @@ export default {
 
         headers.set(
           "Location",
-          env.SITE_URL
+          SITE_URL
         );
 
         return new Response(null, {
@@ -296,75 +540,76 @@ export default {
         });
       }
 
-      return json(
-        {
-          service: "academy-auth",
-          status: "online",
-          endpoints: [
-            "/health",
-            "/login?course=facebook",
-            "/callback",
-            "/me",
-            "/logout"
-          ]
-        },
-        200
-      );
+
+      /* DEFAULT */
+
+      return json({
+        service: "academy-auth",
+        status: "online",
+        endpoints: [
+          "/health",
+          "/login?course=facebook",
+          "/callback",
+          "/me",
+          "/logout"
+        ]
+      }, 200, corsHeaders);
 
     } catch (err) {
+
       console.error(err);
 
-      return json(
-        {
-          ok: false,
-          error: "Internal server error."
-        },
-        500
-      );
+      return json({
+        ok: false,
+        error: "Internal server error."
+      }, 500, corsHeaders);
     }
   }
 };
 
 
 /* =========================
-   SESSION SIGNING
+   SESSION
 ========================= */
 
-async function signSession(payload, secret) {
-  const encoded = base64url(
-    new TextEncoder().encode(JSON.stringify(payload))
-  );
+async function getSession(
+  request,
+  env
+) {
 
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    {
-      name: "HMAC",
-      hash: "SHA-256"
-    },
-    false,
-    ["sign"]
-  );
+  const token =
+    getCookie(
+      request.headers.get("Cookie"),
+      "academy_session"
+    );
 
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(encoded)
-  );
+  if (!token) return null;
 
-  return `${encoded}.${base64url(new Uint8Array(signature))}`;
+  return verifySession(
+    token,
+    env.SESSION_SECRET
+  );
 }
 
 
-async function verifySession(token, secret) {
-  try {
-    const parts = token.split(".");
+/* =========================
+   SIGN SESSION
+========================= */
 
-    if (parts.length !== 2) return null;
+async function signSession(
+  payload,
+  secret
+) {
 
-    const [encoded, signature] = parts;
+  const encoded =
+    base64url(
+      new TextEncoder().encode(
+        JSON.stringify(payload)
+      )
+    );
 
-    const key = await crypto.subtle.importKey(
+  const key =
+    await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(secret),
       {
@@ -372,31 +617,87 @@ async function verifySession(token, secret) {
         hash: "SHA-256"
       },
       false,
-      ["verify"]
+      ["sign"]
     );
 
-    const valid = await crypto.subtle.verify(
+  const signature =
+    await crypto.subtle.sign(
       "HMAC",
       key,
-      base64urlDecode(signature),
       new TextEncoder().encode(encoded)
     );
 
-    if (!valid) return null;
+  return `${encoded}.${base64url(
+    new Uint8Array(signature)
+  )}`;
+}
 
-    const payload = JSON.parse(
-      new TextDecoder().decode(
-        base64urlDecode(encoded)
-      )
-    );
 
-    if (!payload.exp || Date.now() > payload.exp) {
+/* =========================
+   VERIFY SESSION
+========================= */
+
+async function verifySession(
+  token,
+  secret
+) {
+
+  try {
+
+    const parts =
+      token.split(".");
+
+    if (parts.length !== 2) {
+      return null;
+    }
+
+    const [
+      encoded,
+      signature
+    ] = parts;
+
+    const key =
+      await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(secret),
+        {
+          name: "HMAC",
+          hash: "SHA-256"
+        },
+        false,
+        ["verify"]
+      );
+
+    const valid =
+      await crypto.subtle.verify(
+        "HMAC",
+        key,
+        base64urlDecode(signature),
+        new TextEncoder().encode(encoded)
+      );
+
+    if (!valid) {
+      return null;
+    }
+
+    const payload =
+      JSON.parse(
+        new TextDecoder().decode(
+          base64urlDecode(encoded)
+        )
+      );
+
+    if (
+      !payload.exp ||
+      Date.now() > payload.exp
+    ) {
       return null;
     }
 
     return payload;
 
   } catch {
+
     return null;
   }
 }
@@ -406,18 +707,28 @@ async function verifySession(token, secret) {
    COOKIE
 ========================= */
 
-function getCookie(cookieHeader, name) {
+function getCookie(
+  cookieHeader,
+  name
+) {
+
   if (!cookieHeader) return null;
 
-  const cookies = cookieHeader.split(";");
+  const cookies =
+    cookieHeader.split(";");
 
   for (const cookie of cookies) {
-    const index = cookie.indexOf("=");
+
+    const index =
+      cookie.indexOf("=");
 
     if (index === -1) continue;
 
-    const key = cookie.slice(0, index).trim();
-    const value = cookie.slice(index + 1).trim();
+    const key =
+      cookie.slice(0, index).trim();
+
+    const value =
+      cookie.slice(index + 1).trim();
 
     if (key === name) {
       return value;
@@ -433,6 +744,7 @@ function getCookie(cookieHeader, name) {
 ========================= */
 
 function base64url(bytes) {
+
   let binary = "";
 
   for (const byte of bytes) {
@@ -447,15 +759,20 @@ function base64url(bytes) {
 
 
 function base64urlDecode(value) {
-  value = value
-    .replace(/-/g, "+")
-    .replace(/_/g, "/");
 
-  while (value.length % 4) {
+  value =
+    value
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+  while (
+    value.length % 4
+  ) {
     value += "=";
   }
 
-  const binary = atob(value);
+  const binary =
+    atob(value);
 
   return Uint8Array.from(
     binary,
@@ -465,29 +782,50 @@ function base64urlDecode(value) {
 
 
 /* =========================
-   RESPONSE HELPERS
+   RESPONSE
 ========================= */
 
-function json(data, status = 200) {
+function json(
+  data,
+  status = 200,
+  corsHeaders = {}
+) {
+
   return new Response(
     JSON.stringify(data),
     {
       status,
+
       headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store"
+        "Content-Type":
+          "application/json; charset=utf-8",
+
+        "Cache-Control":
+          "no-store",
+
+        ...corsHeaders
       }
     }
   );
 }
 
 
-function error(message, status = 400) {
+/* =========================
+   ERROR
+========================= */
+
+function error(
+  message,
+  status = 400,
+  corsHeaders = {}
+) {
+
   return json(
     {
       ok: false,
       error: message
     },
-    status
+    status,
+    corsHeaders
   );
 }
