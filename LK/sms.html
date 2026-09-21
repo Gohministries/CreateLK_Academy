@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK SMS Follow-up</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  padding:20px;
+  background:#f4f6fa;
+  font-family:Arial,sans-serif;
+  color:#222
+}
+.box{
+  max-width:500px;
+  margin:40px auto;
+  background:#fff;
+  padding:22px;
+  border-radius:16px;
+  box-shadow:0 4px 20px #0001
+}
+h2{color:#102a56;margin-top:0}
+input,button{
+  width:100%;
+  padding:13px;
+  margin:7px 0;
+  border-radius:8px;
+  font-size:15px
+}
+input{border:1px solid #ddd}
+button{
+  border:0;
+  background:#102a56;
+  color:#fff;
+  font-weight:bold;
+  cursor:pointer
+}
+.logout{background:#777}
+.hidden{display:none}
+.status{
+  margin:10px 0;
+  padding:10px;
+  border-radius:8px
+}
+.lead{
+  padding:14px 0;
+  border-bottom:1px solid #ddd;
+  line-height:1.6
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+
+<!-- LOGIN -->
+
+<div id="login">
+
+<h2>CreateLK SMS Follow-up</h2>
+
+<input
+  id="adminKey"
+  type="password"
+  placeholder="Admin Key">
+
+<button onclick="login()">
+🔐 Login
+</button>
+
+<div id="loginStatus"></div>
+
+</div>
+
+
+<!-- ADMIN -->
+
+<div id="admin" class="hidden">
+
+<h2>CreateLK SMS Follow-up</h2>
+
+<button class="logout" onclick="logout()">
+Logout
+</button>
+
+<input
+  id="name"
+  placeholder="Customer name">
+
+<input
+  id="phone"
+  type="tel"
+  placeholder="0771234567">
+
+<button onclick="addLead()">
+➕ Add WhatsApp Lead
+</button>
+
+<div id="status"></div>
+
+<hr>
+
+<button onclick="loadLeads()">
+🔄 Refresh Leads
+</button>
+
+<div id="leads"></div>
+
+</div>
+
+</div>
+
+
+<script>
+
+const API =
+"https://sms.createlk.workers.dev";
+
+let KEY =
+sessionStorage.getItem("sms_admin_key");
+
+
+function showAdmin(){
+
+  document.getElementById("login")
+    .classList.add("hidden");
+
+  document.getElementById("admin")
+    .classList.remove("hidden");
+
+  loadLeads();
+}
+
+
+async function login(){
+
+  const key =
+    document.getElementById("adminKey")
+    .value.trim();
+
+  if(!key){
+    document.getElementById("loginStatus")
+      .textContent="Enter Admin Key";
+    return;
+  }
+
+  try{
+
+    const r =
+      await fetch(
+        API+"/api/leads?key="+
+        encodeURIComponent(key)
+      );
+
+    const data =
+      await r.json();
+
+    if(data.success){
+
+      KEY=key;
+
+      sessionStorage.setItem(
+        "sms_admin_key",
+        KEY
+      );
+
+      showAdmin();
+
+    }else{
+
+      document.getElementById(
+        "loginStatus"
+      ).textContent="❌ Invalid Admin Key";
+    }
+
+  }catch(e){
+
+    document.getElementById(
+      "loginStatus"
+    ).textContent="❌ Connection error";
+  }
+}
+
+
+function logout(){
+
+  sessionStorage.removeItem(
+    "sms_admin_key"
+  );
+
+  KEY=null;
+
+  location.reload();
+}
+
+
+function normalize(phone){
+
+  phone=phone
+    .replace(/\s+/g,"")
+    .replace(/-/g,"");
+
+  if(phone.startsWith("07"))
+    phone="+94"+phone.substring(1);
+
+  else if(phone.startsWith("947"))
+    phone="+"+phone;
+
+  return phone;
+}
+
+
+async function addLead(){
+
+  const name =
+    document.getElementById("name")
+    .value.trim();
+
+  let phone =
+    document.getElementById("phone")
+    .value.trim();
+
+  if(!phone){
+    status("Enter phone number");
+    return;
+  }
+
+  phone=normalize(phone);
+
+  status("Adding lead...");
+
+  try{
+
+    const r =
+      await fetch(
+        API+"/api/leads",
+        {
+          method:"POST",
+          headers:{
+            "Content-Type":
+            "application/json"
+          },
+          body:JSON.stringify({
+            name:name,
+            phone:phone,
+            admin_key:KEY
+          })
+        }
+      );
+
+    const data =
+      await r.json();
+
+    if(data.success){
+
+      status(
+        "✅ Lead added: "+phone
+      );
+
+      document.getElementById("name")
+        .value="";
+
+      document.getElementById("phone")
+        .value="";
+
+      loadLeads();
+
+    }else{
+
+      status(
+        "❌ "+(data.error||"Error")
+      );
+
+      if(data.error==="Unauthorized")
+        logout();
+    }
+
+  }catch(e){
+
+    status(
+      "❌ Unable to connect"
+    );
+  }
+}
+
+
+async function loadLeads(){
+
+  try{
+
+    const r =
+      await fetch(
+        API+"/api/leads?key="+
+        encodeURIComponent(KEY)
+      );
+
+    const data =
+      await r.json();
+
+    if(!data.success){
+      logout();
+      return;
+    }
+
+    document.getElementById("leads")
+      .innerHTML =
+      data.leads.map(l=>`
+
+      <div class="lead">
+
+        <b>
+          ${safe(l.name||"Customer")}
+        </b><br>
+
+        ${safe(l.phone)}<br>
+
+        Message 1:
+        ${l.message1_sent?"✅ Sent":"⏳ Pending"}<br>
+
+        Message 2:
+        ${l.message2_sent?"✅ Sent":"⏳ Pending"}<br>
+
+        Message 3:
+        ${l.message3_sent?"✅ Sent":"⏳ Pending"}<br>
+
+        Status:
+        ${l.completed
+          ?"✅ Completed"
+          :"🟢 Active"}
+
+        ${!l.completed?`
+          <button
+            onclick="completeLead(${l.id})">
+            Stop Follow-ups
+          </button>
+        `:""}
+
+      </div>
+
+      `).join("");
+
+  }catch(e){
+
+    status("❌ Connection error");
+  }
+}
+
+
+async function completeLead(id){
+
+  if(!confirm(
+    "Stop follow-ups for this lead?"
+  )) return;
+
+  try{
+
+    const r =
+      await fetch(
+        API+"/api/complete",
+        {
+          method:"POST",
+          headers:{
+            "Content-Type":
+            "application/json"
+          },
+          body:JSON.stringify({
+            id:id,
+            admin_key:KEY
+          })
+        }
+      );
+
+    const data =
+      await r.json();
+
+    if(data.success)
+      loadLeads();
+    else
+      status(
+        "❌ "+(data.error||"Error")
+      );
+
+  }catch(e){
+
+    status("❌ Connection error");
+  }
+}
+
+
+function status(text){
+
+  const el =
+    document.getElementById("status");
+
+  el.className="status";
+  el.textContent=text;
+}
+
+
+function safe(value){
+
+  return String(value)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+
+/* Restore login */
+
+if(KEY){
+  showAdmin();
+}
+
+</script>
+
+</body>
+</html>
