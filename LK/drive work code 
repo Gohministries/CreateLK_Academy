@@ -1,682 +1,304 @@
-const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
-const DRIVE_API = "https://www.googleapis.com/drive/v3";
-const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+const ADMIN_PASSWORD = "drive#2026#02#09#";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: corsHeaders()
-      });
+      return new Response(null, { headers: cors() });
     }
 
     try {
-      if (url.pathname === "/api/login") {
-        return await adminLogin(request, env);
-      }
+      // LOGIN
+      if (url.pathname === "/auth" && request.method === "POST") {
+        const { password } = await request.json();
 
-      if (url.pathname === "/api/oauth/start") {
-        return await oauthStart(request, env);
-      }
+        if (password !== ADMIN_PASSWORD) {
+          return json({ success: false, error: "Invalid password" }, 401);
+        }
 
-      if (url.pathname === "/api/oauth/callback") {
-        return await oauthCallback(request, env);
-      }
-
-      if (url.pathname === "/api/status") {
-        return await status(request, env);
-      }
-
-      if (url.pathname === "/api/logout") {
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: {
-            "Content-Type": "application/json",
-            "Set-Cookie": "drive_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax"
-          }
+        return json({
+          success: true,
+          token: ADMIN_PASSWORD
         });
       }
 
-      if (!(await validSession(request, env))) {
-        return json({ error: "Unauthorized" }, 401);
+      // PUBLIC PHOTO
+      if (url.pathname === "/photo") {
+        const key = url.searchParams.get("key");
+
+        if (!key) return new Response("Missing key", { status: 400 });
+
+        const object = await env.BUCKET.get(key);
+
+        if (!object) {
+          return new Response("Photo not found", { status: 404 });
+        }
+
+        const headers = new Headers();
+        object.writeHttpMetadata(headers);
+        headers.set("Cache-Control", "public, max-age=31536000");
+
+        return new Response(object.body, { headers });
       }
 
-      if (url.pathname === "/api/files") {
-        return await listFiles(request, env);
+      // ADMIN AUTH
+      if (
+        request.headers.get("Authorization") !==
+        `Bearer ${ADMIN_PASSWORD}`
+      ) {
+        return json({ success: false, error: "Unauthorized" }, 401);
       }
 
-      if (url.pathname === "/api/folder") {
-        return await createFolder(request, env);
+      // LIST
+      if (url.pathname === "/list") {
+        const result = await env.BUCKET.list({ limit: 1000 });
+        const files = [];
+
+        for (const item of result.objects) {
+          const head = await env.BUCKET.head(item.key);
+
+          files.push({
+            name: item.key,
+            size: item.size,
+            uploaded: item.uploaded,
+            saved: head?.customMetadata?.saved === "true"
+          });
+        }
+
+        return json({
+          success: true,
+          files
+        });
       }
 
-      if (url.pathname === "/api/rename") {
-        return await renameFile(request, env);
+      // UPLOAD
+      if (
+        url.pathname === "/upload" &&
+        request.method === "POST"
+      ) {
+        const form = await request.formData();
+        const file = form.get("file");
+
+        if (!file || typeof file === "string") {
+          return json({
+            success: false,
+            error: "Select a photo"
+          }, 400);
+        }
+
+        let filename =
+          form.get("filename") || file.name;
+
+        filename = clean(filename);
+
+        if (!filename) {
+          return json({
+            success: false,
+            error: "Invalid filename"
+          }, 400);
+        }
+
+        if (!isImage(filename, file.type)) {
+          return json({
+            success: false,
+            error: "Only image files are allowed"
+          }, 400);
+        }
+
+        await env.BUCKET.put(
+          filename,
+          file.stream(),
+          {
+            httpMetadata: {
+              contentType:
+                file.type || mime(filename)
+            },
+            customMetadata: {
+              saved: "false"
+            }
+          }
+        );
+
+        return json({
+          success: true,
+          name: filename
+        });
       }
 
-      if (url.pathname === "/api/delete") {
-        return await deleteFile(request, env);
+      // MARK SAVED
+      if (
+        url.pathname === "/save" &&
+        request.method === "POST"
+      ) {
+        return setSaved(env, request, true);
       }
 
-      if (url.pathname === "/api/upload") {
-        return await uploadFile(request, env);
+      // UNMARK SAVED
+      if (
+        url.pathname === "/unsave" &&
+        request.method === "POST"
+      ) {
+        return setSaved(env, request, false);
       }
 
-      if (url.pathname === "/api/download") {
-        return await downloadFile(request, env);
+      // RENAME
+      if (
+        url.pathname === "/rename" &&
+        request.method === "POST"
+      ) {
+        const { oldName, newName: rawName } =
+          await request.json();
+
+        const newName = clean(rawName);
+
+        if (!oldName || !newName) {
+          return json({
+            success: false,
+            error: "Filename required"
+          }, 400);
+        }
+
+        const object = await env.BUCKET.get(oldName);
+
+        if (!object) {
+          return json({
+            success: false,
+            error: "Photo not found"
+          }, 404);
+        }
+
+        if (await env.BUCKET.head(newName)) {
+          return json({
+            success: false,
+            error: "Filename already exists"
+          }, 409);
+        }
+
+        await env.BUCKET.put(
+          newName,
+          object.body,
+          {
+            httpMetadata: object.httpMetadata,
+            customMetadata: object.customMetadata
+          }
+        );
+
+        await env.BUCKET.delete(oldName);
+
+        return json({ success: true });
       }
 
-      return json({ error: "Not found" }, 404);
+      // DELETE
+      if (
+        url.pathname === "/delete" &&
+        request.method === "POST"
+      ) {
+        const { name } = await request.json();
 
-    } catch (e) {
+        await env.BUCKET.delete(name);
+
+        return json({ success: true });
+      }
+
       return json({
-        error: e.message || "Server error"
+        success: false,
+        error: "Not found"
+      }, 404);
+
+    } catch (error) {
+      return json({
+        success: false,
+        error: error.message
       }, 500);
     }
   }
 };
 
-function corsHeaders() {
+
+async function setSaved(env, request, saved) {
+
+  const { name } = await request.json();
+
+  const object = await env.BUCKET.get(name);
+
+  if (!object) {
+    return json({
+      success: false,
+      error: "Photo not found"
+    }, 404);
+  }
+
+  const metadata = object.customMetadata || {};
+  metadata.saved = String(saved);
+
+  await env.BUCKET.put(
+    name,
+    object.body,
+    {
+      httpMetadata: object.httpMetadata,
+      customMetadata: metadata
+    }
+  );
+
+  return json({ success: true });
+}
+
+
+function clean(name) {
+  return String(name)
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9._\-\/]/g, "_");
+}
+
+
+function isImage(name, type) {
+  const ext = name.toLowerCase().split(".").pop();
+
+  return [
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "bmp",
+    "avif"
+  ].includes(ext) ||
+  String(type || "").startsWith("image/");
+}
+
+
+function mime(name) {
+  const ext = name.toLowerCase().split(".").pop();
+
+  return {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    avif: "image/avif"
+  }[ext] || "application/octet-stream";
+}
+
+
+function cors() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS"
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization"
   };
 }
 
-function json(data, status = 200, extra = {}) {
+
+function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders(),
-      ...extra
+      ...cors()
     }
   });
-}
-
-async function adminLogin(request, env) {
-  const body = await request.json();
-
-  if (!body.secret) {
-    return json({ error: "Secret required" }, 400);
-  }
-
-  const supplied = await sha256(body.secret);
-  const actual = await sha256(env.DRIVE_ADMIN_SECRET);
-
-  if (!constantTimeEqual(supplied, actual)) {
-    return json({ error: "Invalid admin secret" }, 401);
-  }
-
-  const token = await signSession({
-    admin: true,
-    exp: Date.now() + 24 * 60 * 60 * 1000
-  }, env.SESSION_SECRET);
-
-  return json(
-    { ok: true },
-    200,
-    {
-      "Set-Cookie":
-        `drive_session=${token}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`
-    }
-  );
-}
-
-async function status(request, env) {
-  const session = await getSession(request, env);
-
-  if (!session) {
-    return json({
-      loggedIn: false,
-      googleConnected: false
-    });
-  }
-
-  const row = await env.DB.prepare(
-    "SELECT id FROM google_tokens WHERE id=1"
-  ).first();
-
-  return json({
-    loggedIn: true,
-    googleConnected: !!row
-  });
-}
-
-async function oauthStart(request, env) {
-  if (!(await validSession(request, env))) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  const redirectUri = new URL(
-    "/api/oauth/callback",
-    request.url
-  ).toString();
-
-  const params = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    access_type: "offline",
-    prompt: "consent",
-    scope: "https://www.googleapis.com/auth/drive"
-  });
-
-  return Response.redirect(
-    `${GOOGLE_AUTH}?${params}`,
-    302
-  );
-}
-
-async function oauthCallback(request, env) {
-  const url = new URL(request.url);
-  const code = url.searchParams.get("code");
-
-  if (!code) {
-    return new Response("Google authorization failed.", {
-      status: 400
-    });
-  }
-
-  const redirectUri = new URL(
-    "/api/oauth/callback",
-    request.url
-  ).toString();
-
-  const response = await fetch(GOOGLE_TOKEN, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri
-    })
-  });
-
-  const data = await response.json();
-
-  if (!response.ok || !data.refresh_token) {
-    return new Response(
-      "Google authorization failed: " +
-      JSON.stringify(data),
-      { status: 500 }
-    );
-  }
-
-  const encrypted = await encryptToken(
-    data.refresh_token,
-    env.TOKEN_ENCRYPTION_KEY
-  );
-
-  await env.DB.prepare(`
-    INSERT INTO google_tokens (id, refresh_token, updated_at)
-    VALUES (1, ?, ?)
-    ON CONFLICT(id)
-    DO UPDATE SET
-      refresh_token=excluded.refresh_token,
-      updated_at=excluded.updated_at
-  `).bind(
-    encrypted,
-    Date.now()
-  ).run();
-
-  return Response.redirect(
-    new URL("/", request.url).toString() +
-    "?google=connected",
-    302
-  );
-}
-
-async function getAccessToken(env) {
-  const row = await env.DB.prepare(
-    "SELECT refresh_token FROM google_tokens WHERE id=1"
-  ).first();
-
-  if (!row) {
-    throw new Error("Google Drive is not connected");
-  }
-
-  const refreshToken = await decryptToken(
-    row.refresh_token,
-    env.TOKEN_ENCRYPTION_KEY
-  );
-
-  const response = await fetch(GOOGLE_TOKEN, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token"
-    })
-  });
-
-  const data = await response.json();
-
-  if (!response.ok || !data.access_token) {
-    throw new Error("Unable to refresh Google access");
-  }
-
-  return data.access_token;
-}
-
-async function driveFetch(path, options, env) {
-  const accessToken = await getAccessToken(env);
-
-  const headers = new Headers(options?.headers || {});
-  headers.set(
-    "Authorization",
-    `Bearer ${accessToken}`
-  );
-
-  return fetch(path, {
-    ...options,
-    headers
-  });
-}
-
-async function listFiles(request, env) {
-  const url = new URL(request.url);
-
-  const q = url.searchParams.get("q");
-
-  let query =
-    "trashed = false";
-
-  if (q) {
-    query +=
-      ` and name contains '${escapeDriveQuery(q)}'`;
-  }
-
-  const params = new URLSearchParams({
-    q: query,
-    pageSize: "100",
-    orderBy: "folder,name",
-    fields:
-      "files(id,name,mimeType,size,modifiedTime,webViewLink,parents)"
-  });
-
-  const response = await driveFetch(
-    `${DRIVE_API}/files?${params}`,
-    {},
-    env
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(
-      data.error?.message || "Drive request failed"
-    );
-  }
-
-  return json(data);
-}
-
-async function createFolder(request, env) {
-  const body = await request.json();
-
-  const response = await driveFetch(
-    `${DRIVE_API}/files`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name: body.name,
-        mimeType:
-          "application/vnd.google-apps.folder",
-        ...(body.parentId
-          ? { parents: [body.parentId] }
-          : {})
-      })
-    },
-    env
-  );
-
-  return json(await response.json(), response.status);
-}
-
-async function renameFile(request, env) {
-  const body = await request.json();
-
-  const response = await driveFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(body.id)}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name: body.name
-      })
-    },
-    env
-  );
-
-  return json(await response.json(), response.status);
-}
-
-async function deleteFile(request, env) {
-  const body = await request.json();
-
-  const response = await driveFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(body.id)}`,
-    {
-      method: "DELETE"
-    },
-    env
-  );
-
-  if (response.status === 204) {
-    return json({ ok: true });
-  }
-
-  return json(
-    await response.json(),
-    response.status
-  );
-}
-
-async function uploadFile(request, env) {
-  const form = await request.formData();
-
-  const file = form.get("file");
-  const parentId = form.get("parentId");
-
-  if (!(file instanceof File)) {
-    return json({
-      error: "File required"
-    }, 400);
-  }
-
-  if (file.size > 20 * 1024 * 1024) {
-    return json({
-      error: "Maximum upload size is 20 MB"
-    }, 400);
-  }
-
-  const metadata = {
-    name: file.name,
-    ...(parentId
-      ? { parents: [parentId] }
-      : {})
-  };
-
-  const boundary = "drive_boundary_9f2a";
-
-  const body = new Blob([
-    `--${boundary}\r\n`,
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n",
-    JSON.stringify(metadata),
-    "\r\n",
-    `--${boundary}\r\n`,
-    `Content-Type: ${file.type || "application/octet-stream"}\r\n\r\n`,
-    await file.arrayBuffer(),
-    "\r\n",
-    `--${boundary}--`
-  ]);
-
-  const response = await driveFetch(
-    `${DRIVE_UPLOAD}?uploadType=multipart`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          `multipart/related; boundary=${boundary}`
-      },
-      body
-    },
-    env
-  );
-
-  return json(await response.json(), response.status);
-}
-
-async function downloadFile(request, env) {
-  const url = new URL(request.url);
-  const id = url.searchParams.get("id");
-
-  if (!id) {
-    return json({
-      error: "File ID required"
-    }, 400);
-  }
-
-  const response = await driveFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(id)}?alt=media`,
-    {},
-    env
-  );
-
-  if (!response.ok) {
-    return new Response(
-      await response.text(),
-      { status: response.status }
-    );
-  }
-
-  return new Response(response.body, {
-    headers: {
-      "Content-Type":
-        response.headers.get("Content-Type") ||
-        "application/octet-stream"
-    }
-  });
-}
-
-async function validSession(request, env) {
-  return !!(await getSession(request, env));
-}
-
-async function getSession(request, env) {
-  const cookie =
-    request.headers.get("Cookie") || "";
-
-  const match =
-    cookie.match(/drive_session=([^;]+)/);
-
-  if (!match) return null;
-
-  try {
-    const session = await verifySession(
-      match[1],
-      env.SESSION_SECRET
-    );
-
-    if (!session || session.exp < Date.now()) {
-      return null;
-    }
-
-    return session;
-  } catch {
-    return null;
-  }
-}
-
-async function signSession(data, secret) {
-  const payload =
-    btoa(JSON.stringify(data));
-
-  const sig =
-    await hmac(payload, secret);
-
-  return `${payload}.${sig}`;
-}
-
-async function verifySession(token, secret) {
-  const parts = token.split(".");
-
-  if (parts.length !== 2) return null;
-
-  const expected =
-    await hmac(parts[0], secret);
-
-  if (!constantTimeEqual(
-    parts[1],
-    expected
-  )) return null;
-
-  return JSON.parse(
-    atob(parts[0])
-  );
-}
-
-async function hmac(text, secret) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    {
-      name: "HMAC",
-      hash: "SHA-256"
-    },
-    false,
-    ["sign"]
-  );
-
-  const signature =
-    await crypto.subtle.sign(
-      "HMAC",
-      key,
-      new TextEncoder().encode(text)
-    );
-
-  return [...new Uint8Array(signature)]
-    .map(x =>
-      x.toString(16).padStart(2, "0")
-    )
-    .join("");
-}
-
-async function sha256(text) {
-  const data =
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(text)
-    );
-
-  return [...new Uint8Array(data)]
-    .map(x =>
-      x.toString(16).padStart(2, "0")
-    )
-    .join("");
-}
-
-function constantTimeEqual(a, b) {
-  if (a.length !== b.length) return false;
-
-  let result = 0;
-
-  for (let i = 0; i < a.length; i++) {
-    result |=
-      a.charCodeAt(i) ^
-      b.charCodeAt(i);
-  }
-
-  return result === 0;
-}
-
-function escapeDriveQuery(value) {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'");
-}
-
-async function encryptToken(text, secret) {
-  const keyBytes =
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(secret)
-    );
-
-  const key =
-    await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      "AES-GCM",
-      false,
-      ["encrypt", "decrypt"]
-    );
-
-  const iv = crypto.getRandomValues(
-    new Uint8Array(12)
-  );
-
-  const encrypted =
-    await crypto.subtle.encrypt(
-      {
-        name: "AES-GCM",
-        iv
-      },
-      key,
-      new TextEncoder().encode(text)
-    );
-
-  return [
-    bytesToBase64(iv),
-    bytesToBase64(
-      new Uint8Array(encrypted)
-    )
-  ].join(".");
-}
-
-async function decryptToken(value, secret) {
-  const [ivText, encryptedText] =
-    value.split(".");
-
-  const keyBytes =
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(secret)
-    );
-
-  const key =
-    await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      "AES-GCM",
-      false,
-      ["decrypt"]
-    );
-
-  const plain =
-    await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: base64ToBytes(ivText)
-      },
-      key,
-      base64ToBytes(encryptedText)
-    );
-
-  return new TextDecoder().decode(plain);
-}
-
-function bytesToBase64(bytes) {
-  let binary = "";
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
-}
-
-function base64ToBytes(value) {
-  const binary = atob(value);
-
-  return Uint8Array.from(
-    binary,
-    c => c.charCodeAt(0)
-  );
 }
