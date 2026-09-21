@@ -1,0 +1,337 @@
+const AUTH_URL = "https://academy-auth.createlk.workers.dev";
+const PAYMENT_URL = "https://createlk.com/fb/payment.html";
+
+const COURSES = {
+  youtube: "YouTube Monetization",
+  facebook: "Facebook Monetization & Reels",
+  tiktok: "TikTok Creator & Monetization",
+  daraz: "Daraz Affiliate Marketing",
+  affiliate: "Affiliate Marketing Sri Lanka",
+  instagram: "Instagram Growth & Reels",
+  ai: "AI Content Creation",
+  canva: "Canva & Video Creation",
+  "digital-products": "Digital Products",
+  whatsapp: "WhatsApp Marketing"
+};
+
+const TOTAL_LESSONS = 100;
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: cors() });
+    }
+
+    try {
+      if (url.pathname === "/health") {
+        return json({
+          ok: true,
+          service: "academy-course",
+          courses: 10,
+          lessons_per_course: 100,
+          free_lessons: 1,
+          premium_lessons: 99
+        });
+      }
+
+      if (url.pathname === "/api/courses") {
+        return json(
+          Object.entries(COURSES).map(([id, name]) => ({
+            id,
+            name,
+            lessons: 100,
+            free_lessons: 1,
+            price: 1000,
+            currency: "LKR"
+          }))
+        );
+      }
+
+      const lessonMatch =
+        url.pathname.match(/^\/api\/lesson\/([^/]+)\/(\d+)$/);
+
+      if (lessonMatch) {
+        const course = lessonMatch[1];
+        const lesson = Number(lessonMatch[2]);
+
+        if (!COURSES[course]) {
+          return json({ error: "Course not found." }, 404);
+        }
+
+        if (lesson < 1 || lesson > 100) {
+          return json({ error: "Lesson must be 1-100." }, 400);
+        }
+
+        /* LESSON 1 IS FREE */
+        if (lesson === 1) {
+          return json({
+            ok: true,
+            access: "FREE",
+            course,
+            course_name: COURSES[course],
+            lesson,
+            total_lessons: 100,
+            title: `Lesson 1`
+          });
+        }
+
+        /* LESSONS 2-100 REQUIRE PREMIUM */
+        const student = await getStudent(request, env);
+
+        if (!student) {
+          return redirectToPayment(course, lesson);
+        }
+
+        const premium = await isPremium(student.id, env);
+
+        if (!premium) {
+          return redirectToPayment(course, lesson);
+        }
+
+        return json({
+          ok: true,
+          access: "PREMIUM",
+          course,
+          course_name: COURSES[course],
+          lesson,
+          total_lessons: 100,
+          title: `Lesson ${lesson}`
+        });
+      }
+
+      if (url.pathname === "/api/progress") {
+        const student = await getStudent(request, env);
+
+        if (!student) {
+          return json({
+            authenticated: false
+          }, 401);
+        }
+
+        await setupDB(env);
+
+        const course =
+          url.searchParams.get("course") ||
+          student.course ||
+          "facebook";
+
+        if (!COURSES[course]) {
+          return json({ error: "Course not found." }, 404);
+        }
+
+        const result = await env.DB.prepare(`
+          SELECT lesson, completed_at
+          FROM academy_progress
+          WHERE student_id = ? AND course = ?
+          ORDER BY lesson
+        `).bind(student.id, course).all();
+
+        return json({
+          authenticated: true,
+          course,
+          total_lessons: 100,
+          completed_count: result.results?.length || 0,
+          completed: result.results || []
+        });
+      }
+
+      const completeMatch =
+        url.pathname.match(/^\/api\/complete\/([^/]+)\/(\d+)$/);
+
+      if (completeMatch && request.method === "POST") {
+        const course = completeMatch[1];
+        const lesson = Number(completeMatch[2]);
+
+        if (!COURSES[course]) {
+          return json({ error: "Course not found." }, 404);
+        }
+
+        if (lesson < 1 || lesson > 100) {
+          return json({ error: "Invalid lesson." }, 400);
+        }
+
+        const student = await getStudent(request, env);
+
+        if (!student) {
+          return redirectToPayment(course, lesson);
+        }
+
+        /* ONLY LESSON 1 IS FREE */
+        if (lesson > 1) {
+          const premium = await isPremium(student.id, env);
+
+          if (!premium) {
+            return redirectToPayment(course, lesson);
+          }
+        }
+
+        await setupDB(env);
+
+        await env.DB.prepare(`
+          INSERT OR REPLACE INTO academy_progress
+          (student_id, course, lesson, completed_at)
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          student.id,
+          course,
+          lesson,
+          new Date().toISOString()
+        ).run();
+
+        const count = await env.DB.prepare(`
+          SELECT COUNT(*) AS total
+          FROM academy_progress
+          WHERE student_id = ? AND course = ?
+        `).bind(student.id, course).first();
+
+        return json({
+          ok: true,
+          course,
+          lesson,
+          completed: true,
+          completed_count: Number(count?.total || 0),
+          total_lessons: 100
+        });
+      }
+
+      return json({
+        ok: true,
+        service: "academy-course",
+        courses: 10,
+        lessons_per_course: 100,
+        free_lessons: 1,
+        premium_lessons: 99
+      });
+
+    } catch (error) {
+      console.error(error);
+
+      return json({
+        ok: false,
+        error: "Internal server error."
+      }, 500);
+    }
+  }
+};
+
+
+/* =========================
+   STUDENT
+========================= */
+
+async function getStudent(request, env) {
+  const cookie = request.headers.get("Cookie");
+
+  if (!cookie) return null;
+
+  const authResponse = await fetch(`${AUTH_URL}/me`, {
+    headers: {
+      Cookie: cookie
+    }
+  });
+
+  if (!authResponse.ok) return null;
+
+  const data = await authResponse.json();
+
+  if (!data.authenticated || !data.student) {
+    return null;
+  }
+
+  return data.student;
+}
+
+
+/* =========================
+   PREMIUM CHECK
+========================= */
+
+async function isPremium(studentId, env) {
+  const student = await env.DB.prepare(`
+    SELECT membership_status, membership_expiry
+    FROM academy_students
+    WHERE id = ?
+  `).bind(studentId).first();
+
+  if (!student) return false;
+
+  if (student.membership_status !== "PREMIUM") {
+    return false;
+  }
+
+  if (!student.membership_expiry) {
+    return false;
+  }
+
+  return (
+    new Date(student.membership_expiry).getTime() >
+    Date.now()
+  );
+}
+
+
+/* =========================
+   PAYMENT REDIRECT
+========================= */
+
+function redirectToPayment(course, lesson) {
+  const url = new URL(PAYMENT_URL);
+
+  url.searchParams.set("course", course);
+  url.searchParams.set("lesson", lesson);
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: url.toString(),
+      ...cors()
+    }
+  });
+}
+
+
+/* =========================
+   DATABASE
+========================= */
+
+async function setupDB(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS academy_progress (
+      student_id TEXT NOT NULL,
+      course TEXT NOT NULL,
+      lesson INTEGER NOT NULL,
+      completed_at TEXT NOT NULL,
+      PRIMARY KEY(student_id, course, lesson)
+    )
+  `).run();
+}
+
+
+/* =========================
+   RESPONSE
+========================= */
+
+function json(data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json;charset=UTF-8",
+        "Cache-Control": "no-store",
+        ...cors()
+      }
+    }
+  );
+}
+
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": "https://createlk.com",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+  };
+}
