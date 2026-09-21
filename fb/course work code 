@@ -1,0 +1,263 @@
+const COURSE_ID = "facebook";
+
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": "https://createlk.com",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET, OPTIONS"
+  };
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "Cache-Control": "no-store",
+      ...cors()
+    }
+  });
+}
+
+export default {
+
+  async fetch(request, env) {
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: cors()
+      });
+    }
+
+    if (request.method !== "GET") {
+      return json({
+        error: "GET only"
+      }, 405);
+    }
+
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, "");
+
+
+    /* =========================
+       HEALTH
+    ========================= */
+
+    if (path === "/health") {
+
+      const course =
+        await env.DB.prepare(`
+          SELECT id, title, description, price
+          FROM facebook_course
+          WHERE id = 'facebook'
+            AND active = 1
+          LIMIT 1
+        `)
+        .first();
+
+      const count =
+        await env.DB.prepare(`
+          SELECT COUNT(*) AS total
+          FROM facebook_lessons
+          WHERE active = 1
+        `)
+        .first();
+
+      return json({
+        ok: true,
+        course: course || null,
+        lessons: Number(count?.total || 0)
+      });
+    }
+
+
+    /* =========================
+       COURSE
+       /api/course
+       /api/course/facebook
+    ========================= */
+
+    if (
+      path === "/api/course" ||
+      path === "/api/course/facebook"
+    ) {
+
+      const course =
+        await env.DB.prepare(`
+          SELECT
+            id,
+            title,
+            description,
+            price
+          FROM facebook_course
+          WHERE id = 'facebook'
+            AND active = 1
+          LIMIT 1
+        `)
+        .first();
+
+      if (!course) {
+        return json({
+          error: "Facebook course not found"
+        }, 404);
+      }
+
+
+      const lessons =
+        await env.DB.prepare(`
+          SELECT
+            id,
+            lesson_number,
+            title_en,
+            title_ta,
+            title_si,
+            is_free
+          FROM facebook_lessons
+          WHERE active = 1
+          ORDER BY lesson_number ASC
+        `)
+        .all();
+
+
+      return json({
+
+        course: {
+          id: course.id,
+          title: course.title,
+          description: course.description || "",
+          price: Number(course.price || 0)
+        },
+
+        lessons: lessons.results || []
+
+      });
+    }
+
+
+    /* =========================
+       SINGLE LESSON
+
+       /api/lesson/1
+       /api/lesson/2
+       etc.
+    ========================= */
+
+    const match =
+      path.match(/^\/api\/lesson\/(\d+)$/);
+
+    if (match) {
+
+      const number =
+        Number(match[1]);
+
+
+      if (
+        !Number.isInteger(number) ||
+        number < 1
+      ) {
+        return json({
+          error: "Invalid lesson number"
+        }, 400);
+      }
+
+
+      const lesson =
+        await env.DB.prepare(`
+          SELECT
+            id,
+            lesson_number,
+
+            title_en,
+            title_ta,
+            title_si,
+
+            notes_en,
+            notes_ta,
+            notes_si,
+
+            is_free
+
+          FROM facebook_lessons
+
+          WHERE lesson_number = ?
+            AND active = 1
+
+          LIMIT 1
+        `)
+        .bind(number)
+        .first();
+
+
+      if (!lesson) {
+        return json({
+          error: "Lesson not found"
+        }, 404);
+      }
+
+
+      /*
+        Photos belonging to this lesson.
+      */
+
+      const images =
+        await env.DB.prepare(`
+          SELECT
+            image_url,
+            caption_en,
+            caption_ta,
+            caption_si,
+            sort_order
+
+          FROM facebook_lesson_images
+
+          WHERE lesson_id = ?
+
+          ORDER BY
+            sort_order ASC,
+            id ASC
+        `)
+        .bind(lesson.id)
+        .all();
+
+
+      return json({
+
+        course: COURSE_ID,
+
+        lesson: {
+
+          id: lesson.id,
+
+          number:
+            lesson.lesson_number,
+
+          title: {
+            en: lesson.title_en,
+            ta: lesson.title_ta,
+            si: lesson.title_si
+          },
+
+          notes: {
+            en: lesson.notes_en,
+            ta: lesson.notes_ta,
+            si: lesson.notes_si
+          },
+
+          free:
+            Number(lesson.is_free) === 1
+
+        },
+
+        images:
+          images.results || []
+
+      });
+    }
+
+
+    return json({
+      error: "Not found"
+    }, 404);
+  }
+};
