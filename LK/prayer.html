@@ -310,20 +310,14 @@ Prayer Point 1 of 100
 </div>
 
 
-<!--
-Important:
-data-id stores the REAL Cloudflare
-database prayer ID.
--->
-
-<div id="prayer" data-id="">
+<div id="prayer" data-id="" data-point="">
 
 <h2>
-Loading prayer...
+Prayer Point 1
 </h2>
 
 <div class="content">
-Please wait...
+No prayer has been added yet.
 </div>
 
 </div>
@@ -411,12 +405,14 @@ let prayers = [];
 
 let selectedPoint = 1;
 
-let todayPoint = 1;
-
 let editId = null;
 
 let currentSriLankaDate = "";
 
+
+/* =========================
+   SHORTCUT
+========================= */
 
 const $ = id =>
 document.getElementById(id);
@@ -501,56 +497,54 @@ return (
 
 function getPoint(p){
 
+/*
+NEW DATABASE FIELD
+*/
+
 if(
 p.prayer_point != null &&
-!isNaN(
-Number(p.prayer_point)
-)
+!isNaN(Number(p.prayer_point))
 ){
 
-return Number(
-p.prayer_point
-);
-
-}
-
-if(
-p.point != null &&
-!isNaN(
-Number(p.point)
-)
-){
-
-return Number(
-p.point
-);
-
-}
-
-if(
-p.day != null &&
-!isNaN(
-Number(p.day)
-)
-){
-
-return Number(
-p.day
-);
+return Number(p.prayer_point);
 
 }
 
 
 /*
-Old Worker stores prayer_date.
+Alternative field names
+*/
+
+if(
+p.point != null &&
+!isNaN(Number(p.point))
+){
+
+return Number(p.point);
+
+}
+
+
+if(
+p.day != null &&
+!isNaN(Number(p.day))
+){
+
+return Number(p.day);
+
+}
+
+
+/*
+OLD RECORDS:
+derive point from prayer_date
+ONLY if there is no explicit point.
 */
 
 if(p.prayer_date){
 
 return pointFor(
-String(
-p.prayer_date
-).slice(0,10)
+String(p.prayer_date).slice(0,10)
 );
 
 }
@@ -683,8 +677,7 @@ Array.from(
 {length:MAX},
 (_,i)=>{
 
-const n =
-i + 1;
+const n = i + 1;
 
 return `
 <option value="${n}">
@@ -711,33 +704,24 @@ today().slice(0,4)
 
 const data =
 await api(
-"/prayers?year=" +
-year
+"/prayers?year=" + year
 );
 
 prayers =
-data.prayers || [];
+Array.isArray(data.prayers)
+? data.prayers
+: [];
 
 
 progress();
 
-
-/*
-Always Point 1 on initial/reload.
-*/
-
-todayPoint = 1;
-
 selectedPoint = 1;
 
-$("pointSelect").value =
-"1";
-
+$("pointSelect").value = "1";
 
 showDate();
 
 await showPoint(1);
-
 
 currentSriLankaDate =
 today();
@@ -770,12 +754,10 @@ getPoint(p);
 
 if(
 point >= 1 &&
-point <= 100
+point <= MAX
 ){
 
-uniquePoints.add(
-point
-);
+uniquePoints.add(point);
 
 }
 
@@ -786,18 +768,14 @@ point
 const done =
 uniquePoints.size;
 
-const pct =
-done;
-
-
 $("count").textContent =
 done;
 
 $("percent").textContent =
-pct + "% Complete";
+done + "% Complete";
 
 $("bar").style.width =
-pct + "%";
+done + "%";
 
 
 if(done === 100){
@@ -818,12 +796,10 @@ function showDate(){
 
 const d =
 new Date(
-today() +
-"T12:00:00"
+today() + "T12:00:00"
 );
 
 const days = [
-
 "Sunday",
 "Monday",
 "Tuesday",
@@ -831,12 +807,9 @@ const days = [
 "Thursday",
 "Friday",
 "Saturday"
-
 ];
 
-
 const months = [
-
 "January",
 "February",
 "March",
@@ -849,9 +822,7 @@ const months = [
 "October",
 "November",
 "December"
-
 ];
-
 
 $("weekday").textContent =
 days[d.getDay()];
@@ -873,59 +844,22 @@ d.getFullYear();
 
 function findPrayer(point){
 
-/*
-First match by point.
-*/
-
-let p =
-prayers.find(
-x =>
-getPoint(x) ===
-point
-);
-
-if(p){
-
-return p;
-
-}
+point =
+Number(point);
 
 
 /*
-Then match today's actual date.
+ONLY find by the selected
+Prayer Point.
+
+NO single-record fallback.
+NO today's-date fallback.
 */
 
-p =
-prayers.find(
-x =>
-x.prayer_date &&
-String(
-x.prayer_date
-).slice(0,10) ===
-today()
-);
-
-if(p){
-
-return p;
-
-}
-
-
-/*
-If only one existing record,
-use it as fallback.
-*/
-
-if(
-prayers.length === 1
-){
-
-return prayers[0];
-
-}
-
-return null;
+return prayers.find(
+p =>
+getPoint(p) === point
+) || null;
 
 }
 
@@ -934,9 +868,7 @@ return null;
    SHOW POINT
 ========================= */
 
-async function showPoint(
-point
-){
+async function showPoint(point){
 
 point =
 Number(point);
@@ -945,7 +877,7 @@ Number(point);
 if(
 !Number.isFinite(point) ||
 point < 1 ||
-point > 100
+point > MAX
 ){
 
 point = 1;
@@ -960,11 +892,45 @@ point;
 $("pointSelect").value =
 String(point);
 
-
 $("point").textContent =
 "Prayer Point " +
 point +
 " of 100";
+
+
+/*
+Clear old ID immediately.
+
+This prevents Edit/Complete
+from accidentally using the
+previous prayer while loading.
+*/
+
+$("prayer").dataset.id = "";
+
+$("prayer").dataset.point =
+String(point);
+
+$("complete").disabled = true;
+
+$("status").className =
+"status pending";
+
+$("status").textContent =
+"⏳ Not completed";
+
+
+$("prayer").innerHTML = `
+
+<h2>
+Prayer Point ${point}
+</h2>
+
+<div class="content">
+Loading prayer...
+</div>
+
+`;
 
 
 let p =
@@ -972,8 +938,8 @@ findPrayer(point);
 
 
 /*
-Try today's Worker endpoint
-if local record wasn't found.
+Try server endpoint only for
+the SAME selected point.
 */
 
 if(!p){
@@ -983,33 +949,49 @@ try{
 const data =
 await api(
 "/today?date=" +
-encodeURIComponent(
-today()
-) +
+encodeURIComponent(today()) +
 "&prayer_point=" +
-point
+encodeURIComponent(point)
 );
 
-if(data.prayer){
+if(
+data &&
+data.prayer
+){
+
+const serverPoint =
+getPoint(data.prayer);
+
+if(
+serverPoint === point
+){
 
 p =
 data.prayer;
 
 }
 
-}catch{}
+}
+
+}catch(e){
+
+/*
+Ignore endpoint failure.
+Local list is still valid.
+*/
+
+}
 
 }
 
 
 /*
-No prayer found.
+No prayer found for this point.
 */
 
 if(!p){
 
-$("prayer").dataset.id =
-"";
+$("prayer").dataset.id = "";
 
 $("prayer").innerHTML = `
 
@@ -1023,15 +1005,35 @@ No prayer has been added yet.
 
 `;
 
+return;
 
-$("status").className =
-"status pending";
+}
 
-$("status").textContent =
-"⏳ Not completed";
 
-$("complete").disabled =
-true;
+/*
+Make absolutely sure the
+returned prayer belongs to the
+selected point.
+*/
+
+const actualPoint =
+getPoint(p);
+
+if(actualPoint !== point){
+
+$("prayer").dataset.id = "";
+
+$("prayer").innerHTML = `
+
+<h2>
+Prayer Point ${point}
+</h2>
+
+<div class="content">
+No prayer has been added yet.
+</div>
+
+`;
 
 return;
 
@@ -1039,12 +1041,15 @@ return;
 
 
 /*
-VERY IMPORTANT:
-Store actual database ID.
+Store exact database ID
+AND selected point.
 */
 
 $("prayer").dataset.id =
 String(p.id);
+
+$("prayer").dataset.point =
+String(point);
 
 
 $("prayer").innerHTML = `
@@ -1059,9 +1064,7 @@ ${safe(p.content)}
 
 `;
 
-
-$("complete").disabled =
-false;
+$("complete").disabled = false;
 
 
 if(
@@ -1097,9 +1100,7 @@ $("complete").textContent =
    SELECT POINT
 ========================= */
 
-async function selectPoint(
-point
-){
+async function selectPoint(point){
 
 await showPoint(
 Number(point)
@@ -1114,82 +1115,42 @@ Number(point)
 
 function editSelected(){
 
-let p = null;
-
-
-/*
-FIRST:
-Use the exact ID of the
-currently displayed prayer.
-*/
-
 const displayedId =
 $("prayer").dataset.id;
 
+const displayedPoint =
+Number(
+$("prayer").dataset.point
+);
 
-if(displayedId){
 
-p =
+/*
+Require exact displayed ID.
+*/
+
+if(
+!displayedId ||
+displayedPoint !== selectedPoint
+){
+
+message(
+"viewMsg",
+"Prayer not found for Prayer Point " +
+selectedPoint + ".",
+"err"
+);
+
+return;
+
+}
+
+
+const p =
 prayers.find(
 x =>
 String(x.id) ===
 String(displayedId)
 );
-
-}
-
-
-/*
-SECOND:
-Try selected point.
-*/
-
-if(!p){
-
-p =
-prayers.find(
-x =>
-getPoint(x) ===
-selectedPoint
-);
-
-}
-
-
-/*
-THIRD:
-Try today's record.
-*/
-
-if(!p){
-
-p =
-prayers.find(
-x =>
-x.prayer_date &&
-String(
-x.prayer_date
-).slice(0,10) ===
-today()
-);
-
-}
-
-
-/*
-LAST:
-If only one record exists.
-*/
-
-if(
-!p &&
-prayers.length === 1
-){
-
-p =
-prayers[0];
-
-}
 
 
 if(!p){
@@ -1205,13 +1166,7 @@ return;
 }
 
 
-/*
-Open exact database record.
-*/
-
-edit(
-p.id
-);
+edit(p.id);
 
 }
 
@@ -1243,45 +1198,55 @@ return;
 }
 
 
-editId =
-Number(p.id);
-
-
 const point =
 getPoint(p);
 
 
-selectedPoint =
-point || 1;
+/*
+Never edit a prayer if its
+point cannot be identified.
+*/
 
+if(
+point < 1 ||
+point > MAX
+){
 
-$("pointSelect").value =
-String(
-selectedPoint
+message(
+"viewMsg",
+"Invalid Prayer Point.",
+"err"
 );
 
+return;
+
+}
+
+
+editId =
+Number(p.id);
+
+selectedPoint =
+point;
+
+$("pointSelect").value =
+String(point);
 
 $("title").value =
 p.title || "";
 
-
 $("content").value =
 p.content || "";
 
-
 $("formTitle").textContent =
 "✏️ Edit Prayer Point " +
-selectedPoint;
-
+point;
 
 $("cancel")
 .classList
 .remove("hidden");
 
-
-$("msg").innerHTML =
-"";
-
+$("msg").innerHTML = "";
 
 window.scrollTo({
 
@@ -1329,12 +1294,43 @@ return;
 }
 
 
+const point =
+Number(selectedPoint);
+
+
+if(
+point < 1 ||
+point > MAX
+){
+
+message(
+"msg",
+"Invalid Prayer Point.",
+"err"
+);
+
+return;
+
+}
+
+
+const btn =
+$("save");
+
+btn.disabled = true;
+
+btn.textContent =
+"Saving...";
+
+
+try{
+
 let existing = null;
 
 
 /*
-If editing:
-use exact ID.
+EDIT:
+Use exact database ID.
 */
 
 if(editId){
@@ -1346,26 +1342,20 @@ String(p.id) ===
 String(editId)
 );
 
-}
-
 
 /*
-If ID wasn't found:
-use displayed ID.
+Security check:
+the edited record must belong
+to the selected point.
 */
 
-if(!existing){
+if(
+existing &&
+getPoint(existing) !== point
+){
 
-const displayedId =
-$("prayer").dataset.id;
-
-if(displayedId){
-
-existing =
-prayers.find(
-p =>
-String(p.id) ===
-String(displayedId)
+throw Error(
+"This prayer belongs to another Prayer Point."
 );
 
 }
@@ -1374,7 +1364,9 @@ String(displayedId)
 
 
 /*
-Try selected point.
+If not editing, check whether
+this exact Prayer Point already
+exists.
 */
 
 if(!existing){
@@ -1382,54 +1374,19 @@ if(!existing){
 existing =
 prayers.find(
 p =>
-getPoint(p) ===
-selectedPoint
+getPoint(p) === point
 );
 
 }
 
 
 /*
-Try today's record.
+UPDATE
 */
-
-if(!existing){
-
-existing =
-prayers.find(
-p =>
-p.prayer_date &&
-String(
-p.prayer_date
-).slice(0,10) ===
-today()
-);
-
-}
-
-
-const btn =
-$("save");
-
-btn.disabled =
-true;
-
-btn.textContent =
-"Saving...";
-
-
-try{
-
-let result;
-
 
 if(existing){
 
-/*
-UPDATE EXISTING PRAYER
-*/
-
-result =
+const result =
 await api(
 "/prayer/" +
 existing.id,
@@ -1438,6 +1395,9 @@ method:"PUT",
 
 body:
 JSON.stringify({
+
+prayer_point:
+point,
 
 prayer_date:
 existing.prayer_date ||
@@ -1454,13 +1414,30 @@ content
 }
 );
 
+
+if(
+result &&
+result.success === false
+){
+
+throw Error(
+result.error ||
+"Update failed"
+);
+
+}
+
 }else{
 
 /*
-CREATE NEW PRAYER
+CREATE
+
+IMPORTANT:
+prayer_point is now explicitly
+saved.
 */
 
-result =
+const result =
 await api(
 "/prayer",
 {
@@ -1468,6 +1445,9 @@ method:"POST",
 
 body:
 JSON.stringify({
+
+prayer_point:
+point,
 
 prayer_date:
 today(),
@@ -1483,8 +1463,6 @@ content
 }
 );
 
-}
-
 
 if(
 result &&
@@ -1498,26 +1476,26 @@ result.error ||
 
 }
 
+}
+
+
+/*
+Remember selected point.
+*/
 
 const keepPoint =
-selectedPoint;
-
+point;
 
 editId =
 null;
 
+$("title").value = "";
 
-$("title").value =
-"";
-
-$("content").value =
-"";
-
+$("content").value = "";
 
 $("cancel")
 .classList
 .add("hidden");
-
 
 $("formTitle").textContent =
 "➕ Add Prayer Point";
@@ -1525,7 +1503,9 @@ $("formTitle").textContent =
 
 message(
 "msg",
-"✅ Prayer saved successfully.",
+"✅ Prayer Point " +
+keepPoint +
+" saved successfully.",
 "ok"
 );
 
@@ -1534,7 +1514,9 @@ await load();
 
 
 /*
-Return to the selected point.
+load() resets to Point 1,
+so return to the point that
+was actually saved.
 */
 
 await showPoint(
@@ -1553,8 +1535,7 @@ e.message,
 
 }finally{
 
-btn.disabled =
-false;
+btn.disabled = false;
 
 btn.textContent =
 "💾 Save Prayer Point";
@@ -1570,20 +1551,15 @@ btn.textContent =
 
 function cancelEdit(){
 
-editId =
-null;
+editId = null;
 
-$("title").value =
-"";
+$("title").value = "";
 
-$("content").value =
-"";
-
+$("content").value = "";
 
 $("cancel")
 .classList
 .add("hidden");
-
 
 $("formTitle").textContent =
 "➕ Add Prayer Point";
@@ -1597,62 +1573,43 @@ $("formTitle").textContent =
 
 async function markSelected(){
 
-let p = null;
-
-
-/*
-Use displayed database ID.
-*/
-
 const displayedId =
 $("prayer").dataset.id;
 
+const displayedPoint =
+Number(
+$("prayer").dataset.point
+);
 
-if(displayedId){
 
-p =
+/*
+Must have exact selected
+prayer.
+*/
+
+if(
+!displayedId ||
+displayedPoint !== selectedPoint
+){
+
+message(
+"viewMsg",
+"Prayer not found for Prayer Point " +
+selectedPoint + ".",
+"err"
+);
+
+return;
+
+}
+
+
+const p =
 prayers.find(
 x =>
 String(x.id) ===
 String(displayedId)
 );
-
-}
-
-
-/*
-Fallback by point.
-*/
-
-if(!p){
-
-p =
-prayers.find(
-x =>
-getPoint(x) ===
-selectedPoint
-);
-
-}
-
-
-/*
-Fallback today.
-*/
-
-if(!p){
-
-p =
-prayers.find(
-x =>
-x.prayer_date &&
-String(
-x.prayer_date
-).slice(0,10) ===
-today()
-);
-
-}
 
 
 if(!p){
@@ -1668,12 +1625,13 @@ return;
 }
 
 
+/*
+Toggle completion based on
+the actual database state.
+*/
+
 const completed =
-$("complete")
-.textContent
-.includes(
-"Not Completed"
-)
+Number(p.completed) === 1
 ? 0
 : 1;
 
@@ -1709,7 +1667,6 @@ selectedPoint;
 
 await load();
 
-
 await showPoint(
 keep
 );
@@ -1736,16 +1693,13 @@ function logout(){
 
 token = "";
 
-
 localStorage.removeItem(
 "prayer_token"
 );
 
-
 sessionStorage.removeItem(
 "prayer_token"
 );
-
 
 location.href =
 location.pathname;
@@ -1826,12 +1780,10 @@ if(session){
 token =
 session;
 
-
 localStorage.setItem(
 "prayer_token",
 token
 );
-
 
 history.replaceState(
 {},
@@ -1854,8 +1806,7 @@ sriLankaDate();
 
 if(
 currentSriLankaDate &&
-now !==
-currentSriLankaDate
+now !== currentSriLankaDate
 ){
 
 load().catch(
@@ -1883,3 +1834,4 @@ start();
 
 </body>
 </html>
+
