@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -40,12 +39,23 @@ gap:15px
 }
 
 .logo{
+display:flex;
+align-items:center;
+gap:8px;
 font-size:21px;
 font-weight:800;
 white-space:nowrap
 }
 
-.logo span{color:#d69b16}
+.logo img{
+width:40px;
+height:40px;
+object-fit:contain;
+display:block
+}
+
+.logo span{color:#fff}
+.logo b{color:#d69b16}
 
 .search{
 flex:1;
@@ -312,6 +322,14 @@ color:#102a56;
 padding:18px 0
 }
 
+.delivery-row{
+display:flex;
+justify-content:space-between;
+padding:10px 0;
+font-size:15px;
+color:#555
+}
+
 .checkout{
 margin-top:10px
 }
@@ -425,27 +443,54 @@ height:34px
 }
 
 @media(max-width:900px){
-
 .products{
 grid-template-columns:repeat(3,1fr)
 }
-
 }
 
 @media(max-width:600px){
 
 .top{
-flex-wrap:wrap;
-justify-content:flex-end
+display:grid;
+grid-template-columns:minmax(0,1fr) auto;
+grid-template-rows:auto auto;
+gap:8px;
+padding:10px 12px;
+align-items:center
 }
 
 .logo{
-width:auto
+grid-column:1;
+grid-row:1;
+min-width:0;
+font-size:18px;
+gap:6px;
+overflow:hidden
+}
+
+.logo img{
+width:36px;
+height:36px;
+flex-shrink:0
+}
+
+.logo span{
+overflow:hidden;
+text-overflow:ellipsis;
+white-space:nowrap
+}
+
+.cart-btn{
+grid-column:2;
+grid-row:1;
+justify-self:end;
+padding:10px 13px
 }
 
 .search{
-order:3;
-flex-basis:100%;
+grid-column:1/-1;
+grid-row:2;
+width:100%;
 max-width:none
 }
 
@@ -477,7 +522,6 @@ font-size:16px
 .cart-box{
 max-height:94vh
 }
-
 }
 
 @media(max-width:380px){
@@ -489,29 +533,34 @@ grid-template-columns:1fr
 .cart-btn{
 padding:10px 13px
 }
-
 }
 </style>
 </head>
 
 <body>
 
-<header>
+<!-- 🚚 DELIVERY CHARGE: CHANGE ONLY THIS NUMBER -->
 
+<script>
+const DELIVERY_CHARGE = 400;
+</script>
+
+<header>
 <div class="top">
 
 <div class="logo">
-CreateLK <span>Shop</span>
+<img
+src="https://media.gohministries.org/file_00000000689081f5b99939c76193c97d.png"
+alt="CreateLK Shop">
+<span>CreateLK <b>Shop</b></span>
 </div>
 
 <div class="search">
-
 <input
 id="searchInput"
 type="search"
 placeholder="Search products..."
 autocomplete="off">
-
 </div>
 
 <button
@@ -523,7 +572,6 @@ onclick="openCart()">
 </button>
 
 </div>
-
 </header>
 
 <section class="hero">
@@ -625,6 +673,16 @@ onclick="closeCart()">
 
 <div id="cartItems"></div>
 
+<div class="delivery-row">
+
+<span>Delivery</span>
+
+<span id="deliveryCharge">
+LKR 400
+</span>
+
+</div>
+
 <div class="cart-total">
 
 <span>
@@ -632,7 +690,7 @@ Total
 </span>
 
 <span id="cartTotal">
-LKR 0
+LKR 400
 </span>
 
 </div>
@@ -943,8 +1001,28 @@ function renderProducts(){
 
 if(!products.length){
 
+const keyword=
+searchInput.value.trim();
+
 productsEl.innerHTML=
-'<div class="message">No products found.</div>';
+keyword
+?
+`
+<div class="message">
+No products found for
+<strong>
+"${escapeHtml(keyword)}"
+</strong>.
+<br>
+Please try another keyword.
+</div>
+`
+:
+`
+<div class="message">
+No products found.
+</div>
+`;
 
 return;
 
@@ -1154,6 +1232,9 @@ function renderCart(){
 const el=
 document.getElementById("cartItems");
 
+const deliveryEl=
+document.getElementById("deliveryCharge");
+
 const totalEl=
 document.getElementById("cartTotal");
 
@@ -1162,23 +1243,27 @@ if(!cart.length){
 el.innerHTML=
 '<div class="message">Your cart is empty.</div>';
 
-totalEl.textContent="LKR 0";
+deliveryEl.textContent=
+money(DELIVERY_CHARGE);
+
+totalEl.textContent=
+money(DELIVERY_CHARGE);
 
 return;
 
 }
 
-let total=0;
+let subtotal=0;
 
 el.innerHTML="";
 
 cart.forEach(item=>{
 
-const subtotal=
+const itemTotal=
 Number(item.price)*
 Number(item.quantity);
 
-total+=subtotal;
+subtotal+=itemTotal;
 
 const row=
 document.createElement("div");
@@ -1244,7 +1329,7 @@ Remove
 </div>
 
 <strong>
-${money(subtotal)}
+${money(itemTotal)}
 </strong>
 
 `;
@@ -1252,6 +1337,12 @@ ${money(subtotal)}
 el.appendChild(row);
 
 });
+
+const total=
+subtotal+DELIVERY_CHARGE;
+
+deliveryEl.textContent=
+money(DELIVERY_CHARGE);
 
 totalEl.textContent=
 money(total);
@@ -1394,7 +1485,10 @@ Number(item.id),
 quantity:
 Number(item.quantity)
 
-}))
+})),
+
+delivery_charge:
+DELIVERY_CHARGE
 
 })
 
@@ -1503,11 +1597,8 @@ loadProducts,
 });
 
 updateCartCount();
-
 renderCart();
-
 loadCategories();
-
 loadProducts();
 
 </script>
