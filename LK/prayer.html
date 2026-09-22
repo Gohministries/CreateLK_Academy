@@ -80,7 +80,6 @@ button:disabled{opacity:.5}
 
 </div>
 
-
 <div class="card">
 
 <div class="today">
@@ -125,7 +124,6 @@ Prayer Point 1 of 100
 
 </div>
 
-
 <div class="card">
 
 <h3 id="formTitle">➕ Add Prayer Point</h3>
@@ -149,7 +147,6 @@ Cancel
 </div>
 
 </main>
-
 
 <script>
 
@@ -193,16 +190,13 @@ get("day");
 
 }
 
-
 function today(){
-
 return sriLankaDate();
-
 }
 
 
 /* =========================
-   POINT NUMBER
+   POINT CALCULATION
 ========================= */
 
 function pointFor(date){
@@ -252,12 +246,7 @@ p.day!=null &&
 )
 return Number(p.day);
 
-/*
-Old Worker stores prayer_date.
-Convert its date into the
-corresponding 1-100 point.
-*/
-
+/* Existing Worker uses prayer_date */
 if(p.prayer_date){
 
 return pointFor(
@@ -276,9 +265,7 @@ return null;
 ========================= */
 
 function login(){
-
 location.href=API+"/login";
-
 }
 
 
@@ -306,9 +293,7 @@ d=await r.json();
 if(!r.ok){
 
 if(r.status===401){
-
 logout();
-
 }
 
 throw Error(
@@ -336,7 +321,6 @@ const me=
 await api("/me");
 
 $("login").classList.add("hidden");
-
 $("app").classList.remove("hidden");
 
 $("user").textContent=
@@ -384,7 +368,7 @@ Prayer Point ${n}
 
 
 /* =========================
-   LOAD PRAYERS
+   LOAD
 ========================= */
 
 async function load(){
@@ -402,18 +386,17 @@ data.prayers||[];
 
 progress();
 
-todayPoint=
-pointFor(today());
+/*
+Always open on Prayer Point 1.
+*/
+todayPoint=1;
+selectedPoint=1;
 
-selectedPoint=
-todayPoint;
-
-$("pointSelect").value=
-todayPoint;
+$("pointSelect").value=1;
 
 showDate();
 
-await showPoint(todayPoint);
+await showPoint(1);
 
 currentSriLankaDate=
 today();
@@ -427,13 +410,15 @@ today();
 
 function progress(){
 
-const uniquePoints=new Set();
+const uniquePoints=
+new Set();
 
 prayers.forEach(p=>{
 
 if(Number(p.completed)!==1)return;
 
-const point=getPoint(p);
+const point=
+getPoint(p);
 
 if(point>=1&&point<=100){
 
@@ -469,7 +454,7 @@ $("percent").textContent=
 
 
 /* =========================
-   DISPLAY DATE
+   DATE DISPLAY
 ========================= */
 
 function showDate(){
@@ -526,7 +511,7 @@ async function showPoint(point){
 point=Number(point);
 
 if(!Number.isFinite(point))
-point=todayPoint;
+point=1;
 
 selectedPoint=point;
 
@@ -537,17 +522,10 @@ $("point").textContent=
 "Prayer Point "+point+
 " of 100";
 
-
 let p=
 prayers.find(
 x=>getPoint(x)===point
 );
-
-
-/*
-Try today's date through
-the existing Worker.
-*/
 
 if(!p){
 
@@ -562,15 +540,12 @@ point
 );
 
 if(data.prayer){
-
 p=data.prayer;
-
 }
 
 }catch{}
 
 }
-
 
 if(!p){
 
@@ -590,13 +565,11 @@ $("status").className=
 $("status").textContent=
 "⏳ Not completed";
 
-$("complete").disabled=
-true;
+$("complete").disabled=true;
 
 return;
 
 }
-
 
 $("prayer").innerHTML=`
 
@@ -608,9 +581,7 @@ ${safe(p.content)}
 
 `;
 
-$("complete").disabled=
-false;
-
+$("complete").disabled=false;
 
 if(Number(p.completed)===1){
 
@@ -640,7 +611,7 @@ $("complete").textContent=
 
 
 /* =========================
-   SELECT POINT
+   SELECT
 ========================= */
 
 async function selectPoint(point){
@@ -697,12 +668,6 @@ x=>getPoint(x)===selectedPoint
 
 if(!p)return;
 
-
-/*
-Existing Worker expects
-prayer_id and completed_date.
-*/
-
 const completed=
 $("complete").textContent
 .includes("Not Completed")
@@ -718,9 +683,7 @@ method:"POST",
 body:JSON.stringify({
 
 prayer_id:p.id,
-
 completed_date:today(),
-
 completed
 
 })
@@ -733,10 +696,12 @@ selectedPoint;
 
 await load();
 
-if(keep!==todayPoint){
-
+/*
+After completion, return to
+the point the user was viewing.
+*/
+if(keep!==1){
 await showPoint(keep);
-
 }
 
 }catch(e){
@@ -785,7 +750,6 @@ return;
 
 }
 
-
 const existing=
 editId
 ?prayers.find(
@@ -795,25 +759,18 @@ p=>Number(p.id)===editId
 p=>getPoint(p)===point
 );
 
-
 const btn=
 $("save");
 
 btn.disabled=true;
-
-btn.textContent=
-"Saving...";
-
+btn.textContent="Saving...";
 
 try{
 
 /*
-Existing Worker requires:
-prayer_date
-title
-content
+Existing Worker requires
+prayer_date, title and content.
 */
-
 const body={
 
 prayer_date:today(),
@@ -824,34 +781,27 @@ content:content
 
 };
 
-
 const result=
 await api(
 existing
 ?"/prayer/"+existing.id
 :"/prayer",
 {
-
 method:existing
 ?"PUT"
 :"POST",
-
 body:JSON.stringify(body)
-
 }
 );
-
 
 if(!result.success)
 throw Error(
 result.error||"Save failed"
 );
 
-
 editId=null;
 
 $("title").value="";
-
 $("content").value="";
 
 $("cancel").classList.add(
@@ -861,18 +811,15 @@ $("cancel").classList.add(
 $("formTitle").textContent=
 "➕ Add Prayer Point";
 
-
 message(
 "msg",
 "✅ Saved to Cloudflare.",
 "ok"
 );
 
-
 await load();
 
 await showPoint(point);
-
 
 }catch(e){
 
@@ -885,7 +832,6 @@ message(
 }finally{
 
 btn.disabled=false;
-
 btn.textContent=
 "💾 Save Prayer Point";
 
@@ -914,7 +860,7 @@ editId=
 Number(id);
 
 selectedPoint=
-point||todayPoint||1;
+point||1;
 
 $("pointSelect").value=
 selectedPoint;
@@ -950,7 +896,6 @@ function cancelEdit(){
 editId=null;
 
 $("title").value="";
-
 $("content").value="";
 
 $("cancel").classList.add(
@@ -1043,8 +988,8 @@ location.pathname
 
 
 /* =========================
-   AUTOMATIC DAILY RESET
-   12:00 AM SRI LANKA TIME
+   DAILY RESET
+   12:00 AM SRI LANKA
 ========================= */
 
 function checkDailyReset(){
@@ -1062,14 +1007,6 @@ load().catch(()=>{});
 }
 
 }
-
-
-/*
-Check every 30 seconds.
-This means the page automatically
-changes to the new day's point
-after midnight Sri Lanka time.
-*/
 
 setInterval(
 checkDailyReset,
