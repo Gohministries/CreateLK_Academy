@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Daily Prayer</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#f1f5f9;color:#1e293b}
+header{background:#1e3a8a;color:#fff;text-align:center;padding:18px}
+header h1{margin:0;font-size:23px}
+header p{margin:5px 0 0;font-size:13px}
+main{max-width:700px;margin:auto;padding:15px}
+.card{background:#fff;padding:16px;border-radius:12px;margin-bottom:14px;box-shadow:0 2px 10px #0001}
+input,textarea,button{width:100%;font:inherit;padding:11px;margin:5px 0;border-radius:8px}
+input,textarea{border:1px solid #cbd5e1}
+textarea{min-height:140px}
+button{border:0;font-weight:bold;cursor:pointer}
+.blue{background:#1e3a8a;color:#fff}
+.green{background:#15803d;color:#fff}
+.red{background:#dc2626;color:#fff}
+.gray{background:#e2e8f0}
+.hidden{display:none}
+.date{text-align:center;background:#eff6ff;padding:12px;border-radius:9px}
+.date b{display:block;font-size:20px}
+.prayer h2{margin-bottom:8px}
+.content{white-space:pre-wrap;line-height:1.7}
+.status{text-align:center;padding:9px;border-radius:8px;margin:10px 0;font-weight:bold}
+.done{background:#dcfce7;color:#166534}
+.pending{background:#fef3c7;color:#92400e}
+.nav{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.item{border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:7px 0}
+.item small{color:#64748b}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.msg{padding:9px;border-radius:7px;margin:6px 0}
+.ok{background:#dcfce7;color:#166534}
+.err{background:#fee2e2;color:#991b1b}
+@media(max-width:500px){.nav{grid-template-columns:1fr}.actions{grid-template-columns:1fr}}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>🙏 My Daily Prayer</h1>
+<p>Personal Prayer Manager</p>
+</header>
+
+<main>
+
+<div id="login" class="card">
+<h3>🔐 Private Access</h3>
+<input id="key" type="password" placeholder="Admin key">
+<button class="blue" onclick="login()">Login</button>
+<div id="loginMsg"></div>
+</div>
+
+<div id="app" class="hidden">
+
+<div class="card">
+<b><span id="count">0</span> / 100 prayers</b>
+<button class="gray" onclick="logout()">🔒 Lock</button>
+</div>
+
+<div class="card">
+
+<div class="date">
+<span id="day"></span>
+<b id="date"></b>
+<span id="month"></span>
+</div>
+
+<div id="status" class="status pending">⏳ Not completed</div>
+
+<div id="prayer" class="prayer">
+<h2>No prayer</h2>
+<div class="content">Add a prayer for this date.</div>
+</div>
+
+<button id="complete" class="green" onclick="complete()">✅ Mark as Completed</button>
+
+<div class="nav">
+<button class="gray" onclick="move(-1)">◀ Previous</button>
+<button class="blue" onclick="today()">Today</button>
+<button class="gray" onclick="move(1)">Next ▶</button>
+</div>
+
+</div>
+
+<div class="card">
+<h3 id="formTitle">➕ Add Prayer</h3>
+
+<input id="pdate" type="date">
+<input id="title" placeholder="Prayer title">
+<textarea id="content" placeholder="Write your prayer..."></textarea>
+
+<button class="blue" onclick="save()">💾 Save Prayer</button>
+<button id="cancel" class="gray hidden" onclick="cancelEdit()">Cancel</button>
+
+<div id="msg"></div>
+</div>
+
+<div class="card">
+<h3>🔎 My Prayers</h3>
+<input id="search" placeholder="Search..." oninput="list()">
+<div id="list"></div>
+</div>
+
+</div>
+</main>
+
+<script>
+const API="https://prayer.createlk.workers.dev";
+const MAX=100;
+
+let key=sessionStorage.getItem("prayer_key")||"";
+let prayers=[];
+let selected=localStorage.getItem("prayer_date")||localDate();
+let editId=null;
+let completed=JSON.parse(localStorage.getItem("prayer_done")||"{}");
+
+const $=id=>document.getElementById(id);
+
+function localDate(){
+ const d=new Date();
+ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+
+function login(){
+ key=$("key").value.trim();
+ if(!key)return msg("loginMsg","Enter your admin key.","err");
+ sessionStorage.setItem("prayer_key",key);
+ $("login").classList.add("hidden");
+ $("app").classList.remove("hidden");
+ load();
+}
+
+function logout(){
+ key="";
+ sessionStorage.removeItem("prayer_key");
+ $("app").classList.add("hidden");
+ $("login").classList.remove("hidden");
+}
+
+async function api(path,opt={}){
+ opt.headers={
+  ...(opt.headers||{}),
+  "Authorization":"Bearer "+key,
+  "Content-Type":"application/json"
+ };
+ const r=await fetch(API+path,opt);
+ const d=await r.json();
+ if(!r.ok)throw Error(d.error||"Request failed");
+ return d;
+}
+
+async function load(){
+ try{
+  const d=await api("/prayers");
+  prayers=d.prayers||[];
+  $("count").textContent=prayers.length;
+  show();
+  list();
+ }catch(e){msg("msg",e.message,"err")}
+}
+
+function show(){
+ $("pdate").value=selected;
+
+ const d=new Date(selected+"T00:00:00");
+ $("day").textContent=d.toLocaleDateString(undefined,{weekday:"long"});
+ $("date").textContent=d.getDate();
+ $("month").textContent=d.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+
+ const p=prayers.find(x=>x.prayer_date===selected);
+
+ if(!p){
+  $("prayer").innerHTML="<h2>No prayer</h2><div class='content'>Add a prayer for this date.</div>";
+  $("complete").disabled=true;
+  $("status").className="status pending";
+  $("status").textContent="⏳ No prayer";
+  return;
+ }
+
+ $("complete").disabled=false;
+ $("prayer").innerHTML=
+ `<h2>${safe(p.title)}</h2><div class="content">${safe(p.content)}</div>`;
+
+ const done=!!completed[p.id+"_"+selected];
+ $("status").className="status "+(done?"done":"pending");
+ $("status").textContent=done?"✅ Completed":"⏳ Not completed";
+ $("complete").textContent=done?"↩️ Mark as Not Completed":"✅ Mark as Completed";
+}
+
+function move(n){
+ const d=new Date(selected+"T00:00:00");
+ d.setDate(d.getDate()+n);
+ selected=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+ localStorage.setItem("prayer_date",selected);
+ show();
+}
+
+function today(){
+ selected=localDate();
+ localStorage.setItem("prayer_date",selected);
+ show();
+}
+
+async function complete(){
+ const p=prayers.find(x=>x.prayer_date===selected);
+ if(!p)return;
+
+ const k=p.id+"_"+selected;
+ const value=!completed[k];
+ completed[k]=value;
+ localStorage.setItem("prayer_done",JSON.stringify(completed));
+ show();
+
+ try{
+  await api("/complete",{
+   method:"POST",
+   body:JSON.stringify({
+    prayer_id:p.id,
+    date:selected,
+    completed:value
+   })
+  });
+ }catch(e){
+  completed[k]=!value;
+  localStorage.setItem("prayer_done",JSON.stringify(completed));
+  show();
+  alert(e.message);
+ }
+}
+
+async function save(){
+ const date=$("pdate").value;
+ const title=$("title").value.trim();
+ const content=$("content").value.trim();
+
+ if(!date||!title||!content)
+  return msg("msg","Date, title and prayer are required.","err");
+
+ try{
+  if(editId){
+   await api("/prayer/"+editId,{
+    method:"PUT",
+    body:JSON.stringify({prayer_date:date,title,content})
+   });
+  }else{
+   if(prayers.length>=MAX)
+    return msg("msg","Maximum 100 prayers reached.","err");
+
+   await api("/prayer",{
+    method:"POST",
+    body:JSON.stringify({prayer_date:date,title,content})
+   });
+  }
+
+  selected=date;
+  localStorage.setItem("prayer_date",selected);
+  editId=null;
+  $("formTitle").textContent="➕ Add Prayer";
+  $("cancel").classList.add("hidden");
+  $("title").value="";
+  $("content").value="";
+  await load();
+  msg("msg","Prayer saved successfully.","ok");
+
+ }catch(e){
+  msg("msg",e.message,"err");
+ }
+}
+
+function edit(id){
+ const p=prayers.find(x=>Number(x.id)===Number(id));
+ if(!p)return;
+
+ editId=p.id;
+ $("pdate").value=p.prayer_date;
+ $("title").value=p.title;
+ $("content").value=p.content;
+ $("formTitle").textContent="✏️ Edit Prayer";
+ $("cancel").classList.remove("hidden");
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function cancelEdit(){
+ editId=null;
+ $("formTitle").textContent="➕ Add Prayer";
+ $("cancel").classList.add("hidden");
+ $("title").value="";
+ $("content").value="";
+}
+
+async function del(id){
+ const p=prayers.find(x=>Number(x.id)===Number(id));
+ if(!p||!confirm("Delete this prayer?\n\n"+p.title))return;
+
+ try{
+  await api("/prayer/"+id,{method:"DELETE"});
+  delete completed[id+"_"+p.prayer_date];
+  localStorage.setItem("prayer_done",JSON.stringify(completed));
+  load();
+ }catch(e){alert(e.message)}
+}
+
+function list(){
+ const q=$("search").value.toLowerCase();
+
+ const data=prayers.filter(p=>
+  !q ||
+  p.title.toLowerCase().includes(q) ||
+  p.content.toLowerCase().includes(q) ||
+  p.prayer_date.includes(q)
+ );
+
+ $("list").innerHTML=data.length?data.map(p=>`
+  <div class="item">
+   <b>${completed[p.id+"_"+p.prayer_date]?"✅ ":""}${safe(p.title)}</b><br>
+   <small>📅 ${p.prayer_date}</small>
+   <p>${safe(p.content).substring(0,120)}...</p>
+   <div class="actions">
+    <button class="blue" onclick="openPrayer('${p.prayer_date}')">Open</button>
+    <button class="gray" onclick="edit(${p.id})">Edit</button>
+    <button class="red" onclick="del(${p.id})">Delete</button>
+   </div>
+  </div>
+ `).join(""):"<p>No prayers found.</p>";
+}
+
+function openPrayer(date){
+ selected=date;
+ localStorage.setItem("prayer_date",selected);
+ show();
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function msg(id,text,type){
+ $(id).innerHTML=`<div class="msg ${type}">${safe(text)}</div>`;
+}
+
+function safe(v){
+ return String(v??"")
+ .replace(/&/g,"&amp;")
+ .replace(/</g,"&lt;")
+ .replace(/>/g,"&gt;")
+ .replace(/"/g,"&quot;")
+ .replace(/'/g,"&#039;");
+}
+
+$("pdate").addEventListener("change",function(){
+ selected=this.value;
+ localStorage.setItem("prayer_date",selected);
+ show();
+});
+
+if(key){
+ $("login").classList.add("hidden");
+ $("app").classList.remove("hidden");
+ load();
+}
+</script>
+
+</body>
+</html>
+
