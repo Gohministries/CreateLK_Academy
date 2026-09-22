@@ -1,0 +1,640 @@
+const CORS = {
+  "Access-Control-Allow-Origin": "https://createlk.com",
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,X-Admin-Key"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...CORS
+    }
+  });
+}
+
+function slugify(text) {
+  return String(text || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function admin(request, env) {
+  return request.headers.get("X-Admin-Key") === env.ADMIN_KEY;
+}
+
+function extFromType(type) {
+  if (type === "image/jpeg") return "jpg";
+  if (type === "image/png") return "png";
+  if (type === "image/webp") return "webp";
+  return null;
+}
+
+export default {
+  async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: CORS });
+    }
+
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    try {
+
+      // =========================
+      // IMAGE
+      // =========================
+
+      if (path.startsWith("/images/") && request.method === "GET") {
+        const key = decodeURIComponent(path.substring(8));
+
+        const object = await env.SHOP_IMAGES.get(key);
+
+        if (!object) {
+          return new Response("Image not found", {
+            status: 404,
+            headers: CORS
+          });
+        }
+
+        const headers = new Headers(CORS);
+
+        object.writeHttpMetadata(headers);
+        headers.set("Cache-Control", "public, max-age=31536000");
+
+        return new Response(object.body, {
+          headers
+        });
+      }
+
+
+      // =========================
+      // CATEGORIES
+      // =========================
+
+      if (path === "/api/categories" && request.method === "GET") {
+
+        const result = await env.DB.prepare(`
+          SELECT id, name, slug, active
+          FROM categories
+          WHERE active = 1
+          ORDER BY name ASC
+        `).all();
+
+        return json(result.results || []);
+      }
+
+
+      if (path === "/api/categories" && request.method === "POST") {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const body = await request.json();
+
+        const name = String(body.name || "").trim();
+
+        if (!name) {
+          return json({ error: "Category name required" }, 400);
+        }
+
+        const slug = slugify(name);
+
+        const result = await env.DB.prepare(`
+          INSERT INTO categories (name, slug)
+          VALUES (?, ?)
+        `).bind(name, slug).run();
+
+        return json({
+          success: true,
+          id: result.meta.last_row_id
+        }, 201);
+      }
+
+
+      // =========================
+      // PRODUCTS
+      // =========================
+
+      if (path === "/api/products" && request.method === "GET") {
+
+        const category = url.searchParams.get("category");
+        const search = url.searchParams.get("search");
+
+        let sql = `
+          SELECT
+            p.id,
+            p.name,
+            p.slug,
+            p.description,
+            p.price,
+            p.sale_price,
+            p.stock,
+            p.image_key,
+            p.category_id,
+            c.name AS category_name
+          FROM products p
+          LEFT JOIN categories c
+            ON c.id = p.category_id
+          WHERE p.active = 1
+        `;
+
+        const params = [];
+
+        if (category) {
+          sql += ` AND p.category_id = ?`;
+          params.push(category);
+        }
+
+        if (search) {
+          sql += ` AND (
+            p.name LIKE ?
+            OR p.description LIKE ?
+          )`;
+
+          const q = `%${search}%`;
+          params.push(q, q);
+        }
+
+        sql += ` ORDER BY p.created_at DESC`;
+
+        const result = await env.DB
+          .prepare(sql)
+          .bind(...params)
+          .all();
+
+        return json(result.results || []);
+      }
+
+
+      // Single product
+
+      if (
+        path.startsWith("/api/products/") &&
+        request.method === "GET"
+      ) {
+
+        const id = path.split("/")[3];
+
+        const result = await env.DB.prepare(`
+          SELECT
+            p.*,
+            c.name AS category_name
+          FROM products p
+          LEFT JOIN categories c
+            ON c.id = p.category_id
+          WHERE p.id = ?
+            AND p.active = 1
+        `).bind(id).first();
+
+        if (!result) {
+          return json({ error: "Product not found" }, 404);
+        }
+
+        return json(result);
+      }
+
+
+      // Add product
+
+      if (path === "/api/products" && request.method === "POST") {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const body = await request.json();
+
+        const name = String(body.name || "").trim();
+
+        if (!name) {
+          return json({ error: "Product name required" }, 400);
+        }
+
+        const slug = slugify(name) + "-" + Date.now();
+
+        const price = Number(body.price || 0);
+        const salePrice =
+          body.sale_price === null ||
+          body.sale_price === "" ||
+          body.sale_price === undefined
+            ? null
+            : Number(body.sale_price);
+
+        const stock = Number(body.stock || 0);
+        const categoryId =
+          body.category_id ? Number(body.category_id) : null;
+
+        const result = await env.DB.prepare(`
+          INSERT INTO products (
+            category_id,
+            name,
+            slug,
+            description,
+            price,
+            sale_price,
+            stock,
+            image_key
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          categoryId,
+          name,
+          slug,
+          String(body.description || ""),
+          price,
+          salePrice,
+          stock,
+          String(body.image_key || "")
+        ).run();
+
+        return json({
+          success: true,
+          id: result.meta.last_row_id
+        }, 201);
+      }
+
+
+      // Update product
+
+      if (
+        path.startsWith("/api/products/") &&
+        request.method === "PUT"
+      ) {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const id = path.split("/")[3];
+        const body = await request.json();
+
+        await env.DB.prepare(`
+          UPDATE products
+          SET
+            category_id = ?,
+            name = ?,
+            description = ?,
+            price = ?,
+            sale_price = ?,
+            stock = ?,
+            image_key = ?
+          WHERE id = ?
+        `).bind(
+          body.category_id ? Number(body.category_id) : null,
+          String(body.name || ""),
+          String(body.description || ""),
+          Number(body.price || 0),
+          body.sale_price === null ||
+          body.sale_price === "" ||
+          body.sale_price === undefined
+            ? null
+            : Number(body.sale_price),
+          Number(body.stock || 0),
+          String(body.image_key || ""),
+          id
+        ).run();
+
+        return json({ success: true });
+      }
+
+
+      // Delete / hide product
+
+      if (
+        path.startsWith("/api/products/") &&
+        request.method === "DELETE"
+      ) {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const id = path.split("/")[3];
+
+        await env.DB.prepare(`
+          UPDATE products
+          SET active = 0
+          WHERE id = ?
+        `).bind(id).run();
+
+        return json({ success: true });
+      }
+
+
+      // =========================
+      // IMAGE UPLOAD
+      // =========================
+
+      if (path === "/api/upload" && request.method === "POST") {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const contentType = request.headers.get("Content-Type") || "";
+
+        if (!contentType.startsWith("multipart/form-data")) {
+          return json({
+            error: "multipart/form-data required"
+          }, 400);
+        }
+
+        const form = await request.formData();
+
+        const file = form.get("file");
+
+        if (!(file instanceof File)) {
+          return json({ error: "Image file required" }, 400);
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+          return json({
+            error: "Maximum image size is 5 MB"
+          }, 400);
+        }
+
+        const ext = extFromType(file.type);
+
+        if (!ext) {
+          return json({
+            error: "Only JPG, PNG and WEBP images are allowed"
+          }, 400);
+        }
+
+        const key =
+          "products/" +
+          crypto.randomUUID() +
+          "." +
+          ext;
+
+        await env.SHOP_IMAGES.put(
+          key,
+          file.stream(),
+          {
+            httpMetadata: {
+              contentType: file.type
+            }
+          }
+        );
+
+        return json({
+          success: true,
+          key,
+          url: `${url.origin}/images/${encodeURIComponent(key)}`
+        });
+      }
+
+
+      // =========================
+      // CREATE ORDER
+      // =========================
+
+      if (path === "/api/orders" && request.method === "POST") {
+
+        const body = await request.json();
+
+        const customer = body.customer || {};
+        const items = Array.isArray(body.items)
+          ? body.items
+          : [];
+
+        if (!customer.name || !customer.phone) {
+          return json({
+            error: "Customer name and phone are required"
+          }, 400);
+        }
+
+        if (!items.length) {
+          return json({
+            error: "Cart is empty"
+          }, 400);
+        }
+
+        const customerResult = await env.DB.prepare(`
+          INSERT INTO customers (
+            name,
+            phone,
+            email,
+            address
+          )
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          String(customer.name),
+          String(customer.phone),
+          String(customer.email || ""),
+          String(customer.address || "")
+        ).run();
+
+        const customerId =
+          customerResult.meta.last_row_id;
+
+        let total = 0;
+        const orderItems = [];
+
+        for (const item of items) {
+
+          const product = await env.DB.prepare(`
+            SELECT
+              id,
+              name,
+              price,
+              sale_price,
+              stock
+            FROM products
+            WHERE id = ?
+              AND active = 1
+          `).bind(Number(item.product_id)).first();
+
+          if (!product) {
+            return json({
+              error: "Product not found: " + item.product_id
+            }, 400);
+          }
+
+          const quantity = Number(item.quantity || 0);
+
+          if (quantity < 1) {
+            return json({
+              error: "Invalid quantity"
+            }, 400);
+          }
+
+          if (product.stock < quantity) {
+            return json({
+              error: `${product.name} has only ${product.stock} in stock`
+            }, 400);
+          }
+
+          const price =
+            product.sale_price !== null
+              ? product.sale_price
+              : product.price;
+
+          total += price * quantity;
+
+          orderItems.push({
+            product_id: product.id,
+            quantity,
+            price
+          });
+        }
+
+        const orderResult = await env.DB.prepare(`
+          INSERT INTO orders (
+            customer_id,
+            total,
+            status
+          )
+          VALUES (?, ?, 'PENDING')
+        `).bind(
+          customerId,
+          total
+        ).run();
+
+        const orderId =
+          orderResult.meta.last_row_id;
+
+        for (const item of orderItems) {
+
+          await env.DB.prepare(`
+            INSERT INTO order_items (
+              order_id,
+              product_id,
+              quantity,
+              price
+            )
+            VALUES (?, ?, ?, ?)
+          `).bind(
+            orderId,
+            item.product_id,
+            item.quantity,
+            item.price
+          ).run();
+
+          await env.DB.prepare(`
+            UPDATE products
+            SET stock = stock - ?
+            WHERE id = ?
+          `).bind(
+            item.quantity,
+            item.product_id
+          ).run();
+        }
+
+        return json({
+          success: true,
+          order_id: orderId,
+          total,
+          status: "PENDING"
+        }, 201);
+      }
+
+
+      // =========================
+      // ADMIN ORDERS
+      // =========================
+
+      if (
+        path === "/api/admin/orders" &&
+        request.method === "GET"
+      ) {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const result = await env.DB.prepare(`
+          SELECT
+            o.id,
+            o.total,
+            o.status,
+            o.created_at,
+            c.name AS customer_name,
+            c.phone,
+            c.email,
+            c.address
+          FROM orders o
+          JOIN customers c
+            ON c.id = o.customer_id
+          ORDER BY o.created_at DESC
+        `).all();
+
+        return json(result.results || []);
+      }
+
+
+      // Update order status
+
+      if (
+        path.startsWith("/api/admin/orders/") &&
+        request.method === "PUT"
+      ) {
+
+        if (!admin(request, env)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+
+        const id = path.split("/")[4];
+
+        const body = await request.json();
+
+        const allowed = [
+          "PENDING",
+          "CONFIRMED",
+          "PROCESSING",
+          "SHIPPED",
+          "DELIVERED",
+          "CANCELLED"
+        ];
+
+        const status = String(body.status || "");
+
+        if (!allowed.includes(status)) {
+          return json({
+            error: "Invalid order status"
+          }, 400);
+        }
+
+        await env.DB.prepare(`
+          UPDATE orders
+          SET status = ?
+          WHERE id = ?
+        `).bind(
+          status,
+          id
+        ).run();
+
+        return json({
+          success: true
+        });
+      }
+
+
+      // =========================
+      // HEALTH
+      // =========================
+
+      if (path === "/") {
+        return json({
+          success: true,
+          service: "CreateLK Shop API"
+        });
+      }
+
+      return json({
+        error: "Not found"
+      }, 404);
+
+    } catch (error) {
+
+      return json({
+        error: error.message || "Server error"
+      }, 500);
+    }
+  }
+};
