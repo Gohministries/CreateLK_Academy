@@ -249,9 +249,7 @@ async function api(path,options={}){
 
 async function checkLogin(){
 
- const token=auth();
-
- if(!token){
+ if(!auth()){
   $("loginCard").classList.remove("hidden");
   return;
  }
@@ -261,35 +259,21 @@ async function checkLogin(){
   const data=await api("/me");
 
   if(!data.authenticated){
-
-   localStorage.removeItem(
-    "prayer_session"
-   );
-
-   $("loginCard")
-    .classList.remove("hidden");
-
+   localStorage.removeItem("prayer_session");
+   $("loginCard").classList.remove("hidden");
    return;
   }
 
-  $("loginCard")
-   .classList.add("hidden");
-
-  $("app")
-   .classList.remove("hidden");
-
-  $("email").textContent=
-   data.email;
+  $("loginCard").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  $("email").textContent=data.email;
 
   await loadPrayers();
 
  }catch(e){
 
-  $("loginCard")
-   .classList.remove("hidden");
-
-  $("app")
-   .classList.add("hidden");
+  $("loginCard").classList.remove("hidden");
+  $("app").classList.add("hidden");
 
  }
 }
@@ -298,11 +282,9 @@ async function loadPrayers(){
 
  try{
 
-  const data=
-   await api("/prayers");
+  const data=await api("/prayers");
 
-  prayers=
-   data.prayers||[];
+  prayers=data.prayers||[];
 
   $("date").textContent=
    new Date().toLocaleDateString(
@@ -316,10 +298,6 @@ async function loadPrayers(){
     }
    );
 
-  buildSelector();
-
-  updateProgress();
-
   if(prayers.length){
 
    selected=Math.min(
@@ -327,47 +305,34 @@ async function loadPrayers(){
     prayers.length
    );
 
-   $("pointSelect").value=
-    selected;
-
-   showSelectedPoint();
-
   }else{
 
-   $("pointTitle").textContent=
-    "No prayer points yet";
-
-   $("prayerContent").textContent=
-    "Add your first prayer point below.";
+   selected=1;
 
   }
 
+  buildSelector();
+  updateProgress();
+  showSelectedPoint();
+
  }catch(e){
 
-  showMessage(
-   e.message,
-   true
-  );
+  showMessage(e.message,true);
 
  }
 }
 
 function buildSelector(){
 
- const s=
-  $("pointSelect");
+ const s=$("pointSelect");
 
  s.innerHTML="";
 
  for(let i=1;i<=100;i++){
 
-  const p=
-   getPrayer(i);
+  const p=getPrayer(i);
 
-  const o=
-   document.createElement(
-    "option"
-   );
+  const o=document.createElement("option");
 
   o.value=i;
 
@@ -377,14 +342,14 @@ function buildSelector(){
 
   s.appendChild(o);
  }
+
+ s.value=selected;
 }
 
 function selectPoint(){
 
  selected=
-  Number(
-   $("pointSelect").value
-  )||1;
+  Number($("pointSelect").value)||1;
 
  localStorage.setItem(
   "prayer_selected",
@@ -396,8 +361,7 @@ function selectPoint(){
 
 function showSelectedPoint(){
 
- const p=
-  getPrayer(selected);
+ const p=getPrayer(selected);
 
  if(!p){
 
@@ -458,28 +422,21 @@ function updateProgress(){
    p=>Number(p.completed)===1
   ).length;
 
- const percent=
-  Math.round(completed);
-
  $("progressText").textContent=
   `${completed} / 100 Prayer Points`;
 
  $("percent").textContent=
-  `${percent}% Complete`;
+  `${completed}% Complete`;
 
  $("progressBar").style.width=
-  percent+"%";
+  completed+"%";
 
  buildSelector();
-
- $("pointSelect").value=
-  selected;
 }
 
 async function toggleComplete(){
 
- const p=
-  getPrayer(selected);
+ const p=getPrayer(selected);
 
  if(!p)return;
 
@@ -488,17 +445,16 @@ async function toggleComplete(){
 
  try{
 
-  const data=
-   await api(
-    "/complete",
-    {
-     method:"POST",
-     body:JSON.stringify({
-      prayer_id:p.id,
-      completed:!currently
-     })
-    }
-   );
+  const data=await api(
+   "/complete",
+   {
+    method:"POST",
+    body:JSON.stringify({
+     prayer_id:p.id,
+     completed:!currently
+    })
+   }
+  );
 
   p.completed=
    data.completed?1:0;
@@ -509,7 +465,7 @@ async function toggleComplete(){
 
   if(!currently){
 
-   if(selected<100){
+   if(selected<prayers.length){
 
     selected++;
 
@@ -528,7 +484,7 @@ async function toggleComplete(){
      selected+"."
     );
 
-   }else{
+   }else if(prayers.length===100){
 
     showMessage(
      "🎉 All 100 prayer points completed today!"
@@ -556,8 +512,7 @@ async function toggleComplete(){
 
 function editSelected(){
 
- const p=
-  getPrayer(selected);
+ const p=getPrayer(selected);
 
  if(!p){
 
@@ -569,17 +524,11 @@ function editSelected(){
   return;
  }
 
- $("editId").value=
-  p.id;
+ $("editId").value=p.id;
+ $("editTitle").value=p.title||"";
+ $("editContent").value=p.content||"";
 
- $("editTitle").value=
-  p.title||"";
-
- $("editContent").value=
-  p.content||"";
-
- $("editCard")
-  .classList.remove("hidden");
+ $("editCard").classList.remove("hidden");
 
  window.scrollTo({
   top:$("editCard").offsetTop-10,
@@ -589,17 +538,13 @@ function editSelected(){
 
 function cancelEdit(){
 
- $("editCard")
-  .classList.add("hidden");
+ $("editCard").classList.add("hidden");
 }
 
 async function saveEdit(){
 
- const id=
-  $("editId").value;
-
- const old=
-  getPrayer(selected);
+ const id=$("editId").value;
+ const old=getPrayer(selected);
 
  if(!old){
 
@@ -612,14 +557,10 @@ async function saveEdit(){
  }
 
  const title=
-  $("editTitle")
-   .value
-   .trim();
+  $("editTitle").value.trim();
 
  const content=
-  $("editContent")
-   .value
-   .trim();
+  $("editContent").value.trim();
 
  if(!title||!content){
 
@@ -638,16 +579,14 @@ async function saveEdit(){
    {
     method:"PUT",
     body:JSON.stringify({
-     prayer_date:
-      old.prayer_date,
+     prayer_date:old.prayer_date,
      title:title,
      content:content
     })
    }
   );
 
-  $("editCard")
-   .classList.add("hidden");
+  $("editCard").classList.add("hidden");
 
   showMessage(
    "✅ Prayer point saved permanently."
@@ -665,6 +604,30 @@ async function saveEdit(){
  }
 }
 
+function nextInternalDate(){
+
+ const dates=
+  prayers
+   .map(p=>p.prayer_date)
+   .filter(Boolean)
+   .sort();
+
+ if(!dates.length)
+  return "2000-01-01";
+
+ const last=
+  dates[dates.length-1];
+
+ const d=
+  new Date(last+"T00:00:00Z");
+
+ d.setUTCDate(
+  d.getUTCDate()+1
+ );
+
+ return d.toISOString().slice(0,10);
+}
+
 async function addPrayer(){
 
  if(prayers.length>=100){
@@ -678,14 +641,10 @@ async function addPrayer(){
  }
 
  const title=
-  $("addTitle")
-   .value
-   .trim();
+  $("addTitle").value.trim();
 
  const content=
-  $("addContent")
-   .value
-   .trim();
+  $("addContent").value.trim();
 
  if(!title||!content){
 
@@ -701,9 +660,7 @@ async function addPrayer(){
   prayers.length+1;
 
  const body={
-  prayer_date:
-   "2000-01-"+String(number)
-    .padStart(2,"0"),
+  prayer_date:nextInternalDate(),
   title:title,
   content:content
  };
@@ -731,7 +688,7 @@ async function addPrayer(){
   showMessage(
    "✅ Prayer Point "+
    number+
-   " added permanently."
+   " saved permanently."
   );
 
   await loadPrayers();
@@ -753,8 +710,7 @@ async function addPrayer(){
 
 async function deleteSelected(){
 
- const id=
-  $("editId").value;
+ const id=$("editId").value;
 
  if(!id)return;
 
@@ -771,11 +727,12 @@ async function deleteSelected(){
    }
   );
 
-  $("editCard")
-   .classList.add("hidden");
+  $("editCard").classList.add("hidden");
 
-  if(selected>1)
-   selected--;
+  selected=Math.max(
+   1,
+   selected-1
+  );
 
   localStorage.setItem(
    "prayer_selected",
@@ -798,25 +755,18 @@ async function deleteSelected(){
  }
 }
 
-function showMessage(
- message,
- error=false
-){
+function showMessage(message,error=false){
 
- const el=
-  $("message");
+ const el=$("message");
 
- el.textContent=
-  message;
+ el.textContent=message;
 
  el.style.color=
   error
    ?" #d92d20"
    :"#16803c";
 
- clearTimeout(
-  window.msgTimer
- );
+ clearTimeout(window.msgTimer);
 
  window.msgTimer=
   setTimeout(()=>{
