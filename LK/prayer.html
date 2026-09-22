@@ -420,25 +420,39 @@ oninput="renderList()">
 
 <script>
 
-const API=
+const API =
 "https://prayer.createlk.workers.dev";
 
-const MAX_DAYS=100;
+const MAX_DAYS = 100;
 
-let token=
-sessionStorage.getItem("prayer_token")||"";
 
-let prayers=[];
+/*
+  IMPORTANT
 
-let selected=
+  The 100-day journey starts here.
+
+  September 22, 2026 = Day 1
+  September 23, 2026 = Day 2
+  September 24, 2026 = Day 3
+*/
+const JOURNEY_START_DATE =
+"2026-09-22";
+
+
+let token =
+sessionStorage.getItem("prayer_token") || "";
+
+let prayers = [];
+
+let selected =
 localDate();
 
-let editId=null;
+let editId = null;
 
 
 /* SHORTCUT */
 
-const $=id=>
+const $ = id =>
 document.getElementById(id);
 
 
@@ -446,10 +460,10 @@ document.getElementById(id);
 
 function localDate(){
 
- const d=new Date();
+ const d = new Date();
 
- return d.getFullYear()+"-"+
- String(d.getMonth()+1).padStart(2,"0")+"-"+
+ return d.getFullYear() + "-" +
+ String(d.getMonth()+1).padStart(2,"0") + "-" +
  String(d.getDate()).padStart(2,"0");
 
 }
@@ -459,8 +473,8 @@ function localDate(){
 
 function googleLogin(){
 
- location.href=
- API+"/login";
+ location.href =
+ API + "/login";
 
 }
 
@@ -469,32 +483,36 @@ function googleLogin(){
 
 async function api(path,options={}){
 
- options.headers={
-  ...(options.headers||{}),
+ options.headers = {
+  ...(options.headers || {}),
   Authorization:
-   "Bearer "+token,
+   "Bearer " + token,
   "Content-Type":
    "application/json"
  };
 
- const response=
-  await fetch(API+path,options);
+ const response =
+  await fetch(
+   API + path,
+   options
+  );
 
- let data={};
+ let data = {};
 
  try{
-  data=await response.json();
+  data = await response.json();
  }catch{}
 
  if(!response.ok){
 
-  if(response.status===401){
+  if(response.status === 401){
    logout();
   }
 
   throw new Error(
-   data.error||"Request failed"
+   data.error || "Request failed"
   );
+
  }
 
  return data;
@@ -512,7 +530,7 @@ async function start(){
 
  try{
 
-  const me=
+  const me =
    await api("/me");
 
   $("login").classList.add(
@@ -523,13 +541,13 @@ async function start(){
    "hidden"
   );
 
-  $("user").textContent=
-   me.email||"";
+  $("user").textContent =
+   me.email || "";
 
-  selected=
+  selected =
    localDate();
 
-  $("pdate").value=
+  $("pdate").value =
    selected;
 
   showTodayDate();
@@ -538,16 +556,17 @@ async function start(){
 
  }catch(error){
 
-  token="";
+  token = "";
 
   sessionStorage.removeItem(
    "prayer_token"
   );
 
-  $("loginMsg").innerHTML=
-   '<div class="msg err">'+
-   safe(error.message)+
+  $("loginMsg").innerHTML =
+   '<div class="msg err">' +
+   safe(error.message) +
    "</div>";
+
  }
 
 }
@@ -557,12 +576,12 @@ async function start(){
 
 function showTodayDate(){
 
- const d=
+ const d =
   new Date(
-   selected+"T12:00:00"
+   selected + "T12:00:00"
   );
 
- const weekdays=[
+ const weekdays = [
   "Sunday",
   "Monday",
   "Tuesday",
@@ -572,7 +591,7 @@ function showTodayDate(){
   "Saturday"
  ];
 
- const months=[
+ const months = [
   "January",
   "February",
   "March",
@@ -587,15 +606,46 @@ function showTodayDate(){
   "December"
  ];
 
- $("weekday").textContent=
+ $("weekday").textContent =
   weekdays[d.getDay()];
 
- $("dayNumberDate").textContent=
+ $("dayNumberDate").textContent =
   d.getDate();
 
- $("monthYear").textContent=
-  months[d.getMonth()]+" "+
+ $("monthYear").textContent =
+  months[d.getMonth()] +
+  " " +
   d.getFullYear();
+
+}
+
+
+/* GET JOURNEY DAY */
+
+function getJourneyDay(date){
+
+ const start =
+  new Date(
+   JOURNEY_START_DATE +
+   "T12:00:00"
+  );
+
+ const current =
+  new Date(
+   date +
+   "T12:00:00"
+  );
+
+ const difference =
+  Math.floor(
+   (current - start) /
+   86400000
+  );
+
+ const day =
+  difference + 1;
+
+ return day;
 
 }
 
@@ -604,22 +654,19 @@ function showTodayDate(){
 
 async function load(){
 
- /*
-  Always use today's date.
- */
- selected=
+ selected =
   localDate();
 
- $("pdate").value=
+ $("pdate").value =
   selected;
 
  showTodayDate();
 
- const data=
+ const data =
   await api("/prayers");
 
- prayers=
-  data.prayers||[];
+ prayers =
+  data.prayers || [];
 
  updateProgress();
 
@@ -634,35 +681,37 @@ async function load(){
 
 function updateProgress(){
 
- const completed=
+ const completed =
   prayers.filter(
-   p=>Number(p.completed)===1
+   p => Number(p.completed) === 1
   ).length;
 
- const percent=
+ const percent =
   Math.min(
    100,
    Math.round(
-    completed/MAX_DAYS*100
+    completed / MAX_DAYS * 100
    )
   );
 
- $("completedCount").textContent=
+ $("completedCount").textContent =
   completed;
 
- $("progressPercent").textContent=
-  percent+"% Complete";
+ $("progressPercent").textContent =
+  percent + "% Complete";
 
- $("progressBar").style.width=
-  percent+"%";
+ $("progressBar").style.width =
+  percent + "%";
 
- if(completed>=100){
 
-  $("progressPercent").textContent=
+ if(completed >= 100){
+
+  $("progressPercent").textContent =
    "🎉 100 / 100 — Journey Complete";
 
-  $("progressBar").style.width=
+  $("progressBar").style.width =
    "100%";
+
  }
 
 }
@@ -672,145 +721,165 @@ function updateProgress(){
 
 async function showToday(){
 
- selected=
+ selected =
   localDate();
 
- $("pdate").value=
+ $("pdate").value =
   selected;
 
  showTodayDate();
 
+
+ /* JOURNEY DAY */
+
+ const day =
+  getJourneyDay(selected);
+
+ if(day >= 1 && day <= 100){
+
+  $("journeyDay").textContent =
+   "Day " + day + " of 100";
+
+ }else if(day > 100){
+
+  $("journeyDay").textContent =
+   "🎉 100 Day Journey Complete";
+
+ }else{
+
+  $("journeyDay").textContent =
+   "100 Day Prayer Journey";
+
+ }
+
+
  try{
 
-  const data=
+  const data =
    await api(
-    "/today?date="+
+    "/today?date=" +
     encodeURIComponent(selected)
    );
 
-  const p=
+  const p =
    data.prayer;
-
-  /*
-   Calculate journey day from
-   the first prayer date.
-  */
-
-  if(prayers.length){
-
-   const sorted=
-    [...prayers].sort(
-     (a,b)=>
-      a.prayer_date.localeCompare(
-       b.prayer_date
-      )
-    );
-
-   const firstDate=
-    new Date(
-     sorted[0].prayer_date+
-     "T12:00:00"
-    );
-
-   const todayDate=
-    new Date(
-     selected+"T12:00:00"
-    );
-
-   const difference=
-    Math.floor(
-     (todayDate-firstDate)/
-     86400000
-    );
-
-   const day=
-    difference+1;
-
-   if(day>=1&&day<=100){
-
-    $("journeyDay").textContent=
-     "Day "+day+" of 100";
-
-   }else{
-
-    $("journeyDay").textContent=
-     "100 Day Prayer Journey";
-
-   }
-
-  }else{
-
-   $("journeyDay").textContent=
-    "Day 1 of 100";
-
-  }
 
 
   if(!p){
 
-   $("prayer").innerHTML=
-    "<h2>No prayer for today</h2>"+
-    '<div class="content">'+
-    "Add today's prayer below."+
+   $("prayer").innerHTML =
+    "<h2>No prayer for today</h2>" +
+    '<div class="content">' +
+    "Add today's prayer below." +
     "</div>";
 
-   $("status").className=
+   $("status").className =
     "status pending";
 
-   $("status").textContent=
+   $("status").textContent =
     "⏳ Not completed";
 
-   $("complete").disabled=
+   $("complete").disabled =
     true;
 
-   $("complete").textContent=
+   $("complete").textContent =
     "✅ Mark as Completed";
 
+   /*
+     Clear form when there is no
+     prayer for today.
+   */
+
+   $("formTitle").textContent =
+    "➕ Today's Prayer";
+
+   $("title").value = "";
+
+   $("content").value = "";
+
+   editId = null;
+
+   $("cancelButton").classList.add(
+    "hidden"
+   );
+
    return;
+
   }
 
 
-  $("prayer").innerHTML=
-   "<h2>"+
-   safe(p.title)+
-   "</h2>"+
-   '<div class="content">'+
-   safe(p.content)+
+  /*
+    Show today's prayer
+  */
+
+  $("prayer").innerHTML =
+   "<h2>" +
+   safe(p.title) +
+   "</h2>" +
+   '<div class="content">' +
+   safe(p.content) +
    "</div>";
 
-  $("complete").disabled=
+
+  /*
+    Automatically place today's
+    prayer in the edit form.
+  */
+
+  $("formTitle").textContent =
+   "✏️ Edit Today's Prayer";
+
+  $("pdate").value =
+   selected;
+
+  $("title").value =
+   p.title || "";
+
+  $("content").value =
+   p.content || "";
+
+  editId =
+   Number(p.id);
+
+  $("cancelButton").classList.remove(
+   "hidden"
+  );
+
+
+  $("complete").disabled =
    false;
 
 
-  if(Number(p.completed)===1){
+  if(Number(p.completed) === 1){
 
-   $("status").className=
+   $("status").className =
     "status done";
 
-   $("status").textContent=
+   $("status").textContent =
     "✅ Completed";
 
-   $("complete").textContent=
+   $("complete").textContent =
     "↩️ Mark as Not Completed";
 
   }else{
 
-   $("status").className=
+   $("status").className =
     "status pending";
 
-   $("status").textContent=
+   $("status").textContent =
     "⏳ Not completed";
 
-   $("complete").textContent=
+   $("complete").textContent =
     "✅ Mark as Completed";
 
   }
 
+
  }catch(error){
 
-  $("prayer").innerHTML=
-   '<div class="msg err">'+
-   safe(error.message)+
+  $("prayer").innerHTML =
+   '<div class="msg err">' +
+   safe(error.message) +
    "</div>";
 
  }
@@ -822,19 +891,22 @@ async function showToday(){
 
 async function completePrayer(){
 
- const p=
+ const p =
   prayers.find(
-   x=>x.prayer_date===selected
+   x =>
+    x.prayer_date === selected
   );
 
  if(!p){
   return;
  }
 
- const isCompleted=
+
+ const isCompleted =
   $("complete").textContent.includes(
    "Not Completed"
   );
+
 
  try{
 
@@ -842,16 +914,23 @@ async function completePrayer(){
    "/complete",
    {
     method:"POST",
+
     body:JSON.stringify({
+
      prayer_id:p.id,
+
      date:selected,
+
      completed:
-      isCompleted?0:1
+      isCompleted ? 0 : 1
+
     })
    }
   );
 
+
   await load();
+
 
  }catch(error){
 
@@ -871,18 +950,19 @@ async function completePrayer(){
 async function savePrayer(){
 
  /*
-  Always save for today.
+   Always save today's date.
  */
- const date=
+ const date =
   localDate();
 
- const title=
+ const title =
   $("title").value.trim();
 
- const content=
+ const content =
   $("content").value.trim();
 
- if(!title||!content){
+
+ if(!title || !content){
 
   message(
    "msg",
@@ -891,27 +971,27 @@ async function savePrayer(){
   );
 
   return;
+
  }
 
 
  /*
-  If today's prayer already exists,
-  update it instead of creating
-  another prayer.
+   Find today's existing prayer.
  */
-
- const existing=
+ const existing =
   prayers.find(
-   p=>p.prayer_date===date
+   p =>
+    p.prayer_date === date
   );
 
 
- const button=
+ const button =
   $("saveButton");
 
- button.disabled=true;
+ button.disabled =
+  true;
 
- button.textContent=
+ button.textContent =
   "Saving...";
 
 
@@ -919,24 +999,42 @@ async function savePrayer(){
 
   let result;
 
+
+  /*
+    If today's prayer exists,
+    UPDATE it.
+  */
+
   if(existing){
 
-   result=
+   result =
     await api(
-     "/prayer/"+existing.id,
+     "/prayer/" +
+     existing.id,
      {
       method:"PUT",
+
       body:JSON.stringify({
+
        prayer_date:date,
+
        title:title,
+
        content:content
+
       })
      }
     );
 
-  }else{
+  }
 
-   if(prayers.length>=MAX_DAYS){
+  /*
+    Otherwise CREATE today's prayer.
+  */
+
+  else{
+
+   if(prayers.length >= MAX_DAYS){
 
     throw new Error(
      "100 prayer days already reached."
@@ -944,15 +1042,21 @@ async function savePrayer(){
 
    }
 
-   result=
+
+   result =
     await api(
      "/prayer",
      {
       method:"POST",
+
       body:JSON.stringify({
+
        prayer_date:date,
+
        title:title,
+
        content:content
+
       })
      }
     );
@@ -963,29 +1067,31 @@ async function savePrayer(){
   if(!result.success){
 
    throw new Error(
-    result.error||"Save failed"
+    result.error ||
+    "Save failed"
    );
 
   }
 
 
-  editId=null;
+  editId = null;
 
-  $("formTitle").textContent=
-   "➕ Today's Prayer";
 
-  $("title").value="";
-  $("content").value="";
+  $("formTitle").textContent =
+   "✏️ Today's Prayer";
 
-  $("cancelButton").classList.add(
+
+  $("cancelButton").classList.remove(
    "hidden"
   );
+
 
   message(
    "msg",
    "✅ Today's prayer saved.",
    "ok"
   );
+
 
   await load();
 
@@ -994,15 +1100,16 @@ async function savePrayer(){
 
   message(
    "msg",
-   "❌ "+error.message,
+   "❌ " + error.message,
    "err"
   );
 
  }finally{
 
-  button.disabled=false;
+  button.disabled =
+   false;
 
-  button.textContent=
+  button.textContent =
    "💾 Save Prayer";
 
  }
@@ -1014,20 +1121,25 @@ async function savePrayer(){
 
 function editPrayer(id){
 
- const p=
+ const p =
   prayers.find(
-   x=>Number(x.id)===Number(id)
+   x =>
+    Number(x.id) === Number(id)
   );
 
  if(!p){
   return;
  }
 
+
  /*
-  Only today's prayer can be edited.
+   Only today's prayer can be edited.
  */
 
- if(p.prayer_date!==localDate()){
+ if(
+  p.prayer_date !==
+  localDate()
+ ){
 
   message(
    "msg",
@@ -1036,26 +1148,34 @@ function editPrayer(id){
   );
 
   return;
+
  }
 
- editId=
+
+ editId =
   Number(id);
 
- $("formTitle").textContent=
+
+ $("formTitle").textContent =
   "✏️ Edit Today's Prayer";
 
- $("pdate").value=
+
+ $("pdate").value =
   localDate();
 
- $("title").value=
-  p.title;
 
- $("content").value=
-  p.content;
+ $("title").value =
+  p.title || "";
+
+
+ $("content").value =
+  p.content || "";
+
 
  $("cancelButton").classList.remove(
   "hidden"
  );
+
 
  window.scrollTo({
   top:document.body.scrollHeight,
@@ -1069,16 +1189,24 @@ function editPrayer(id){
 
 function cancelEdit(){
 
- editId=null;
+ editId = null;
 
- $("formTitle").textContent=
+
+ $("formTitle").textContent =
   "➕ Today's Prayer";
 
- $("pdate").value=
+
+ $("pdate").value =
   localDate();
 
- $("title").value="";
- $("content").value="";
+
+ $("title").value =
+  "";
+
+
+ $("content").value =
+  "";
+
 
  $("cancelButton").classList.add(
   "hidden"
@@ -1097,16 +1225,19 @@ async function deletePrayer(id){
   return;
  }
 
+
  try{
 
   await api(
-   "/prayer/"+id,
+   "/prayer/" + id,
    {
     method:"DELETE"
    }
   );
 
+
   await load();
+
 
  }catch(error){
 
@@ -1125,30 +1256,34 @@ async function deletePrayer(id){
 
 function renderList(){
 
- const q=
+ const q =
   $("search").value
    .trim()
    .toLowerCase();
 
- const items=
-  prayers.filter(p=>
-   !q||
-   String(p.title)
-    .toLowerCase()
-    .includes(q)||
-   String(p.content)
-    .toLowerCase()
-    .includes(q)||
-   String(p.prayer_date)
-    .includes(q)
+
+ const items =
+  prayers.filter(
+   p =>
+    !q ||
+    String(p.title)
+     .toLowerCase()
+     .includes(q) ||
+
+    String(p.content)
+     .toLowerCase()
+     .includes(q) ||
+
+    String(p.prayer_date)
+     .includes(q)
   );
 
 
  if(!items.length){
 
-  $("list").innerHTML=
-   '<div class="empty">'+
-   "No prayers found."+
+  $("list").innerHTML =
+   '<div class="empty">' +
+   "No prayers found." +
    "</div>";
 
   return;
@@ -1156,28 +1291,42 @@ function renderList(){
  }
 
 
- const sorted=
+ /*
+   Always sort by date.
+ */
+ const sorted =
   [...items].sort(
-   (a,b)=>
+   (a,b) =>
     a.prayer_date.localeCompare(
      b.prayer_date
     )
   );
 
 
- $("list").innerHTML=
-  sorted.map((p,index)=>{
+ $("list").innerHTML =
+  sorted.map(p => {
 
-   const status=
-    Number(p.completed)===1
-     ?"✅ Completed"
-     :"⏳ Not completed";
+   const status =
+    Number(p.completed) === 1
+     ? "✅ Completed"
+     : "⏳ Not completed";
+
+
+   const day =
+    getJourneyDay(
+     p.prayer_date
+    );
+
 
    return `
     <div class="item">
 
      <b>
-      Day ${index+1}
+      ${
+       day >= 1 && day <= 100
+        ? "Day " + day
+        : "Prayer"
+      }
      </b>
 
      <br>
@@ -1194,8 +1343,8 @@ function renderList(){
      </small>
 
      ${
-      p.prayer_date===localDate()
-      ?`
+      p.prayer_date === localDate()
+      ? `
        <div class="actions">
 
         <button
@@ -1212,7 +1361,7 @@ function renderList(){
 
        </div>
       `
-      :""
+      : ""
      }
 
     </div>
@@ -1227,13 +1376,13 @@ function renderList(){
 
 function logout(){
 
- token="";
+ token = "";
 
  sessionStorage.removeItem(
   "prayer_token"
  );
 
- location.href=
+ location.href =
   location.pathname;
 
 }
@@ -1247,9 +1396,11 @@ function message(
  type
 ){
 
- $(id).innerHTML=
-  '<div class="msg '+type+'">'+
-  safe(text)+
+ $(id).innerHTML =
+  '<div class="msg ' +
+  type +
+  '">' +
+  safe(text) +
   "</div>";
 
 }
@@ -1259,7 +1410,7 @@ function message(
 
 function safe(value){
 
- return String(value??"")
+ return String(value ?? "")
   .replace(/&/g,"&amp;")
   .replace(/</g,"&lt;")
   .replace(/>/g,"&gt;")
@@ -1271,22 +1422,25 @@ function safe(value){
 
 /* GOOGLE CALLBACK */
 
-const params=
+const params =
  new URLSearchParams(
   location.search
  );
 
-const session=
+const session =
  params.get("session");
+
 
 if(session){
 
- token=session;
+ token =
+  session;
 
  sessionStorage.setItem(
   "prayer_token",
   token
  );
+
 
  history.replaceState(
   {},
