@@ -202,6 +202,23 @@ button:hover{opacity:.9}
   border-radius:8px;
   display:none;
 }
+.profit-box{
+  background:#f8f9fc;
+  padding:12px;
+  border-radius:10px;
+}
+.profit-label{
+  display:flex;
+  justify-content:space-between;
+  font-size:13px;
+  font-weight:bold;
+  margin-bottom:5px;
+}
+.auto-note{
+  font-size:11px;
+  color:#777;
+  margin-top:-5px;
+}
 @media(max-width:800px){
   .products{
     grid-template-columns:repeat(2,1fr);
@@ -306,12 +323,34 @@ Orders
 </div>
 
 <div>
-<label>Price</label>
+<label>Real / Cost Price</label>
 <input
   type="number"
   id="productPrice"
   min="0"
-  placeholder="0">
+  step="1"
+  placeholder="1000">
+</div>
+
+<div class="profit-box">
+
+<div class="profit-label">
+<span>Profit Markup %</span>
+<span>Default 30%</span>
+</div>
+
+<input
+  type="number"
+  id="profitPercent"
+  min="0"
+  step="1"
+  value="30"
+  placeholder="30">
+
+<div class="auto-note">
+Sale Price is calculated automatically.
+</div>
+
 </div>
 
 <div>
@@ -320,7 +359,8 @@ Orders
   type="number"
   id="productSalePrice"
   min="0"
-  placeholder="Optional">
+  step="1"
+  placeholder="Auto calculated">
 </div>
 
 <div>
@@ -760,6 +800,78 @@ Delete
 }
 
 
+/* AUTO PROFIT CALCULATION */
+
+function calculateSalePrice(){
+
+const price=
+Number(
+document.getElementById(
+"productPrice"
+).value
+);
+
+const percent=
+Number(
+document.getElementById(
+"profitPercent"
+).value
+);
+
+if(
+!Number.isFinite(price) ||
+price<0
+){
+
+document.getElementById(
+"productSalePrice"
+).value="";
+
+return;
+
+}
+
+if(
+!Number.isFinite(percent) ||
+percent<0
+){
+
+return;
+
+}
+
+const sale=
+price+
+(price*percent/100);
+
+document.getElementById(
+"productSalePrice"
+).value=
+Math.round(sale);
+
+}
+
+
+/* PRICE CHANGE */
+
+document
+.getElementById("productPrice")
+.addEventListener(
+"input",
+calculateSalePrice
+);
+
+
+/* PROFIT CHANGE */
+
+document
+.getElementById("profitPercent")
+.addEventListener(
+"input",
+calculateSalePrice
+);
+
+
 /* UPLOAD IMAGE */
 
 async function uploadImage(file){
@@ -898,6 +1010,20 @@ return;
 
 }
 
+if(
+salePrice==="" ||
+Number(salePrice)<Number(price)
+){
+
+showMessage(
+"Sale Price must be equal to or higher than the Real Price.",
+true
+);
+
+return;
+
+}
+
 
 try{
 
@@ -944,9 +1070,7 @@ description:description,
 price:Number(price),
 
 sale_price:
-salePrice===""
-?null
-:Number(salePrice),
+Number(salePrice),
 
 stock:Number(stock),
 
@@ -1075,6 +1199,10 @@ document.getElementById(
 ).textContent=
 "Edit Product";
 
+document.getElementById(
+"profitPercent"
+).value="30";
+
 window.scrollTo({
 top:0,
 behavior:"smooth"
@@ -1151,6 +1279,10 @@ document.getElementById(
 document.getElementById(
 "productPrice"
 ).value="";
+
+document.getElementById(
+"profitPercent"
+).value="30";
 
 document.getElementById(
 "productSalePrice"
