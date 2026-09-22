@@ -291,14 +291,11 @@ main{padding-left:11px;padding-right:11px}
 
 <header>
 <div class="header-inner">
-
 <a class="brand" href="https://createlk.com/">
 <img src="https://assets.createlk.com/file_00000000f05482118c11cccfc653fd0f.png" alt="CreateLK Jobs">
 <span>CreateLK Jobs</span>
 </a>
-
 <button id="logoutBtn" class="logout">Logout</button>
-
 </div>
 </header>
 
@@ -312,59 +309,37 @@ main{padding-left:11px;padding-right:11px}
 <div id="apiError" class="api-error"></div>
 
 <section class="profile-card">
-
-<img id="profilePhoto"
-class="profile-photo"
-alt="Profile photo">
-
+<img id="profilePhoto" class="profile-photo" alt="Profile photo">
 <div class="profile-info">
-
 <h2 id="profileName">User</h2>
-
 <p id="profileEmail">-</p>
-
-<p id="profileVerified" class="verified">
-Account
-</p>
-
+<p id="profileVerified" class="verified">Account</p>
 </div>
 </section>
 
 <section class="primary-actions">
 
-<a class="primary-action post"
-href="/LK/post-ad.html">
-
+<a class="primary-action post" href="/LK/post-ad.html">
 <div class="action-icon">＋</div>
-
 <div class="action-content">
 <h2>Post Job / Service</h2>
 <p>Create a job or service advertisement and reach people across Sri Lanka.</p>
 </div>
-
 <div class="action-arrow">›</div>
-
 </a>
 
-<a class="primary-action ads"
-href="/LK/my-ads.html">
-
+<a class="primary-action ads" href="/LK/my-ads.html">
 <div class="action-icon">▤</div>
-
 <div class="action-content">
 <h2>My Jobs / Services</h2>
 <p>View, manage and check the status of your jobs and services.</p>
 </div>
-
 <div class="action-arrow">›</div>
-
 </a>
 
 </section>
 
-<h2 class="section-title">
-Jobs & Services Overview
-</h2>
+<h2 class="section-title">Jobs & Services Overview</h2>
 
 <div class="status-grid">
 
@@ -385,47 +360,31 @@ Jobs & Services Overview
 
 <div class="status-card remaining">
 <h3>Next Free Post</h3>
-<div id="freeRemaining" class="status-number">
-Available Now
-</div>
+<div id="freeRemaining" class="status-number">Available Now</div>
 </div>
 
 </div>
 
-<button id="refreshBtn" class="refresh">
-Refresh
-</button>
+<button id="refreshBtn" class="refresh">Refresh</button>
 
-<h2 class="section-title">
-Posting Options
-</h2>
+<h2 class="section-title">Posting Options</h2>
 
 <section class="info-grid">
 
 <div class="info-card free">
-
 <h2>Free Job / Service</h2>
-
-<p>
-Post your job or service at no cost and reach people across Sri Lanka.
-</p>
-
+<p>Post your job or service at no cost and reach people across Sri Lanka.</p>
 <ul class="benefits">
 <li>Post for Rs. 0</li>
 <li>30-day advertisement period</li>
 <li>Reach people across Sri Lanka</li>
 <li>Easy online advertisement submission</li>
 </ul>
-
 </div>
 
 <div class="info-card premium">
-
 <h2>Premium Job / Service</h2>
-
-<p>
-Give your job or service more visibility with premium placement options.
-</p>
+<p>Give your job or service more visibility with premium placement options.</p>
 
 <ul class="benefits premium-list">
 <li>More prominent placement</li>
@@ -435,7 +394,6 @@ Give your job or service more visibility with premium placement options.
 </ul>
 
 <div class="premium-types">
-
 <div class="premium-type">
 <strong>Featured</strong>
 <span>Rs. 500 • 30 days</span>
@@ -450,7 +408,6 @@ Give your job or service more visibility with premium placement options.
 <strong>Top</strong>
 <span>Rs. 500 • 30 days</span>
 </div>
-
 </div>
 
 <div class="premium-type" style="margin-top:9px">
@@ -459,380 +416,245 @@ Give your job or service more visibility with premium placement options.
 </div>
 
 </div>
-
 </section>
 
 </main>
 </div>
 
 <script>
-
-const LOGIN_API =
-"https://login.createlk.workers.dev";
-
-const ADS_API =
-"https://ads.createlk.workers.dev";
-
-const LOGIN_PAGE =
-"https://createlk.com/LK/login.html";
-
-const $ = id =>
-document.getElementById(id);
-
-
-/* =========================
-   ERROR
-========================= */
+const LOGIN_API="https://login.createlk.workers.dev";
+const ADS_API="https://ads.createlk.workers.dev";
+const LOGIN_PAGE="https://createlk.com/LK/login.html";
+const TOKEN_KEY="createlk_session_token";
+const CUSTOMER_KEY="createlk_customer";
+const $=id=>document.getElementById(id);
 
 function showError(message){
-
 $("loading").classList.add("hidden");
-
 $("app").classList.add("hidden");
-
-$("errorMessage").textContent =
-message ||
-"Please sign in to continue.";
-
+$("errorMessage").textContent=message||"Please sign in to continue.";
 $("errorScreen").classList.remove("hidden");
 }
 
-
-/* =========================
-   SHOW APP
-========================= */
-
 function showApp(){
-
 $("loading").classList.add("hidden");
-
 $("errorScreen").classList.add("hidden");
-
 $("app").classList.remove("hidden");
 }
 
+function getToken(){
+return sessionStorage.getItem(TOKEN_KEY);
+}
 
-/* =========================
-   GET USER
-   Uses existing
-   createlk_session cookie
-========================= */
+function saveUser(user){
+try{sessionStorage.setItem(CUSTOMER_KEY,JSON.stringify(user))}
+catch(e){console.error(e)}
+}
 
-async function getMe(){
+async function exchangeTicket(ticket){
+const r=await fetch(
+LOGIN_API+"/exchange?ticket="+encodeURIComponent(ticket),
+{cache:"no-store"}
+);
 
-const r = await fetch(
-LOGIN_API + "/me",
-{
-method:"GET",
-credentials:"include",
+const d=await r.json().catch(()=>({}));
+
+if(!r.ok||!d.success||!d.token)
+throw new Error(d.error||"Login session could not be created.");
+
+sessionStorage.setItem(TOKEN_KEY,d.token);
+if(d.user)saveUser(d.user);
+return d;
+}
+
+async function getMe(token){
+const r=await fetch(LOGIN_API+"/me",{
+headers:{Authorization:"Bearer "+token},
 cache:"no-store"
+});
+
+const d=await r.json().catch(()=>({}));
+
+if(r.status===401||r.status===403||!r.ok||!d.success)
+throw new Error(d.error||"Your session has expired.");
+
+return d;
 }
-);
-
-const d =
-await r.json().catch(()=>({}));
-
-if(!r.ok){
-
-throw new Error(
-d.error ||
-"Your login session has expired."
-);
-}
-
-if(!d.loggedIn || !d.user){
-
-throw new Error(
-"Please sign in to your CreateLK Jobs account."
-);
-}
-
-return d.user;
-}
-
-
-/* =========================
-   DISPLAY USER
-========================= */
 
 function displayUser(user){
+const name=user.name||"CreateLK Jobs User";
 
-const name =
-user.name ||
-"CreateLK Jobs User";
+$("profileName").textContent=name;
+$("profileEmail").textContent=user.email||"";
+$("welcomeTitle").textContent="Welcome, "+name;
 
-$("profileName").textContent =
-name;
+if(user.photo_url)$("profilePhoto").src=user.photo_url;
 
-$("profileEmail").textContent =
-user.email || "";
-
-$("welcomeTitle").textContent =
-"Welcome, " + name;
-
-if(user.photo_url){
-
-$("profilePhoto").src =
-user.photo_url;
-
+$("profileVerified").textContent=
+user.email_verified===true||user.email_verified===1
+?"✓ Google account verified":"Google account";
 }
-
-$("profileVerified").textContent =
-user.email_verified === true ||
-user.email_verified === 1
-?
-"✓ Google account verified"
-:
-"Google account";
-}
-
-
-/* =========================
-   DATE
-========================= */
 
 function formatDate(date){
+const d=new Date(date);
+if(isNaN(d))return null;
 
-const d = new Date(date);
-
-if(isNaN(d)) return null;
-
-return d.toLocaleDateString(
-"en-LK",
-{
-day:"2-digit",
-month:"short",
-year:"numeric"
+return d.toLocaleDateString("en-LK",{
+day:"2-digit",month:"short",year:"numeric"
+});
 }
-);
-}
-
-
-/* =========================
-   FREE POST
-========================= */
 
 function updateFreeRemaining(ads){
 
-const freeAds =
-ads.filter(ad =>
-String(ad.ad_type || "")
-.toLowerCase() === "free"
+const freeAds=ads.filter(ad=>
+String(ad.ad_type||"").toLowerCase()==="free"
 );
 
 if(!freeAds.length){
-
-$("freeRemaining").textContent =
-"Available Now";
-
+$("freeRemaining").textContent="Available Now";
 return;
 }
 
-const latest =
-freeAds.sort((a,b)=>
-(Date.parse(b.created_at)||0) -
-(Date.parse(a.created_at)||0)
+const latest=freeAds.sort((a,b)=>
+(Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0)
 )[0];
 
-const expires =
-latest?.expires_at;
+const expires=latest?.expires_at;
 
 if(!expires){
-
-$("freeRemaining").textContent =
-"Check My Jobs / Services";
-
+$("freeRemaining").textContent="Check My Jobs / Services";
 return;
 }
 
-const time =
-new Date(expires).getTime();
+const time=new Date(expires).getTime();
 
-if(
-!Number.isFinite(time) ||
-time <= Date.now()
-){
-
-$("freeRemaining").textContent =
-"Available Now";
-
+if(!Number.isFinite(time)||time<=Date.now()){
+$("freeRemaining").textContent="Available Now";
 return;
 }
 
-const date =
-formatDate(expires);
+const date=formatDate(expires);
 
-$("freeRemaining").innerHTML =
-date
-?
-"Available from<br><strong>" +
-date +
-"</strong>"
-:
-"Check My Jobs / Services";
+$("freeRemaining").innerHTML=date
+?"Available from<br><strong>"+date+"</strong>"
+:"Check My Jobs / Services";
 }
-
-
-/* =========================
-   LOAD ADS
-========================= */
 
 async function loadMyAds(){
 
-$("apiError").style.display =
-"none";
+const token=getToken();
+if(!token)throw new Error("Login session not found.");
+
+$("apiError").style.display="none";
 
 try{
 
-const r =
-await fetch(
-ADS_API + "/my-ads",
-{
-method:"GET",
-credentials:"include",
+const r=await fetch(ADS_API+"/my-ads",{
 headers:{
+Authorization:"Bearer "+token,
 Accept:"application/json"
 },
 cache:"no-store"
-}
-);
+});
 
-const d =
-await r.json().catch(()=>({}));
+const d=await r.json().catch(()=>({}));
 
-if(
-r.status === 401 ||
-r.status === 403
-){
+if(r.status===401||r.status===403)
+throw new Error("Ads Worker rejected your login session.");
 
-throw new Error(
-"Your login session was rejected by the Jobs service."
-);
-}
+if(!r.ok||!d.success)
+throw new Error(d.error||"Could not load your jobs and services.");
 
-if(!r.ok || !d.success){
+const ads=Array.isArray(d.ads)?d.ads:[];
 
-throw new Error(
-d.error ||
-"Could not load your jobs and services."
-);
-}
+$("pendingCount").textContent=
+ads.filter(a=>String(a.status).toLowerCase()==="pending").length;
 
-const ads =
-Array.isArray(d.ads)
-?
-d.ads
-:
-[];
+$("approvedCount").textContent=
+ads.filter(a=>String(a.status).toLowerCase()==="approved").length;
 
-$("pendingCount").textContent =
-ads.filter(a =>
-String(a.status).toLowerCase() ===
-"pending"
-).length;
-
-$("approvedCount").textContent =
-ads.filter(a =>
-String(a.status).toLowerCase() ===
-"approved"
-).length;
-
-$("rejectedCount").textContent =
-ads.filter(a =>
-String(a.status).toLowerCase() ===
-"rejected"
-).length;
+$("rejectedCount").textContent=
+ads.filter(a=>String(a.status).toLowerCase()==="rejected").length;
 
 updateFreeRemaining(ads);
-
-}
-catch(e){
-
-console.error(e);
-
-$("pendingCount").textContent = "—";
-$("approvedCount").textContent = "—";
-$("rejectedCount").textContent = "—";
-
-$("apiError").textContent =
-"Unable to load your jobs and services: " +
-e.message;
-
-$("apiError").style.display =
-"block";
-}
-}
-
-
-/* =========================
-   LOGOUT
-========================= */
-
-async function logout(){
-
-$("logoutBtn").disabled = true;
-
-$("logoutBtn").textContent =
-"Logging out...";
-
-try{
-
-await fetch(
-LOGIN_API + "/logout",
-{
-method:"GET",
-credentials:"include",
-cache:"no-store"
-}
-);
 
 }catch(e){
 
 console.error(e);
 
+$("pendingCount").textContent="—";
+$("approvedCount").textContent="—";
+$("rejectedCount").textContent="—";
+
+$("apiError").textContent=
+"Unable to load your jobs and services: "+e.message;
+
+$("apiError").style.display="block";
 }
+}
+
+function removeTicket(){
+history.replaceState({},document.title,location.origin+location.pathname);
+}
+
+async function logout(){
+
+const token=getToken();
+
+$("logoutBtn").disabled=true;
+$("logoutBtn").textContent="Logging out...";
+
+try{
+if(token){
+await fetch(LOGIN_API+"/logout",{
+headers:{Authorization:"Bearer "+token},
+cache:"no-store"
+});
+}
+}catch(e){console.error(e)}
+
+sessionStorage.removeItem(TOKEN_KEY);
+sessionStorage.removeItem(CUSTOMER_KEY);
 
 location.replace(LOGIN_PAGE);
 }
 
-$("logoutBtn").onclick =
-logout;
+$("logoutBtn").onclick=logout;
 
-
-/* =========================
-   REFRESH
-========================= */
-
-$("refreshBtn").onclick =
-async function(){
-
-this.disabled = true;
-
-this.textContent =
-"Refreshing...";
-
+$("refreshBtn").onclick=async function(){
+this.disabled=true;
+this.textContent="Refreshing...";
 await loadMyAds();
-
-this.disabled = false;
-
-this.textContent =
-"Refresh";
+this.disabled=false;
+this.textContent="Refresh";
 };
-
-
-/* =========================
-   START
-========================= */
 
 async function start(){
 
 try{
 
-const user =
-await getMe();
+const params=new URLSearchParams(location.search);
+const ticket=params.get("ticket");
+let token=getToken();
 
-displayUser(user);
+if(ticket){
+const result=await exchangeTicket(ticket);
+token=result.token;
+removeTicket();
+}
 
+if(!token){
+showError("Please sign in to your CreateLK Jobs account to continue.");
+return;
+}
+
+const result=await getMe(token);
+
+if(!result.user)
+throw new Error("User information is missing.");
+
+saveUser(result.user);
+displayUser(result.user);
 showApp();
 
 await loadMyAds();
@@ -841,17 +663,14 @@ await loadMyAds();
 
 console.error(e);
 
-showError(
-e.message ||
-"Your login session could not be verified."
-);
+sessionStorage.removeItem(TOKEN_KEY);
+sessionStorage.removeItem(CUSTOMER_KEY);
 
+showError(e.message||"Your login session could not be verified.");
 }
-
 }
 
 start();
-
 </script>
 
 </body>
