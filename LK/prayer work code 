@@ -10,13 +10,18 @@ const CALLBACK="https://prayer.createlk.workers.dev/oauth/callback";
 function json(data,status=200){
  return new Response(JSON.stringify(data),{
   status,
-  headers:{"Content-Type":"application/json",...CORS}
+  headers:{
+   "Content-Type":"application/json",
+   ...CORS
+  }
  });
 }
 
 function b64(data){
  return btoa(String.fromCharCode(...new Uint8Array(data)))
-  .replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+  .replace(/\+/g,"-")
+  .replace(/\//g,"_")
+  .replace(/=/g,"");
 }
 
 function randomString(){
@@ -34,7 +39,9 @@ async function hmac(text,secret){
   ["sign"]
  );
  return b64(await crypto.subtle.sign(
-  "HMAC",key,new TextEncoder().encode(text)
+  "HMAC",
+  key,
+  new TextEncoder().encode(text)
  ));
 }
 
@@ -51,12 +58,12 @@ async function verifyToken(token,secret,email){
   const p=token.split(".");
   if(p.length!==2)return false;
 
-  const sig=await hmac(p[0],secret);
-  if(sig!==p[1])return false;
+  if(await hmac(p[0],secret)!==p[1])
+   return false;
 
   const d=JSON.parse(atob(p[0]));
 
-  return d.email===email && Date.now()<d.exp;
+  return d.email===email&&Date.now()<d.exp;
  }catch{
   return false;
  }
@@ -71,6 +78,23 @@ async function authorized(req,env){
   env.SESSION_SECRET,
   env.ALLOWED_EMAIL
  );
+}
+
+function today(){
+ const parts=new Intl.DateTimeFormat("en-CA",{
+  timeZone:"Asia/Colombo",
+  year:"numeric",
+  month:"2-digit",
+  day:"2-digit"
+ }).formatToParts(new Date());
+
+ const d={};
+
+ parts.forEach(p=>{
+  if(p.type!=="literal")d[p.type]=p.value;
+ });
+
+ return `${d.year}-${d.month}-${d.day}`;
 }
 
 async function googleToken(code,env){
@@ -94,7 +118,8 @@ async function googleToken(code,env){
   }
  );
 
- if(!r.ok)throw new Error("Google token request failed");
+ if(!r.ok)
+  throw new Error("Google token request failed");
 
  return r.json();
 }
@@ -109,7 +134,8 @@ async function googleUser(access){
   }
  );
 
- if(!r.ok)throw new Error("Google account verification failed");
+ if(!r.ok)
+  throw new Error("Google account verification failed");
 
  return r.json();
 }
@@ -118,21 +144,16 @@ export default{
 
  async fetch(request,env){
 
-  if(request.method==="OPTIONS"){
+  if(request.method==="OPTIONS")
    return new Response(null,{headers:CORS});
-  }
 
   const url=new URL(request.url);
 
   try{
 
-   /* HOME */
-
-   if(request.method==="GET"&&url.pathname==="/"){
+   if(request.method==="GET"&&url.pathname==="/")
     return new Response("CreateLK 100 Day Prayer API");
-   }
 
-   /* GOOGLE LOGIN */
 
    if(request.method==="GET"&&url.pathname==="/login"){
 
@@ -153,13 +174,11 @@ export default{
      headers:{
       Location:google,
       "Set-Cookie":
-       "oauth_state="+state+
-       "; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600"
+       `oauth_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`
      }
     });
    }
 
-   /* GOOGLE CALLBACK */
 
    if(
     request.method==="GET"&&
@@ -174,30 +193,30 @@ export default{
      /(?:^|;\s*)oauth_state=([^;]+)/
     );
 
-    const savedState=match?match[1]:"";
+    const saved=match?match[1]:"";
 
-    if(!code||!state||state!==savedState){
+    if(!code||!state||state!==saved)
      return new Response(
       "Invalid Google login request.",
       {status:400}
      );
-    }
 
     const tokens=await googleToken(code,env);
     const user=await googleUser(tokens.access_token);
 
     const email=String(user.email||"")
-     .toLowerCase().trim();
+     .toLowerCase()
+     .trim();
 
     const allowed=String(env.ALLOWED_EMAIL||"")
-     .toLowerCase().trim();
+     .toLowerCase()
+     .trim();
 
-    if(email!==allowed){
+    if(email!==allowed)
      return new Response(
       "Access denied. This Google account is not authorized.",
       {status:403}
      );
-    }
 
     const session=await createToken(
      email,
@@ -209,22 +228,21 @@ export default{
      headers:{
       Location:
        APP_URL+"?session="+encodeURIComponent(session),
+
       "Set-Cookie":
        "oauth_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
      }
     });
    }
 
-   /* LOGIN CHECK */
 
    if(request.method==="GET"&&url.pathname==="/me"){
 
-    if(!await authorized(request,env)){
+    if(!await authorized(request,env))
      return json({
       success:false,
       authenticated:false
      },401);
-    }
 
     return json({
      success:true,
@@ -233,73 +251,83 @@ export default{
     });
    }
 
-   /* ALL PRAYERS */
 
    if(
     request.method==="GET"&&
     url.pathname==="/prayers"
    ){
 
-    if(!await authorized(request,env)){
-     return json({success:false,error:"Unauthorized"},401);
-    }
+    if(!await authorized(request,env))
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
+
+    const date=today();
 
     const r=await env.DB.prepare(`
-     SELECT
-      p.*,
-      COALESCE(
-       (
-        SELECT pc.completed
-        FROM prayer_completions pc
-        WHERE pc.prayer_id=p.id
-        AND pc.completed_date=p.prayer_date
-        LIMIT 1
-       ),0
-      ) AS completed
+     SELECT p.*,
+     COALESCE(
+      (
+       SELECT pc.completed
+       FROM prayer_completions pc
+       WHERE pc.prayer_id=p.id
+       AND pc.completed_date=?
+       LIMIT 1
+      ),0
+     ) AS completed
      FROM prayers p
      ORDER BY p.prayer_date ASC
-    `).all();
+    `).bind(date).all();
 
     return json({
      success:true,
+     date,
      prayers:r.results||[]
     });
    }
 
-   /* ADD */
 
    if(
     request.method==="POST"&&
     url.pathname==="/prayer"
    ){
 
-    if(!await authorized(request,env)){
-     return json({success:false,error:"Unauthorized"},401);
-    }
+    if(!await authorized(request,env))
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
 
     const body=await request.json();
 
-    const date=String(body.prayer_date||"").trim();
-    const title=String(body.title||"").trim();
-    const content=String(body.content||"").trim();
+    const date=String(
+     body.prayer_date||""
+    ).trim();
 
-    if(!date||!title||!content){
+    const title=String(
+     body.title||""
+    ).trim();
+
+    const content=String(
+     body.content||""
+    ).trim();
+
+    if(!date||!title||!content)
      return json({
       success:false,
       error:"Date, title and prayer are required"
      },400);
-    }
 
-    const count=await env.DB.prepare(`
-     SELECT COUNT(*) AS total FROM prayers
-    `).first();
+    const count=await env.DB.prepare(
+     "SELECT COUNT(*) AS total FROM prayers"
+    ).first();
 
-    if(Number(count.total)>=100){
+    if(Number(count.total)>=100)
      return json({
       success:false,
       error:"100 prayer days already reached"
      },400);
-    }
 
     try{
 
@@ -307,7 +335,11 @@ export default{
       INSERT INTO prayers
       (prayer_date,title,content)
       VALUES(?,?,?)
-     `).bind(date,title,content).run();
+     `).bind(
+      date,
+      title,
+      content
+     ).run();
 
      return json({
       success:true,
@@ -315,6 +347,7 @@ export default{
      });
 
     }catch{
+
      return json({
       success:false,
       error:"A prayer already exists for this date"
@@ -322,16 +355,17 @@ export default{
     }
    }
 
-   /* EDIT */
 
    if(
     request.method==="PUT"&&
     url.pathname.startsWith("/prayer/")
    ){
 
-    if(!await authorized(request,env)){
-     return json({success:false,error:"Unauthorized"},401);
-    }
+    if(!await authorized(request,env))
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
 
     const id=Number(
      url.pathname.split("/").pop()
@@ -339,34 +373,52 @@ export default{
 
     const body=await request.json();
 
+    const date=String(
+     body.prayer_date||""
+    ).trim();
+
+    const title=String(
+     body.title||""
+    ).trim();
+
+    const content=String(
+     body.content||""
+    ).trim();
+
+    if(!date||!title||!content)
+     return json({
+      success:false,
+      error:"Date, title and prayer are required"
+     },400);
+
     await env.DB.prepare(`
      UPDATE prayers
-     SET
-      prayer_date=?,
-      title=?,
-      content=?,
-      updated_at=CURRENT_TIMESTAMP
+     SET prayer_date=?,
+         title=?,
+         content=?,
+         updated_at=CURRENT_TIMESTAMP
      WHERE id=?
     `).bind(
-     String(body.prayer_date||"").trim(),
-     String(body.title||"").trim(),
-     String(body.content||"").trim(),
+     date,
+     title,
+     content,
      id
     ).run();
 
     return json({success:true});
    }
 
-   /* DELETE */
 
    if(
     request.method==="DELETE"&&
     url.pathname.startsWith("/prayer/")
    ){
 
-    if(!await authorized(request,env)){
-     return json({success:false,error:"Unauthorized"},401);
-    }
+    if(!await authorized(request,env))
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
 
     const id=Number(
      url.pathname.split("/").pop()
@@ -385,25 +437,24 @@ export default{
     return json({success:true});
    }
 
-   /* DAY */
 
    if(
     request.method==="GET"&&
     url.pathname==="/today"
    ){
 
-    if(!await authorized(request,env)){
-     return json({success:false,error:"Unauthorized"},401);
-    }
+    if(!await authorized(request,env))
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
 
     const date=
-     url.searchParams.get("date")||
-     new Date().toISOString().slice(0,10);
+     url.searchParams.get("date")||today();
 
     const p=await env.DB.prepare(`
-     SELECT
-      p.*,
-      COALESCE(pc.completed,0) AS completed
+     SELECT p.*,
+     COALESCE(pc.completed,0) AS completed
      FROM prayers p
      LEFT JOIN prayer_completions pc
       ON pc.prayer_id=p.id
@@ -419,22 +470,37 @@ export default{
     });
    }
 
-   /* COMPLETE */
 
    if(
     request.method==="POST"&&
     url.pathname==="/complete"
    ){
 
-    if(!await authorized(request,env)){
-     return json({success:false,error:"Unauthorized"},401);
-    }
+    if(!await authorized(request,env))
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
 
     const body=await request.json();
 
-    const prayerId=Number(body.prayer_id);
-    const date=String(body.date||"").trim();
-    const completed=body.completed?1:0;
+    const prayerId=Number(
+     body.prayer_id
+    );
+
+    const completed=
+     body.completed?1:0;
+
+    if(
+     !prayerId||
+     !Number.isInteger(prayerId)
+    )
+     return json({
+      success:false,
+      error:"Invalid prayer ID"
+     },400);
+
+    const date=today();
 
     await env.DB.prepare(`
      INSERT INTO prayer_completions
@@ -450,9 +516,11 @@ export default{
 
     return json({
      success:true,
-     completed:!!completed
+     completed:completed===1,
+     date
     });
    }
+
 
    return json({
     success:false,
