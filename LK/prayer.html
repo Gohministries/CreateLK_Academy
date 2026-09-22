@@ -8,9 +8,7 @@
 <meta name="theme-color" content="#102a56">
 
 <style>
-*{
- box-sizing:border-box;
-}
+*{box-sizing:border-box}
 
 body{
  margin:0;
@@ -54,7 +52,6 @@ header p{
 .progress-title{
  display:flex;
  justify-content:space-between;
- align-items:center;
  margin-bottom:10px;
  font-weight:bold;
 }
@@ -83,29 +80,29 @@ header p{
  color:#666;
 }
 
-.logout{
- width:auto;
- padding:8px 12px;
- background:#fff;
- color:#102a56;
- border:1px solid #d7dce5;
+button,
+select,
+input,
+textarea{
+ width:100%;
+ font:inherit;
 }
 
-label{
- display:block;
+button{
+ border:0;
+ border-radius:12px;
+ padding:13px 16px;
+ cursor:pointer;
  font-weight:bold;
- margin:14px 0 7px;
 }
 
 select,
 input,
 textarea{
- width:100%;
  border:1px solid #d7dce5;
  border-radius:12px;
  padding:12px;
  background:#fff;
- font:inherit;
 }
 
 textarea{
@@ -114,14 +111,12 @@ textarea{
  line-height:1.6;
 }
 
-button{
- width:100%;
- border:0;
- border-radius:12px;
- padding:13px 16px;
- cursor:pointer;
- font:inherit;
- font-weight:bold;
+.logout{
+ width:auto;
+ padding:8px 12px;
+ background:#fff;
+ color:#102a56;
+ border:1px solid #d7dce5;
 }
 
 .primary{
@@ -230,6 +225,12 @@ button{
  margin-top:0;
 }
 
+label{
+ display:block;
+ font-weight:bold;
+ margin:14px 0 7px;
+}
+
 @media(max-width:520px){
  .actions{
   grid-template-columns:1fr;
@@ -250,6 +251,7 @@ button{
  <div id="message" class="message"></div>
 
  <!-- PROGRESS -->
+
  <div class="card">
 
   <div class="progress-title">
@@ -285,7 +287,9 @@ button{
 
  </div>
 
- <!-- DATE -->
+
+ <!-- SELECT POINT -->
+
  <div class="card">
 
   <div class="date-display">
@@ -305,14 +309,18 @@ button{
 
  </div>
 
+
  <!-- PRAYER -->
+
  <div class="card">
 
   <div id="prayerArea"></div>
 
  </div>
 
+
  <!-- ADD / EDIT -->
+
  <div class="card">
 
   <h2
@@ -330,14 +338,14 @@ button{
    Prayer Point
   </label>
 
-  <select id="formPoint"></select>
+  <select
+   id="formPoint"
+   onchange="updatePrayerDate()">
+  </select>
 
-  <label>
-   Date
-  </label>
-
+  <!-- Hidden automatic date -->
   <input
-   type="date"
+   type="hidden"
    id="prayerDate">
 
   <label>
@@ -378,6 +386,7 @@ button{
 
 </div>
 
+
 <script>
 
 const API =
@@ -394,7 +403,58 @@ let editingId = null;
 
 
 /* =========================
-   DATE
+   AUTOMATIC POINT DATE
+========================= */
+
+function pointDate(point){
+
+ const year =
+  new Date().getFullYear();
+
+ const d =
+  new Date(
+   year,
+   0,
+   Number(point)-1
+  );
+
+ const y =
+  d.getFullYear();
+
+ const m =
+  String(d.getMonth()+1)
+   .padStart(2,"0");
+
+ const day =
+  String(d.getDate())
+   .padStart(2,"0");
+
+ return `${y}-${m}-${day}`;
+}
+
+
+/* =========================
+   UPDATE AUTOMATIC DATE
+========================= */
+
+function updatePrayerDate(){
+
+ const point =
+  Number(
+   document.getElementById(
+    "formPoint"
+   ).value
+  );
+
+ document.getElementById(
+  "prayerDate"
+ ).value =
+  pointDate(point);
+}
+
+
+/* =========================
+   TODAY
 ========================= */
 
 function today(){
@@ -429,34 +489,37 @@ function today(){
 
 
 /* =========================
-   DATE DISPLAY
+   DISPLAY TODAY
 ========================= */
 
 function displayToday(){
 
- const d = new Date(
-  today() + "T00:00:00"
- );
+ const d =
+  new Date(
+   today()+"T00:00:00"
+  );
 
- document.getElementById("dayName")
-  .textContent =
-   d.toLocaleDateString(
-    "en-US",
-    {
-     weekday:"long"
-    }
-   );
+ document.getElementById(
+  "dayName"
+ ).textContent =
+  d.toLocaleDateString(
+   "en-US",
+   {
+    weekday:"long"
+   }
+  );
 
- document.getElementById("currentDate")
-  .textContent =
-   d.toLocaleDateString(
-    "en-US",
-    {
-     day:"numeric",
-     month:"long",
-     year:"numeric"
-    }
-   );
+ document.getElementById(
+  "currentDate"
+ ).textContent =
+  d.toLocaleDateString(
+   "en-US",
+   {
+    day:"numeric",
+    month:"long",
+    year:"numeric"
+   }
+  );
 }
 
 
@@ -502,14 +565,11 @@ function init(){
 
   location.href = LOGIN;
   return;
-
  }
 
  buildSelectors();
 
- document.getElementById(
-  "prayerDate"
- ).value = today();
+ updatePrayerDate();
 
  checkLogin();
 }
@@ -531,41 +591,40 @@ function buildSelectors(){
    "formPoint"
   );
 
- pointSelect.innerHTML="";
- formPoint.innerHTML="";
+ pointSelect.innerHTML = "";
+ formPoint.innerHTML = "";
 
  for(let i=1;i<=100;i++){
 
-  const a =
+  const option =
    document.createElement("option");
 
-  a.value=i;
+  option.value = i;
 
-  a.textContent =
+  option.textContent =
    "Prayer Point " + i;
 
-  pointSelect.appendChild(a);
+  pointSelect.appendChild(option);
 
 
-  const b =
+  const option2 =
    document.createElement("option");
 
-  b.value=i;
+  option2.value = i;
 
-  b.textContent =
+  option2.textContent =
    "Prayer Point " + i;
 
-  formPoint.appendChild(b);
-
+  formPoint.appendChild(option2);
  }
 
- pointSelect.value="1";
- formPoint.value="1";
+ pointSelect.value = "1";
+ formPoint.value = "1";
 }
 
 
 /* =========================
-   LOGIN CHECK
+   LOGIN
 ========================= */
 
 async function checkLogin(){
@@ -577,7 +636,7 @@ async function checkLogin(){
     API + "/me",
     {
      headers:{
-      "Authorization":
+      Authorization:
        "Bearer " + session
      }
     }
@@ -610,7 +669,6 @@ async function checkLogin(){
    "Unable to connect to prayer server.",
    true
   );
-
  }
 }
 
@@ -628,7 +686,7 @@ async function loadPrayers(){
     API + "/prayers",
     {
      headers:{
-      "Authorization":
+      Authorization:
        "Bearer " + session
      }
     }
@@ -643,7 +701,6 @@ async function loadPrayers(){
     data.error ||
     "Unable to load prayers"
    );
-
   }
 
   prayers =
@@ -653,16 +710,13 @@ async function loadPrayers(){
 
 
   /*
-   IMPORTANT:
+   Worker returns prayers by:
 
-   Your Worker does not store
-   prayer_point.
+   ORDER BY prayer_date ASC
 
-   It returns prayers ordered
-   by prayer_date ASC.
-
-   Therefore the frontend uses
-   the database order:
+   Since the Worker cannot store
+   prayer_point, the frontend uses
+   the sorted position:
 
    prayers[0] = Point 1
    prayers[1] = Point 2
@@ -684,12 +738,11 @@ async function loadPrayers(){
      Number(a.id || 0) -
      Number(b.id || 0)
     );
-
    }
 
    return da.localeCompare(db);
-
   });
+
 
   updateProgress();
 
@@ -702,24 +755,23 @@ async function loadPrayers(){
    "Unable to load prayers.",
    true
   );
-
  }
 }
 
 
 /* =========================
-   FIND PRAYER
+   GET PRAYER BY POINT
 ========================= */
 
 function getPrayer(point){
 
- return prayers[point - 1] || null;
+ return prayers[point-1] || null;
 
 }
 
 
 /* =========================
-   SHOW SELECTED POINT
+   SHOW POINT
 ========================= */
 
 function showSelectedPoint(){
@@ -735,6 +787,7 @@ function showSelectedPoint(){
   "formPoint"
  ).value = point;
 
+ updatePrayerDate();
 
  const prayer =
   getPrayer(point);
@@ -785,16 +838,16 @@ function showSelectedPoint(){
   completed
 
    ? `
-     <div class="status done">
-      ✅ Completed
-     </div>
-    `
+    <div class="status done">
+     ✅ Completed
+    </div>
+   `
 
    : `
-     <div class="status pending">
-      ⏳ Not completed
-     </div>
-    `;
+    <div class="status pending">
+     ⏳ Not completed
+    </div>
+   `;
 
 
  area.innerHTML = `
@@ -896,15 +949,11 @@ function updateProgress(){
   ){
 
    completed++;
-
   }
-
  });
 
  const percent =
-  Math.round(
-   completed / 100 * 100
-  );
+  completed;
 
  document.getElementById(
   "progressText"
@@ -959,13 +1008,22 @@ function editPrayer(id,point){
 
  document.getElementById(
   "formPoint"
- ).value = point;
+ ).value =
+  point;
 
+
+ /*
+  During EDIT we preserve the
+  existing database date.
+
+  The user still does not see
+  or enter the date.
+ */
 
  document.getElementById(
   "prayerDate"
  ).value =
-  prayer.prayer_date || "";
+  prayer.prayer_date || pointDate(point);
 
 
  document.getElementById(
@@ -986,12 +1044,11 @@ function editPrayer(id,point){
   behavior:"smooth",
   block:"start"
  });
-
 }
 
 
 /* =========================
-   CANCEL EDIT
+   CANCEL
 ========================= */
 
 function cancelEdit(){
@@ -1011,17 +1068,19 @@ function cancelEdit(){
   "prayerContent"
  ).value = "";
 
- document.getElementById(
-  "prayerDate"
- ).value = today();
+ const point =
+  Number(
+   document.getElementById(
+    "pointSelect"
+   ).value
+  );
 
  document.getElementById(
   "formPoint"
  ).value =
-   document.getElementById(
-    "pointSelect"
-   ).value;
+  point;
 
+ updatePrayerDate();
 }
 
 
@@ -1038,10 +1097,28 @@ async function savePrayer(){
    ).value
   );
 
- const date =
+ let date =
   document.getElementById(
    "prayerDate"
   ).value.trim();
+
+
+ /*
+  For NEW prayer:
+
+  automatically use the selected
+  point's date.
+
+  No date question.
+ */
+
+ if(!editingId){
+
+  date =
+   pointDate(point);
+
+ }
+
 
  const title =
   document.getElementById(
@@ -1054,12 +1131,11 @@ async function savePrayer(){
   ).value.trim();
 
 
- if(!date ||
-    !title ||
+ if(!title ||
     !content){
 
   showFormMessage(
-   "Date, title and prayer are required.",
+   "Title and prayer are required.",
    true
   );
 
@@ -1084,16 +1160,10 @@ async function savePrayer(){
 
   }else{
 
-   /*
-    New prayers are inserted using
-    the selected date.
-   */
-
    url =
     API + "/prayer";
 
    method = "POST";
-
   }
 
 
@@ -1104,7 +1174,7 @@ async function savePrayer(){
      method:method,
 
      headers:{
-      "Authorization":
+      Authorization:
        "Bearer " + session,
 
       "Content-Type":
@@ -1134,7 +1204,6 @@ async function savePrayer(){
     data.error ||
     "Unable to save prayer"
    );
-
   }
 
 
@@ -1167,13 +1236,11 @@ async function savePrayer(){
   await loadPrayers();
 
 
-  /*
-   Keep the selected point after save.
-  */
-
   document.getElementById(
    "pointSelect"
-  ).value = point;
+  ).value =
+   point;
+
 
   showSelectedPoint();
 
@@ -1185,7 +1252,6 @@ async function savePrayer(){
    "Unable to save prayer.",
    true
   );
-
  }
 }
 
@@ -1221,24 +1287,6 @@ async function toggleComplete(id,point){
 
  try{
 
-  /*
-   IMPORTANT:
-
-   Your Worker expects:
-
-   body.date
-
-   NOT:
-
-   body.completed_date
-
-   Also the Worker checks the
-   completion against the prayer's
-   own prayer_date.
-
-   Therefore we send prayer_date.
-  */
-
   const r =
    await fetch(
     API + "/complete",
@@ -1246,12 +1294,22 @@ async function toggleComplete(id,point){
      method:"POST",
 
      headers:{
-      "Authorization":
+      Authorization:
        "Bearer " + session,
 
       "Content-Type":
        "application/json"
      },
+
+     /*
+      IMPORTANT:
+
+      Existing Worker expects:
+      "date"
+
+      We use the prayer's own
+      prayer_date.
+     */
 
      body:JSON.stringify({
 
@@ -1282,13 +1340,8 @@ async function toggleComplete(id,point){
     data.error ||
     "Unable to update completion."
    );
-
   }
 
-
-  /*
-   Update local data immediately.
-  */
 
   prayer.completed =
    !isCompleted ? 1 : 0;
@@ -1302,7 +1355,7 @@ async function toggleComplete(id,point){
   showMessage(
    !isCompleted
     ? "✅ Prayer marked as completed."
-    : "↩️ Prayer marked as uncompleted.",
+    : "↩️ Prayer unmarked.",
    false
   );
 
@@ -1314,7 +1367,6 @@ async function toggleComplete(id,point){
    "Unable to update prayer.",
    true
   );
-
  }
 }
 
@@ -1343,15 +1395,14 @@ async function deletePrayer(id,point){
  }
 
 
- const ok =
-  confirm(
-   "Delete Prayer Point " +
-   point +
-   "?\n\nThis cannot be undone."
-  );
+ if(!confirm(
+  "Delete Prayer Point " +
+  point +
+  "?\n\nThis cannot be undone."
+ )){
 
-
- if(!ok) return;
+  return;
+ }
 
 
  try{
@@ -1365,7 +1416,7 @@ async function deletePrayer(id,point){
      method:"DELETE",
 
      headers:{
-      "Authorization":
+      Authorization:
        "Bearer " + session
      }
     }
@@ -1383,9 +1434,10 @@ async function deletePrayer(id,point){
     data.error ||
     "Unable to delete prayer."
    );
-
   }
 
+
+  editingId = null;
 
   showMessage(
    "🗑️ Prayer deleted.",
@@ -1393,15 +1445,16 @@ async function deletePrayer(id,point){
   );
 
 
-  editingId = null;
-
-
   await loadPrayers();
 
 
   document.getElementById(
    "pointSelect"
-  ).value = point;
+  ).value =
+   Math.min(
+    point,
+    100
+   );
 
 
   showSelectedPoint();
@@ -1414,7 +1467,6 @@ async function deletePrayer(id,point){
    "Unable to delete prayer.",
    true
   );
-
  }
 }
 
@@ -1446,16 +1498,20 @@ function showMessage(text,error){
    "message"
   );
 
- box.textContent=text;
+ box.textContent = text;
 
  box.className =
   "message " +
-  (error ? "error" : "success");
+  (
+   error
+    ? "error"
+    : "success"
+  );
 
- box.style.display="block";
+ box.style.display = "block";
 
  setTimeout(()=>{
-  box.style.display="none";
+  box.style.display = "none";
  },4000);
 }
 
@@ -1467,22 +1523,26 @@ function showFormMessage(text,error){
    "formMessage"
   );
 
- box.textContent=text;
+ box.textContent = text;
 
  box.className =
   "message " +
-  (error ? "error" : "success");
+  (
+   error
+    ? "error"
+    : "success"
+  );
 
- box.style.display="block";
+ box.style.display = "block";
 
  setTimeout(()=>{
-  box.style.display="none";
+  box.style.display = "none";
  },4000);
 }
 
 
 /* =========================
-   HTML ESCAPE
+   ESCAPE HTML
 ========================= */
 
 function escapeHtml(value){
