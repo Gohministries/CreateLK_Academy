@@ -1,0 +1,470 @@
+const CORS={
+ "Access-Control-Allow-Origin":"https://createlk.com",
+ "Access-Control-Allow-Methods":"GET,POST,PUT,DELETE,OPTIONS",
+ "Access-Control-Allow-Headers":"Content-Type,Authorization"
+};
+
+const APP_URL="https://createlk.com/LK/prayer.html";
+const CALLBACK="https://prayer.createlk.workers.dev/oauth/callback";
+
+function json(data,status=200){
+ return new Response(JSON.stringify(data),{
+  status,
+  headers:{"Content-Type":"application/json",...CORS}
+ });
+}
+
+function b64(data){
+ return btoa(String.fromCharCode(...new Uint8Array(data)))
+  .replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+}
+
+function randomString(){
+ const a=new Uint8Array(32);
+ crypto.getRandomValues(a);
+ return b64(a);
+}
+
+async function hmac(text,secret){
+ const key=await crypto.subtle.importKey(
+  "raw",
+  new TextEncoder().encode(secret),
+  {name:"HMAC",hash:"SHA-256"},
+  false,
+  ["sign"]
+ );
+ return b64(await crypto.subtle.sign(
+  "HMAC",key,new TextEncoder().encode(text)
+ ));
+}
+
+async function createToken(email,secret){
+ const data=btoa(JSON.stringify({
+  email,
+  exp:Date.now()+7*24*60*60*1000
+ }));
+ return data+"."+await hmac(data,secret);
+}
+
+async function verifyToken(token,secret,email){
+ try{
+  const p=token.split(".");
+  if(p.length!==2)return false;
+
+  const sig=await hmac(p[0],secret);
+  if(sig!==p[1])return false;
+
+  const d=JSON.parse(atob(p[0]));
+
+  return d.email===email && Date.now()<d.exp;
+ }catch{
+  return false;
+ }
+}
+
+async function authorized(req,env){
+ const h=req.headers.get("Authorization")||"";
+ if(!h.startsWith("Bearer "))return false;
+
+ return verifyToken(
+  h.slice(7).trim(),
+  env.SESSION_SECRET,
+  env.ALLOWED_EMAIL
+ );
+}
+
+async function googleToken(code,env){
+ const body=new URLSearchParams();
+
+ body.set("code",code);
+ body.set("client_id",env.GOOGLE_CLIENT_ID);
+ body.set("client_secret",env.GOOGLE_CLIENT_SECRET);
+ body.set("redirect_uri",CALLBACK);
+ body.set("grant_type","authorization_code");
+
+ const r=await fetch(
+  "https://oauth2.googleapis.com/token",
+  {
+   method:"POST",
+   headers:{
+    "Content-Type":
+     "application/x-www-form-urlencoded"
+   },
+   body
+  }
+ );
+
+ if(!r.ok)throw new Error("Google token request failed");
+
+ return r.json();
+}
+
+async function googleUser(access){
+ const r=await fetch(
+  "https://www.googleapis.com/oauth2/v3/userinfo",
+  {
+   headers:{
+    Authorization:"Bearer "+access
+   }
+  }
+ );
+
+ if(!r.ok)throw new Error("Google account verification failed");
+
+ return r.json();
+}
+
+export default{
+
+ async fetch(request,env){
+
+  if(request.method==="OPTIONS"){
+   return new Response(null,{headers:CORS});
+  }
+
+  const url=new URL(request.url);
+
+  try{
+
+   /* HOME */
+
+   if(request.method==="GET"&&url.pathname==="/"){
+    return new Response("CreateLK 100 Day Prayer API");
+   }
+
+   /* GOOGLE LOGIN */
+
+   if(request.method==="GET"&&url.pathname==="/login"){
+
+    const state=randomString();
+
+    const google=
+     "https://accounts.google.com/o/oauth2/v2/auth"+
+     "?client_id="+encodeURIComponent(env.GOOGLE_CLIENT_ID)+
+     "&redirect_uri="+encodeURIComponent(CALLBACK)+
+     "&response_type=code"+
+     "&scope="+encodeURIComponent("openid email profile")+
+     "&state="+encodeURIComponent(state)+
+     "&access_type=online"+
+     "&prompt=select_account";
+
+    return new Response(null,{
+     status:302,
+     headers:{
+      Location:google,
+      "Set-Cookie":
+       "oauth_state="+state+
+       "; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600"
+     }
+    });
+   }
+
+   /* GOOGLE CALLBACK */
+
+   if(
+    request.method==="GET"&&
+    url.pathname==="/oauth/callback"
+   ){
+
+    const code=url.searchParams.get("code");
+    const state=url.searchParams.get("state");
+
+    const cookie=request.headers.get("Cookie")||"";
+    const match=cookie.match(
+     /(?:^|;\s*)oauth_state=([^;]+)/
+    );
+
+    const savedState=match?match[1]:"";
+
+    if(!code||!state||state!==savedState){
+     return new Response(
+      "Invalid Google login request.",
+      {status:400}
+     );
+    }
+
+    const tokens=await googleToken(code,env);
+    const user=await googleUser(tokens.access_token);
+
+    const email=String(user.email||"")
+     .toLowerCase().trim();
+
+    const allowed=String(env.ALLOWED_EMAIL||"")
+     .toLowerCase().trim();
+
+    if(email!==allowed){
+     return new Response(
+      "Access denied. This Google account is not authorized.",
+      {status:403}
+     );
+    }
+
+    const session=await createToken(
+     email,
+     env.SESSION_SECRET
+    );
+
+    return new Response(null,{
+     status:302,
+     headers:{
+      Location:
+       APP_URL+"?session="+encodeURIComponent(session),
+      "Set-Cookie":
+       "oauth_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+     }
+    });
+   }
+
+   /* LOGIN CHECK */
+
+   if(request.method==="GET"&&url.pathname==="/me"){
+
+    if(!await authorized(request,env)){
+     return json({
+      success:false,
+      authenticated:false
+     },401);
+    }
+
+    return json({
+     success:true,
+     authenticated:true,
+     email:env.ALLOWED_EMAIL
+    });
+   }
+
+   /* ALL PRAYERS */
+
+   if(
+    request.method==="GET"&&
+    url.pathname==="/prayers"
+   ){
+
+    if(!await authorized(request,env)){
+     return json({success:false,error:"Unauthorized"},401);
+    }
+
+    const r=await env.DB.prepare(`
+     SELECT
+      p.*,
+      COALESCE(
+       (
+        SELECT pc.completed
+        FROM prayer_completions pc
+        WHERE pc.prayer_id=p.id
+        AND pc.completed_date=p.prayer_date
+        LIMIT 1
+       ),0
+      ) AS completed
+     FROM prayers p
+     ORDER BY p.prayer_date ASC
+    `).all();
+
+    return json({
+     success:true,
+     prayers:r.results||[]
+    });
+   }
+
+   /* ADD */
+
+   if(
+    request.method==="POST"&&
+    url.pathname==="/prayer"
+   ){
+
+    if(!await authorized(request,env)){
+     return json({success:false,error:"Unauthorized"},401);
+    }
+
+    const body=await request.json();
+
+    const date=String(body.prayer_date||"").trim();
+    const title=String(body.title||"").trim();
+    const content=String(body.content||"").trim();
+
+    if(!date||!title||!content){
+     return json({
+      success:false,
+      error:"Date, title and prayer are required"
+     },400);
+    }
+
+    const count=await env.DB.prepare(`
+     SELECT COUNT(*) AS total FROM prayers
+    `).first();
+
+    if(Number(count.total)>=100){
+     return json({
+      success:false,
+      error:"100 prayer days already reached"
+     },400);
+    }
+
+    try{
+
+     const r=await env.DB.prepare(`
+      INSERT INTO prayers
+      (prayer_date,title,content)
+      VALUES(?,?,?)
+     `).bind(date,title,content).run();
+
+     return json({
+      success:true,
+      id:r.meta.last_row_id
+     });
+
+    }catch{
+     return json({
+      success:false,
+      error:"A prayer already exists for this date"
+     },400);
+    }
+   }
+
+   /* EDIT */
+
+   if(
+    request.method==="PUT"&&
+    url.pathname.startsWith("/prayer/")
+   ){
+
+    if(!await authorized(request,env)){
+     return json({success:false,error:"Unauthorized"},401);
+    }
+
+    const id=Number(
+     url.pathname.split("/").pop()
+    );
+
+    const body=await request.json();
+
+    await env.DB.prepare(`
+     UPDATE prayers
+     SET
+      prayer_date=?,
+      title=?,
+      content=?,
+      updated_at=CURRENT_TIMESTAMP
+     WHERE id=?
+    `).bind(
+     String(body.prayer_date||"").trim(),
+     String(body.title||"").trim(),
+     String(body.content||"").trim(),
+     id
+    ).run();
+
+    return json({success:true});
+   }
+
+   /* DELETE */
+
+   if(
+    request.method==="DELETE"&&
+    url.pathname.startsWith("/prayer/")
+   ){
+
+    if(!await authorized(request,env)){
+     return json({success:false,error:"Unauthorized"},401);
+    }
+
+    const id=Number(
+     url.pathname.split("/").pop()
+    );
+
+    await env.DB.prepare(`
+     DELETE FROM prayer_completions
+     WHERE prayer_id=?
+    `).bind(id).run();
+
+    await env.DB.prepare(`
+     DELETE FROM prayers
+     WHERE id=?
+    `).bind(id).run();
+
+    return json({success:true});
+   }
+
+   /* DAY */
+
+   if(
+    request.method==="GET"&&
+    url.pathname==="/today"
+   ){
+
+    if(!await authorized(request,env)){
+     return json({success:false,error:"Unauthorized"},401);
+    }
+
+    const date=
+     url.searchParams.get("date")||
+     new Date().toISOString().slice(0,10);
+
+    const p=await env.DB.prepare(`
+     SELECT
+      p.*,
+      COALESCE(pc.completed,0) AS completed
+     FROM prayers p
+     LEFT JOIN prayer_completions pc
+      ON pc.prayer_id=p.id
+      AND pc.completed_date=?
+     WHERE p.prayer_date=?
+     LIMIT 1
+    `).bind(date,date).first();
+
+    return json({
+     success:true,
+     prayer:p||null,
+     date
+    });
+   }
+
+   /* COMPLETE */
+
+   if(
+    request.method==="POST"&&
+    url.pathname==="/complete"
+   ){
+
+    if(!await authorized(request,env)){
+     return json({success:false,error:"Unauthorized"},401);
+    }
+
+    const body=await request.json();
+
+    const prayerId=Number(body.prayer_id);
+    const date=String(body.date||"").trim();
+    const completed=body.completed?1:0;
+
+    await env.DB.prepare(`
+     INSERT INTO prayer_completions
+     (prayer_id,completed_date,completed)
+     VALUES(?,?,?)
+     ON CONFLICT(prayer_id,completed_date)
+     DO UPDATE SET completed=excluded.completed
+    `).bind(
+     prayerId,
+     date,
+     completed
+    ).run();
+
+    return json({
+     success:true,
+     completed:!!completed
+    });
+   }
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
+
+  }catch(e){
+
+   return json({
+    success:false,
+    error:e.message
+   },500);
+  }
+ }
+};
