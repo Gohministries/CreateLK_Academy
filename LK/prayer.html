@@ -156,26 +156,25 @@ Cancel
 const API="https://prayer.createlk.workers.dev";
 const MAX=100;
 
-/* Login persists after browser/app restart */
 let token=localStorage.getItem("prayer_token")||"";
 
 let prayers=[];
 let selectedPoint=1;
 let todayPoint=1;
 let editId=null;
-
 let currentSriLankaDate="";
 
 const $=id=>document.getElementById(id);
 
 
-/* --------------------------------
+/* =========================
    SRI LANKA DATE
--------------------------------- */
+========================= */
 
 function sriLankaDate(){
 
-const parts=new Intl.DateTimeFormat(
+const parts=
+new Intl.DateTimeFormat(
 "en-CA",
 {
 timeZone:"Asia/Colombo",
@@ -195,10 +194,6 @@ get("day");
 }
 
 
-/* --------------------------------
-   DATE
--------------------------------- */
-
 function today(){
 
 return sriLankaDate();
@@ -206,22 +201,25 @@ return sriLankaDate();
 }
 
 
-/* --------------------------------
-   PRAYER POINT
--------------------------------- */
+/* =========================
+   POINT NUMBER
+========================= */
 
 function pointFor(date){
 
-const d=new Date(date+"T12:00:00");
+const d=
+new Date(date+"T12:00:00");
 
-const start=new Date(
+const start=
+new Date(
 d.getFullYear(),
 0,
 1,
 12
 );
 
-const day=Math.floor(
+const day=
+Math.floor(
 (d-start)/86400000
 )+1;
 
@@ -230,9 +228,9 @@ return((day-1)%100)+1;
 }
 
 
-/* --------------------------------
+/* =========================
    GET POINT
--------------------------------- */
+========================= */
 
 function getPoint(p){
 
@@ -254,14 +252,28 @@ p.day!=null &&
 )
 return Number(p.day);
 
+/*
+Old Worker stores prayer_date.
+Convert its date into the
+corresponding 1-100 point.
+*/
+
+if(p.prayer_date){
+
+return pointFor(
+String(p.prayer_date).slice(0,10)
+);
+
+}
+
 return null;
 
 }
 
 
-/* --------------------------------
+/* =========================
    LOGIN
--------------------------------- */
+========================= */
 
 function login(){
 
@@ -270,9 +282,9 @@ location.href=API+"/login";
 }
 
 
-/* --------------------------------
+/* =========================
    API
--------------------------------- */
+========================= */
 
 async function api(path,opt={}){
 
@@ -282,7 +294,8 @@ Authorization:"Bearer "+token,
 "Content-Type":"application/json"
 };
 
-const r=await fetch(API+path,opt);
+const r=
+await fetch(API+path,opt);
 
 let d={};
 
@@ -309,9 +322,9 @@ return d;
 }
 
 
-/* --------------------------------
+/* =========================
    START
--------------------------------- */
+========================= */
 
 async function start(){
 
@@ -319,7 +332,8 @@ if(!token)return;
 
 try{
 
-const me=await api("/me");
+const me=
+await api("/me");
 
 $("login").classList.add("hidden");
 
@@ -344,9 +358,9 @@ safe(e.message)+
 }
 
 
-/* --------------------------------
+/* =========================
    SELECTOR
--------------------------------- */
+========================= */
 
 function createSelector(){
 
@@ -369,9 +383,9 @@ Prayer Point ${n}
 }
 
 
-/* --------------------------------
-   LOAD
--------------------------------- */
+/* =========================
+   LOAD PRAYERS
+========================= */
 
 async function load(){
 
@@ -383,7 +397,8 @@ await api(
 "/prayers?year="+year
 );
 
-prayers=data.prayers||[];
+prayers=
+data.prayers||[];
 
 progress();
 
@@ -406,18 +421,33 @@ today();
 }
 
 
-/* --------------------------------
+/* =========================
    PROGRESS
--------------------------------- */
+========================= */
 
 function progress(){
 
-const done=
-prayers.filter(
-p=>Number(p.completed)===1
-).length;
+const uniquePoints=new Set();
 
-const pct=Math.round(done);
+prayers.forEach(p=>{
+
+if(Number(p.completed)!==1)return;
+
+const point=getPoint(p);
+
+if(point>=1&&point<=100){
+
+uniquePoints.add(point);
+
+}
+
+});
+
+const done=
+uniquePoints.size;
+
+const pct=
+Math.round(done);
 
 $("count").textContent=
 done;
@@ -438,16 +468,15 @@ $("percent").textContent=
 }
 
 
-/* --------------------------------
+/* =========================
    DISPLAY DATE
--------------------------------- */
+========================= */
 
 function showDate(){
 
-const date=today();
-
-const d=new Date(
-date+"T12:00:00"
+const d=
+new Date(
+today()+"T12:00:00"
 );
 
 const days=[
@@ -488,9 +517,9 @@ d.getFullYear();
 }
 
 
-/* --------------------------------
+/* =========================
    SHOW POINT
--------------------------------- */
+========================= */
 
 async function showPoint(point){
 
@@ -509,10 +538,16 @@ $("point").textContent=
 " of 100";
 
 
-let p=prayers.find(
+let p=
+prayers.find(
 x=>getPoint(x)===point
 );
 
+
+/*
+Try today's date through
+the existing Worker.
+*/
 
 if(!p){
 
@@ -526,8 +561,11 @@ encodeURIComponent(today())+
 point
 );
 
-if(data.prayer)
+if(data.prayer){
+
 p=data.prayer;
+
+}
 
 }catch{}
 
@@ -552,7 +590,8 @@ $("status").className=
 $("status").textContent=
 "⏳ Not completed";
 
-$("complete").disabled=true;
+$("complete").disabled=
+true;
 
 return;
 
@@ -569,7 +608,8 @@ ${safe(p.content)}
 
 `;
 
-$("complete").disabled=false;
+$("complete").disabled=
+false;
 
 
 if(Number(p.completed)===1){
@@ -599,9 +639,9 @@ $("complete").textContent=
 }
 
 
-/* --------------------------------
+/* =========================
    SELECT POINT
--------------------------------- */
+========================= */
 
 async function selectPoint(point){
 
@@ -617,13 +657,14 @@ behavior:"smooth"
 }
 
 
-/* --------------------------------
-   EDIT
--------------------------------- */
+/* =========================
+   EDIT SELECTED
+========================= */
 
 function editSelected(){
 
-const p=prayers.find(
+const p=
+prayers.find(
 x=>getPoint(x)===selectedPoint
 );
 
@@ -643,17 +684,24 @@ edit(p.id);
 }
 
 
-/* --------------------------------
+/* =========================
    COMPLETE
--------------------------------- */
+========================= */
 
 async function markSelected(){
 
-const p=prayers.find(
+const p=
+prayers.find(
 x=>getPoint(x)===selectedPoint
 );
 
 if(!p)return;
+
+
+/*
+Existing Worker expects
+prayer_id and completed_date.
+*/
 
 const completed=
 $("complete").textContent
@@ -671,9 +719,7 @@ body:JSON.stringify({
 
 prayer_id:p.id,
 
-year:Number(today().slice(0,4)),
-
-prayer_point:selectedPoint,
+completed_date:today(),
 
 completed
 
@@ -706,13 +752,13 @@ e.message,
 }
 
 
-/* --------------------------------
+/* =========================
    SAVE
--------------------------------- */
+========================= */
 
 async function save(){
 
-const existingPoint=
+const point=
 editId
 ?getPoint(
 prayers.find(
@@ -720,9 +766,6 @@ p=>Number(p.id)===editId
 )
 )||selectedPoint
 :selectedPoint;
-
-const point=
-existingPoint;
 
 const title=
 $("title").value.trim();
@@ -753,7 +796,8 @@ p=>getPoint(p)===point
 );
 
 
-const btn=$("save");
+const btn=
+$("save");
 
 btn.disabled=true;
 
@@ -763,15 +807,20 @@ btn.textContent=
 
 try{
 
+/*
+Existing Worker requires:
+prayer_date
+title
+content
+*/
+
 const body={
 
-year:Number(today().slice(0,4)),
+prayer_date:today(),
 
-prayer_point:point,
+title:title,
 
-title,
-
-content
+content:content
 
 };
 
@@ -845,13 +894,14 @@ btn.textContent=
 }
 
 
-/* --------------------------------
-   EDIT FORM
--------------------------------- */
+/* =========================
+   EDIT
+========================= */
 
 function edit(id){
 
-const p=prayers.find(
+const p=
+prayers.find(
 x=>Number(x.id)===Number(id)
 );
 
@@ -864,7 +914,7 @@ editId=
 Number(id);
 
 selectedPoint=
-point||1;
+point||todayPoint||1;
 
 $("pointSelect").value=
 selectedPoint;
@@ -891,9 +941,9 @@ behavior:"smooth"
 }
 
 
-/* --------------------------------
+/* =========================
    CANCEL
--------------------------------- */
+========================= */
 
 function cancelEdit(){
 
@@ -913,9 +963,9 @@ $("formTitle").textContent=
 }
 
 
-/* --------------------------------
+/* =========================
    LOGOUT
--------------------------------- */
+========================= */
 
 function logout(){
 
@@ -935,9 +985,9 @@ location.pathname;
 }
 
 
-/* --------------------------------
+/* =========================
    MESSAGE
--------------------------------- */
+========================= */
 
 function message(id,text,type){
 
@@ -949,9 +999,9 @@ ${safe(text)}
 }
 
 
-/* --------------------------------
+/* =========================
    SAFE HTML
--------------------------------- */
+========================= */
 
 function safe(v){
 
@@ -965,9 +1015,9 @@ return String(v??"")
 }
 
 
-/* --------------------------------
+/* =========================
    OAUTH CALLBACK
--------------------------------- */
+========================= */
 
 const session=
 new URLSearchParams(
@@ -992,10 +1042,10 @@ location.pathname
 }
 
 
-/* --------------------------------
-   AUTOMATIC 12:00 AM RESET
-   SRI LANKA TIME
--------------------------------- */
+/* =========================
+   AUTOMATIC DAILY RESET
+   12:00 AM SRI LANKA TIME
+========================= */
 
 function checkDailyReset(){
 
@@ -1007,12 +1057,6 @@ currentSriLankaDate &&
 now!==currentSriLankaDate
 ){
 
-/*
- New Sri Lankan day detected.
- Automatically reload today's
- Prayer Point and progress.
-*/
-
 load().catch(()=>{});
 
 }
@@ -1021,9 +1065,10 @@ load().catch(()=>{});
 
 
 /*
- Check every 30 seconds.
- The browser does not need to be
- open exactly at 12:00 AM.
+Check every 30 seconds.
+This means the page automatically
+changes to the new day's point
+after midnight Sri Lanka time.
 */
 
 setInterval(
@@ -1032,9 +1077,9 @@ checkDailyReset,
 );
 
 
-/* --------------------------------
-   START APP
--------------------------------- */
+/* =========================
+   START
+========================= */
 
 start();
 
