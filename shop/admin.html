@@ -196,11 +196,18 @@ button:hover{opacity:.9}
   font-size:14px;
   margin-top:10px;
 }
-.preview{
-  max-width:160px;
-  max-height:120px;
+.image-previews{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:8px;
+  margin-top:5px;
+}
+.image-previews img{
+  width:100%;
+  height:90px;
+  object-fit:cover;
   border-radius:8px;
-  display:none;
+  border:1px solid #ddd;
 }
 .profit-box{
   background:#f8f9fc;
@@ -220,24 +227,15 @@ button:hover{opacity:.9}
   margin-top:-5px;
 }
 @media(max-width:800px){
-  .products{
-    grid-template-columns:repeat(2,1fr);
-  }
+  .products{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:600px){
-  .form-grid,.order-grid{
-    grid-template-columns:1fr;
-  }
-  .products{
-    grid-template-columns:1fr;
-  }
+  .form-grid,.order-grid{grid-template-columns:1fr}
+  .products{grid-template-columns:1fr}
   .full{grid-column:auto}
-  .status-actions{
-    flex-direction:column;
-  }
-  .status-actions button{
-    width:100%;
-  }
+  .status-actions{flex-direction:column}
+  .status-actions button{width:100%}
+  .image-previews{grid-template-columns:repeat(3,1fr)}
 }
 </style>
 </head>
@@ -263,7 +261,6 @@ button:hover{opacity:.9}
 <div id="loginError" class="error"></div>
 
 </div>
-
 
 <div id="adminPanel" class="hidden">
 
@@ -372,16 +369,25 @@ Sale Price is calculated automatically.
   placeholder="0">
 </div>
 
-<div>
-<label>Product Image</label>
+<div class="full">
+
+<label>Product Images</label>
+
 <input
   type="file"
   id="productImage"
-  accept="image/jpeg,image/png,image/webp">
+  accept="image/jpeg,image/png,image/webp"
+  multiple>
+
+<div style="font-size:12px;color:#777;margin-top:-5px;margin-bottom:8px">
+Select multiple photos. Maximum 5 photos.
 </div>
 
-<div class="full">
-<img id="preview" class="preview">
+<div
+  id="imagePreviews"
+  class="image-previews">
+</div>
+
 </div>
 
 </div>
@@ -483,8 +489,6 @@ loadProducts();
 }
 
 
-/* SHOW ADMIN */
-
 function showAdmin(){
 
 document
@@ -497,8 +501,6 @@ document
 
 }
 
-
-/* LOGOUT */
 
 function logout(){
 
@@ -520,8 +522,6 @@ document
 
 }
 
-
-/* RESTORE LOGIN */
 
 function restoreLogin(){
 
@@ -800,7 +800,7 @@ Delete
 }
 
 
-/* AUTO PROFIT CALCULATION */
+/* PROFIT */
 
 function calculateSalePrice(){
 
@@ -834,11 +834,7 @@ return;
 if(
 !Number.isFinite(percent) ||
 percent<0
-){
-
-return;
-
-}
+)return;
 
 const sale=
 price+
@@ -852,17 +848,12 @@ Math.round(sale);
 }
 
 
-/* PRICE CHANGE */
-
 document
 .getElementById("productPrice")
 .addEventListener(
 "input",
 calculateSalePrice
 );
-
-
-/* PROFIT CHANGE */
 
 document
 .getElementById("profitPercent")
@@ -872,7 +863,51 @@ calculateSalePrice
 );
 
 
-/* UPLOAD IMAGE */
+/* IMAGE PREVIEW */
+
+document
+.getElementById("productImage")
+.addEventListener(
+"change",
+function(){
+
+const box=
+document.getElementById(
+"imagePreviews"
+);
+
+box.innerHTML="";
+
+const files=
+Array.from(this.files||[])
+.slice(0,5);
+
+files.forEach((file,index)=>{
+
+if(![
+"image/jpeg",
+"image/png",
+"image/webp"
+].includes(file.type))return;
+
+const img=
+document.createElement("img");
+
+img.src=
+URL.createObjectURL(file);
+
+img.alt=
+"Product photo "+(index+1);
+
+box.appendChild(img);
+
+});
+
+}
+);
+
+
+/* UPLOAD */
 
 async function uploadImage(file){
 
@@ -1069,8 +1104,7 @@ description:description,
 
 price:Number(price),
 
-sale_price:
-Number(salePrice),
+sale_price:Number(salePrice),
 
 stock:Number(stock),
 
@@ -1093,14 +1127,11 @@ method:id
 :"POST",
 
 headers:{
-"Content-Type":
-"application/json",
-"X-Admin-Key":
-ADMIN_KEY
+"Content-Type":"application/json",
+"X-Admin-Key":ADMIN_KEY
 },
 
-body:
-JSON.stringify(body)
+body:JSON.stringify(body)
 
 }
 
@@ -1195,6 +1226,10 @@ document.getElementById(
 ).value="";
 
 document.getElementById(
+"imagePreviews"
+).innerHTML="";
+
+document.getElementById(
 "productFormTitle"
 ).textContent=
 "Edit Product";
@@ -1227,8 +1262,7 @@ API+"/api/products/"+id,
 {
 method:"DELETE",
 headers:{
-"X-Admin-Key":
-ADMIN_KEY
+"X-Admin-Key":ADMIN_KEY
 }
 }
 );
@@ -1297,13 +1331,13 @@ document.getElementById(
 ).value="";
 
 document.getElementById(
+"imagePreviews"
+).innerHTML="";
+
+document.getElementById(
 "productFormTitle"
 ).textContent=
 "Add Product";
-
-document.getElementById(
-"preview"
-).style.display="none";
 
 }
 
@@ -1349,8 +1383,7 @@ await fetch(
 API+"/api/admin/orders",
 {
 headers:{
-"X-Admin-Key":
-ADMIN_KEY
+"X-Admin-Key":ADMIN_KEY
 }
 }
 );
@@ -1428,81 +1461,51 @@ ${escapeHtml(o.status)}
 
 </div>
 
-
 <div class="order-grid">
 
 <div class="field">
 <strong>CUSTOMER NAME</strong>
-<span>
-${escapeHtml(
-o.customer_name||"-"
-)}
-</span>
+<span>${escapeHtml(o.customer_name||"-")}</span>
 </div>
 
 <div class="field">
 <strong>MOBILE 1</strong>
-<span>
-${escapeHtml(
-o.mobile_1||"-"
-)}
-</span>
+<span>${escapeHtml(o.mobile_1||"-")}</span>
 </div>
 
 <div class="field">
 <strong>MOBILE 2</strong>
-<span>
-${escapeHtml(
-o.mobile_2||"-"
-)}
-</span>
+<span>${escapeHtml(o.mobile_2||"-")}</span>
 </div>
 
 <div class="field">
 <strong>CITY</strong>
-<span>
-${escapeHtml(
-o.city||"-"
-)}
-</span>
+<span>${escapeHtml(o.city||"-")}</span>
 </div>
 
 <div class="field">
 <strong>ADDRESS</strong>
-<span>
-${escapeHtml(
-o.address||"-"
-)}
-</span>
+<span>${escapeHtml(o.address||"-")}</span>
 </div>
 
 <div class="field">
 <strong>REMARKS</strong>
-<span>
-${escapeHtml(
-o.remarks||"-"
-)}
-</span>
+<span>${escapeHtml(o.remarks||"-")}</span>
 </div>
 
 </div>
-
 
 <div class="total">
 Total: LKR ${money(o.total)}
 </div>
 
-
 <div class="status-actions">
 
 <select id="status-${o.id}">
-
 ${statusOptions(o.status)}
-
 </select>
 
-<button
-onclick="updateStatus(${o.id})">
+<button onclick="updateStatus(${o.id})">
 Update Status
 </button>
 
@@ -1520,14 +1523,12 @@ Update Status
 function statusOptions(current){
 
 return [
-
 "PENDING",
 "CONFIRMED",
 "PROCESSING",
 "SHIPPED",
 "DELIVERED",
 "CANCELLED"
-
 ].map(s=>`
 
 <option
@@ -1557,19 +1558,13 @@ await fetch(
 API+"/api/admin/orders/"+id,
 {
 method:"PUT",
-
 headers:{
-"Content-Type":
-"application/json",
-"X-Admin-Key":
-ADMIN_KEY
+"Content-Type":"application/json",
+"X-Admin-Key":ADMIN_KEY
 },
-
-body:
-JSON.stringify({
+body:JSON.stringify({
 status:select.value
 })
-
 }
 );
 
@@ -1639,40 +1634,6 @@ return String(v??"")
 
 }
 
-
-/* IMAGE PREVIEW */
-
-document
-.getElementById("productImage")
-.addEventListener(
-"change",
-function(){
-
-const file=this.files[0];
-
-const preview=
-document.getElementById(
-"preview"
-);
-
-if(!file){
-
-preview.style.display="none";
-
-return;
-
-}
-
-preview.src=
-URL.createObjectURL(file);
-
-preview.style.display="block";
-
-}
-);
-
-
-/* RESTORE SESSION */
 
 restoreLogin();
 
