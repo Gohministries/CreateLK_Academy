@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>100 Prayer Points</title>
 <meta name="theme-color" content="#1e3a8a">
+
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f1f5f9;color:#1e293b;font-family:Arial,sans-serif}
@@ -79,6 +80,7 @@ button:disabled{opacity:.5}
 
 </div>
 
+
 <div class="card">
 
 <div class="today">
@@ -89,7 +91,9 @@ button:disabled{opacity:.5}
 
 <div class="selector">
 <label for="pointSelect">🙏 Select Prayer Point</label>
-<select id="pointSelect" onchange="selectPoint(this.value)"></select>
+
+<select id="pointSelect" onchange="selectPoint(this.value)">
+</select>
 </div>
 
 <div id="point" class="point">
@@ -121,6 +125,7 @@ Prayer Point 1 of 100
 
 </div>
 
+
 <div class="card">
 
 <h3 id="formTitle">➕ Add Prayer Point</h3>
@@ -145,12 +150,13 @@ Cancel
 
 </main>
 
+
 <script>
 
 const API="https://prayer.createlk.workers.dev";
 const MAX=100;
 
-/* KEEP LOGIN */
+/* Login persists after browser/app restart */
 let token=localStorage.getItem("prayer_token")||"";
 
 let prayers=[];
@@ -158,24 +164,61 @@ let selectedPoint=1;
 let todayPoint=1;
 let editId=null;
 
+let currentSriLankaDate="";
+
 const $=id=>document.getElementById(id);
+
+
+/* --------------------------------
+   SRI LANKA DATE
+-------------------------------- */
+
+function sriLankaDate(){
+
+const parts=new Intl.DateTimeFormat(
+"en-CA",
+{
+timeZone:"Asia/Colombo",
+year:"numeric",
+month:"2-digit",
+day:"2-digit"
+}
+).formatToParts(new Date());
+
+const get=type=>
+parts.find(x=>x.type===type)?.value;
+
+return get("year")+"-"+
+get("month")+"-"+
+get("day");
+
+}
+
+
+/* --------------------------------
+   DATE
+-------------------------------- */
 
 function today(){
 
-const d=new Date();
-
-return d.getFullYear()+"-"+
-String(d.getMonth()+1).padStart(2,"0")+"-"+
-String(d.getDate()).padStart(2,"0");
+return sriLankaDate();
 
 }
+
+
+/* --------------------------------
+   PRAYER POINT
+-------------------------------- */
 
 function pointFor(date){
 
 const d=new Date(date+"T12:00:00");
 
 const start=new Date(
-d.getFullYear(),0,1,12
+d.getFullYear(),
+0,
+1,
+12
 );
 
 const day=Math.floor(
@@ -186,24 +229,50 @@ return((day-1)%100)+1;
 
 }
 
+
+/* --------------------------------
+   GET POINT
+-------------------------------- */
+
 function getPoint(p){
 
-if(p.prayer_point!=null&&!isNaN(Number(p.prayer_point)))
+if(
+p.prayer_point!=null &&
+!isNaN(Number(p.prayer_point))
+)
 return Number(p.prayer_point);
 
-if(p.point!=null&&!isNaN(Number(p.point)))
+if(
+p.point!=null &&
+!isNaN(Number(p.point))
+)
 return Number(p.point);
 
-if(p.day!=null&&!isNaN(Number(p.day)))
+if(
+p.day!=null &&
+!isNaN(Number(p.day))
+)
 return Number(p.day);
 
 return null;
 
 }
 
+
+/* --------------------------------
+   LOGIN
+-------------------------------- */
+
 function login(){
+
 location.href=API+"/login";
+
 }
+
+
+/* --------------------------------
+   API
+-------------------------------- */
 
 async function api(path,opt={}){
 
@@ -217,19 +286,32 @@ const r=await fetch(API+path,opt);
 
 let d={};
 
-try{d=await r.json()}catch{}
+try{
+d=await r.json();
+}catch{}
 
 if(!r.ok){
 
-if(r.status===401)logout();
+if(r.status===401){
 
-throw Error(d.error||"Request failed");
+logout();
+
+}
+
+throw Error(
+d.error||"Request failed"
+);
 
 }
 
 return d;
 
 }
+
+
+/* --------------------------------
+   START
+-------------------------------- */
 
 async function start(){
 
@@ -240,8 +322,11 @@ try{
 const me=await api("/me");
 
 $("login").classList.add("hidden");
+
 $("app").classList.remove("hidden");
-$("user").textContent=me.email||"";
+
+$("user").textContent=
+me.email||"";
 
 createSelector();
 
@@ -258,26 +343,43 @@ safe(e.message)+
 
 }
 
+
+/* --------------------------------
+   SELECTOR
+-------------------------------- */
+
 function createSelector(){
 
 $("pointSelect").innerHTML=
 Array.from(
 {length:MAX},
 (_,i)=>{
+
 const n=i+1;
-return`<option value="${n}">
+
+return`
+<option value="${n}">
 Prayer Point ${n}
-</option>`;
+</option>
+`;
+
 }
 ).join("");
 
 }
 
+
+/* --------------------------------
+   LOAD
+-------------------------------- */
+
 async function load(){
 
-const year=new Date().getFullYear();
+const year=
+Number(today().slice(0,4));
 
-const data=await api(
+const data=
+await api(
 "/prayers?year="+year
 );
 
@@ -285,55 +387,110 @@ prayers=data.prayers||[];
 
 progress();
 
-todayPoint=pointFor(today());
-selectedPoint=todayPoint;
+todayPoint=
+pointFor(today());
 
-$("pointSelect").value=todayPoint;
+selectedPoint=
+todayPoint;
+
+$("pointSelect").value=
+todayPoint;
 
 showDate();
 
 await showPoint(todayPoint);
 
+currentSriLankaDate=
+today();
+
 }
+
+
+/* --------------------------------
+   PROGRESS
+-------------------------------- */
 
 function progress(){
 
-const done=prayers.filter(
+const done=
+prayers.filter(
 p=>Number(p.completed)===1
 ).length;
 
 const pct=Math.round(done);
 
-$("count").textContent=done;
-$("percent").textContent=pct+"% Complete";
-$("bar").style.width=pct+"%";
+$("count").textContent=
+done;
 
-if(done===100)
-$("percent").textContent="🎉 100 / 100 Complete";
+$("percent").textContent=
+pct+"% Complete";
+
+$("bar").style.width=
+pct+"%";
+
+if(done===100){
+
+$("percent").textContent=
+"🎉 100 / 100 Complete";
 
 }
+
+}
+
+
+/* --------------------------------
+   DISPLAY DATE
+-------------------------------- */
 
 function showDate(){
 
-const d=new Date(today()+"T12:00:00");
+const date=today();
+
+const d=new Date(
+date+"T12:00:00"
+);
 
 const days=[
-"Sunday","Monday","Tuesday","Wednesday",
-"Thursday","Friday","Saturday"
+"Sunday",
+"Monday",
+"Tuesday",
+"Wednesday",
+"Thursday",
+"Friday",
+"Saturday"
 ];
 
 const months=[
-"January","February","March","April",
-"May","June","July","August",
-"September","October","November","December"
+"January",
+"February",
+"March",
+"April",
+"May",
+"June",
+"July",
+"August",
+"September",
+"October",
+"November",
+"December"
 ];
 
-$("weekday").textContent=days[d.getDay()];
-$("date").textContent=d.getDate();
+$("weekday").textContent=
+days[d.getDay()];
+
+$("date").textContent=
+d.getDate();
+
 $("month").textContent=
-months[d.getMonth()]+" "+d.getFullYear();
+months[d.getMonth()]+" "+
+d.getFullYear();
 
 }
+
+
+/* --------------------------------
+   SHOW POINT
+-------------------------------- */
 
 async function showPoint(point){
 
@@ -344,23 +501,29 @@ point=todayPoint;
 
 selectedPoint=point;
 
-$("pointSelect").value=point;
+$("pointSelect").value=
+point;
 
 $("point").textContent=
-"Prayer Point "+point+" of 100";
+"Prayer Point "+point+
+" of 100";
+
 
 let p=prayers.find(
 x=>getPoint(x)===point
 );
 
+
 if(!p){
 
 try{
 
-const data=await api(
+const data=
+await api(
 "/today?date="+
 encodeURIComponent(today())+
-"&prayer_point="+point
+"&prayer_point="+
+point
 );
 
 if(data.prayer)
@@ -370,47 +533,81 @@ p=data.prayer;
 
 }
 
+
 if(!p){
 
-$("prayer").innerHTML=
-`<h2>Prayer Point ${point}</h2>
+$("prayer").innerHTML=`
+
+<h2>Prayer Point ${point}</h2>
+
 <div class="content">
 No prayer has been added yet.
-</div>`;
+</div>
 
-$("status").className="status pending";
-$("status").textContent="⏳ Not completed";
+`;
+
+$("status").className=
+"status pending";
+
+$("status").textContent=
+"⏳ Not completed";
+
 $("complete").disabled=true;
 
 return;
 
 }
 
-$("prayer").innerHTML=
-`<h2>${safe(p.title)}</h2>
-<div class="content">${safe(p.content)}</div>`;
+
+$("prayer").innerHTML=`
+
+<h2>${safe(p.title)}</h2>
+
+<div class="content">
+${safe(p.content)}
+</div>
+
+`;
 
 $("complete").disabled=false;
 
+
 if(Number(p.completed)===1){
 
-$("status").className="status done";
-$("status").textContent="✅ Completed";
-$("complete").textContent="↩️ Mark as Not Completed";
+$("status").className=
+"status done";
+
+$("status").textContent=
+"✅ Completed";
+
+$("complete").textContent=
+"↩️ Mark as Not Completed";
 
 }else{
 
-$("status").className="status pending";
-$("status").textContent="⏳ Not completed";
-$("complete").textContent="✅ Mark as Completed";
+$("status").className=
+"status pending";
+
+$("status").textContent=
+"⏳ Not completed";
+
+$("complete").textContent=
+"✅ Mark as Completed";
 
 }
 
 }
+
+
+/* --------------------------------
+   SELECT POINT
+-------------------------------- */
 
 async function selectPoint(point){
 
-await showPoint(Number(point));
+await showPoint(
+Number(point)
+);
 
 window.scrollTo({
 top:0,
@@ -418,6 +615,11 @@ behavior:"smooth"
 });
 
 }
+
+
+/* --------------------------------
+   EDIT
+-------------------------------- */
 
 function editSelected(){
 
@@ -428,7 +630,9 @@ x=>getPoint(x)===selectedPoint
 if(!p){
 
 $("viewMsg").innerHTML=
-'<div class="msg err">Prayer not found.</div>';
+'<div class="msg err">'+
+"Prayer not found."+
+'</div>';
 
 return;
 
@@ -437,6 +641,11 @@ return;
 edit(p.id);
 
 }
+
+
+/* --------------------------------
+   COMPLETE
+-------------------------------- */
 
 async function markSelected(){
 
@@ -447,7 +656,8 @@ x=>getPoint(x)===selectedPoint
 if(!p)return;
 
 const completed=
-$("complete").textContent.includes("Not Completed")
+$("complete").textContent
+.includes("Not Completed")
 ?0:1;
 
 try{
@@ -456,46 +666,69 @@ await api(
 "/complete",
 {
 method:"POST",
+
 body:JSON.stringify({
 
 prayer_id:p.id,
-year:new Date().getFullYear(),
+
+year:Number(today().slice(0,4)),
+
 prayer_point:selectedPoint,
+
 completed
 
 })
+
 }
 );
 
-const keep=selectedPoint;
+const keep=
+selectedPoint;
 
 await load();
 
-if(keep!==todayPoint)
+if(keep!==todayPoint){
+
 await showPoint(keep);
+
+}
 
 }catch(e){
 
-message("viewMsg",e.message,"err");
+message(
+"viewMsg",
+e.message,
+"err"
+);
 
 }
 
 }
+
+
+/* --------------------------------
+   SAVE
+-------------------------------- */
 
 async function save(){
 
-const point=
+const existingPoint=
 editId
-?
-getPoint(
+?getPoint(
 prayers.find(
 p=>Number(p.id)===editId
 )
 )||selectedPoint
 :selectedPoint;
 
-const title=$("title").value.trim();
-const content=$("content").value.trim();
+const point=
+existingPoint;
+
+const title=
+$("title").value.trim();
+
+const content=
+$("content").value.trim();
 
 if(!title||!content){
 
@@ -509,69 +742,112 @@ return;
 
 }
 
+
 const existing=
 editId
-?
-prayers.find(
+?prayers.find(
 p=>Number(p.id)===editId
 )
-:
-prayers.find(
+:prayers.find(
 p=>getPoint(p)===point
 );
+
 
 const btn=$("save");
 
 btn.disabled=true;
-btn.textContent="Saving...";
+
+btn.textContent=
+"Saving...";
+
 
 try{
 
 const body={
-year:new Date().getFullYear(),
+
+year:Number(today().slice(0,4)),
+
 prayer_point:point,
+
 title,
+
 content
+
 };
 
-const result=await api(
+
+const result=
+await api(
 existing
 ?"/prayer/"+existing.id
 :"/prayer",
 {
-method:existing?"PUT":"POST",
+
+method:existing
+?"PUT"
+:"POST",
+
 body:JSON.stringify(body)
+
 }
 );
 
+
 if(!result.success)
-throw Error(result.error||"Save failed");
+throw Error(
+result.error||"Save failed"
+);
+
 
 editId=null;
 
 $("title").value="";
+
 $("content").value="";
 
-$("cancel").classList.add("hidden");
-$("formTitle").textContent="➕ Add Prayer Point";
+$("cancel").classList.add(
+"hidden"
+);
 
-message("msg","✅ Saved to Cloudflare.","ok");
+$("formTitle").textContent=
+"➕ Add Prayer Point";
+
+
+message(
+"msg",
+"✅ Saved to Cloudflare.",
+"ok"
+);
+
 
 await load();
+
 await showPoint(point);
+
 
 }catch(e){
 
-message("msg","❌ "+e.message,"err");
+message(
+"msg",
+"❌ "+e.message,
+"err"
+);
 
 }finally{
 
 btn.disabled=false;
-btn.textContent="💾 Save Prayer Point";
+
+btn.textContent=
+"💾 Save Prayer Point";
 
 }
 
 }
+
+
+/* --------------------------------
+   EDIT FORM
+-------------------------------- */
 
 function edit(id){
 
@@ -581,20 +857,31 @@ x=>Number(x.id)===Number(id)
 
 if(!p)return;
 
-const point=getPoint(p);
+const point=
+getPoint(p);
 
-editId=Number(id);
-selectedPoint=point||1;
+editId=
+Number(id);
 
-$("pointSelect").value=selectedPoint;
+selectedPoint=
+point||1;
 
-$("title").value=p.title||"";
-$("content").value=p.content||"";
+$("pointSelect").value=
+selectedPoint;
+
+$("title").value=
+p.title||"";
+
+$("content").value=
+p.content||"";
 
 $("formTitle").textContent=
-"✏️ Edit Prayer Point "+selectedPoint;
+"✏️ Edit Prayer Point "+
+selectedPoint;
 
-$("cancel").classList.remove("hidden");
+$("cancel").classList.remove(
+"hidden"
+);
 
 window.scrollTo({
 top:document.body.scrollHeight,
@@ -603,29 +890,54 @@ behavior:"smooth"
 
 }
 
+
+/* --------------------------------
+   CANCEL
+-------------------------------- */
+
 function cancelEdit(){
 
 editId=null;
 
 $("title").value="";
+
 $("content").value="";
 
-$("cancel").classList.add("hidden");
+$("cancel").classList.add(
+"hidden"
+);
 
 $("formTitle").textContent=
 "➕ Add Prayer Point";
 
 }
 
+
+/* --------------------------------
+   LOGOUT
+-------------------------------- */
+
 function logout(){
 
 token="";
 
-localStorage.removeItem("prayer_token");
+localStorage.removeItem(
+"prayer_token"
+);
 
-location.href=location.pathname;
+sessionStorage.removeItem(
+"prayer_token"
+);
+
+location.href=
+location.pathname;
 
 }
+
+
+/* --------------------------------
+   MESSAGE
+-------------------------------- */
 
 function message(id,text,type){
 
@@ -635,6 +947,11 @@ ${safe(text)}
 </div>`;
 
 }
+
+
+/* --------------------------------
+   SAFE HTML
+-------------------------------- */
 
 function safe(v){
 
@@ -646,6 +963,11 @@ return String(v??"")
 .replace(/'/g,"&#039;");
 
 }
+
+
+/* --------------------------------
+   OAUTH CALLBACK
+-------------------------------- */
 
 const session=
 new URLSearchParams(
@@ -668,6 +990,51 @@ location.pathname
 );
 
 }
+
+
+/* --------------------------------
+   AUTOMATIC 12:00 AM RESET
+   SRI LANKA TIME
+-------------------------------- */
+
+function checkDailyReset(){
+
+const now=
+sriLankaDate();
+
+if(
+currentSriLankaDate &&
+now!==currentSriLankaDate
+){
+
+/*
+ New Sri Lankan day detected.
+ Automatically reload today's
+ Prayer Point and progress.
+*/
+
+load().catch(()=>{});
+
+}
+
+}
+
+
+/*
+ Check every 30 seconds.
+ The browser does not need to be
+ open exactly at 12:00 AM.
+*/
+
+setInterval(
+checkDailyReset,
+30000
+);
+
+
+/* --------------------------------
+   START APP
+-------------------------------- */
 
 start();
 
