@@ -14,8 +14,8 @@ header h1{margin:0;font-size:23px}
 header p{margin:6px 0 0;font-size:13px}
 main{max-width:700px;margin:auto;padding:15px}
 .card{background:#fff;padding:16px;border-radius:12px;margin-bottom:14px;box-shadow:0 2px 10px #0001}
-input,textarea,button,select{width:100%;padding:11px;margin:5px 0;border-radius:8px;font:inherit}
-input,textarea,select{border:1px solid #cbd5e1;background:#fff}
+input,textarea,button{width:100%;padding:11px;margin:5px 0;border-radius:8px;font:inherit}
+input,textarea{border:1px solid #cbd5e1;background:#fff}
 textarea{min-height:150px;resize:vertical}
 button{border:0;font-weight:bold;cursor:pointer}
 button:disabled{opacity:.5}
@@ -45,7 +45,9 @@ button:disabled{opacity:.5}
 .itemStatus{font-size:13px;color:#64748b;margin:5px 0}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pointBtn{background:#f8fafc;color:#1e3a8a;text-align:left}
-@media(max-width:500px){.actions{grid-template-columns:1fr}}
+@media(max-width:500px){
+ .actions{grid-template-columns:1fr}
+}
 </style>
 </head>
 
@@ -61,13 +63,16 @@ button:disabled{opacity:.5}
 <div id="login" class="card">
 <h3>🔐 Private Prayer</h3>
 <p>Sign in with your authorized Google account.</p>
-<button class="google" onclick="login()">🔐 Sign in with Google</button>
+<button class="google" onclick="login()">
+🔐 Sign in with Google
+</button>
 <div id="loginMsg"></div>
 </div>
 
 <div id="app" class="hidden">
 
 <div class="card">
+
 <div class="progressText">
 <span id="count">0</span> / 100 Prayer Points
 </div>
@@ -76,12 +81,20 @@ button:disabled{opacity:.5}
 <div id="bar" class="progressBar"></div>
 </div>
 
-<div id="percent" class="percent">0% Complete</div>
-<div class="user" id="user"></div>
-
-<button class="gray" onclick="logout()">🔒 Sign Out</button>
+<div id="percent" class="percent">
+0% Complete
 </div>
 
+<div class="user" id="user"></div>
+
+<button class="gray" onclick="logout()">
+🔒 Sign Out
+</button>
+
+</div>
+
+
+<!-- TODAY / SELECTED PRAYER -->
 
 <div class="card">
 
@@ -101,7 +114,9 @@ Prayer Point 1 of 100
 
 <div id="prayer">
 <h2>Loading prayer...</h2>
-<div class="content">Please wait...</div>
+<div class="content">
+Please wait...
+</div>
 </div>
 
 <button id="complete"
@@ -114,22 +129,35 @@ disabled>
 </div>
 
 
+<!-- ADD / EDIT -->
+
 <div class="card">
 
-<h3 id="formTitle">➕ Add Prayer Point</h3>
+<h3 id="formTitle">
+➕ Add Prayer Point
+</h3>
 
-<select id="pointSelect"></select>
+<div class="point">
+Prayer Point <span id="formPoint">1</span>
+</div>
 
-<input id="title" placeholder="Prayer title">
+<input
+id="title"
+placeholder="Prayer title">
 
-<textarea id="content"
+<textarea
+id="content"
 placeholder="Write the full prayer..."></textarea>
 
-<button id="save" class="blue" onclick="save()">
+<button
+id="save"
+class="blue"
+onclick="save()">
 💾 Save Prayer Point
 </button>
 
-<button id="cancel"
+<button
+id="cancel"
 class="gray hidden"
 onclick="cancelEdit()">
 Cancel
@@ -140,11 +168,14 @@ Cancel
 </div>
 
 
+<!-- ALL PRAYERS -->
+
 <div class="card">
 
 <h3>📖 100 Prayer Points</h3>
 
-<input id="search"
+<input
+id="search"
 placeholder="Search prayer points..."
 oninput="render()">
 
@@ -153,6 +184,7 @@ oninput="render()">
 </div>
 
 </div>
+
 </main>
 
 
@@ -161,13 +193,19 @@ oninput="render()">
 const API="https://prayer.createlk.workers.dev";
 const MAX=100;
 
-let token=sessionStorage.getItem("prayer_token")||"";
+let token=
+ sessionStorage.getItem("prayer_token")||"";
+
 let prayers=[];
+
 let selectedPoint=1;
+
 let todayPoint=1;
+
 let editId=null;
 
-const $=id=>document.getElementById(id);
+const $=id=>
+ document.getElementById(id);
 
 
 /* TODAY */
@@ -194,41 +232,51 @@ function today(){
 
 function pointFor(date){
 
- const d=new Date(date+"T12:00:00");
+ const d=
+  new Date(date+"T12:00:00");
 
  const start=
-  new Date(d.getFullYear(),0,1,12);
+  new Date(
+   d.getFullYear(),
+   0,
+   1,
+   12
+  );
 
  const day=
-  Math.floor((d-start)/86400000)+1;
+  Math.floor(
+   (d-start)/86400000
+  )+1;
 
  return ((day-1)%100)+1;
 
 }
 
 
-/*
- IMPORTANT:
- Existing records may not have
- prayer_point yet.
-
- If missing, use their existing
- number/id as a fallback.
-*/
+/* GET POINT */
 
 function getPoint(p){
 
- if(p.prayer_point!=null &&
-    !isNaN(Number(p.prayer_point)))
-   return Number(p.prayer_point);
+ if(
+  p.prayer_point!=null &&
+  !isNaN(Number(p.prayer_point))
+ ){
+  return Number(p.prayer_point);
+ }
 
- if(p.point!=null &&
-    !isNaN(Number(p.point)))
-   return Number(p.point);
+ if(
+  p.point!=null &&
+  !isNaN(Number(p.point))
+ ){
+  return Number(p.point);
+ }
 
- if(p.day!=null &&
-    !isNaN(Number(p.day)))
-   return Number(p.day);
+ if(
+  p.day!=null &&
+  !isNaN(Number(p.day))
+ ){
+  return Number(p.day);
+ }
 
  return null;
 
@@ -238,7 +286,10 @@ function getPoint(p){
 /* LOGIN */
 
 function login(){
- location.href=API+"/login";
+
+ location.href=
+  API+"/login";
+
 }
 
 
@@ -248,11 +299,17 @@ async function api(path,opt={}){
 
  opt.headers={
   ...(opt.headers||{}),
-  Authorization:"Bearer "+token,
-  "Content-Type":"application/json"
+  Authorization:
+   "Bearer "+token,
+  "Content-Type":
+   "application/json"
  };
 
- const r=await fetch(API+path,opt);
+ const r=
+  await fetch(
+   API+path,
+   opt
+  );
 
  let d={};
 
@@ -266,7 +323,8 @@ async function api(path,opt={}){
    logout();
 
   throw Error(
-   d.error||"Request failed"
+   d.error||
+   "Request failed"
   );
 
  }
@@ -284,15 +342,17 @@ async function start(){
 
  try{
 
-  const me=await api("/me");
+  const me=
+   await api("/me");
 
-  $("login").classList.add("hidden");
-  $("app").classList.remove("hidden");
+  $("login")
+   .classList.add("hidden");
+
+  $("app")
+   .classList.remove("hidden");
 
   $("user").textContent=
    me.email||"";
-
-  setupPoints();
 
   await load();
 
@@ -304,22 +364,6 @@ async function start(){
    '</div>';
 
  }
-
-}
-
-
-/* SELECT OPTIONS */
-
-function setupPoints(){
-
- $("pointSelect").innerHTML=
-  Array.from(
-   {length:MAX},
-   (_,i)=>
-    `<option value="${i+1}">
-      Prayer Point ${i+1}
-    </option>`
-  ).join("");
 
 }
 
@@ -336,22 +380,29 @@ async function load(){
    "/prayers?year="+year
   );
 
- prayers=data.prayers||[];
+ prayers=
+  data.prayers||[];
 
  progress();
+
  render();
 
  /*
- IMPORTANT:
- Always reset the main display
- to today's point after loading.
+ Current calendar point
+ automatically displayed.
  */
+
  todayPoint=
   pointFor(today());
 
- selectedPoint=todayPoint;
+ selectedPoint=
+  todayPoint;
 
- await showPoint(todayPoint);
+ showDate();
+
+ await showPoint(
+  todayPoint
+ );
 
 }
 
@@ -366,18 +417,23 @@ function progress(){
   ).length;
 
  const pct=
-  Math.round(done/100*100);
+  Math.round(done);
 
- $("count").textContent=done;
+ $("count").textContent=
+  done;
+
  $("percent").textContent=
   pct+"% Complete";
 
  $("bar").style.width=
   pct+"%";
 
- if(done===100)
+ if(done===100){
+
   $("percent").textContent=
    "🎉 100 / 100 Complete";
+
+ }
 
 }
 
@@ -386,20 +442,37 @@ function progress(){
 
 function showDate(){
 
- const date=today();
- const d=new Date(date+"T12:00:00");
+ const date=
+  today();
+
+ const d=
+  new Date(
+   date+"T12:00:00"
+  );
 
  const days=[
-  "Sunday","Monday","Tuesday",
-  "Wednesday","Thursday",
-  "Friday","Saturday"
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday"
  ];
 
  const months=[
-  "January","February","March",
-  "April","May","June",
-  "July","August","September",
-  "October","November","December"
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
  ];
 
  $("weekday").textContent=
@@ -419,39 +492,38 @@ function showDate(){
 
 async function showPoint(point){
 
- point=Number(point);
+ point=
+  Number(point);
 
  if(!Number.isFinite(point))
   point=todayPoint;
 
- selectedPoint=point;
+ selectedPoint=
+  point;
 
- $("pointSelect").value=point;
+ $("formPoint").textContent=
+  point;
 
  $("point").textContent=
-  "Prayer Point "+point+" of 100";
-
- if(point===todayPoint)
-  showDate();
+  "Prayer Point "+
+  point+
+  " of 100";
 
 
  /*
- IMPORTANT:
- Find by prayer_point.
- Never use completed status
- to decide whether content
- should be displayed.
+ Find prayer by permanent
+ prayer point.
  */
 
  let p=
-  prayers.find(x=>
-   getPoint(x)===point
+  prayers.find(
+   x=>getPoint(x)===point
   );
 
 
  /*
- If local list does not contain
- it, ask Cloudflare directly.
+ Ask Cloudflare if not
+ found locally.
  */
 
  if(!p){
@@ -464,7 +536,8 @@ async function showPoint(point){
      encodeURIComponent(
       today()
      )+
-     "&prayer_point="+point
+     "&prayer_point="+
+     point
     );
 
    if(data.prayer)
@@ -489,14 +562,15 @@ async function showPoint(point){
   $("status").textContent=
    "⏳ Not completed";
 
-  $("complete").disabled=true;
+  $("complete").disabled=
+   true;
 
   return;
 
  }
 
 
- /* FULL CONTENT */
+ /* FULL PRAYER */
 
  $("prayer").innerHTML=
   `<h2>${safe(p.title)}</h2>
@@ -504,7 +578,8 @@ async function showPoint(point){
    ${safe(p.content)}
    </div>`;
 
- $("complete").disabled=false;
+ $("complete").disabled=
+  false;
 
 
  if(Number(p.completed)===1){
@@ -534,19 +609,13 @@ async function showPoint(point){
 }
 
 
-/* CLICK A PRAYER POINT */
+/* SELECT PRAYER */
 
 async function selectPoint(point){
 
- /*
- Clicking only changes the
- displayed prayer.
-
- It does NOT change today's
- point or the date.
- */
-
- await showPoint(Number(point));
+ await showPoint(
+  Number(point)
+ );
 
  window.scrollTo({
   top:0,
@@ -556,13 +625,13 @@ async function selectPoint(point){
 }
 
 
-/* MARK */
+/* MARK SELECTED */
 
 async function markSelected(){
 
  const p=
-  prayers.find(x=>
-   getPoint(x)===selectedPoint
+  prayers.find(
+   x=>getPoint(x)===selectedPoint
   );
 
  if(!p)return;
@@ -570,34 +639,47 @@ async function markSelected(){
  const completed=
   $("complete")
    .textContent
-   .includes("Not Completed")
-   ?0:1;
+   .includes(
+    "Not Completed"
+   )
+   ?0
+   :1;
 
  try{
 
-  await api("/complete",{
-   method:"POST",
-   body:JSON.stringify({
+  await api(
+   "/complete",
+   {
+    method:"POST",
+    body:JSON.stringify({
 
-    prayer_id:p.id,
+     prayer_id:p.id,
 
-    year:new Date().getFullYear(),
+     year:
+      new Date()
+       .getFullYear(),
 
-    prayer_point:selectedPoint,
+     prayer_point:
+      selectedPoint,
 
-    completed
+     completed
 
-   })
-  });
+    })
+   }
+  );
+
+  const keep=
+   selectedPoint;
 
   await load();
 
   /*
-   After reload, return to
-   the point the user selected.
+   Keep the selected prayer
+   after completion.
   */
 
-  await showPoint(selectedPoint);
+  if(keep!==todayPoint)
+   await showPoint(keep);
 
  }catch(e){
 
@@ -617,13 +699,26 @@ async function markSelected(){
 async function save(){
 
  const point=
-  Number($("pointSelect").value);
+  editId
+   ? (
+      getPoint(
+       prayers.find(
+        p=>Number(p.id)===editId
+       )
+      ) ||
+      selectedPoint
+     )
+   : selectedPoint;
 
  const title=
-  $("title").value.trim();
+  $("title")
+   .value
+   .trim();
 
  const content=
-  $("content").value.trim();
+  $("content")
+   .value
+   .trim();
 
  if(!title||!content){
 
@@ -646,45 +741,70 @@ async function save(){
       p=>getPoint(p)===point
      );
 
- const btn=$("save");
+ const btn=
+  $("save");
 
- btn.disabled=true;
- btn.textContent="Saving...";
+ btn.disabled=
+  true;
+
+ btn.textContent=
+  "Saving...";
 
  try{
 
   const body={
-   year:new Date().getFullYear(),
-   prayer_point:point,
+
+   year:
+    new Date()
+     .getFullYear(),
+
+   prayer_point:
+    point,
+
    title,
+
    content
+
   };
 
   const result=
    await api(
     existing
-     ?"/prayer/"+existing.id
-     :"/prayer",
+     ? "/prayer/"+existing.id
+     : "/prayer",
     {
-     method:existing?"PUT":"POST",
-     body:JSON.stringify(body)
+     method:
+      existing
+       ? "PUT"
+       : "POST",
+
+     body:
+      JSON.stringify(body)
     }
    );
 
   if(!result.success)
    throw Error(
-    result.error||"Save failed"
+    result.error||
+    "Save failed"
    );
 
   editId=null;
 
-  $("title").value="";
-  $("content").value="";
+  $("title").value=
+   "";
 
-  $("cancel").classList.add("hidden");
+  $("content").value=
+   "";
 
-  $("formTitle").textContent=
-   "➕ Add Prayer Point";
+  $("cancel")
+   .classList.add(
+    "hidden"
+   );
+
+  $("formTitle")
+   .textContent=
+    "➕ Add Prayer Point";
 
   message(
    "msg",
@@ -694,7 +814,9 @@ async function save(){
 
   await load();
 
-  await showPoint(point);
+  await showPoint(
+   point
+  );
 
  }catch(e){
 
@@ -706,7 +828,9 @@ async function save(){
 
  }finally{
 
-  btn.disabled=false;
+  btn.disabled=
+   false;
+
   btn.textContent=
    "💾 Save Prayer Point";
 
@@ -726,29 +850,40 @@ function edit(id){
 
  if(!p)return;
 
- const point=getPoint(p);
+ const point=
+  getPoint(p);
 
- editId=Number(id);
+ editId=
+  Number(id);
 
- $("pointSelect").value=
+ selectedPoint=
   point||1;
 
- $("title").value=
-  p.title||"";
+ $("formPoint")
+  .textContent=
+   selectedPoint;
 
- $("content").value=
-  p.content||"";
+ $("title")
+  .value=
+   p.title||"";
 
- $("formTitle").textContent=
-  "✏️ Edit Prayer Point "+
-  (point||"");
+ $("content")
+  .value=
+   p.content||"";
 
- $("cancel").classList.remove(
-  "hidden"
- );
+ $("formTitle")
+  .textContent=
+   "✏️ Edit Prayer Point "+
+   selectedPoint;
+
+ $("cancel")
+  .classList.remove(
+   "hidden"
+  );
 
  window.scrollTo({
-  top:document.body.scrollHeight,
+  top:
+   document.body.scrollHeight,
   behavior:"smooth"
  });
 
@@ -761,20 +896,29 @@ function cancelEdit(){
 
  editId=null;
 
- $("title").value="";
- $("content").value="";
+ $("title").value=
+  "";
 
- $("cancel").classList.add(
-  "hidden"
- );
+ $("content").value=
+  "";
 
- $("formTitle").textContent=
-  "➕ Add Prayer Point";
+ $("formPoint")
+  .textContent=
+   selectedPoint;
+
+ $("cancel")
+  .classList.add(
+   "hidden"
+  );
+
+ $("formTitle")
+  .textContent=
+   "➕ Add Prayer Point";
 
 }
 
 
-/* TOGGLE FROM LIST */
+/* TOGGLE */
 
 async function toggle(id,value){
 
@@ -787,26 +931,34 @@ async function toggle(id,value){
 
  try{
 
-  await api("/complete",{
-   method:"POST",
-   body:JSON.stringify({
+  await api(
+   "/complete",
+   {
+    method:"POST",
+    body:JSON.stringify({
 
-    prayer_id:p.id,
+     prayer_id:p.id,
 
-    year:new Date().getFullYear(),
+     year:
+      new Date()
+       .getFullYear(),
 
-    prayer_point:getPoint(p),
+     prayer_point:
+      getPoint(p),
 
-    completed:value
+     completed:value
 
-   })
-  });
+    })
+   }
+  );
+
+  const keep=
+   getPoint(p);
 
   await load();
 
-  await showPoint(
-   getPoint(p)
-  );
+  if(keep!==todayPoint)
+   await showPoint(keep);
 
  }catch(e){
 
@@ -833,7 +985,9 @@ async function del(id){
 
   await api(
    "/prayer/"+id,
-   {method:"DELETE"}
+   {
+    method:"DELETE"
+   }
   );
 
   await load();
@@ -865,19 +1019,26 @@ function render(){
   prayers
    .filter(p=>
     !q||
-    String(getPoint(p)||"")
-     .includes(q)||
-    String(p.title||"")
+    String(
+     getPoint(p)||""
+    ).includes(q)||
+    String(
+     p.title||""
+    )
      .toLowerCase()
      .includes(q)||
-    String(p.content||"")
+    String(
+     p.content||""
+    )
      .toLowerCase()
      .includes(q)
    )
-   .sort((a,b)=>
-    (getPoint(a)||999)-
-    (getPoint(b)||999)
+   .sort(
+    (a,b)=>
+     (getPoint(a)||999)-
+     (getPoint(b)||999)
    );
+
 
  if(!items.length){
 
@@ -890,10 +1051,12 @@ function render(){
 
  }
 
+
  $("list").innerHTML=
   items.map(p=>{
 
-   const point=getPoint(p);
+   const point=
+    getPoint(p);
 
    const done=
     Number(p.completed)===1;
@@ -966,7 +1129,11 @@ function render(){
 
 /* MESSAGE */
 
-function message(id,text,type){
+function message(
+ id,
+ text,
+ type
+){
 
  $(id).innerHTML=
   `<div class="msg ${type}">
@@ -976,16 +1143,31 @@ function message(id,text,type){
 }
 
 
-/* SAFE HTML */
+/* SAFE */
 
 function safe(v){
 
  return String(v??"")
-  .replace(/&/g,"&amp;")
-  .replace(/</g,"&lt;")
-  .replace(/>/g,"&gt;")
-  .replace(/"/g,"&quot;")
-  .replace(/'/g,"&#039;");
+  .replace(
+   /&/g,
+   "&amp;"
+  )
+  .replace(
+   /</g,
+   "&lt;"
+  )
+  .replace(
+   />/g,
+   "&gt;"
+  )
+  .replace(
+   /"/g,
+   "&quot;"
+  )
+  .replace(
+   /'/g,
+   "&#039;"
+  );
 
 }
 
