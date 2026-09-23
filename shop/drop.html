@@ -1,325 +1,896 @@
-<!DOCTYPE html>
-<html lang="en">
+
+<!DOCTYPE html><html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CreateLK Marketplace Photo Maker</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>CreateLK Marketplace Photo Maker</title><style>
+*{
+  box-sizing:border-box;
+}
 
-<style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#f3f6fa;color:#102a56}
-header{background:#102a56;color:#fff;text-align:center;padding:16px}
-header h2{margin:0;font-size:20px}
-.wrap{max-width:600px;margin:auto;padding:15px}
-.card{background:#fff;border-radius:14px;padding:15px;box-shadow:0 3px 15px #0001}
-label{display:block;font-weight:bold;margin:10px 0 5px}
-input{width:100%;padding:12px;border:1px solid #ccd4df;border-radius:8px;font-size:15px}
-button{width:100%;padding:13px;border:0;border-radius:9px;background:#102a56;color:#fff;font-size:16px;font-weight:bold;margin-top:12px;cursor:pointer}
-.download{background:#25D366}
-.preview{margin-top:16px}
-canvas{width:100%;display:block;border-radius:10px;box-shadow:0 2px 12px #0002}
-</style>
-</head>
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#f3f6fa;
+  color:#102a56;
+}
 
-<body>
+header{
+  background:#102a56;
+  color:#fff;
+  text-align:center;
+  padding:16px;
+}
 
-<header>
-<h2>CreateLK Marketplace Photo Maker</h2>
-</header>
+header h2{
+  margin:0;
+  font-size:20px;
+}
 
-<div class="wrap">
-<div class="card">
+.wrap{
+  max-width:600px;
+  margin:auto;
+  padding:15px;
+}
 
-<label>Product Photo</label>
+.card{
+  background:#fff;
+  border-radius:16px;
+  padding:16px;
+  box-shadow:0 3px 15px #0001;
+}
+
+label{
+  display:block;
+  font-weight:bold;
+  margin:11px 0 6px;
+}
+
+input{
+  width:100%;
+  padding:13px;
+  border:1px solid #ccd4df;
+  border-radius:9px;
+  font-size:16px;
+  outline:none;
+}
+
+input:focus{
+  border-color:#102a56;
+}
+
+button{
+  width:100%;
+  padding:14px;
+  border:0;
+  border-radius:10px;
+  background:#102a56;
+  color:#fff;
+  font-size:16px;
+  font-weight:bold;
+  margin-top:12px;
+  cursor:pointer;
+}
+
+button:active{
+  transform:scale(.99);
+}
+
+.download{
+  background:#25D366;
+}
+
+.reset{
+  background:#e9edf3;
+  color:#102a56;
+}
+
+.preview{
+  margin-top:18px;
+}
+
+canvas{
+  width:100%;
+  display:block;
+  border-radius:12px;
+  box-shadow:0 3px 15px #0002;
+  background:#fff;
+}
+
+.hint{
+  text-align:center;
+  color:#68778c;
+  font-size:13px;
+  margin:10px 0 0;
+}
+</style></head><body><header>
+  <h2>CreateLK Marketplace Photo Maker</h2>
+</header><div class="wrap">  <div class="card"><label>Product Photo</label>
 <input id="photo" type="file" accept="image/*">
 
 <label>Product Name</label>
-<input id="name" placeholder="Product Name">
+<input
+  id="name"
+  placeholder="Product Name"
+  maxlength="60"
+>
 
 <label>Price (LKR)</label>
-<input id="price" type="number" placeholder="2500">
+<input
+  id="price"
+  type="number"
+  min="0"
+  placeholder="2500"
+>
 
-<button onclick="makeImage()">Create Photo</button>
+<button onclick="makeImage()">
+  Create Photo
+</button>
 
 <div class="preview">
-<canvas id="canvas" width="1080" height="1080"></canvas>
+  <canvas id="canvas" width="1080" height="1080"></canvas>
 </div>
 
-<button class="download" onclick="downloadImage()">Download JPG</button>
+<button class="download" onclick="downloadImage()">
+  Download JPG
+</button>
 
-</div>
+<button class="reset" onclick="resetMaker()">
+  Reset
+</button>
+
+<div class="hint">
+  1080 × 1080 • Square Marketplace Image
 </div>
 
-<script>
+  </div></div><script>
+
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
+
 let img=null;
 
-document.getElementById("photo").onchange=e=>{
- const file=e.target.files[0];
- if(!file)return;
 
- const x=new Image();
+/* =========================
+   LOAD PHOTO
+========================= */
 
- x.onload=()=>{
-  img=x;
-  makeImage();
- };
+document.getElementById("photo").addEventListener("change",function(e){
 
- x.src=URL.createObjectURL(file);
-};
+  const file=e.target.files[0];
+
+  if(!file)return;
+
+  const x=new Image();
+
+  x.onload=function(){
+
+    img=x;
+
+    makeImage();
+
+  };
+
+  x.src=URL.createObjectURL(file);
+
+});
+
+
+/* =========================
+   LIVE PREVIEW
+========================= */
+
+document.getElementById("name").addEventListener("input",makeImage);
+document.getElementById("price").addEventListener("input",makeImage);
+
+
+/* =========================
+   MAIN IMAGE
+========================= */
 
 function makeImage(){
 
- ctx.clearRect(0,0,1080,1080);
- ctx.fillStyle="#fff";
- ctx.fillRect(0,0,1080,1080);
+  ctx.clearRect(0,0,1080,1080);
 
- if(!img){
-  ctx.fillStyle="#102a56";
-  ctx.font="bold 45px Arial";
-  ctx.textAlign="center";
-  ctx.fillText("Upload Product Photo",540,540);
-  return;
- }
+  /* White background */
 
- /* 1:1 center crop */
- const size=Math.min(img.width,img.height);
- const sx=(img.width-size)/2;
- const sy=(img.height-size)/2;
-
- ctx.drawImage(
-  img,
-  sx,sy,size,size,
-  0,0,1080,1080
- );
-
- /* Bottom gradient */
- const gradient=ctx.createLinearGradient(0,790,0,1080);
- gradient.addColorStop(0,"rgba(0,0,0,0)");
- gradient.addColorStop(1,"rgba(0,0,0,.68)");
-
- ctx.fillStyle=gradient;
- ctx.fillRect(0,790,1080,290);
-
- drawWhatsAppLabel();
- drawWebsite();
-
- const name=document.getElementById("name").value.trim();
- const price=document.getElementById("price").value.trim();
-
- /* Product name */
- if(name){
-  ctx.textAlign="left";
   ctx.fillStyle="#fff";
-  ctx.font="bold 36px Arial";
+  ctx.fillRect(0,0,1080,1080);
 
-  let title=name;
 
-  if(title.length>28)
-   title=title.substring(0,28)+"...";
+  if(!img){
 
-  ctx.fillText(title,35,955);
- }
+    ctx.fillStyle="#102a56";
 
- /* Price */
- if(price){
-  ctx.textAlign="left";
-  ctx.fillStyle="#25D366";
-  ctx.font="bold 38px Arial";
+    ctx.textAlign="center";
 
-  ctx.fillText(
-   "LKR "+Number(price).toLocaleString(),
-   35,1015
+    ctx.font="bold 45px Arial";
+
+    ctx.fillText(
+      "Upload Product Photo",
+      540,
+      540
+    );
+
+    return;
+  }
+
+
+  /* =========================
+     PRODUCT IMAGE
+  ========================= */
+
+  const imageArea={
+    x:0,
+    y:0,
+    w:1080,
+    h:1080
+  };
+
+  drawProductImage(
+    img,
+    imageArea.x,
+    imageArea.y,
+    imageArea.w,
+    imageArea.h
   );
- }
+
+
+  /* =========================
+     DARK BOTTOM GRADIENT
+  ========================= */
+
+  const gradient=ctx.createLinearGradient(
+    0,
+    720,
+    0,
+    1080
+  );
+
+  gradient.addColorStop(
+    0,
+    "rgba(0,0,0,0)"
+  );
+
+  gradient.addColorStop(
+    .55,
+    "rgba(0,0,0,.35)"
+  );
+
+  gradient.addColorStop(
+    1,
+    "rgba(0,0,0,.78)"
+  );
+
+  ctx.fillStyle=gradient;
+
+  ctx.fillRect(
+    0,
+    720,
+    1080,
+    360
+  );
+
+
+  /* =========================
+     TOP WHATSAPP BADGE
+  ========================= */
+
+  drawWhatsAppLabel();
+
+
+  /* =========================
+     WEBSITE
+  ========================= */
+
+  drawWebsite();
+
+
+  /* =========================
+     PRODUCT NAME
+  ========================= */
+
+  const name=
+    document.getElementById("name")
+    .value
+    .trim();
+
+  if(name){
+
+    drawProductName(name);
+
+  }
+
+
+  /* =========================
+     PRICE
+  ========================= */
+
+  const price=
+    document.getElementById("price")
+    .value
+    .trim();
+
+  if(price){
+
+    drawPrice(price);
+
+  }
+
 }
 
-/* TOP LEFT WHATSAPP */
+
+/* =========================
+   PRODUCT IMAGE FIT
+========================= */
+
+function drawProductImage(image,x,y,w,h){
+
+  const iw=image.width;
+  const ih=image.height;
+
+  const imageRatio=iw/ih;
+  const areaRatio=w/h;
+
+  let drawW;
+  let drawH;
+  let dx;
+  let dy;
+
+  /*
+    Cover the canvas while keeping
+    the product centered.
+  */
+
+  if(imageRatio>areaRatio){
+
+    drawH=h;
+    drawW=h*imageRatio;
+
+  }else{
+
+    drawW=w;
+    drawH=w/imageRatio;
+
+  }
+
+  dx=x+(w-drawW)/2;
+  dy=y+(h-drawH)/2;
+
+  ctx.drawImage(
+    image,
+    dx,
+    dy,
+    drawW,
+    drawH
+  );
+
+}
+
+
+/* =========================
+   WHATSAPP LABEL
+========================= */
+
 function drawWhatsAppLabel(){
 
- const x=25;
- const y=25;
- const badge=68;
- const boxW=350;
- const boxH=100;
+  const x=25;
+  const y=25;
 
- ctx.fillStyle="rgba(16,42,86,.95)";
- roundRect(x,y,boxW,boxH,50);
- ctx.fill();
+  const boxW=390;
+  const boxH=108;
 
- drawWhatsApp(x+52,y+50,badge);
+  /* Background */
 
- ctx.fillStyle="#fff";
- ctx.textAlign="left";
- ctx.font="bold 34px Arial";
- ctx.fillText("0771190395",x+100,y+61);
+  ctx.fillStyle="rgba(16,42,86,.96)";
+
+  roundRect(
+    x,
+    y,
+    boxW,
+    boxH,
+    54
+  );
+
+  ctx.fill();
+
+
+  /* Icon */
+
+  drawWhatsApp(
+    x+55,
+    y+54,
+    74
+  );
+
+
+  /* Number */
+
+  ctx.fillStyle="#fff";
+
+  ctx.textAlign="left";
+
+  ctx.font="bold 36px Arial";
+
+  ctx.fillText(
+    "0771190395",
+    x+105,
+    y+66
+  );
+
 }
 
-/* BOTTOM RIGHT WEBSITE */
+
+/* =========================
+   WEBSITE LABEL
+========================= */
+
 function drawWebsite(){
 
- const text="createlk.com";
- const fontSize=34;
+  const text="createlk.com";
 
- ctx.font="bold "+fontSize+"px Arial";
+  const fontSize=36;
 
- const textW=ctx.measureText(text).width;
- const boxW=textW+80;
- const boxH=82;
+  ctx.font="bold "+fontSize+"px Arial";
 
- const x=1080-boxW-25;
- const y=970;
+  const textW=
+    ctx.measureText(text).width;
 
- ctx.fillStyle="rgba(16,42,86,.95)";
- roundRect(x,y,boxW,boxH,41);
- ctx.fill();
+  const boxW=textW+90;
+  const boxH=86;
 
- ctx.fillStyle="#fff";
- ctx.textAlign="center";
- ctx.font="bold "+fontSize+"px Arial";
+  const x=
+    1080-boxW-25;
 
- ctx.fillText(
-  text,
-  x+boxW/2,
-  y+54
- );
+  const y=970;
+
+
+  ctx.fillStyle=
+    "rgba(16,42,86,.96)";
+
+  roundRect(
+    x,
+    y,
+    boxW,
+    boxH,
+    43
+  );
+
+  ctx.fill();
+
+
+  ctx.fillStyle="#fff";
+
+  ctx.textAlign="center";
+
+  ctx.font=
+    "bold "+fontSize+"px Arial";
+
+  ctx.fillText(
+    text,
+    x+boxW/2,
+    y+57
+  );
+
 }
 
-function roundRect(x,y,w,h,r){
 
- ctx.beginPath();
+/* =========================
+   PRODUCT NAME
+========================= */
 
- ctx.moveTo(x+r,y);
- ctx.lineTo(x+w-r,y);
+function drawProductName(name){
 
- ctx.quadraticCurveTo(
-  x+w,y,
-  x+w,y+r
- );
+  const maxWidth=600;
 
- ctx.lineTo(x+w,y+h-r);
+  const words=name.split(" ");
 
- ctx.quadraticCurveTo(
-  x+w,y+h,
-  x+w-r,y+h
- );
+  const lines=[];
 
- ctx.lineTo(x+r,y+h);
+  let line="";
 
- ctx.quadraticCurveTo(
-  x,y+h,
-  x,y+h-r
- );
 
- ctx.lineTo(x,y+r);
+  ctx.font="bold 40px Arial";
 
- ctx.quadraticCurveTo(
-  x,y,
-  x+r,y
- );
 
- ctx.closePath();
+  words.forEach(word=>{
+
+    const test=
+      line
+      ? line+" "+word
+      : word;
+
+    if(
+      ctx.measureText(test).width
+      > maxWidth
+    ){
+
+      if(line){
+
+        lines.push(line);
+
+      }
+
+      line=word;
+
+    }else{
+
+      line=test;
+
+    }
+
+  });
+
+
+  if(line){
+
+    lines.push(line);
+
+  }
+
+
+  /* Maximum 2 lines */
+
+  const displayLines=
+    lines.slice(0,2);
+
+
+  if(lines.length>2){
+
+    displayLines[1]+="...";
+
+  }
+
+
+  ctx.textAlign="left";
+
+  ctx.fillStyle="#fff";
+
+  ctx.font="bold 40px Arial";
+
+
+  const startY=
+    displayLines.length===1
+    ? 920
+    : 895;
+
+
+  displayLines.forEach(
+    (line,index)=>{
+
+      ctx.fillText(
+        line,
+        35,
+        startY+(index*48)
+      );
+
+    }
+  );
+
 }
 
-/* RECOGNIZABLE WHATSAPP-STYLE ICON */
-function drawWhatsApp(cx,cy,size){
 
- const r=size/2;
+/* =========================
+   PRICE
+========================= */
 
- ctx.save();
+function drawPrice(price){
 
- /* Green circular badge */
- ctx.beginPath();
- ctx.arc(cx,cy,r,0,Math.PI*2);
- ctx.fillStyle="#25D366";
- ctx.fill();
+  const formatted=
+    Number(price).toLocaleString();
 
- /* White speech bubble */
- ctx.fillStyle="#fff";
- ctx.beginPath();
 
- ctx.arc(
+  const text=
+    "LKR "+formatted;
+
+
+  /* Price background */
+
+  ctx.font="bold 42px Arial";
+
+  const textW=
+    ctx.measureText(text).width;
+
+  const boxW=
+    textW+42;
+
+  const boxH=65;
+
+  const x=25;
+
+  const y=1000;
+
+
+  ctx.fillStyle="#25D366";
+
+  roundRect(
+    x,
+    y,
+    boxW,
+    boxH,
+    32
+  );
+
+  ctx.fill();
+
+
+  ctx.fillStyle="#fff";
+
+  ctx.textAlign="left";
+
+  ctx.font="bold 42px Arial";
+
+  ctx.fillText(
+    text,
+    x+21,
+    y+46
+  );
+
+}
+
+
+/* =========================
+   ROUNDED RECTANGLE
+========================= */
+
+function roundRect(
+  x,
+  y,
+  w,
+  h,
+  r
+){
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    x+r,
+    y
+  );
+
+  ctx.lineTo(
+    x+w-r,
+    y
+  );
+
+  ctx.quadraticCurveTo(
+    x+w,
+    y,
+    x+w,
+    y+r
+  );
+
+  ctx.lineTo(
+    x+w,
+    y+h-r
+  );
+
+  ctx.quadraticCurveTo(
+    x+w,
+    y+h,
+    x+w-r,
+    y+h
+  );
+
+  ctx.lineTo(
+    x+r,
+    y+h
+  );
+
+  ctx.quadraticCurveTo(
+    x,
+    y+h,
+    x,
+    y+h-r
+  );
+
+  ctx.lineTo(
+    x,
+    y+r
+  );
+
+  ctx.quadraticCurveTo(
+    x,
+    y,
+    x+r,
+    y
+  );
+
+  ctx.closePath();
+
+}
+
+
+/* =========================
+   CUSTOM WHATSAPP-STYLE ICON
+========================= */
+
+function drawWhatsApp(
   cx,
-  cy-2,
-  r*.64,
-  0,
-  Math.PI*2
- );
+  cy,
+  size
+){
 
- ctx.fill();
+  const r=size/2;
 
- /* Speech bubble tail */
- ctx.beginPath();
- ctx.moveTo(cx-r*.40,cy+r*.43);
- ctx.lineTo(cx-r*.67,cy+r*.67);
- ctx.lineTo(cx-r*.25,cy+r*.56);
- ctx.closePath();
- ctx.fill();
+  ctx.save();
 
- /* Green inner circle */
- ctx.fillStyle="#25D366";
- ctx.beginPath();
 
- ctx.arc(
-  cx,
-  cy-2,
-  r*.51,
-  0,
-  Math.PI*2
- );
+  /* Outer green circle */
 
- ctx.fill();
+  ctx.beginPath();
 
- /* White phone receiver */
- ctx.strokeStyle="#fff";
- ctx.lineWidth=size*.105;
- ctx.lineCap="round";
- ctx.lineJoin="round";
+  ctx.arc(
+    cx,
+    cy,
+    r,
+    0,
+    Math.PI*2
+  );
 
- ctx.beginPath();
+  ctx.fillStyle="#25D366";
 
- ctx.moveTo(
-  cx-r*.19,
-  cy-r*.20
- );
+  ctx.fill();
 
- ctx.quadraticCurveTo(
-  cx-r*.31,
-  cy-r*.02,
-  cx-r*.03,
-  cy+r*.23
- );
 
- ctx.quadraticCurveTo(
-  cx+r*.18,
-  cy+r*.34,
-  cx+r*.27,
-  cy+r*.08
- );
+  /* White bubble */
 
- ctx.stroke();
+  ctx.fillStyle="#fff";
 
- ctx.restore();
+  ctx.beginPath();
+
+  ctx.arc(
+    cx,
+    cy-2,
+    r*.64,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* Bubble tail */
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    cx-r*.40,
+    cy+r*.43
+  );
+
+  ctx.lineTo(
+    cx-r*.67,
+    cy+r*.67
+  );
+
+  ctx.lineTo(
+    cx-r*.25,
+    cy+r*.56
+  );
+
+  ctx.closePath();
+
+  ctx.fill();
+
+
+  /* Inner green */
+
+  ctx.fillStyle="#25D366";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    cx,
+    cy-2,
+    r*.51,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* Phone symbol */
+
+  ctx.strokeStyle="#fff";
+
+  ctx.lineWidth=size*.105;
+
+  ctx.lineCap="round";
+
+  ctx.lineJoin="round";
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    cx-r*.19,
+    cy-r*.20
+  );
+
+  ctx.quadraticCurveTo(
+    cx-r*.31,
+    cy-r*.02,
+    cx-r*.03,
+    cy+r*.23
+  );
+
+  ctx.quadraticCurveTo(
+    cx+r*.18,
+    cy+r*.34,
+    cx+r*.27,
+    cy+r*.08
+  );
+
+  ctx.stroke();
+
+
+  ctx.restore();
+
 }
+
+
+/* =========================
+   DOWNLOAD
+========================= */
 
 function downloadImage(){
 
- if(!img){
-  alert("Please upload a product photo first.");
-  return;
- }
+  if(!img){
 
- const a=document.createElement("a");
+    alert(
+      "Please upload a product photo first."
+    );
 
- a.download="createlk-marketplace.jpg";
- a.href=canvas.toDataURL("image/jpeg",.95);
+    return;
 
- a.click();
+  }
+
+
+  const a=
+    document.createElement("a");
+
+  a.download=
+    "createlk-marketplace.jpg";
+
+  a.href=
+    canvas.toDataURL(
+      "image/jpeg",
+      0.96
+    );
+
+  a.click();
+
 }
 
-makeImage();
-</script>
 
-</body>
+/* =========================
+   RESET
+========================= */
+
+function resetMaker(){
+
+  img=null;
+
+  document.getElementById(
+    "photo"
+  ).value="";
+
+  document.getElementById(
+    "name"
+  ).value="";
+
+  document.getElementById(
+    "price"
+  ).value="";
+
+  makeImage();
+
+}
+
+
+/* Initial preview */
+
+makeImage();
+
+</script></body>
 </html>
