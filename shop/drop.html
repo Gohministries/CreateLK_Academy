@@ -111,11 +111,13 @@ button {
     color: white;
 }
 
+/* Open button BELOW navigation */
 .open-btn {
     width: 100%;
     margin-top: 15px;
     background: #198754;
     color: white;
+    padding: 15px;
 }
 
 .info {
@@ -126,17 +128,18 @@ button {
     line-height: 1.5;
 }
 
-iframe {
-    width: 100%;
-    height: 75vh;
-    min-height: 500px;
-    border: none;
-    border-radius: 10px;
-    margin-top: 20px;
-    background: white;
+.status {
+    text-align: center;
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #eef3f9;
+    color: #102a56;
+    font-size: 14px;
 }
 
 @media (max-width: 500px) {
+
     .navigation {
         flex-direction: column;
     }
@@ -149,9 +152,13 @@ iframe {
         width: 100%;
     }
 
-    iframe {
-        height: 70vh;
-        min-height: 450px;
+    .container {
+        margin: 15px auto;
+        padding: 10px;
+    }
+
+    .card {
+        padding: 18px;
     }
 }
 </style>
@@ -167,13 +174,16 @@ iframe {
 
     <div class="card">
 
+        <!-- Current Product -->
         <div class="current">
             <small>Current Product</small>
             <strong id="productNumber">11</strong>
         </div>
 
-        <!-- Enter any product number -->
+
+        <!-- Enter Product Number -->
         <div class="input-row">
+
             <input
                 type="number"
                 id="productInput"
@@ -181,10 +191,14 @@ iframe {
                 min="1"
             >
 
-            <button class="go-btn" onclick="goToProduct()">
+            <button
+                class="go-btn"
+                onclick="goToProduct()">
                 Go
             </button>
+
         </div>
+
 
         <!-- Previous / Next -->
         <div class="navigation">
@@ -203,125 +217,231 @@ iframe {
 
         </div>
 
-        <!-- Open product directly -->
+
+        <!-- Open Product -->
         <button
             class="open-btn"
             onclick="openProduct()">
             Open Product
         </button>
 
-        <div class="info">
-            Your last product number is automatically saved.<br>
-            Example: Enter <b>1355</b> → Dropin product 1355.
+
+        <!-- Status -->
+        <div
+            class="status"
+            id="status">
+            Product 11 selected
         </div>
 
-        <!-- Product page -->
-        <iframe
-            id="productFrame"
-            src="https://dropin.lk/product/11"
-            title="Dropin Product">
-        </iframe>
+
+        <!-- Information -->
+        <div class="info">
+
+            Your last product number is automatically saved.<br>
+
+            Example:
+            Enter <b>1355</b>
+            → Open Dropin product 1355.
+
+            <br><br>
+
+            The product opens directly in your browser,
+            using your existing Dropin login session.
+
+        </div>
 
     </div>
 
 </div>
 
+
 <script>
 
+/* Dropin base URL */
 const BASE_URL = "https://dropin.lk/product/";
+
 
 /* Starting product */
 const DEFAULT_PRODUCT = 11;
 
-/* Load saved product number */
-let productNumber = parseInt(
-    localStorage.getItem("dropinProductNumber")
-) || DEFAULT_PRODUCT;
+
+/* Get saved product */
+let savedProduct =
+    localStorage.getItem("dropinProductNumber");
 
 
-/* Update page */
-function updateProduct() {
+/* Use saved product or 11 */
+let productNumber =
+    savedProduct
+        ? parseInt(savedProduct)
+        : DEFAULT_PRODUCT;
 
-    document.getElementById("productNumber").textContent =
-        productNumber;
 
-    document.getElementById("productInput").value =
-        productNumber;
+/*
+    Save product number
+*/
+function saveProduct() {
 
-    document.getElementById("productFrame").src =
-        BASE_URL + productNumber;
-
-    /* Remember product */
     localStorage.setItem(
         "dropinProductNumber",
         productNumber
     );
+
 }
 
 
-/* Next product */
+/*
+    Update display
+*/
+function updateDisplay() {
+
+    document.getElementById(
+        "productNumber"
+    ).textContent = productNumber;
+
+
+    document.getElementById(
+        "productInput"
+    ).value = productNumber;
+
+
+    document.getElementById(
+        "status"
+    ).textContent =
+        "Product " + productNumber + " selected";
+
+
+    saveProduct();
+
+}
+
+
+/*
+    Create Dropin URL
+*/
+function getProductURL() {
+
+    return BASE_URL + productNumber;
+
+}
+
+
+/*
+    Open product directly
+*/
+function openProduct() {
+
+    const url = getProductURL();
+
+    /*
+        Open in browser.
+
+        This does NOT use an iframe.
+        Chrome can use its existing
+        Dropin login/session.
+    */
+    window.open(url, "_blank");
+
+}
+
+
+/*
+    Next product
+*/
 function nextProduct() {
 
     productNumber++;
 
-    updateProduct();
+    updateDisplay();
+
+    openProduct();
+
 }
 
 
-/* Previous product */
+/*
+    Previous product
+*/
 function previousProduct() {
 
-    if (productNumber > 1) {
-        productNumber--;
-        updateProduct();
+    if (productNumber <= 1) {
+
+        alert("Product number cannot be less than 1.");
+
+        return;
+
     }
+
+    productNumber--;
+
+    updateDisplay();
+
+    openProduct();
 
 }
 
 
-/* Go to entered product */
+/*
+    Go to entered product
+*/
 function goToProduct() {
 
-    const value = parseInt(
-        document.getElementById("productInput").value
-    );
+    const input =
+        document.getElementById(
+            "productInput"
+        );
 
-    if (!value || value < 1) {
-        alert("Please enter a valid product number.");
+    const value =
+        parseInt(input.value);
+
+
+    if (
+        !value ||
+        value < 1 ||
+        !Number.isInteger(value)
+    ) {
+
+        alert(
+            "Please enter a valid product number."
+        );
+
         return;
+
     }
+
 
     productNumber = value;
 
-    updateProduct();
+    updateDisplay();
+
+    openProduct();
+
 }
 
 
-/* Open product in a new tab */
-function openProduct() {
+/*
+    Enter key
+*/
+document
+    .getElementById("productInput")
+    .addEventListener(
+        "keydown",
+        function(event) {
 
-    window.open(
-        BASE_URL + productNumber,
-        "_blank"
-    );
-}
+            if (event.key === "Enter") {
 
+                goToProduct();
 
-/* Press Enter inside input */
-document.getElementById("productInput").addEventListener(
-    "keydown",
-    function(event) {
+            }
 
-        if (event.key === "Enter") {
-            goToProduct();
         }
-
-    }
-);
+    );
 
 
-/* Load saved product when page starts */
-updateProduct();
+/*
+    Load saved product
+*/
+updateDisplay();
 
 </script>
 
