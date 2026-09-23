@@ -4,49 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CreateLK Marketplace Photo Maker</title>
-
 <style>
 *{box-sizing:border-box}
-body{
- margin:0;font-family:Arial,sans-serif;
- background:#f3f6fa;color:#102a56
-}
-header{
- background:#102a56;color:#fff;padding:16px;
- text-align:center
-}
-header h2{margin:0;font-size:21px}
-.wrap{max-width:600px;margin:auto;padding:16px}
-.card{
- background:#fff;border-radius:14px;padding:16px;
- box-shadow:0 3px 15px rgba(0,0,0,.08)
-}
-label{
- display:block;font-weight:bold;margin:12px 0 6px
-}
-input{
- width:100%;padding:12px;border:1px solid #ccd4df;
- border-radius:8px;font-size:15px
-}
-button{
- width:100%;padding:13px;border:0;border-radius:9px;
- background:#102a56;color:#fff;font-size:16px;
- font-weight:bold;margin-top:14px;cursor:pointer
-}
-button.download{background:#25D366}
-.preview{
- margin-top:18px;text-align:center
-}
-canvas{
- width:100%;max-width:600px;
- border-radius:10px;
- background:#fff;
- box-shadow:0 2px 12px rgba(0,0,0,.15)
-}
-.file{
- background:#f5f7fa;
- padding:12px;border-radius:8px
-}
+body{margin:0;font-family:Arial,sans-serif;background:#f3f6fa;color:#102a56}
+header{background:#102a56;color:#fff;text-align:center;padding:16px}
+header h2{margin:0;font-size:20px}
+.wrap{max-width:600px;margin:auto;padding:15px}
+.card{background:#fff;border-radius:14px;padding:15px;box-shadow:0 3px 15px #0001}
+label{display:block;font-weight:bold;margin:10px 0 5px}
+input{width:100%;padding:11px;border:1px solid #ccd4df;border-radius:8px;font-size:15px}
+button{width:100%;padding:13px;border:0;border-radius:9px;background:#102a56;color:#fff;font-size:16px;font-weight:bold;margin-top:12px}
+.download{background:#25D366}
+.preview{margin-top:16px}
+canvas{width:100%;display:block;border-radius:10px;box-shadow:0 2px 12px #0002}
 </style>
 </head>
 
@@ -68,15 +38,13 @@ canvas{
 <label>Price (LKR)</label>
 <input id="price" type="number" placeholder="2500">
 
-<button onclick="makeImage()">Create Marketplace Photo</button>
+<button onclick="makeImage()">Create Photo</button>
 
 <div class="preview">
 <canvas id="canvas" width="1080" height="1080"></canvas>
 </div>
 
-<button class="download" onclick="downloadImage()">
-Download JPG
-</button>
+<button class="download" onclick="downloadImage()">Download JPG</button>
 
 </div>
 </div>
@@ -84,154 +52,138 @@ Download JPG
 <script>
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
+let img=null;
 
-let productImage=null;
-
-document.getElementById("photo").addEventListener("change",e=>{
+document.getElementById("photo").onchange=e=>{
  const file=e.target.files[0];
  if(!file)return;
-
- const img=new Image();
- img.onload=()=>{
-  productImage=img;
+ const x=new Image();
+ x.onload=()=>{
+  img=x;
   makeImage();
  };
- img.src=URL.createObjectURL(file);
-});
+ x.src=URL.createObjectURL(file);
+};
 
 function makeImage(){
 
  ctx.fillStyle="#fff";
  ctx.fillRect(0,0,1080,1080);
 
- if(!productImage){
+ if(!img){
   ctx.fillStyle="#102a56";
-  ctx.font="bold 48px Arial";
+  ctx.font="bold 45px Arial";
   ctx.textAlign="center";
   ctx.fillText("Upload Product Photo",540,540);
   return;
  }
 
- /* Product area */
- const areaX=40,areaY=40;
- const areaW=1000,areaH=760;
-
- const scale=Math.min(
-  areaW/productImage.width,
-  areaH/productImage.height
- );
-
- const w=productImage.width*scale;
- const h=productImage.height*scale;
+ /* 1:1 crop */
+ const size=Math.min(img.width,img.height);
+ const sx=(img.width-size)/2;
+ const sy=(img.height-size)/2;
 
  ctx.drawImage(
-  productImage,
-  540-w/2,
-  areaY+(areaH-h)/2,
-  w,h
+  img,
+  sx,sy,size,size,
+  0,0,1080,1080
  );
 
- /* Bottom marketplace section */
- ctx.fillStyle="#102a56";
- ctx.fillRect(0,800,1080,280);
+ /* Bottom overlay */
+ ctx.fillStyle="rgba(16,42,86,.94)";
+ ctx.fillRect(0,930,1080,150);
 
  /* Product name */
  const name=document.getElementById("name").value.trim();
  const price=document.getElementById("price").value.trim();
 
- ctx.fillStyle="#fff";
  ctx.textAlign="left";
- ctx.font="bold 42px Arial";
+ ctx.fillStyle="#fff";
+ ctx.font="bold 34px Arial";
 
- let displayName=name||"Quality Product";
+ let title=name||"Quality Product";
+ if(title.length>30)title=title.substring(0,30)+"...";
+ ctx.fillText(title,35,970);
 
- if(displayName.length>28)
-  displayName=displayName.substring(0,28)+"...";
-
- ctx.fillText(displayName,50,865);
-
- /* Price */
  if(price){
-  ctx.fillStyle="#25D366";
-  ctx.font="bold 55px Arial";
-  ctx.fillText("LKR "+Number(price).toLocaleString(),50,935);
+  ctx.font="bold 34px Arial";
+  ctx.fillText("LKR "+Number(price).toLocaleString(),35,1020);
  }
 
- /* Website */
- ctx.fillStyle="#fff";
- ctx.font="bold 30px Arial";
- ctx.fillText("CreateLK Marketplace",50,990);
+ /* Bottom brand/contact line */
+ const y=1060;
 
- ctx.font="25px Arial";
- ctx.fillText("createlk.com",50,1030);
+ ctx.font="bold 23px Arial";
+ ctx.fillStyle="#fff";
+ ctx.textAlign="center";
+
+ ctx.fillText("createlk.com",360,y);
+
+ /* separator */
+ ctx.font="bold 24px Arial";
+ ctx.fillText("•",540,y);
 
  /* WhatsApp badge */
- ctx.beginPath();
- ctx.arc(970,950,58,0,Math.PI*2);
- ctx.fillStyle="#25D366";
- ctx.fill();
+ drawWhatsApp(590,1040,42);
 
- drawWhatsApp(970,950,62);
-
- ctx.fillStyle="#fff";
- ctx.font="bold 24px Arial";
- ctx.textAlign="center";
- ctx.fillText("0771190395",970,1045);
+ ctx.font="bold 23px Arial";
+ ctx.fillText("0771190395",780,y);
 }
 
 function drawWhatsApp(cx,cy,size){
 
- const s=size/48;
+ const r=size/2;
+
  ctx.save();
- ctx.translate(cx-size/2,cy-size/2);
- ctx.scale(s,s);
 
+ /* green circle */
  ctx.beginPath();
- ctx.arc(24,24,21,0,Math.PI*2);
- ctx.fillStyle="#fff";
- ctx.fill();
-
- ctx.beginPath();
- ctx.arc(24,24,17,0,Math.PI*2);
+ ctx.arc(cx,cy,r,0,Math.PI*2);
  ctx.fillStyle="#25D366";
  ctx.fill();
 
+ /* white phone bubble */
  ctx.fillStyle="#fff";
  ctx.beginPath();
- ctx.moveTo(31,28);
- ctx.bezierCurveTo(
- 29,27,28,26,27,26
- );
- ctx.lineTo(25,28);
- ctx.bezierCurveTo(
- 22,27,20,25,19,22
- );
- ctx.lineTo(21,20);
- ctx.lineTo(19,16);
- ctx.lineTo(16,16);
- ctx.bezierCurveTo(
- 14,20,17,26,22,29
- );
- ctx.bezierCurveTo(
- 25,31,29,31,31,29
- );
- ctx.closePath();
+ ctx.arc(cx,cy,r*.62,0,Math.PI*2);
  ctx.fill();
+
+ /* green inner */
+ ctx.fillStyle="#25D366";
+ ctx.beginPath();
+ ctx.arc(cx,cy,r*.50,0,Math.PI*2);
+ ctx.fill();
+
+ /* phone shape */
+ ctx.strokeStyle="#fff";
+ ctx.lineWidth=size*.09;
+ ctx.lineCap="round";
+ ctx.beginPath();
+ ctx.moveTo(cx-r*.18,cy-r*.20);
+ ctx.quadraticCurveTo(
+  cx-r*.30,cy,
+  cx,cy+r*.22
+ );
+ ctx.quadraticCurveTo(
+  cx+r*.18,cy+r*.30,
+  cx+r*.25,cy+r*.08
+ );
+ ctx.stroke();
 
  ctx.restore();
 }
 
 function downloadImage(){
 
- if(!productImage){
+ if(!img){
   alert("Please upload a product photo first.");
   return;
  }
 
- const link=document.createElement("a");
- link.download="createlk-marketplace.jpg";
- link.href=canvas.toDataURL("image/jpeg",0.95);
- link.click();
+ const a=document.createElement("a");
+ a.download="createlk-marketplace.jpg";
+ a.href=canvas.toDataURL("image/jpeg",.95);
+ a.click();
 }
 
 makeImage();
