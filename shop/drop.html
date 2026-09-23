@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>CreateLK Marketplace Photo Maker</title>
+<title>CreateLK Photo Maker</title>
 
 <style>
 *{
@@ -13,16 +13,16 @@
 
 body{
     margin:0;
-    font-family:Arial,sans-serif;
-    background:#f2f5f9;
+    font-family:Arial,Helvetica,sans-serif;
+    background:#eef2f7;
     color:#102a56;
 }
 
 header{
     background:#102a56;
-    color:white;
+    color:#fff;
+    padding:18px;
     text-align:center;
-    padding:18px 12px;
 }
 
 header h1{
@@ -31,23 +31,21 @@ header h1{
 }
 
 .container{
-    max-width:650px;
+    width:min(650px,94%);
     margin:20px auto;
-    padding:15px;
 }
 
 .card{
-    background:white;
+    background:#fff;
     padding:18px;
     border-radius:16px;
-    box-shadow:0 5px 20px rgba(0,0,0,.08);
+    box-shadow:0 5px 25px rgba(0,0,0,.08);
 }
 
 .upload{
-    display:block;
     border:2px dashed #102a56;
-    border-radius:13px;
-    padding:24px 15px;
+    border-radius:12px;
+    padding:24px;
     text-align:center;
     cursor:pointer;
     margin-bottom:18px;
@@ -57,10 +55,11 @@ header h1{
     display:none;
 }
 
-.upload strong{
-    display:block;
+.upload-title{
     font-size:18px;
-    margin-bottom:7px;
+    font-weight:bold;
+    display:block;
+    margin-bottom:6px;
 }
 
 .controls{
@@ -70,25 +69,30 @@ header h1{
 }
 
 label{
-    display:block;
     font-size:14px;
     font-weight:bold;
 }
 
-input{
+input[type=text]{
+    display:block;
     width:100%;
     padding:12px;
     margin-top:5px;
-    border:1px solid #ccd4df;
+    border:1px solid #ccd3dd;
     border-radius:9px;
+    outline:none;
     font-size:15px;
+}
+
+input[type=text]:focus{
+    border-color:#102a56;
 }
 
 .preview{
     width:100%;
-    overflow:hidden;
+    background:#ddd;
     border-radius:12px;
-    background:#e9edf2;
+    overflow:hidden;
 }
 
 canvas{
@@ -99,10 +103,10 @@ canvas{
 
 button{
     width:100%;
-    padding:14px;
-    margin-top:12px;
     border:0;
     border-radius:10px;
+    padding:14px;
+    margin-top:12px;
     font-size:16px;
     font-weight:bold;
     cursor:pointer;
@@ -110,7 +114,7 @@ button{
 
 .download{
     background:#102a56;
-    color:white;
+    color:#fff;
 }
 
 .clear{
@@ -120,13 +124,12 @@ button{
 
 button:disabled{
     opacity:.45;
-    cursor:not-allowed;
 }
 
-.note{
+.info{
     text-align:center;
-    color:#667085;
     font-size:12px;
+    color:#667085;
     margin-top:14px;
 }
 </style>
@@ -143,71 +146,106 @@ button:disabled{
 <div class="card">
 
     <label class="upload">
-        <strong>📷 Upload Product Photo</strong>
-        <span>Select your product image</span>
+        <span class="upload-title">
+            📷 Upload Product Photo
+        </span>
+        <span>
+            Tap to select your product image
+        </span>
+
         <input
             type="file"
-            id="photoInput"
+            id="imageInput"
             accept="image/*">
     </label>
+
 
     <div class="controls">
 
         <div>
             <label>Shop Name</label>
+
             <input
                 type="text"
-                id="shopName"
+                id="shop"
                 value="CreateLK Shop">
         </div>
 
+
         <div>
             <label>Website</label>
+
             <input
                 type="text"
                 id="website"
                 value="createlk.com">
         </div>
 
+
         <div>
-            <label>WhatsApp Number</label>
+            <label>WhatsApp</label>
+
             <input
                 type="text"
-                id="whatsapp"
+                id="phone"
                 value="0771190395">
         </div>
 
     </div>
 
+
     <div class="preview">
+
         <canvas id="canvas"></canvas>
+
     </div>
 
+
     <button
+        id="download"
         class="download"
-        id="downloadBtn"
         disabled>
-        ⬇️ Download Image
+
+        ⬇️ Download Marketplace Image
+
     </button>
+
 
     <button
-        class="clear"
-        id="clearBtn">
+        id="clear"
+        class="clear">
+
         🔄 Clear
+
     </button>
 
-    <div class="note">
-        The original product photo is not changed. The contact banner is added only once.
+
+    <div class="info">
+        The image is processed on your device.
     </div>
 
 </div>
 
 </div>
+
 
 <script>
 
-const photoInput =
-    document.getElementById("photoInput");
+/* =========================================
+   ELEMENTS
+========================================= */
+
+const imageInput =
+    document.getElementById("imageInput");
+
+const shopInput =
+    document.getElementById("shop");
+
+const websiteInput =
+    document.getElementById("website");
+
+const phoneInput =
+    document.getElementById("phone");
 
 const canvas =
     document.getElementById("canvas");
@@ -215,281 +253,438 @@ const canvas =
 const ctx =
     canvas.getContext("2d");
 
-const shopName =
-    document.getElementById("shopName");
+const downloadButton =
+    document.getElementById("download");
 
-const website =
-    document.getElementById("website");
-
-const whatsapp =
-    document.getElementById("whatsapp");
-
-const downloadBtn =
-    document.getElementById("downloadBtn");
-
-const clearBtn =
-    document.getElementById("clearBtn");
-
-let image = null;
+const clearButton =
+    document.getElementById("clear");
 
 
-/* ==============================
-   LOAD PHOTO
-============================== */
-
-photoInput.addEventListener("change", function(){
-
-    const file = this.files[0];
-
-    if(!file) return;
-
-    const reader = new FileReader();
-
-    reader.onload = function(event){
-
-        const img = new Image();
-
-        img.onload = function(){
-
-            image = img;
-
-            render();
-
-            downloadBtn.disabled = false;
-        };
-
-        img.src = event.target.result;
-    };
-
-    reader.readAsDataURL(file);
-});
+let productImage = null;
 
 
-/* ==============================
-   RENDER
-============================== */
+/* =========================================
+   UPLOAD
+========================================= */
 
-function render(){
+imageInput.addEventListener(
+    "change",
+    function(){
 
-    if(!image) return;
+        const file = this.files[0];
 
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+        if(!file){
+            return;
+        }
+
+        const reader =
+            new FileReader();
+
+        reader.onload =
+            function(event){
+
+                const img =
+                    new Image();
+
+                img.onload =
+                    function(){
+
+                        productImage = img;
+
+                        createImage();
+
+                        downloadButton.disabled =
+                            false;
+                    };
+
+                img.src =
+                    event.target.result;
+            };
+
+        reader.readAsDataURL(file);
+    }
+);
+
+
+/* =========================================
+   CREATE IMAGE
+========================================= */
+
+function createImage(){
+
+    if(!productImage){
+        return;
+    }
+
+    const W =
+        productImage.naturalWidth;
+
+    const H =
+        productImage.naturalHeight;
+
+
+    canvas.width = W;
+    canvas.height = H;
+
+
+    /*
+       ALWAYS start from original image.
+       This prevents duplicate overlays.
+    */
 
     ctx.clearRect(
         0,
         0,
-        canvas.width,
-        canvas.height
+        W,
+        H
     );
+
 
     ctx.drawImage(
-        image,
+        productImage,
         0,
         0,
-        canvas.width,
-        canvas.height
+        W,
+        H
     );
 
-    drawBanner();
+
+    createContactBar(
+        W,
+        H
+    );
 }
 
 
-/* ==============================
-   DRAW ONE CLEAN BANNER
-============================== */
+/* =========================================
+   CONTACT BAR
+========================================= */
 
-function drawBanner(){
-
-    const W = canvas.width;
-    const H = canvas.height;
+function createContactBar(W,H){
 
     /*
-       Banner size based on image size.
-       Minimum sizes prevent tiny text.
+       One single bar.
     */
 
-    const bannerH =
-        Math.max(105, W * 0.115);
-
-    const padding =
-        Math.max(18, W * 0.025);
-
-    const centerY =
-        H - bannerH / 2;
+    const barHeight =
+        Math.max(
+            120,
+            Math.round(W * 0.125)
+        );
 
 
-    /* Background */
+    const y =
+        H - barHeight;
 
-    ctx.fillStyle = "rgba(8,20,40,0.94)";
+
+    /*
+       Dark background
+    */
+
+    ctx.fillStyle =
+        "#102a56";
 
     ctx.fillRect(
         0,
-        H - bannerH,
+        y,
         W,
-        bannerH
+        barHeight
     );
 
 
-    /* ==========================
-       SHOP NAME
-    ========================== */
+    /*
+       Vertical separator
+    */
+
+    const separatorX =
+        Math.round(W * 0.57);
+
+    ctx.fillStyle =
+        "rgba(255,255,255,.22)";
+
+    ctx.fillRect(
+        separatorX,
+        y + barHeight * .18,
+        1,
+        barHeight * .64
+    );
+
+
+    /*
+       LEFT SIDE
+       Shop + website
+    */
+
+    const leftX =
+        Math.round(W * 0.04);
+
+
+    ctx.textAlign =
+        "left";
+
+    ctx.textBaseline =
+        "middle";
+
 
     const shop =
-        shopName.value.trim() || "CreateLK Shop";
+        shopInput.value.trim()
+        || "CreateLK Shop";
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
 
-    ctx.fillStyle = "#ffffff";
+    const website =
+        websiteInput.value.trim()
+        || "createlk.com";
+
+
+    ctx.fillStyle =
+        "#ffffff";
 
     ctx.font =
-        `bold ${Math.max(20,W*0.028)}px Arial`;
+        "bold " +
+        Math.max(22,W*0.032) +
+        "px Arial";
+
 
     ctx.fillText(
         shop,
-        padding,
-        centerY - bannerH * 0.17
+        leftX,
+        y + barHeight * .37
     );
 
 
-    /* ==========================
-       WEBSITE
-    ========================== */
-
-    const site =
-        website.value.trim();
+    ctx.fillStyle =
+        "#dce8f5";
 
     ctx.font =
-        `${Math.max(15,W*0.020)}px Arial`;
+        Math.max(15,W*0.020) +
+        "px Arial";
 
-    ctx.fillStyle = "#dbe5f2";
 
     ctx.fillText(
-        site,
-        padding,
-        centerY + bannerH * 0.20
+        website,
+        leftX,
+        y + barHeight * .70
     );
 
 
-    /* ==========================
-       WHATSAPP BADGE
-    ========================== */
+    /*
+       RIGHT SIDE
+       WhatsApp badge
+    */
 
-    const number =
-        whatsapp.value.trim();
+    drawWhatsAppArea(
+        separatorX,
+        y,
+        W - separatorX,
+        barHeight
+    );
+}
 
-    const badgeH =
-        Math.max(55, bannerH * 0.60);
 
-    const badgeW =
-        Math.max(220, W * 0.31);
+/* =========================================
+   WHATSAPP AREA
+========================================= */
+
+function drawWhatsAppArea(
+    x,
+    y,
+    width,
+    height
+){
+
+    const phone =
+        phoneInput.value.trim()
+        || "0771190395";
+
+
+    /*
+       Green rounded badge
+    */
+
+    const badgeWidth =
+        Math.min(
+            width * .86,
+            360
+        );
+
+
+    const badgeHeight =
+        Math.min(
+            height * .68,
+            82
+        );
+
 
     const badgeX =
-        W - badgeW - padding;
+        x + (width - badgeWidth) / 2;
+
 
     const badgeY =
-        H - bannerH + (bannerH - badgeH) / 2;
+        y + (height - badgeHeight) / 2;
 
 
-    /* White rounded badge */
+    /*
+       WHITE BADGE
+    */
 
     ctx.save();
 
     roundRect(
-        ctx,
         badgeX,
         badgeY,
-        badgeW,
-        badgeH,
-        badgeH / 2
+        badgeWidth,
+        badgeHeight,
+        badgeHeight / 2
     );
 
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle =
+        "#ffffff";
+
     ctx.fill();
 
     ctx.restore();
 
 
-    /* ==========================
-       REAL-STYLE WHATSAPP CIRCLE
-    ========================== */
+    /*
+       REAL WHATSAPP LOGO
+       drawn as SVG path style
+    */
 
     const iconSize =
-        badgeH * 0.70;
-
-    const iconCX =
-        badgeX + badgeH * 0.62;
-
-    const iconCY =
-        badgeY + badgeH / 2;
+        badgeHeight * .64;
 
 
-    /* Green circle */
-
-    ctx.beginPath();
-
-    ctx.arc(
-        iconCX,
-        iconCY,
-        iconSize / 2,
-        0,
-        Math.PI * 2
-    );
-
-    ctx.fillStyle = "#25D366";
-    ctx.fill();
+    const iconX =
+        badgeX + badgeHeight * .56;
 
 
-    /* White WhatsApp speech bubble */
+    const iconY =
+        badgeY + badgeHeight / 2;
 
-    drawWhatsAppIcon(
-        iconCX,
-        iconCY,
-        iconSize * 0.62
+
+    drawWhatsAppLogo(
+        iconX,
+        iconY,
+        iconSize
     );
 
 
-    /* ==========================
-       NUMBER
-    ========================== */
+    /*
+       WhatsApp text + number
+    */
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
+    const textX =
+        badgeX +
+        badgeHeight * 1.08;
 
-    ctx.fillStyle = "#102a56";
+
+    ctx.textAlign =
+        "left";
+
+    ctx.textBaseline =
+        "middle";
+
+
+    ctx.fillStyle =
+        "#128C7E";
 
     ctx.font =
-        `bold ${Math.max(16,W*0.022)}px Arial`;
+        "bold " +
+        Math.max(12,WScale(width)*.055) +
+        "px Arial";
+
 
     ctx.fillText(
-        number,
-        badgeX + badgeH * 1.15,
-        iconCY
+        "WhatsApp",
+        textX,
+        iconY - badgeHeight * .17
+    );
+
+
+    ctx.fillStyle =
+        "#102a56";
+
+    ctx.font =
+        "bold " +
+        Math.max(15,WScale(width)*.068) +
+        "px Arial";
+
+
+    ctx.fillText(
+        phone,
+        textX,
+        iconY + badgeHeight * .19
     );
 }
 
 
-/* ==============================
-   WHATSAPP ICON
-============================== */
+/* =========================================
+   SCALE
+========================================= */
 
-function drawWhatsAppIcon(x,y,size){
+function WScale(value){
 
-    ctx.save();
+    return Math.min(
+        value / 500,
+        1.2
+    );
+}
 
-    ctx.fillStyle = "#ffffff";
+
+/* =========================================
+   WHATSAPP LOGO
+========================================= */
+
+function drawWhatsAppLogo(
+    x,
+    y,
+    size
+){
 
     /*
-       Speech bubble
+       Green circular WhatsApp logo.
     */
+
+    const r =
+        size / 2;
+
 
     ctx.beginPath();
 
     ctx.arc(
         x,
         y,
-        size * 0.42,
+        r,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fillStyle =
+        "#25D366";
+
+    ctx.fill();
+
+
+    /*
+       White speech bubble
+    */
+
+    ctx.save();
+
+    ctx.fillStyle =
+        "#ffffff";
+
+
+    const bubbleR =
+        r * .56;
+
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x,
+        y,
+        bubbleR,
         0,
         Math.PI * 2
     );
@@ -498,24 +693,24 @@ function drawWhatsAppIcon(x,y,size){
 
 
     /*
-       Small tail
+       Bubble tail
     */
 
     ctx.beginPath();
 
     ctx.moveTo(
-        x - size * 0.28,
-        y + size * 0.27
+        x - bubbleR * .52,
+        y + bubbleR * .55
     );
 
     ctx.lineTo(
-        x - size * 0.43,
-        y + size * 0.43
+        x - bubbleR * .90,
+        y + bubbleR * .90
     );
 
     ctx.lineTo(
-        x - size * 0.08,
-        y + size * 0.30
+        x - bubbleR * .18,
+        y + bubbleR * .60
     );
 
     ctx.closePath();
@@ -524,32 +719,56 @@ function drawWhatsAppIcon(x,y,size){
 
 
     /*
-       Telephone handset
+       Telephone handset.
     */
 
-    ctx.strokeStyle = "#25D366";
-    ctx.lineWidth = Math.max(2,size*0.11);
-    ctx.lineCap = "round";
+    ctx.strokeStyle =
+        "#25D366";
+
+    ctx.lineWidth =
+        Math.max(
+            2,
+            size * .075
+        );
+
+    ctx.lineCap =
+        "round";
+
+    ctx.lineJoin =
+        "round";
+
 
     ctx.beginPath();
 
-    ctx.arc(
-        x,
-        y,
-        size * 0.18,
-        -0.9,
-        0.75
+    ctx.moveTo(
+        x - size*.12,
+        y - size*.18
+    );
+
+    ctx.quadraticCurveTo(
+        x - size*.25,
+        y - size*.03,
+        x - size*.08,
+        y + size*.16
+    );
+
+    ctx.quadraticCurveTo(
+        x + size*.08,
+        y + size*.32,
+        x + size*.23,
+        y + size*.14
     );
 
     ctx.stroke();
+
 
     ctx.restore();
 }
 
 
-/* ==============================
+/* =========================================
    ROUNDED RECTANGLE
-============================== */
+========================================= */
 
 function roundRect(
     ctx,
@@ -619,82 +838,96 @@ function roundRect(
 }
 
 
-/* ==============================
-   LIVE UPDATE
-============================== */
+/* =========================================
+   LIVE TEXT UPDATE
+========================================= */
 
-shopName.addEventListener(
+shopInput.addEventListener(
     "input",
     function(){
 
-        if(image) render();
-
-    }
-);
-
-website.addEventListener(
-    "input",
-    function(){
-
-        if(image) render();
-
-    }
-);
-
-whatsapp.addEventListener(
-    "input",
-    function(){
-
-        if(image) render();
+        if(productImage){
+            createImage();
+        }
 
     }
 );
 
 
-/* ==============================
+websiteInput.addEventListener(
+    "input",
+    function(){
+
+        if(productImage){
+            createImage();
+        }
+
+    }
+);
+
+
+phoneInput.addEventListener(
+    "input",
+    function(){
+
+        if(productImage){
+            createImage();
+        }
+
+    }
+);
+
+
+/* =========================================
    DOWNLOAD
-============================== */
+========================================= */
 
-downloadBtn.addEventListener(
+downloadButton.addEventListener(
     "click",
     function(){
 
-        if(!image) return;
+        if(!productImage){
+            return;
+        }
+
 
         const link =
             document.createElement("a");
 
+
         link.download =
-            "CreateLK-Marketplace-Product.png";
+            "CreateLK-Marketplace.jpg";
+
 
         link.href =
             canvas.toDataURL(
-                "image/png"
+                "image/jpeg",
+                .95
             );
 
-        link.click();
 
+        link.click();
     }
 );
 
 
-/* ==============================
+/* =========================================
    CLEAR
-============================== */
+========================================= */
 
-clearBtn.addEventListener(
+clearButton.addEventListener(
     "click",
     function(){
 
-        image = null;
+        productImage = null;
 
-        photoInput.value = "";
+        imageInput.value = "";
 
         canvas.width = 0;
         canvas.height = 0;
 
-        downloadBtn.disabled = true;
-
+        downloadButton.disabled =
+            true;
     }
 );
 
