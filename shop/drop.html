@@ -7,17 +7,58 @@
 
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#f3f6fa;color:#102a56}
-header{background:#102a56;color:#fff;text-align:center;padding:16px}
+body{
+ margin:0;
+ font-family:Arial,sans-serif;
+ background:#f3f6fa;
+ color:#102a56
+}
+header{
+ background:#102a56;
+ color:#fff;
+ text-align:center;
+ padding:16px
+}
 header h2{margin:0;font-size:20px}
 .wrap{max-width:600px;margin:auto;padding:15px}
-.card{background:#fff;border-radius:14px;padding:15px;box-shadow:0 3px 15px #0001}
-label{display:block;font-weight:bold;margin:10px 0 5px}
-input{width:100%;padding:11px;border:1px solid #ccd4df;border-radius:8px;font-size:15px}
-button{width:100%;padding:13px;border:0;border-radius:9px;background:#102a56;color:#fff;font-size:16px;font-weight:bold;margin-top:12px}
+.card{
+ background:#fff;
+ border-radius:14px;
+ padding:15px;
+ box-shadow:0 3px 15px #0001
+}
+label{
+ display:block;
+ font-weight:bold;
+ margin:10px 0 5px
+}
+input{
+ width:100%;
+ padding:11px;
+ border:1px solid #ccd4df;
+ border-radius:8px;
+ font-size:15px
+}
+button{
+ width:100%;
+ padding:13px;
+ border:0;
+ border-radius:9px;
+ background:#102a56;
+ color:#fff;
+ font-size:16px;
+ font-weight:bold;
+ margin-top:12px;
+ cursor:pointer
+}
 .download{background:#25D366}
 .preview{margin-top:16px}
-canvas{width:100%;display:block;border-radius:10px;box-shadow:0 2px 12px #0002}
+canvas{
+ width:100%;
+ display:block;
+ border-radius:10px;
+ box-shadow:0 2px 12px #0002
+}
 </style>
 </head>
 
@@ -45,7 +86,9 @@ canvas{width:100%;display:block;border-radius:10px;box-shadow:0 2px 12px #0002}
 <canvas id="canvas" width="1080" height="1080"></canvas>
 </div>
 
-<button class="download" onclick="downloadImage()">Download JPG</button>
+<button class="download" onclick="downloadImage()">
+Download JPG
+</button>
 
 </div>
 </div>
@@ -71,6 +114,7 @@ document.getElementById("photo").onchange=e=>{
 
 function makeImage(){
 
+ ctx.clearRect(0,0,1080,1080);
  ctx.fillStyle="#fff";
  ctx.fillRect(0,0,1080,1080);
 
@@ -82,7 +126,7 @@ function makeImage(){
   return;
  }
 
- /* 1:1 crop */
+ /* 1:1 center crop */
  const size=Math.min(img.width,img.height);
  const sx=(img.width-size)/2;
  const sy=(img.height-size)/2;
@@ -93,71 +137,109 @@ function makeImage(){
   0,0,1080,1080
  );
 
- /* Bottom bar */
- ctx.fillStyle="rgba(16,42,86,.95)";
- ctx.fillRect(0,920,1080,160);
+ /* Subtle bottom gradient */
+ const gradient=ctx.createLinearGradient(0,820,0,1080);
+ gradient.addColorStop(0,"rgba(0,0,0,0)");
+ gradient.addColorStop(1,"rgba(0,0,0,.65)");
 
+ ctx.fillStyle=gradient;
+ ctx.fillRect(0,820,1080,260);
+
+ /* WhatsApp top-left */
+ drawWhatsAppLabel();
+
+ /* Website bottom-right */
+ drawWebsite();
+
+ /* Product information */
  const name=document.getElementById("name").value.trim();
  const price=document.getElementById("price").value.trim();
 
- /* Product name */
  if(name){
-  ctx.fillStyle="#fff";
   ctx.textAlign="left";
   ctx.font="bold 32px Arial";
+  ctx.fillStyle="#fff";
 
   let title=name;
-  if(title.length>32)
-   title=title.substring(0,32)+"...";
+  if(title.length>30)
+   title=title.substring(0,30)+"...";
 
-  ctx.fillText(title,35,965);
+  ctx.fillText(title,35,970);
  }
 
- /* Price */
  if(price){
-  ctx.fillStyle="#25D366";
+  ctx.textAlign="left";
   ctx.font="bold 32px Arial";
+  ctx.fillStyle="#25D366";
+
   ctx.fillText(
    "LKR "+Number(price).toLocaleString(),
-   35,1015
+   35,1020
   );
  }
+}
 
- /* Full-width bottom contact line */
+function drawWhatsAppLabel(){
+
+ const x=32;
+ const y=32;
+ const badge=44;
+
+ /* Label background */
+ ctx.fillStyle="rgba(16,42,86,.92)";
+ roundRect(x,y,245,70,35);
+ ctx.fill();
+
+ /* Badge */
+ drawWhatsApp(x+35,y+35,badge);
+
+ /* Text */
  ctx.fillStyle="#fff";
- ctx.font="bold 25px Arial";
  ctx.textAlign="left";
+ ctx.font="bold 24px Arial";
+ ctx.fillText("0771190395",x+65,y+43);
+}
 
- const website="createlk.com";
- const phone="0771190395";
+function drawWebsite(){
 
- /* Measure everything */
- const websiteW=ctx.measureText(website).width;
- const phoneW=ctx.measureText(phone).width;
- const dotW=ctx.measureText(" • ").width;
+ const text="createlk.com";
+ const fontSize=24;
 
- const badgeSize=36;
- const gap=18;
+ ctx.font="bold "+fontSize+"px Arial";
+ const w=ctx.measureText(text).width;
 
- const total=
-   websiteW+
-   dotW+
-   badgeSize+
-   gap+
-   phoneW;
+ const boxW=w+42;
+ const boxH=56;
 
- let x=(1080-total)/2;
+ const x=1080-boxW-30;
+ const y=994;
 
- /* Website */
- ctx.fillText(website,x,1060);
- x+=websiteW+dotW;
+ ctx.fillStyle="rgba(16,42,86,.92)";
+ roundRect(x,y,boxW,boxH,28);
+ ctx.fill();
 
- /* WhatsApp */
- drawWhatsApp(x+badgeSize/2,1048,badgeSize);
- x+=badgeSize+gap;
+ ctx.fillStyle="#fff";
+ ctx.textAlign="center";
+ ctx.font="bold "+fontSize+"px Arial";
+ ctx.fillText(
+  text,
+  x+boxW/2,
+  y+37
+ );
+}
 
- /* Phone */
- ctx.fillText(phone,x,1060);
+function roundRect(x,y,w,h,r){
+ ctx.beginPath();
+ ctx.moveTo(x+r,y);
+ ctx.lineTo(x+w-r,y);
+ ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+ ctx.lineTo(x+w,y+h-r);
+ ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+ ctx.lineTo(x+r,y+h);
+ ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+ ctx.lineTo(x,y+r);
+ ctx.quadraticCurveTo(x,y,x+r,y);
+ ctx.closePath();
 }
 
 function drawWhatsApp(cx,cy,size){
@@ -166,35 +248,42 @@ function drawWhatsApp(cx,cy,size){
 
  ctx.save();
 
+ /* Green badge */
  ctx.beginPath();
  ctx.arc(cx,cy,r,0,Math.PI*2);
  ctx.fillStyle="#25D366";
  ctx.fill();
 
+ /* White circle */
+ ctx.beginPath();
+ ctx.arc(cx,cy,r*.68,0,Math.PI*2);
  ctx.fillStyle="#fff";
- ctx.beginPath();
- ctx.arc(cx,cy,r*.62,0,Math.PI*2);
  ctx.fill();
 
+ /* Green inner circle */
+ ctx.beginPath();
+ ctx.arc(cx,cy,r*.55,0,Math.PI*2);
  ctx.fillStyle="#25D366";
- ctx.beginPath();
- ctx.arc(cx,cy,r*.50,0,Math.PI*2);
  ctx.fill();
 
+ /* Phone */
  ctx.strokeStyle="#fff";
- ctx.lineWidth=size*.09;
+ ctx.lineWidth=size*.10;
  ctx.lineCap="round";
-
  ctx.beginPath();
- ctx.moveTo(cx-r*.18,cy-r*.20);
+
+ ctx.moveTo(cx-r*.20,cy-r*.20);
+
  ctx.quadraticCurveTo(
-  cx-r*.30,cy,
+  cx-r*.31,cy,
   cx,cy+r*.22
  );
+
  ctx.quadraticCurveTo(
   cx+r*.18,cy+r*.30,
   cx+r*.25,cy+r*.08
  );
+
  ctx.stroke();
 
  ctx.restore();
@@ -208,8 +297,10 @@ function downloadImage(){
  }
 
  const a=document.createElement("a");
+
  a.download="createlk-marketplace.jpg";
  a.href=canvas.toDataURL("image/jpeg",.95);
+
  a.click();
 }
 
