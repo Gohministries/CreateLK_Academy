@@ -197,7 +197,7 @@ footer{
 
 <header>
 <h1>🙏 100 Prayer Points</h1>
-<p>100 prayer points • Every year</p>
+<p>100 prayer points • Manual Reset</p>
 </header>
 
 <main>
@@ -263,6 +263,22 @@ Continue with Google
 0% Complete
 </div>
 
+</div>
+
+<!-- MANUAL RESET -->
+
+<div class="buttons">
+
+<button
+class="red"
+onclick="resetProgress()">
+🔄 Reset Progress
+</button>
+
+</div>
+
+<div class="small" style="margin-top:8px">
+Reset only the completion status. Your prayer points and content will not be deleted.
 </div>
 
 </div>
@@ -646,6 +662,7 @@ function stopListening(){
   );
 
   autoScrollTimer=null;
+
  }
 
 
@@ -673,6 +690,7 @@ function finishListening(){
   );
 
   autoScrollTimer=null;
+
  }
 
 
@@ -1147,7 +1165,7 @@ function showSelectedPoint(){
  ){
 
   $("pointStatus").innerHTML=
-   '<span class="completed">✅ Completed today</span>';
+   '<span class="completed">✅ Completed</span>';
 
 
   $("completeBtn").textContent=
@@ -1284,7 +1302,7 @@ async function toggleComplete(){
    ){
 
     showMessage(
-     "🎉 All 100 prayer points completed today!"
+     "🎉 All 100 prayer points completed!"
     );
 
    }
@@ -1302,6 +1320,98 @@ async function toggleComplete(){
  }catch(e){
 
   showMessage(
+   e.message,
+   true
+  );
+
+ }
+
+}
+
+
+/* =========================
+   MANUAL RESET PROGRESS
+========================= */
+
+async function resetProgress(){
+
+ const completedPrayers=
+  prayers.filter(
+   p =>
+    Number(p.completed)===1
+  );
+
+
+ if(!completedPrayers.length){
+
+  showMessage(
+   "Progress is already 0 / 100.",
+   true
+  );
+
+  return;
+
+ }
+
+
+ const confirmed=
+  confirm(
+   "🔄 Reset all completed prayer points?\n\n"+
+   "Your prayer titles and prayer content will NOT be deleted."
+  );
+
+
+ if(!confirmed){
+
+  return;
+
+ }
+
+
+ try{
+
+  showMessage(
+   "🔄 Resetting progress..."
+  );
+
+
+  /*
+   Use the existing /complete
+   endpoint. No Worker change needed.
+  */
+
+  for(
+   const p of completedPrayers
+  ){
+
+   await api(
+    "/complete",
+    {
+     method:"POST",
+
+     body:
+      JSON.stringify({
+       prayer_id:p.id,
+       completed:false
+      })
+    }
+   );
+
+  }
+
+
+  await loadPrayers();
+
+
+  showMessage(
+   "✅ Progress reset to 0 / 100."
+  );
+
+
+ }catch(e){
+
+  showMessage(
+   "Reset failed: "+
    e.message,
    true
   );
