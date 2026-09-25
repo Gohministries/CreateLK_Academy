@@ -1,117 +1,274 @@
-const GOOGLE_AUTH="https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_TOKEN="https://oauth2.googleapis.com/token";
-const GOOGLE_USER="https://www.googleapis.com/oauth2/v2/userinfo";
+const GOOGLE_AUTH =
+  "https://accounts.google.com/o/oauth2/v2/auth";
 
-const SHOP="https://createlk.com";
-const REDIRECT=
-"https://affiliate.createlk.workers.dev/auth/google/callback";
+const GOOGLE_TOKEN =
+  "https://oauth2.googleapis.com/token";
 
-const CORS={
-  "Access-Control-Allow-Origin":SHOP,
-  "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers":"Content-Type"
+const GOOGLE_USER =
+  "https://www.googleapis.com/oauth2/v2/userinfo";
+
+const SHOP =
+  "https://createlk.com";
+
+const REDIRECT =
+  "https://affiliate.createlk.workers.dev/auth/google/callback";
+
+const CORS = {
+  "Access-Control-Allow-Origin": SHOP,
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type"
 };
 
-function json(data,status=200){
-  return new Response(JSON.stringify(data),{
-    status,
-    headers:{
-      "Content-Type":"application/json",
-      ...CORS
+
+/* RESPONSE HELPERS */
+
+function json(data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        ...CORS
+      }
     }
-  });
+  );
 }
 
-function html(body,status=200){
-  return new Response(body,{
-    status,
-    headers:{
-      "Content-Type":"text/html;charset=UTF-8"
+function html(body, status = 200) {
+  return new Response(
+    `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK Affiliate</title>
+<style>
+body{
+  margin:0;
+  padding:40px 20px;
+  font-family:Arial,sans-serif;
+  background:#f4f6f9;
+  color:#222;
+}
+.box{
+  max-width:600px;
+  margin:auto;
+  background:#fff;
+  padding:30px;
+  border-radius:14px;
+  box-shadow:0 4px 20px rgba(0,0,0,.08);
+}
+h2{color:#102a56}
+.error{
+  background:#fff0f0;
+  color:#b00020;
+  padding:15px;
+  border-radius:8px;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+a{
+  display:inline-block;
+  margin-top:20px;
+  padding:12px 20px;
+  background:#102a56;
+  color:#fff;
+  text-decoration:none;
+  border-radius:8px;
+}
+</style>
+</head>
+<body>
+<div class="box">
+${body}
+</div>
+</body>
+</html>`,
+    {
+      status,
+      headers: {
+        "Content-Type": "text/html;charset=UTF-8"
+      }
     }
-  });
+  );
 }
 
-function newCode(){
-  return "CL"+
+
+/* AFFILIATE CODE */
+
+function newCode() {
+  return "CL" +
     crypto.randomUUID()
-    .replaceAll("-","")
-    .slice(0,10)
-    .toUpperCase();
+      .replaceAll("-", "")
+      .slice(0, 10)
+      .toUpperCase();
 }
 
-function safeRedirect(value){
 
-  if(!value) return "/shop/";
+/* SAFE REDIRECT */
 
-  try{
+function safeRedirect(value) {
 
-    const u=new URL(value,SHOP);
+  if (!value) {
+    return "/shop/";
+  }
 
-    if(
-      u.origin===SHOP &&
+  try {
+
+    const u = new URL(value, SHOP);
+
+    if (
+      u.origin === SHOP &&
       u.pathname.startsWith("/shop/")
-    ){
-      return u.pathname+
-        u.search+
-        u.hash;
+    ) {
+      return (
+        u.pathname +
+        u.search +
+        u.hash
+      );
     }
 
-  }catch(e){}
+  } catch (e) {}
 
   return "/shop/";
 }
 
+
+/* MAIN */
+
 export default {
 
-  async fetch(request,env){
+  async fetch(request, env) {
 
-    if(request.method==="OPTIONS"){
-      return new Response(null,{
-        headers:CORS
-      });
+    try {
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          headers: CORS
+        });
+      }
+
+      const url =
+        new URL(request.url);
+
+      if (url.pathname === "/") {
+        return new Response(
+          "CreateLK Affiliate Worker",
+          {
+            headers: {
+              "Content-Type":
+                "text/plain;charset=UTF-8"
+            }
+          }
+        );
+      }
+
+      if (
+        url.pathname ===
+        "/auth/google"
+      ) {
+        return await googleStart(
+          url,
+          env
+        );
+      }
+
+      if (
+        url.pathname ===
+        "/auth/google/callback"
+      ) {
+        return await googleCallback(
+          url,
+          env
+        );
+      }
+
+      if (
+        url.pathname ===
+        "/api/affiliate"
+      ) {
+        return await affiliate(
+          request,
+          env
+        );
+      }
+
+      if (
+        url.pathname ===
+        "/api/affiliate/orders"
+      ) {
+        return await affiliateOrders(
+          request,
+          env
+        );
+      }
+
+      return new Response(
+        "Not Found",
+        {
+          status: 404
+        }
+      );
+
+    } catch (error) {
+
+      console.error(
+        "WORKER ERROR:",
+        error
+      );
+
+      return json(
+        {
+          success: false,
+          error:
+            error?.message ||
+            String(error)
+        },
+        500
+      );
     }
-
-    const url=new URL(request.url);
-
-    if(url.pathname==="/auth/google"){
-      return googleStart(url,env);
-    }
-
-    if(url.pathname==="/auth/google/callback"){
-      return googleCallback(url,env);
-    }
-
-    if(url.pathname==="/api/affiliate"){
-      return affiliate(request,env);
-    }
-
-    if(url.pathname==="/api/affiliate/orders"){
-      return affiliateOrders(request,env);
-    }
-
-    return new Response(
-      "CreateLK Affiliate Worker"
-    );
   }
 };
 
 
-/* GOOGLE LOGIN */
+/* GOOGLE LOGIN START */
 
-async function googleStart(url,env){
+async function googleStart(url, env) {
 
-  const redirect=safeRedirect(
-    url.searchParams.get("redirect")
-  );
+  if (!env.GOOGLE_CLIENT_ID) {
 
-  const state=btoa(
-    JSON.stringify({
-      redirect,
-      nonce:crypto.randomUUID()
-    })
-  );
+    return html(
+      `<h2>Google configuration error</h2>
+       <div class="error">
+GOOGLE_CLIENT_ID is missing in Cloudflare Worker settings.
+       </div>`,
+      500
+    );
+  }
 
-  const auth=new URL(GOOGLE_AUTH);
+  const redirect =
+    safeRedirect(
+      url.searchParams.get(
+        "redirect"
+      )
+    );
+
+  const stateObject = {
+    redirect,
+    nonce:
+      crypto.randomUUID()
+  };
+
+  const state =
+    btoa(
+      JSON.stringify(
+        stateObject
+      )
+    );
+
+  const auth =
+    new URL(GOOGLE_AUTH);
 
   auth.searchParams.set(
     "client_id",
@@ -157,328 +314,732 @@ async function googleStart(url,env){
 
 /* GOOGLE CALLBACK */
 
-async function googleCallback(url,env){
+async function googleCallback(
+  url,
+  env
+) {
 
-  const error=
-    url.searchParams.get("error");
+  try {
 
-  if(error){
+    /* CHECK CONFIG */
 
-    return html(`
-      <h2>Google login cancelled.</h2>
-      <p>Please return to CreateLK Shop.</p>
-    `);
-  }
+    if (!env.GOOGLE_CLIENT_ID) {
 
-  const authCode=
-    url.searchParams.get("code");
-
-  const state=
-    url.searchParams.get("state");
-
-  if(!authCode||!state){
-
-    return html(
-      "<h2>Invalid Google login request.</h2>",
-      400
-    );
-  }
-
-  let stateData;
-
-  try{
-
-    stateData=
-      JSON.parse(atob(state));
-
-  }catch(e){
-
-    return html(
-      "<h2>Invalid login state.</h2>",
-      400
-    );
-  }
-
-  const tokenRes=await fetch(
-    GOOGLE_TOKEN,
-    {
-      method:"POST",
-
-      headers:{
-        "Content-Type":
-        "application/x-www-form-urlencoded"
-      },
-
-      body:new URLSearchParams({
-
-        code:authCode,
-
-        client_id:
-          env.GOOGLE_CLIENT_ID,
-
-        client_secret:
-          env.GOOGLE_CLIENT_SECRET,
-
-        redirect_uri:
-          REDIRECT,
-
-        grant_type:
-          "authorization_code"
-
-      })
+      return html(
+        `<h2>Configuration Error</h2>
+<div class="error">
+GOOGLE_CLIENT_ID is missing.
+</div>`,
+        500
+      );
     }
-  );
 
-  const token=
-    await tokenRes.json();
+    if (!env.GOOGLE_CLIENT_SECRET) {
 
-  if(!token.access_token){
-
-    return html(
-      "<h2>Unable to complete Google login.</h2>",
-      400
-    );
-  }
-
-  const userRes=await fetch(
-    GOOGLE_USER,
-    {
-      headers:{
-        Authorization:
-        "Bearer "+token.access_token
-      }
+      return html(
+        `<h2>Configuration Error</h2>
+<div class="error">
+GOOGLE_CLIENT_SECRET is missing.
+</div>`,
+        500
+      );
     }
-  );
 
-  const user=
-    await userRes.json();
+    if (!env.DB) {
 
-  if(!user.email){
-
-    return html(
-      "<h2>Google account email unavailable.</h2>",
-      400
-    );
-  }
-
-  const email=
-    user.email.toLowerCase();
-
-  let affiliate=
-    await env.DB.prepare(
-      `SELECT *
-       FROM affiliates
-       WHERE email=?`
-    )
-    .bind(email)
-    .first();
+      return html(
+        `<h2>Configuration Error</h2>
+<div class="error">
+D1 binding "DB" is missing.
+</div>`,
+        500
+      );
+    }
 
 
-  /* CREATE AFFILIATE */
+    /* GOOGLE ERROR */
 
-  if(!affiliate){
+    const googleError =
+      url.searchParams.get(
+        "error"
+      );
 
-    let affiliateCode;
+    if (googleError) {
 
-    while(true){
+      const description =
+        url.searchParams.get(
+          "error_description"
+        ) || "";
 
-      affiliateCode=newCode();
+      return html(
+        `<h2>Google Login Cancelled</h2>
+<div class="error">${escapeHtml(
+          googleError +
+          "\n" +
+          description
+        )}</div>
+<a href="${SHOP}/shop/affiliate.html">
+Return to CreateLK Affiliate
+</a>`,
+        400
+      );
+    }
 
-      const exists=
+
+    /* CODE */
+
+    const authCode =
+      url.searchParams.get(
+        "code"
+      );
+
+    const state =
+      url.searchParams.get(
+        "state"
+      );
+
+    if (!authCode) {
+
+      return html(
+        `<h2>Google Login Error</h2>
+<div class="error">
+Authorization code was not received.
+</div>`,
+        400
+      );
+    }
+
+    if (!state) {
+
+      return html(
+        `<h2>Google Login Error</h2>
+<div class="error">
+Login state was not received.
+</div>`,
+        400
+      );
+    }
+
+
+    /* STATE */
+
+    let stateData;
+
+    try {
+
+      stateData =
+        JSON.parse(
+          atob(state)
+        );
+
+    } catch (error) {
+
+      return html(
+        `<h2>Login State Error</h2>
+<div class="error">
+The Google login state could not be read.
+</div>`,
+        400
+      );
+    }
+
+
+    /* TOKEN */
+
+    let tokenRes;
+
+    try {
+
+      tokenRes =
+        await fetch(
+          GOOGLE_TOKEN,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/x-www-form-urlencoded"
+            },
+
+            body:
+              new URLSearchParams({
+                code: authCode,
+
+                client_id:
+                  env.GOOGLE_CLIENT_ID,
+
+                client_secret:
+                  env.GOOGLE_CLIENT_SECRET,
+
+                redirect_uri:
+                  REDIRECT,
+
+                grant_type:
+                  "authorization_code"
+              })
+          }
+        );
+
+    } catch (error) {
+
+      return html(
+        `<h2>Google Token Error</h2>
+<div class="error">${escapeHtml(
+          error?.message ||
+          String(error)
+        )}</div>`,
+        500
+      );
+    }
+
+
+    const tokenText =
+      await tokenRes.text();
+
+    let token;
+
+    try {
+
+      token =
+        JSON.parse(
+          tokenText
+        );
+
+    } catch (error) {
+
+      return html(
+        `<h2>Google Token Error</h2>
+<div class="error">
+Google returned an invalid response.
+
+${escapeHtml(
+  tokenText
+)}
+</div>`,
+        500
+      );
+    }
+
+
+    if (
+      !token.access_token
+    ) {
+
+      return html(
+        `<h2>Google Login Error</h2>
+<div class="error">${escapeHtml(
+          token.error_description ||
+          token.error ||
+          "Google did not return an access token."
+        )}</div>`,
+        400
+      );
+    }
+
+
+    /* USER INFO */
+
+    let userRes;
+
+    try {
+
+      userRes =
+        await fetch(
+          GOOGLE_USER,
+          {
+            headers: {
+              Authorization:
+                "Bearer " +
+                token.access_token
+            }
+          }
+        );
+
+    } catch (error) {
+
+      return html(
+        `<h2>Google User Error</h2>
+<div class="error">${escapeHtml(
+          error?.message ||
+          String(error)
+        )}</div>`,
+        500
+      );
+    }
+
+
+    const userText =
+      await userRes.text();
+
+    let user;
+
+    try {
+
+      user =
+        JSON.parse(
+          userText
+        );
+
+    } catch (error) {
+
+      return html(
+        `<h2>Google User Error</h2>
+<div class="error">
+Invalid Google user response.
+
+${escapeHtml(
+  userText
+)}
+</div>`,
+        500
+      );
+    }
+
+
+    if (!user.email) {
+
+      return html(
+        `<h2>Google Account Error</h2>
+<div class="error">
+Google did not provide an email address.
+</div>`,
+        400
+      );
+    }
+
+
+    const email =
+      user.email
+        .trim()
+        .toLowerCase();
+
+
+    /* FIND EXISTING AFFILIATE */
+
+    let affiliate;
+
+    try {
+
+      affiliate =
         await env.DB.prepare(
-          `SELECT id
+          `SELECT *
            FROM affiliates
-           WHERE affiliate_code=?`
+           WHERE email=?`
         )
-        .bind(affiliateCode)
+        .bind(email)
         .first();
 
-      if(!exists) break;
+    } catch (error) {
+
+      return html(
+        `<h2>Database Error</h2>
+<div class="error">
+Unable to read the affiliate account.
+
+${escapeHtml(
+  error?.message ||
+  String(error)
+)}
+</div>`,
+        500
+      );
     }
 
-    await env.DB.prepare(
-      `INSERT INTO affiliates
-      (
-        name,
+
+    /* CREATE AFFILIATE */
+
+    if (!affiliate) {
+
+      let affiliateCode;
+      let created = false;
+
+      for (
+        let attempt = 0;
+        attempt < 10;
+        attempt++
+      ) {
+
+        affiliateCode =
+          newCode();
+
+        try {
+
+          const exists =
+            await env.DB.prepare(
+              `SELECT id
+               FROM affiliates
+               WHERE affiliate_code=?`
+            )
+            .bind(
+              affiliateCode
+            )
+            .first();
+
+          if (exists) {
+            continue;
+          }
+
+          await env.DB.prepare(
+            `INSERT INTO affiliates
+            (
+              name,
+              email,
+              google_id,
+              affiliate_code,
+              commission_rate,
+              balance,
+              pending_balance,
+              total_earned,
+              status,
+              created_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?,?)`
+          )
+          .bind(
+            user.name || "",
+            email,
+            user.id || "",
+            affiliateCode,
+            10,
+            0,
+            0,
+            0,
+            "active",
+            new Date().toISOString()
+          )
+          .run();
+
+          created = true;
+          break;
+
+        } catch (error) {
+
+          if (
+            attempt === 9
+          ) {
+
+            return html(
+              `<h2>Database Error</h2>
+<div class="error">
+Unable to create affiliate account.
+
+${escapeHtml(
+  error?.message ||
+  String(error)
+)}
+</div>`,
+              500
+            );
+          }
+        }
+      }
+
+      if (!created) {
+
+        return html(
+          `<h2>Affiliate Error</h2>
+<div class="error">
+Unable to generate a unique affiliate code.
+</div>`,
+          500
+        );
+      }
+
+
+      affiliate = {
+        name:
+          user.name || "",
         email,
-        google_id,
-        affiliate_code,
-        commission_rate,
-        balance,
-        pending_balance,
-        total_earned,
-        status,
-        created_at
-      )
-      VALUES(?,?,?,?,?,?,?,?,?,?)`
-    )
-    .bind(
-      user.name||"",
-      email,
-      user.id||"",
-      affiliateCode,
-      10,
-      0,
-      0,
-      0,
-      "active",
-      new Date().toISOString()
-    )
-    .run();
-
-    affiliate={
-      name:user.name||"",
-      email,
-      affiliate_code:affiliateCode
-    };
-  }
+        affiliate_code:
+          affiliateCode
+      };
+    }
 
 
-  /* RETURN TO AFFILIATE PAGE */
+    /* CHECK ACCOUNT STATUS */
 
-  const target=
-    new URL(
-      "/shop/affiliate.html",
-      SHOP
+    if (
+      affiliate.status &&
+      affiliate.status !==
+        "active"
+    ) {
+
+      return html(
+        `<h2>Affiliate Account</h2>
+<div class="error">
+Your affiliate account is not active.
+</div>
+<a href="${SHOP}/shop/affiliate.html">
+Return to CreateLK Affiliate
+</a>`,
+        403
+      );
+    }
+
+
+    /* RETURN TO SHOP */
+
+    const target =
+      new URL(
+        "/shop/affiliate.html",
+        SHOP
+      );
+
+    target.searchParams.set(
+      "login",
+      "success"
     );
 
-  target.searchParams.set(
-    "login",
-    "success"
-  );
+    target.searchParams.set(
+      "code",
+      affiliate.affiliate_code
+    );
 
-  target.searchParams.set(
-    "code",
-    affiliate.affiliate_code
-  );
+    target.searchParams.set(
+      "redirect",
+      stateData.redirect ||
+        "/shop/"
+    );
 
-  target.searchParams.set(
-    "redirect",
-    stateData.redirect||"/shop/"
-  );
+    return Response.redirect(
+      target.toString(),
+      302
+    );
 
-  return Response.redirect(
-    target.toString(),
-    302
-  );
+  } catch (error) {
+
+    console.error(
+      "GOOGLE CALLBACK ERROR:",
+      error
+    );
+
+    return html(
+      `<h2>Affiliate Login Error</h2>
+<div class="error">${escapeHtml(
+        error?.message ||
+        String(error)
+      )}</div>
+<a href="${SHOP}/shop/affiliate.html">
+Return to CreateLK Affiliate
+</a>`,
+      500
+    );
+  }
 }
 
 
 /* AFFILIATE ACCOUNT */
 
-async function affiliate(request,env){
+async function affiliate(
+  request,
+  env
+) {
 
-  if(request.method!=="GET"){
+  if (
+    request.method !==
+    "GET"
+  ) {
 
-    return json({
-      success:false,
-      error:"Method not allowed"
-    },405);
+    return json(
+      {
+        success: false,
+        error:
+          "Method not allowed"
+      },
+      405
+    );
   }
 
-  const email=
+  const email =
     new URL(request.url)
-    .searchParams
-    .get("email");
+      .searchParams
+      .get("email");
 
-  if(!email){
+  if (!email) {
 
-    return json({
-      success:false,
-      error:"Email required"
-    },400);
+    return json(
+      {
+        success: false,
+        error:
+          "Email required"
+      },
+      400
+    );
   }
 
-  const row=
-    await env.DB.prepare(
-      `SELECT
-        id,
-        name,
-        email,
-        affiliate_code,
-        commission_rate,
-        balance,
-        pending_balance,
-        total_earned,
-        status
-       FROM affiliates
-       WHERE email=?`
-    )
-    .bind(email.toLowerCase())
-    .first();
+  if (!env.DB) {
 
-  return json({
-    success:!!row,
-    affiliate:row||null
-  });
+    return json(
+      {
+        success: false,
+        error:
+          "D1 binding DB is missing"
+      },
+      500
+    );
+  }
+
+  try {
+
+    const row =
+      await env.DB.prepare(
+        `SELECT
+          id,
+          name,
+          email,
+          affiliate_code,
+          commission_rate,
+          balance,
+          pending_balance,
+          total_earned,
+          status
+         FROM affiliates
+         WHERE email=?`
+      )
+      .bind(
+        email
+          .trim()
+          .toLowerCase()
+      )
+      .first();
+
+    return json({
+      success: !!row,
+      affiliate:
+        row || null
+    });
+
+  } catch (error) {
+
+    return json(
+      {
+        success: false,
+        error:
+          error?.message ||
+          String(error)
+      },
+      500
+    );
+  }
 }
 
 
 /* AFFILIATE ORDERS */
 
-async function affiliateOrders(request,env){
+async function affiliateOrders(
+  request,
+  env
+) {
 
-  if(request.method!=="GET"){
+  if (
+    request.method !==
+    "GET"
+  ) {
 
-    return json({
-      success:false,
-      error:"Method not allowed"
-    },405);
+    return json(
+      {
+        success: false,
+        error:
+          "Method not allowed"
+      },
+      405
+    );
   }
 
-  const url=new URL(request.url);
+  const url =
+    new URL(request.url);
 
-  const code=
-    url.searchParams.get("code");
+  const code =
+    url.searchParams.get(
+      "code"
+    );
 
-  if(!code){
+  if (!code) {
 
-    return json({
-      success:false,
-      error:"Affiliate code required"
-    },400);
+    return json(
+      {
+        success: false,
+        error:
+          "Affiliate code required"
+      },
+      400
+    );
   }
 
-  const affiliate=
-    await env.DB.prepare(
-      `SELECT
-        id,
-        name,
-        email,
-        affiliate_code,
-        commission_rate,
-        balance,
-        pending_balance,
-        total_earned,
-        status
-       FROM affiliates
-       WHERE affiliate_code=?`
-    )
-    .bind(code)
-    .first();
+  if (!env.DB) {
 
-  if(!affiliate){
-
-    return json({
-      success:false,
-      error:"Affiliate not found"
-    },404);
+    return json(
+      {
+        success: false,
+        error:
+          "D1 binding DB is missing"
+      },
+      500
+    );
   }
 
-  /*
-    Orders are intentionally NOT stored
-    in this Worker.
+  try {
 
-    The Shop Worker owns orders.
-    Affiliate Admin should use a protected
-    Shop Worker admin endpoint to retrieve
-    only affiliate orders.
-  */
+    const affiliate =
+      await env.DB.prepare(
+        `SELECT
+          id,
+          name,
+          email,
+          affiliate_code,
+          commission_rate,
+          balance,
+          pending_balance,
+          total_earned,
+          status
+         FROM affiliates
+         WHERE affiliate_code=?`
+      )
+      .bind(code.trim())
+      .first();
 
-  return json({
-    success:true,
-    affiliate,
-    message:
-      "Affiliate account verified."
-  });
+    if (!affiliate) {
+
+      return json(
+        {
+          success: false,
+          error:
+            "Affiliate not found"
+        },
+        404
+      );
+    }
+
+    return json({
+      success: true,
+      affiliate,
+      message:
+        "Affiliate account verified."
+    });
+
+  } catch (error) {
+
+    return json(
+      {
+        success: false,
+        error:
+          error?.message ||
+          String(error)
+      },
+      500
+    );
+  }
+}
+
+
+/* HTML ESCAPE */
+
+function escapeHtml(value) {
+
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
