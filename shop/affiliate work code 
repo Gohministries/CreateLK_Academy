@@ -51,11 +51,14 @@ h2{color:#102a56}.error{background:#fff0f0;color:#b00020;padding:15px;border-rad
 a{display:inline-block;margin-top:20px;padding:12px 20px;background:#102a56;color:#fff;text-decoration:none;border-radius:8px}
 </style>
 </head>
-<body><div class="box">
-<h2>${title}</h2>
+<body>
+<div class="box">
+<h2>${esc(title)}</h2>
 <div class="error">${esc(message)}</div>
 <a href="${SHOP}/shop/affiliate.html">Return to CreateLK Affiliate</a>
-</div></body></html>`,{
+</div>
+</body>
+</html>`,{
     status,
     headers:{"Content-Type":"text/html;charset=UTF-8"}
   });
@@ -89,6 +92,9 @@ export default{
 
       if(path==="/api/affiliate/orders")
         return affiliateOrders(request,env);
+
+      if(path==="/api/click")
+        return recordClick(request,env);
 
       if(path==="/api/commission")
         return commission(request,env);
@@ -385,6 +391,28 @@ async function affiliateOrders(request,env){
       error:"Affiliate not found"
     },404);
 
+
+  /* TOTAL CLICKS */
+
+  const clicks=await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM affiliate_clicks
+    WHERE affiliate_code=?
+  `).bind(code.trim()).first();
+
+
+  /* SUCCESSFUL ORDERS */
+
+  const successful=await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM affiliate_commissions
+    WHERE affiliate_code=?
+      AND status='RELEASED'
+  `).bind(code.trim()).first();
+
+
+  /* COMMISSIONS */
+
   const commissions=await env.DB.prepare(`
     SELECT id,order_id,order_total,
            commission_rate,commission_amount,
@@ -394,10 +422,86 @@ async function affiliateOrders(request,env){
     ORDER BY created_at DESC
   `).bind(code.trim()).all();
 
+
   return json({
     success:true,
     affiliate,
+    total_clicks:Number(clicks?.total||0),
+    successful_orders:Number(successful?.total||0),
     commissions:commissions.results||[]
+  });
+}
+
+
+/* RECORD CLICK */
+
+async function recordClick(request,env){
+
+  if(request.method!=="POST")
+    return json({
+      success:false,
+      error:"Method not allowed"
+    },405);
+
+  let b={};
+
+  try{
+    b=await request.json();
+  }catch{
+    return json({
+      success:false,
+      error:"Invalid JSON"
+    },400);
+  }
+
+  const code=String(
+    b.affiliate_code||""
+  ).trim();
+
+  const productId=
+    b.product_id?
+    Number(b.product_id):
+    null;
+
+  if(!code)
+    return json({
+      success:false,
+      error:"affiliate_code required"
+    },400);
+
+  const affiliate=await env.DB.prepare(`
+    SELECT affiliate_code,status
+    FROM affiliates
+    WHERE affiliate_code=?
+  `).bind(code).first();
+
+  if(!affiliate)
+    return json({
+      success:false,
+      error:"Affiliate not found"
+    },404);
+
+  if(affiliate.status!=="active")
+    return json({
+      success:false,
+      error:"Affiliate account is not active"
+    },403);
+
+  await env.DB.prepare(`
+    INSERT INTO affiliate_clicks(
+      affiliate_code,
+      product_id,
+      created_at
+    )
+    VALUES(?,?,?)
+  `).bind(
+    code,
+    Number.isFinite(productId)?productId:null,
+    new Date().toISOString()
+  ).run();
+
+  return json({
+    success:true
   });
 }
 
@@ -423,7 +527,10 @@ async function commission(request,env){
 
   const b=await request.json();
 
-  const code=String(b.affiliate_code||"").trim();
+  const code=String(
+    b.affiliate_code||""
+  ).trim();
+
   const orderId=Number(b.order_id);
   const total=Number(b.order_total);
 
@@ -515,10 +622,7 @@ async function commission(request,env){
 
 /* RELEASE COMMISSION */
 
-async function releaseCommission(
-  request,
-  env
-){
+async function releaseCommission(request,env){
 
   if(request.method!=="POST")
     return json({
