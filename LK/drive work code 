@@ -4,17 +4,40 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // =========================
+    // CORS
+    // =========================
+
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: cors() });
+      return new Response(null, {
+        headers: cors()
+      });
     }
 
     try {
+
+      // =========================
       // LOGIN
-      if (url.pathname === "/auth" && request.method === "POST") {
-        const { password } = await request.json();
+      // =========================
+
+      if (
+        url.pathname === "/auth" &&
+        request.method === "POST"
+      ) {
+
+        const { password } =
+          await request.json();
 
         if (password !== ADMIN_PASSWORD) {
-          return json({ success: false, error: "Invalid password" }, 401);
+
+          return json(
+            {
+              success: false,
+              error: "Invalid password"
+            },
+            401
+          );
+
         }
 
         return json({
@@ -23,282 +46,1263 @@ export default {
         });
       }
 
-      // PUBLIC PHOTO
+
+      // =========================
+      // PUBLIC FILE
+      // =========================
+
       if (url.pathname === "/photo") {
-        const key = url.searchParams.get("key");
 
-        if (!key) return new Response("Missing key", { status: 400 });
+        const key =
+          url.searchParams.get("key");
 
-        const object = await env.BUCKET.get(key);
+        if (!key) {
+
+          return new Response(
+            "Missing key",
+            {
+              status: 400
+            }
+          );
+
+        }
+
+        const object =
+          await env.BUCKET.get(key);
 
         if (!object) {
-          return new Response("Photo not found", { status: 404 });
+
+          return new Response(
+            "File not found",
+            {
+              status: 404
+            }
+          );
+
         }
 
-        const headers = new Headers();
-        object.writeHttpMetadata(headers);
-        headers.set("Cache-Control", "public, max-age=31536000");
+        const headers =
+          new Headers();
 
-        return new Response(object.body, { headers });
+        object.writeHttpMetadata(
+          headers
+        );
+
+        headers.set(
+          "Cache-Control",
+          "public, max-age=31536000"
+        );
+
+        return new Response(
+          object.body,
+          {
+            headers
+          }
+        );
       }
 
+
+      // =========================
       // ADMIN AUTH
+      // =========================
+
       if (
-        request.headers.get("Authorization") !==
+        request.headers.get(
+          "Authorization"
+        ) !==
         `Bearer ${ADMIN_PASSWORD}`
       ) {
-        return json({ success: false, error: "Unauthorized" }, 401);
+
+        return json(
+          {
+            success: false,
+            error: "Unauthorized"
+          },
+          401
+        );
+
       }
 
-      // LIST
-      if (url.pathname === "/list") {
-        const result = await env.BUCKET.list({ limit: 1000 });
+
+      // =========================
+      // LIST FILES + FOLDERS
+      // =========================
+
+      if (
+        url.pathname === "/list"
+      ) {
+
+        const prefix =
+          normalizePrefix(
+            url.searchParams.get(
+              "prefix"
+            ) || ""
+          );
+
+
+        const result =
+          await env.BUCKET.list({
+            prefix: prefix,
+            delimiter: "/",
+            limit: 1000
+          });
+
+
+        const folders = [];
+
+
+        for (
+          const folderPrefix
+          of result.delimitedPrefixes || []
+        ) {
+
+          let folderName =
+            folderPrefix;
+
+          if (
+            folderName.startsWith(
+              prefix
+            )
+          ) {
+
+            folderName =
+              folderName.substring(
+                prefix.length
+              );
+
+          }
+
+          folderName =
+            folderName.replace(
+              /\/$/,
+              ""
+            );
+
+
+          if (folderName) {
+
+            folders.push({
+              name: folderName,
+              prefix: folderPrefix
+            });
+
+          }
+
+        }
+
+
         const files = [];
 
-        for (const item of result.objects) {
-          const head = await env.BUCKET.head(item.key);
+
+        for (
+          const item
+          of result.objects
+        ) {
+
+          /*
+           * Ignore the zero-byte folder
+           * placeholder itself.
+           */
+
+          if (
+            item.key.endsWith("/")
+          ) {
+            continue;
+          }
+
+
+          let name =
+            item.key;
+
+          if (
+            prefix &&
+            name.startsWith(prefix)
+          ) {
+
+            name =
+              name.substring(
+                prefix.length
+              );
+
+          }
+
+
+          const head =
+            await env.BUCKET.head(
+              item.key
+            );
+
 
           files.push({
-            name: item.key,
+
+            name: name,
+
+            key: item.key,
+
             size: item.size,
-            uploaded: item.uploaded,
-            saved: head?.customMetadata?.saved === "true"
+
+            uploaded:
+              item.uploaded,
+
+            contentType:
+              head?.httpMetadata
+                ?.contentType ||
+              "application/octet-stream",
+
+            saved:
+              head
+                ?.customMetadata
+                ?.saved === "true"
+
           });
+
         }
+
 
         return json({
+
           success: true,
-          files
+
+          prefix: prefix,
+
+          folders: folders,
+
+          files: files
+
         });
+
       }
 
-      // UPLOAD
+
+      // =========================
+      // CREATE FOLDER
+      // =========================
+
       if (
-        url.pathname === "/upload" &&
+        url.pathname ===
+          "/create-folder" &&
         request.method === "POST"
       ) {
-        const form = await request.formData();
-        const file = form.get("file");
 
-        if (!file || typeof file === "string") {
-          return json({
-            success: false,
-            error: "Select a photo"
-          }, 400);
+        const {
+          prefix = "",
+          name
+        } = await request.json();
+
+
+        const folderName =
+          cleanFolder(name);
+
+
+        if (!folderName) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Folder name required"
+            },
+            400
+          );
+
         }
 
-        let filename =
-          form.get("filename") || file.name;
 
-        filename = clean(filename);
+        const folderKey =
+          normalizePrefix(prefix) +
+          folderName +
+          "/";
 
-        if (!filename) {
-          return json({
-            success: false,
-            error: "Invalid filename"
-          }, 400);
-        }
 
-        if (!isImage(filename, file.type)) {
-          return json({
-            success: false,
-            error: "Only image files are allowed"
-          }, 400);
-        }
+        /*
+         * Cloudflare R2 does not have
+         * real folders. A folder is
+         * represented by a prefix.
+         *
+         * This placeholder makes an
+         * empty folder visible too.
+         */
 
         await env.BUCKET.put(
-          filename,
-          file.stream(),
+          folderKey,
+          new Uint8Array(0),
           {
-            httpMetadata: {
-              contentType:
-                file.type || mime(filename)
-            },
             customMetadata: {
-              saved: "false"
+              folder: "true"
             }
           }
         );
 
+
         return json({
+
           success: true,
-          name: filename
+
+          name: folderName,
+
+          prefix: folderKey
+
         });
+
       }
 
-      // MARK SAVED
+
+      // =========================
+      // UPLOAD ANY FILE
+      // =========================
+
+      if (
+        url.pathname === "/upload" &&
+        request.method === "POST"
+      ) {
+
+        const form =
+          await request.formData();
+
+
+        const file =
+          form.get("file");
+
+
+        if (
+          !file ||
+          typeof file === "string"
+        ) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Select a file"
+            },
+            400
+          );
+
+        }
+
+
+        const prefix =
+          normalizePrefix(
+            form.get("prefix") || ""
+          );
+
+
+        let filename =
+          form.get("filename") ||
+          file.name;
+
+
+        filename =
+          clean(filename);
+
+
+        if (!filename) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Invalid filename"
+            },
+            400
+          );
+
+        }
+
+
+        /*
+         * Prevent the filename input
+         * from creating unexpected
+         * nested directories.
+         */
+
+        filename =
+          filename
+            .split("/")
+            .pop();
+
+
+        const key =
+          prefix + filename;
+
+
+        /*
+         * Do not overwrite an existing
+         * file accidentally.
+         */
+
+        if (
+          await env.BUCKET.head(key)
+        ) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "File already exists"
+            },
+            409
+          );
+
+        }
+
+
+        await env.BUCKET.put(
+          key,
+          file.stream(),
+          {
+
+            httpMetadata: {
+
+              contentType:
+                file.type ||
+                mime(filename)
+
+            },
+
+            customMetadata: {
+
+              saved: "false",
+
+              folder: "false"
+
+            }
+
+          }
+        );
+
+
+        return json({
+
+          success: true,
+
+          name: filename,
+
+          key: key
+
+        });
+
+      }
+
+
+      // =========================
+      // SAVE
+      // =========================
+
       if (
         url.pathname === "/save" &&
         request.method === "POST"
       ) {
-        return setSaved(env, request, true);
+
+        return setSaved(
+          env,
+          request,
+          true
+        );
+
       }
 
-      // UNMARK SAVED
+
+      // =========================
+      // UNSAVE
+      // =========================
+
       if (
         url.pathname === "/unsave" &&
         request.method === "POST"
       ) {
-        return setSaved(env, request, false);
+
+        return setSaved(
+          env,
+          request,
+          false
+        );
+
       }
 
-      // RENAME
+
+      // =========================
+      // RENAME FILE
+      // =========================
+
       if (
         url.pathname === "/rename" &&
         request.method === "POST"
       ) {
-        const { oldName, newName: rawName } =
+
+        const {
+          oldName,
+          newName: rawName
+        } =
           await request.json();
 
-        const newName = clean(rawName);
 
-        if (!oldName || !newName) {
-          return json({
-            success: false,
-            error: "Filename required"
-          }, 400);
+        if (
+          !oldName ||
+          !rawName
+        ) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Filename required"
+            },
+            400
+          );
+
         }
 
-        const object = await env.BUCKET.get(oldName);
+
+        const newName =
+          clean(rawName)
+            .split("/")
+            .pop();
+
+
+        if (!newName) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Invalid filename"
+            },
+            400
+          );
+
+        }
+
+
+        const object =
+          await env.BUCKET.get(
+            oldName
+          );
+
 
         if (!object) {
-          return json({
-            success: false,
-            error: "Photo not found"
-          }, 404);
+
+          return json(
+            {
+              success: false,
+              error:
+                "File not found"
+            },
+            404
+          );
+
         }
 
-        if (await env.BUCKET.head(newName)) {
-          return json({
-            success: false,
-            error: "Filename already exists"
-          }, 409);
+
+        const lastSlash =
+          oldName.lastIndexOf("/");
+
+
+        const prefix =
+          lastSlash >= 0
+            ? oldName.substring(
+                0,
+                lastSlash + 1
+              )
+            : "";
+
+
+        const newKey =
+          prefix + newName;
+
+
+        if (
+          await env.BUCKET.head(
+            newKey
+          )
+        ) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Filename already exists"
+            },
+            409
+          );
+
         }
+
 
         await env.BUCKET.put(
-          newName,
+          newKey,
           object.body,
           {
-            httpMetadata: object.httpMetadata,
-            customMetadata: object.customMetadata
+
+            httpMetadata:
+              object.httpMetadata,
+
+            customMetadata:
+              object.customMetadata
+
           }
         );
 
-        await env.BUCKET.delete(oldName);
 
-        return json({ success: true });
+        await env.BUCKET.delete(
+          oldName
+        );
+
+
+        return json({
+
+          success: true,
+
+          name: newName,
+
+          key: newKey
+
+        });
+
       }
 
-      // DELETE
+
+      // =========================
+      // RENAME FOLDER
+      // =========================
+
+      if (
+        url.pathname ===
+          "/rename-folder" &&
+        request.method === "POST"
+      ) {
+
+        const {
+          oldPrefix,
+          newName
+        } = await request.json();
+
+
+        if (
+          !oldPrefix ||
+          !newName
+        ) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Folder required"
+            },
+            400
+          );
+
+        }
+
+
+        const oldPath =
+          normalizePrefix(
+            oldPrefix
+          );
+
+
+        const folderName =
+          cleanFolder(
+            newName
+          );
+
+
+        if (!folderName) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Invalid folder name"
+            },
+            400
+          );
+
+        }
+
+
+        /*
+         * Find parent folder.
+         */
+
+        const withoutTrailing =
+          oldPath.endsWith("/")
+            ? oldPath.slice(
+                0,
+                -1
+              )
+            : oldPath;
+
+
+        const slash =
+          withoutTrailing.lastIndexOf(
+            "/"
+          );
+
+
+        const parent =
+          slash >= 0
+            ? withoutTrailing.substring(
+                0,
+                slash + 1
+              )
+            : "";
+
+
+        const newPath =
+          parent +
+          folderName +
+          "/";
+
+
+        /*
+         * Prevent renaming to itself.
+         */
+
+        if (
+          newPath === oldPath
+        ) {
+
+          return json({
+            success: true,
+            prefix: newPath
+          });
+
+        }
+
+
+        const result =
+          await env.BUCKET.list({
+            prefix: oldPath,
+            limit: 1000
+          });
+
+
+        for (
+          const item
+          of result.objects
+        ) {
+
+          const newKey =
+            newPath +
+            item.key.substring(
+              oldPath.length
+            );
+
+
+          const object =
+            await env.BUCKET.get(
+              item.key
+            );
+
+
+          if (!object) {
+            continue;
+          }
+
+
+          await env.BUCKET.put(
+            newKey,
+            object.body,
+            {
+
+              httpMetadata:
+                object.httpMetadata,
+
+              customMetadata:
+                object.customMetadata
+
+            }
+          );
+
+
+          await env.BUCKET.delete(
+            item.key
+          );
+
+        }
+
+
+        /*
+         * If the folder was empty,
+         * recreate its placeholder.
+         */
+
+        if (
+          result.objects.length === 0
+        ) {
+
+          await env.BUCKET.put(
+            newPath,
+            new Uint8Array(0),
+            {
+              customMetadata: {
+                folder: "true"
+              }
+            }
+          );
+
+        }
+
+
+        return json({
+
+          success: true,
+
+          prefix: newPath
+
+        });
+
+      }
+
+
+      // =========================
+      // DELETE FILE
+      // =========================
+
       if (
         url.pathname === "/delete" &&
         request.method === "POST"
       ) {
-        const { name } = await request.json();
 
-        await env.BUCKET.delete(name);
+        const {
+          name
+        } = await request.json();
 
-        return json({ success: true });
+
+        if (!name) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "File required"
+            },
+            400
+          );
+
+        }
+
+
+        await env.BUCKET.delete(
+          name
+        );
+
+
+        return json({
+          success: true
+        });
+
       }
 
-      return json({
-        success: false,
-        error: "Not found"
-      }, 404);
+
+      // =========================
+      // DELETE FOLDER
+      // =========================
+
+      if (
+        url.pathname ===
+          "/delete-folder" &&
+        request.method === "POST"
+      ) {
+
+        const {
+          prefix
+        } = await request.json();
+
+
+        if (!prefix) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "Folder required"
+            },
+            400
+          );
+
+        }
+
+
+        const folderPrefix =
+          normalizePrefix(
+            prefix
+          );
+
+
+        /*
+         * R2 list is paginated.
+         * Delete everything under
+         * the folder.
+         */
+
+        let cursor = undefined;
+
+
+        do {
+
+          const result =
+            await env.BUCKET.list({
+              prefix:
+                folderPrefix,
+
+              limit: 1000,
+
+              cursor:
+                cursor
+            });
+
+
+          for (
+            const item
+            of result.objects
+          ) {
+
+            await env.BUCKET.delete(
+              item.key
+            );
+
+          }
+
+
+          cursor =
+            result.truncated
+              ? result.cursor
+              : undefined;
+
+        } while (cursor);
+
+
+        return json({
+          success: true
+        });
+
+      }
+
+
+      // =========================
+      // NOT FOUND
+      // =========================
+
+      return json(
+        {
+          success: false,
+          error: "Not found"
+        },
+        404
+      );
+
 
     } catch (error) {
-      return json({
-        success: false,
-        error: error.message
-      }, 500);
+
+      return json(
+        {
+          success: false,
+
+          error:
+            error?.message ||
+            "Server error"
+        },
+        500
+      );
+
     }
   }
 };
 
 
-async function setSaved(env, request, saved) {
+// =====================================
+// SAVE / UNSAVE
+// =====================================
 
-  const { name } = await request.json();
+async function setSaved(
+  env,
+  request,
+  saved
+) {
 
-  const object = await env.BUCKET.get(name);
+  const {
+    name
+  } = await request.json();
 
-  if (!object) {
-    return json({
-      success: false,
-      error: "Photo not found"
-    }, 404);
+
+  if (!name) {
+
+    return json(
+      {
+        success: false,
+        error:
+          "File required"
+      },
+      400
+    );
+
   }
 
-  const metadata = object.customMetadata || {};
-  metadata.saved = String(saved);
+
+  const object =
+    await env.BUCKET.get(
+      name
+    );
+
+
+  if (!object) {
+
+    return json(
+      {
+        success: false,
+        error:
+          "File not found"
+      },
+      404
+    );
+
+  }
+
+
+  const metadata =
+    object.customMetadata || {};
+
+
+  metadata.saved =
+    String(saved);
+
 
   await env.BUCKET.put(
     name,
     object.body,
     {
-      httpMetadata: object.httpMetadata,
-      customMetadata: metadata
+
+      httpMetadata:
+        object.httpMetadata,
+
+      customMetadata:
+        metadata
+
     }
   );
 
-  return json({ success: true });
+
+  return json({
+    success: true
+  });
+
 }
 
+
+// =====================================
+// CLEAN FILE NAME
+// =====================================
 
 function clean(name) {
-  return String(name)
+
+  return String(name || "")
     .trim()
     .replace(/\s+/g, "_")
-    .replace(/[^a-zA-Z0-9._\-\/]/g, "_");
+    .replace(
+      /[^a-zA-Z0-9._\-\/]/g,
+      "_"
+    );
 }
 
 
-function isImage(name, type) {
-  const ext = name.toLowerCase().split(".").pop();
+// =====================================
+// CLEAN FOLDER NAME
+// =====================================
 
-  return [
-    "jpg",
-    "jpeg",
-    "png",
-    "gif",
-    "webp",
-    "bmp",
-    "avif"
-  ].includes(ext) ||
-  String(type || "").startsWith("image/");
+function cleanFolder(name) {
+
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(
+      /[^a-zA-Z0-9._\-]/g,
+      "_"
+    )
+    .replace(
+      /\//g,
+      ""
+    );
 }
 
+
+// =====================================
+// NORMALIZE FOLDER PREFIX
+// =====================================
+
+function normalizePrefix(prefix) {
+
+  prefix =
+    String(prefix || "")
+      .replace(/^\/+/g, "");
+
+
+  if (
+    prefix &&
+    !prefix.endsWith("/")
+  ) {
+
+    prefix += "/";
+
+  }
+
+
+  return prefix;
+}
+
+
+// =====================================
+// MIME TYPES
+// =====================================
 
 function mime(name) {
-  const ext = name.toLowerCase().split(".").pop();
+
+  const ext =
+    String(name)
+      .toLowerCase()
+      .split(".")
+      .pop();
+
 
   return {
+
+    // Images
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     png: "image/png",
     gif: "image/gif",
     webp: "image/webp",
     bmp: "image/bmp",
-    avif: "image/avif"
-  }[ext] || "application/octet-stream";
+    avif: "image/avif",
+    svg: "image/svg+xml",
+
+    // Documents
+    pdf: "application/pdf",
+
+    txt: "text/plain",
+
+    csv: "text/csv",
+
+    html: "text/html",
+
+    json: "application/json",
+
+    xml: "application/xml",
+
+    // Microsoft Word
+    doc:
+      "application/msword",
+
+    docx:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+    // Microsoft Excel
+    xls:
+      "application/vnd.ms-excel",
+
+    xlsx:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+    // Microsoft PowerPoint
+    ppt:
+      "application/vnd.ms-powerpoint",
+
+    pptx:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+
+    // Android
+    apk:
+      "application/vnd.android.package-archive",
+
+    // Archives
+    zip:
+      "application/zip",
+
+    rar:
+      "application/vnd.rar",
+
+    "7z":
+      "application/x-7z-compressed",
+
+    // Audio
+    mp3:
+      "audio/mpeg",
+
+    wav:
+      "audio/wav",
+
+    ogg:
+      "audio/ogg",
+
+    m4a:
+      "audio/mp4",
+
+    // Video
+    mp4:
+      "video/mp4",
+
+    webm:
+      "video/webm",
+
+    mov:
+      "video/quicktime",
+
+    avi:
+      "video/x-msvideo"
+
+  }[ext] ||
+  "application/octet-stream";
 }
 
+
+// =====================================
+// CORS
+// =====================================
 
 function cors() {
+
   return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization"
+
+    "Access-Control-Allow-Origin":
+      "*",
+
+    "Access-Control-Allow-Methods":
+      "GET,POST,OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type,Authorization"
+
   };
+
 }
 
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...cors()
+// =====================================
+// JSON RESPONSE
+// =====================================
+
+function json(
+  data,
+  status = 200
+) {
+
+  return new Response(
+    JSON.stringify(data),
+    {
+
+      status,
+
+      headers: {
+
+        "Content-Type":
+          "application/json",
+
+        ...cors()
+
+      }
+
     }
-  });
+  );
+
 }
