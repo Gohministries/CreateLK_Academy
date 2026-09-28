@@ -4,14 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#102a56">
-
 <title>Premium English Lessons | CreateLK Academy</title>
 
 <style>
 :root{
   --navy:#102a56;
   --gold:#d69b16;
-  --gold2:#f4c64e;
   --bg:#f5f7fb;
   --text:#172033;
   --muted:#687386;
@@ -21,13 +19,9 @@
   --border:#e5e9f0;
 }
 
-*{
-  box-sizing:border-box;
-}
+*{box-sizing:border-box}
 
-html{
-  scroll-behavior:smooth;
-}
+html{scroll-behavior:smooth}
 
 body{
   margin:0;
@@ -36,18 +30,9 @@ body{
   color:var(--text);
 }
 
-button,
-input{
-  font:inherit;
-}
-
-button{
-  cursor:pointer;
-}
-
-a{
-  text-decoration:none;
-}
+button,input{font:inherit}
+button{cursor:pointer}
+a{text-decoration:none}
 
 .container{
   width:min(1100px,92%);
@@ -134,7 +119,7 @@ main{
   font-size:15px;
 }
 
-/* PREMIUM STATUS */
+/* STATUS */
 
 .status{
   width:min(650px,100%);
@@ -233,7 +218,7 @@ main{
   line-height:1.3;
 }
 
-/* COLORFUL LESSONS */
+/* COLORS */
 
 .lesson-btn:nth-child(1){background:#3568c8}
 .lesson-btn:nth-child(2){background:#8b5cc7}
@@ -256,7 +241,7 @@ main{
 .lesson-btn:nth-child(19){background:#7857a3}
 .lesson-btn:nth-child(20){background:#287e67}
 
-/* LOADING */
+/* LOADING / ERROR */
 
 .loading{
   text-align:center;
@@ -446,7 +431,7 @@ footer p{
   font-size:12px;
 }
 
-/* RESPONSIVE */
+/* MOBILE */
 
 @media(max-width:700px){
 
@@ -545,8 +530,15 @@ footer p{
 
 
     <div id="status" class="status">
-      <div class="status-title">Checking Premium Status...</div>
-      <div class="status-text">Please wait while we check your account.</div>
+
+      <div class="status-title">
+        Checking Premium Status...
+      </div>
+
+      <div class="status-text">
+        Please wait while we check your account.
+      </div>
+
     </div>
 
 
@@ -555,7 +547,9 @@ footer p{
       <h2>20 Premium Lessons</h2>
 
       <div id="lessons" class="lessons">
-        <div class="loading">Loading lessons...</div>
+        <div class="loading">
+          Loading lessons...
+        </div>
       </div>
 
       <div id="error" class="error"></div>
@@ -569,9 +563,13 @@ footer p{
 
 <footer>
   <div class="container">
+
     <strong>CreateLK Academy</strong>
+
     <p>Speak English With Confidence</p>
+
     <p>© CreateLK Academy. All rights reserved.</p>
+
   </div>
 </footer>
 
@@ -585,8 +583,15 @@ footer p{
     <div class="modal-head">
 
       <div class="modal-title">
-        <h2 id="modalTitle">Lesson</h2>
-        <p>50 English practice questions</p>
+
+        <h2 id="modalTitle">
+          Lesson
+        </h2>
+
+        <p>
+          50 English practice questions
+        </p>
+
       </div>
 
       <button
@@ -601,7 +606,11 @@ footer p{
     </div>
 
     <div id="questions" class="questions">
-      <div class="loading">Loading questions...</div>
+
+      <div class="loading">
+        Loading questions...
+      </div>
+
     </div>
 
   </div>
@@ -612,95 +621,162 @@ footer p{
 <script>
 
 const API = "https://eng-login.createlk.workers.dev";
-const PAYMENT = "https://eng-payment.createlk.workers.dev/";
 
-const statusBox = document.getElementById("status");
-const lessonsBox = document.getElementById("lessons");
-const errorBox = document.getElementById("error");
+const PAYMENT =
+  "https://eng-payment.createlk.workers.dev/";
 
-const quizModal = document.getElementById("quizModal");
-const closeModal = document.getElementById("closeModal");
-const modalTitle = document.getElementById("modalTitle");
-const questionsBox = document.getElementById("questions");
+const LOGIN =
+  "/Eng/login.html?next=/Eng/quiz.html";
 
+
+const statusBox =
+  document.getElementById("status");
+
+const lessonsBox =
+  document.getElementById("lessons");
+
+const errorBox =
+  document.getElementById("error");
+
+const quizModal =
+  document.getElementById("quizModal");
+
+const closeModal =
+  document.getElementById("closeModal");
+
+const modalTitle =
+  document.getElementById("modalTitle");
+
+const questionsBox =
+  document.getElementById("questions");
+
+
+/* API */
 
 async function api(path){
 
-  const response = await fetch(API + path,{
-    credentials:"include"
-  });
+  const response = await fetch(
+    API + path,
+    {
+      method:"GET",
+      credentials:"include",
+      headers:{
+        "Accept":"application/json"
+      }
+    }
+  );
 
-  let data = {};
+  let data={};
 
   try{
-    data = await response.json();
+    data=await response.json();
   }catch(e){
     throw new Error("Invalid server response");
   }
 
-  if(!response.ok || data.success === false){
-    throw new Error(data.error || "Server error");
+  if(!response.ok || data.success===false){
+
+    throw new Error(
+      data.error || "Server error"
+    );
+
   }
 
   return data;
 }
 
 
-/* CHECK ACCOUNT */
+/* ACCOUNT STATUS */
 
 async function checkAccount(){
 
   try{
 
-    const data = await api("/api/me");
+    const data =
+      await api("/api/me");
 
-    if(data.user){
+    /*
+      USER NOT LOGGED IN
+    */
 
-      if(data.subscription && data.subscription.active){
+    if(!data.user){
 
-        statusBox.className = "status active";
-
-        statusBox.innerHTML = `
-          <div class="status-title">Premium Active</div>
-          <div class="status-text">
-            Your premium access is active. Select a lesson below.
-          </div>
-        `;
-
-      }else{
-
-        statusBox.className = "status locked";
-
-        statusBox.innerHTML = `
-          <div class="status-title">Premium Access Required</div>
-          <div class="status-text">
-            Select a lesson to continue to premium activation.
-          </div>
-        `;
-
-      }
-
-    }else{
-
-      statusBox.className = "status locked";
+      statusBox.className =
+        "status locked";
 
       statusBox.innerHTML = `
-        <div class="status-title">Google Login Required</div>
+        <div class="status-title">
+          Google Login Required
+        </div>
+
         <div class="status-text">
           Please log in with Google to access premium lessons.
         </div>
       `;
 
+      return;
+
     }
+
+
+    /*
+      PREMIUM ACTIVE
+    */
+
+    if(
+      data.subscription &&
+      data.subscription.active
+    ){
+
+      statusBox.className =
+        "status active";
+
+      statusBox.innerHTML = `
+        <div class="status-title">
+          Premium Active
+        </div>
+
+        <div class="status-text">
+          Your premium access is active. Select a lesson below.
+        </div>
+      `;
+
+      return;
+
+    }
+
+
+    /*
+      LOGGED IN BUT PREMIUM NOT ACTIVE
+    */
+
+    statusBox.className =
+      "status locked";
+
+    statusBox.innerHTML = `
+      <div class="status-title">
+        Premium Activation Required
+      </div>
+
+      <div class="status-text">
+        Select a lesson to continue to premium activation.
+      </div>
+    `;
 
   }catch(error){
 
-    statusBox.className = "status locked";
+    console.error(error);
+
+    statusBox.className =
+      "status locked";
 
     statusBox.innerHTML = `
-      <div class="status-title">Unable to Check Account</div>
+      <div class="status-title">
+        Please Log In
+      </div>
+
       <div class="status-text">
-        Please try again.
+        Continue with Google to check your premium access.
       </div>
     `;
 
@@ -709,19 +785,25 @@ async function checkAccount(){
 }
 
 
-/* LOAD LESSONS */
+/* LOAD 20 LESSONS */
 
 async function loadLessons(){
 
   lessonsBox.innerHTML = `
-    <div class="loading">Loading lessons...</div>
+    <div class="loading">
+      Loading lessons...
+    </div>
   `;
 
   try{
 
-    const data = await api("/api/titles");
+    const data =
+      await api("/api/titles");
 
-    const lessons = data.lessons || data.titles || [];
+    const lessons =
+      data.lessons ||
+      data.titles ||
+      [];
 
     if(!lessons.length){
 
@@ -732,33 +814,52 @@ async function loadLessons(){
       `;
 
       return;
+
     }
 
     lessonsBox.innerHTML = "";
 
     lessons
-      .sort((a,b) => {
-        return Number(a.sort_order || a.id) -
-               Number(b.sort_order || b.id);
+      .sort((a,b)=>{
+
+        return Number(
+          a.sort_order || a.id
+        ) -
+        Number(
+          b.sort_order || b.id
+        );
+
       })
       .slice(0,20)
       .forEach((lesson,index)=>{
 
-        const button = document.createElement("button");
+        const button =
+          document.createElement("button");
 
-        button.type = "button";
-        button.className = "lesson-btn";
+        button.type="button";
 
-        const number = String(index + 1).padStart(2,"0");
+        button.className =
+          "lesson-btn";
+
+        const number =
+          String(index+1).padStart(2,"0");
 
         button.innerHTML = `
-          <span class="lesson-number">${number}</span>
-          <span class="lesson-name">${escapeHtml(lesson.title)}</span>
+          <span class="lesson-number">
+            ${number}
+          </span>
+
+          <span class="lesson-name">
+            ${escapeHtml(lesson.title)}
+          </span>
         `;
 
-        button.addEventListener("click",()=>{
-          openLesson(lesson);
-        });
+        button.addEventListener(
+          "click",
+          ()=>{
+            openLesson(lesson);
+          }
+        );
 
         lessonsBox.appendChild(button);
 
@@ -766,9 +867,12 @@ async function loadLessons(){
 
   }catch(error){
 
-    lessonsBox.innerHTML = "";
+    console.error(error);
 
-    errorBox.style.display = "block";
+    lessonsBox.innerHTML="";
+
+    errorBox.style.display="block";
+
     errorBox.textContent =
       "Unable to load lessons. Please try again.";
 
@@ -777,30 +881,88 @@ async function loadLessons(){
 }
 
 
-/* OPEN LESSON */
+/*
+  IMPORTANT FLOW
+
+  1. Not logged in
+     → Google Login
+
+  2. Logged in but no premium
+     → Payment Worker
+
+  3. Premium active
+     → Load 50 MCQs
+*/
 
 async function openLesson(lesson){
 
-  modalTitle.textContent = lesson.title;
-
-  questionsBox.innerHTML = `
-    <div class="loading">
-      Loading questions...
-    </div>
-  `;
-
-  quizModal.classList.add("show");
-
-  document.body.style.overflow = "hidden";
-
   try{
 
-    const data = await api(
-      "/api/questions?lesson=" +
-      encodeURIComponent(lesson.id)
-    );
+    const account =
+      await api("/api/me");
 
-    const questions = data.questions || [];
+
+    /*
+      NOT LOGGED IN
+    */
+
+    if(!account.user){
+
+      window.location.href =
+        LOGIN;
+
+      return;
+
+    }
+
+
+    /*
+      PREMIUM NOT ACTIVE
+    */
+
+    if(
+      !account.subscription ||
+      !account.subscription.active
+    ){
+
+      window.location.href =
+        PAYMENT;
+
+      return;
+
+    }
+
+
+    /*
+      PREMIUM ACTIVE
+      LOAD QUESTIONS
+    */
+
+    modalTitle.textContent =
+      lesson.title;
+
+    questionsBox.innerHTML = `
+      <div class="loading">
+        Loading questions...
+      </div>
+    `;
+
+    quizModal.classList.add("show");
+
+    document.body.style.overflow =
+      "hidden";
+
+
+    const data =
+      await api(
+        "/api/questions?lesson=" +
+        encodeURIComponent(lesson.id)
+      );
+
+
+    const questions =
+      data.questions || [];
+
 
     if(!questions.length){
 
@@ -811,30 +973,62 @@ async function openLesson(lesson){
       `;
 
       return;
+
     }
+
 
     renderQuestions(questions);
 
   }catch(error){
 
+    console.error(error);
+
+    const message =
+      String(
+        error.message || ""
+      ).toLowerCase();
+
+
+    /*
+      Authentication problem
+    */
+
     if(
-      error.message &&
-      (
-        error.message.toLowerCase().includes("premium") ||
-        error.message.toLowerCase().includes("subscription") ||
-        error.message.toLowerCase().includes("login") ||
-        error.message.toLowerCase().includes("unauthorized")
-      )
+      message.includes("login") ||
+      message.includes("unauthorized") ||
+      message.includes("authentication")
     ){
 
-      window.location.href = PAYMENT;
+      window.location.href =
+        LOGIN;
 
       return;
+
     }
+
+
+    /*
+      Premium/payment problem
+    */
+
+    if(
+      message.includes("premium") ||
+      message.includes("subscription") ||
+      message.includes("payment")
+    ){
+
+      window.location.href =
+        PAYMENT;
+
+      return;
+
+    }
+
 
     questionsBox.innerHTML = `
       <div class="loading">
-        Unable to load questions. Please try again.
+        Unable to load questions.
+        Please try again.
       </div>
     `;
 
@@ -843,7 +1037,7 @@ async function openLesson(lesson){
 }
 
 
-/* RENDER QUESTIONS */
+/* RENDER 50 QUESTIONS */
 
 function renderQuestions(questions){
 
@@ -851,15 +1045,24 @@ function renderQuestions(questions){
 
   questions
     .sort((a,b)=>{
-      return Number(a.question_number || a.id) -
-             Number(b.question_number || b.id);
+
+      return Number(
+        a.question_number || a.id
+      ) -
+      Number(
+        b.question_number || b.id
+      );
+
     })
     .slice(0,50)
     .forEach((q,index)=>{
 
-      const question = document.createElement("div");
+      const question =
+        document.createElement("div");
 
-      question.className = "question";
+      question.className =
+        "question";
+
 
       const options = [
         q.option_a,
@@ -868,11 +1071,15 @@ function renderQuestions(questions){
         q.option_d
       ];
 
-      const answer = Number(q.answer);
+
+      const answer =
+        Number(q.answer);
+
 
       question.innerHTML = `
+
         <div class="q-number">
-          Question ${index + 1}
+          Question ${index+1}
         </div>
 
         <div class="q-text">
@@ -882,97 +1089,154 @@ function renderQuestions(questions){
         <div class="options"></div>
 
         <div class="explanation"></div>
+
       `;
 
+
       const optionsBox =
-        question.querySelector(".options");
+        question.querySelector(
+          ".options"
+        );
+
 
       const explanation =
-        question.querySelector(".explanation");
+        question.querySelector(
+          ".explanation"
+        );
 
-      options.forEach((optionText,optionIndex)=>{
 
-        const button = document.createElement("button");
+      options.forEach(
+        (optionText,optionIndex)=>{
 
-        button.type = "button";
-        button.className = "option";
-        button.textContent = optionText;
+          const button =
+            document.createElement("button");
 
-        button.addEventListener("click",()=>{
+          button.type="button";
 
-          const all =
-            optionsBox.querySelectorAll(".option");
+          button.className =
+            "option";
 
-          all.forEach(btn=>{
-            btn.disabled = true;
-          });
+          button.textContent =
+            optionText;
 
-          if(optionIndex === answer){
 
-            button.classList.add("correct");
+          button.addEventListener(
+            "click",
+            ()=>{
 
-          }else{
+              const all =
+                optionsBox.querySelectorAll(
+                  ".option"
+                );
 
-            button.classList.add("wrong");
 
-            if(all[answer]){
-              all[answer].classList.add("correct");
+              all.forEach(btn=>{
+                btn.disabled=true;
+              });
+
+
+              if(optionIndex === answer){
+
+                button.classList.add(
+                  "correct"
+                );
+
+              }else{
+
+                button.classList.add(
+                  "wrong"
+                );
+
+                if(all[answer]){
+
+                  all[answer]
+                    .classList.add(
+                      "correct"
+                    );
+
+                }
+
+              }
+
+
+              if(q.explanation){
+
+                explanation.textContent =
+                  q.explanation;
+
+                explanation.classList.add(
+                  "show"
+                );
+
+              }
+
             }
+          );
 
-          }
 
-          if(q.explanation){
+          optionsBox.appendChild(
+            button
+          );
 
-            explanation.textContent =
-              q.explanation;
+        }
+      );
 
-            explanation.classList.add("show");
 
-          }
-
-        });
-
-        optionsBox.appendChild(button);
-
-      });
-
-      questionsBox.appendChild(question);
+      questionsBox.appendChild(
+        question
+      );
 
     });
 
 }
 
 
-/* CLOSE */
+/* CLOSE MODAL */
 
 function closeQuiz(){
 
-  quizModal.classList.remove("show");
+  quizModal.classList.remove(
+    "show"
+  );
 
-  document.body.style.overflow = "";
+  document.body.style.overflow =
+    "";
 
 }
 
 
-closeModal.addEventListener("click",closeQuiz);
+closeModal.addEventListener(
+  "click",
+  closeQuiz
+);
 
 
-quizModal.addEventListener("click",(event)=>{
+quizModal.addEventListener(
+  "click",
+  event=>{
 
-  if(event.target === quizModal){
-    closeQuiz();
+    if(event.target === quizModal){
+
+      closeQuiz();
+
+    }
+
   }
+);
 
-});
 
+document.addEventListener(
+  "keydown",
+  event=>{
 
-document.addEventListener("keydown",(event)=>{
+    if(event.key === "Escape"){
 
-  if(event.key === "Escape"){
-    closeQuiz();
+      closeQuiz();
+
+    }
+
   }
-
-});
+);
 
 
 /* HTML ESCAPE */
