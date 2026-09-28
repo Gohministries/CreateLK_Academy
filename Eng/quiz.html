@@ -139,20 +139,50 @@ main{padding:42px 0 70px}
   background:#fff8f8;
 }
 
-.status.locked .status-title{
-  color:var(--red);
+
+/* COMPACT PAYMENT */
+
+.email-row{
+  display:flex;
+  gap:7px;
+}
+
+.email-box{
+  flex:1;
+  min-width:0;
+  padding:10px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:8px;
+  color:var(--text);
+  font-size:13px;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:left;
+}
+
+.copy-btn{
+  flex-shrink:0;
+  border:0;
+  background:var(--navy);
+  color:#fff;
+  padding:10px 14px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:800;
 }
 
 .pay-btn{
   display:inline-block;
-  margin-top:14px;
+  margin-top:9px;
   background:var(--gold);
   color:#fff;
-  padding:12px 24px;
-  border-radius:9px;
-  font-size:14px;
+  padding:10px 20px;
+  border-radius:8px;
+  font-size:13px;
   font-weight:800;
-  box-shadow:0 3px 8px rgba(214,155,22,.20);
 }
 
 .pay-btn:hover{
@@ -416,6 +446,7 @@ footer p{
 }
 
 @media(max-width:700px){
+
   .container{
     width:min(94%,520px);
   }
@@ -461,6 +492,14 @@ footer p{
 
   .questions{
     padding:14px;
+  }
+
+  .email-row{
+    gap:6px;
+  }
+
+  .copy-btn{
+    padding:10px 13px;
   }
 }
 </style>
@@ -710,26 +749,37 @@ async function checkAccount(){
     /*
      * Logged in but no premium
      */
+    const email=
+      String(data.user.email||"").trim();
+
     statusBox.className="status locked";
 
     statusBox.innerHTML=`
 
-      <div class="status-title">
-        Premium Activation Required
-      </div>
+      <div class="email-row">
 
-      <div class="status-text">
-        Get 30 days of CreateLK Academy Premium
-        for Rs.999.
+        <div class="email-box">
+          ${escapeHtml(email)}
+        </div>
+
+        <button
+          type="button"
+          class="copy-btn"
+          id="copyEmailBtn">
+          Copy
+        </button>
+
       </div>
 
       <a
         href="${PAYMENT_LINK}"
         class="pay-btn">
-        Get Premium — Rs.999
+        Continue to Payment
       </a>
 
     `;
+
+    setupCopyButton(email);
 
   }catch(error){
 
@@ -755,6 +805,45 @@ async function checkAccount(){
 
     `;
   }
+}
+
+
+/* ==========================================
+   COPY EMAIL
+========================================== */
+
+function setupCopyButton(email){
+
+  const button=
+    document.getElementById("copyEmailBtn");
+
+  if(!button) return;
+
+  button.addEventListener(
+    "click",
+    async()=>{
+
+      try{
+
+        await navigator.clipboard.writeText(email);
+
+        button.textContent="Copied";
+
+        setTimeout(()=>{
+          button.textContent="Copy";
+        },1200);
+
+      }catch(error){
+
+        console.error(
+          "Copy error:",
+          error
+        );
+
+      }
+
+    }
+  );
 }
 
 
