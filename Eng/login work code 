@@ -1,0 +1,657 @@
+const SITE_URL = "https://createlk.com";
+
+const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
+
+const SESSION_COOKIE = "english_session";
+const GOOGLE_STATE_COOKIE = "google_state";
+
+const LONG_SESSION_DAYS = 30;
+const SHORT_SESSION_DAYS = 1;
+
+export default {
+  async fetch(request, env) {
+    try {
+      const url = new URL(request.url);
+      const path = url.pathname;
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: corsHeaders()
+        });
+      }
+
+      if (path === "/auth/google") {
+        return startGoogleLogin(request, env);
+      }
+
+      if (path === "/auth/callback") {
+        return handleGoogleCallback(request, env);
+      }
+
+      if (path === "/api/me") {
+        return getCurrentUser(request, env);
+      }
+
+      if (path === "/auth/logout") {
+        return logout(request, env);
+      }
+
+      if (path === "/api/health") {
+        return json({
+          success: true,
+          status: "online"
+        });
+      }
+
+      if (path === "/api/titles") {
+        return getLessonTitles(env);
+      }
+
+      if (path === "/api/questions") {
+        return getQuestions(request, env);
+      }
+
+      return json({
+        success: false,
+        error: "Not found"
+      }, 404);
+
+    } catch (error) {
+      console.error(error);
+
+      return json({
+        success: false,
+        error: "Server error"
+      }, 500);
+    }
+  }
+};
+
+
+/* GOOGLE LOGIN */
+
+function startGoogleLogin(request, env) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+    return new Response("Google OAuth is not configured.", {
+      status: 500
+    });
+  }
+
+  const url = new URL(request.url);
+  const stay = url.searchParams.get("stay") === "1";
+  const state = generateToken();
+  const redirectUri = `${url.origin}/auth/callback`;
+
+  const authUrl = new URL(GOOGLE_AUTH_URL);
+
+  authUrl.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("access_type", "online");
+  authUrl.searchParams.set("prompt", "select_account");
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: authUrl.toString(),
+      "Set-Cookie":
+        `${GOOGLE_STATE_COOKIE}=${encodeURIComponent(state + "|" + (stay ? "1" : "0"))}; ` +
+        `Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`
+    }
+  });
+}
+
+
+/* GOOGLE CALLBACK */
+
+async function handleGoogleCallback(request, env) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+
+  if (!code || !state) {
+    return redirectToLogin("Invalid Google login request.");
+  }
+
+  const cookies = parseCookies(
+    request.headers.get("Cookie") || ""
+  );
+
+  const saved = cookies[GOOGLE_STATE_COOKIE];
+
+  if (!saved) {
+    return redirectToLogin("Login session expired.");
+  }
+
+  const parts = saved.split("|");
+  const savedState = parts[0];
+  const stay = parts[1] === "1";
+
+  if (savedState !== state) {
+    return redirectToLogin("Invalid login state.");
+  }
+
+  const redirectUri = `${url.origin}/auth/callback`;
+
+  const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri
+    })
+  });
+
+  if (!tokenResponse.ok) {
+    console.error(await tokenResponse.text());
+    return redirectToLogin("Google authentication failed.");
+  }
+
+  const tokens = await tokenResponse.json();
+
+  if (!tokens.access_token) {
+    return redirectToLogin("Google access token missing.");
+  }
+
+  const userResponse = await fetch(GOOGLE_USERINFO_URL, {
+    headers: {
+      Authorization: `Bearer ${tokens.access_token}`
+    }
+  });
+
+  if (!userResponse.ok) {
+    return redirectToLogin("Unable to retrieve Google account.");
+  }
+
+  const googleUser = await userResponse.json();
+
+  const googleId = googleUser.sub;
+  const email = googleUser.email;
+  const name = googleUser.name || "";
+  const photoUrl = googleUser.picture || "";
+
+  if (!googleId || !email) {
+    return redirectToLogin("Google account information is incomplete.");
+  }
+
+  let user = await env.DB.prepare(`
+    SELECT *
+    FROM users
+    WHERE google_id = ?
+    LIMIT 1
+  `).bind(googleId).first();
+
+  if (user) {
+    await env.DB.prepare(`
+      UPDATE users
+      SET name = ?, email = ?, photo_url = ?
+      WHERE google_id = ?
+    `).bind(
+      name,
+      email,
+      photoUrl,
+      googleId
+    ).run();
+
+  } else {
+
+    const existing = await env.DB.prepare(`
+      SELECT *
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+    `).bind(email).first();
+
+    if (existing) {
+
+      await env.DB.prepare(`
+        UPDATE users
+        SET google_id = ?, name = ?, photo_url = ?
+        WHERE email = ?
+      `).bind(
+        googleId,
+        name,
+        photoUrl,
+        email
+      ).run();
+
+    } else {
+
+      await env.DB.prepare(`
+        INSERT INTO users
+        (google_id, name, email, photo_url)
+        VALUES (?, ?, ?, ?)
+      `).bind(
+        googleId,
+        name,
+        email,
+        photoUrl
+      ).run();
+    }
+  }
+
+  user = await env.DB.prepare(`
+    SELECT *
+    FROM users
+    WHERE google_id = ?
+    LIMIT 1
+  `).bind(googleId).first();
+
+  if (!user) {
+    return redirectToLogin("Unable to create your account.");
+  }
+
+  const sessionToken = generateToken();
+  const sessionHash = await sha256(sessionToken);
+
+  const days = stay
+    ? LONG_SESSION_DAYS
+    : SHORT_SESSION_DAYS;
+
+  const expiresAt =
+    Math.floor(Date.now() / 1000) +
+    days * 86400;
+
+  await env.DB.prepare(`
+    DELETE FROM sessions
+    WHERE user_id = ?
+  `).bind(user.id).run();
+
+  await env.DB.prepare(`
+    INSERT INTO sessions
+    (session_token_hash, user_id, expires_at)
+    VALUES (?, ?, ?)
+  `).bind(
+    sessionHash,
+    user.id,
+    expiresAt
+  ).run();
+
+  const headers = new Headers();
+
+  headers.set(
+    "Location",
+    `${SITE_URL}/Eng/dashboard.html`
+  );
+
+  headers.append(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=${sessionToken}; ` +
+    `Max-Age=${days * 86400}; ` +
+    `Path=/; HttpOnly; Secure; SameSite=None`
+  );
+
+  headers.append(
+    "Set-Cookie",
+    `${GOOGLE_STATE_COOKIE}=; ` +
+    `Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`
+  );
+
+  return new Response(null, {
+    status: 302,
+    headers
+  });
+}
+
+
+/* CURRENT USER */
+
+async function getCurrentUser(request, env) {
+  const user = await authenticate(request, env);
+
+  if (!user) {
+    return json({
+      loggedIn: false
+    });
+  }
+
+  return json({
+    loggedIn: true,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      photo_url: user.photo_url
+    }
+  });
+}
+
+
+/* AUTHENTICATE */
+
+async function authenticate(request, env) {
+  const cookies = parseCookies(
+    request.headers.get("Cookie") || ""
+  );
+
+  const token = cookies[SESSION_COOKIE];
+
+  if (!token) return null;
+
+  const hash = await sha256(token);
+  const now = Math.floor(Date.now() / 1000);
+
+  return await env.DB.prepare(`
+    SELECT
+      users.id,
+      users.name,
+      users.email,
+      users.photo_url,
+      sessions.expires_at
+    FROM sessions
+    JOIN users
+      ON users.id = sessions.user_id
+    WHERE sessions.session_token_hash = ?
+      AND sessions.expires_at > ?
+    LIMIT 1
+  `).bind(hash, now).first();
+}
+
+
+/* LESSON TITLES */
+
+async function getLessonTitles(env) {
+  const result = await env.DB.prepare(`
+    SELECT id, title, sort_order
+    FROM lessons
+    ORDER BY sort_order ASC
+  `).all();
+
+  return json({
+    success: true,
+    lessons: result.results || []
+  });
+}
+
+
+/* QUESTIONS */
+
+async function getQuestions(request, env) {
+  const url = new URL(request.url);
+  const lessonId = Number(
+    url.searchParams.get("lesson")
+  );
+
+  if (!Number.isInteger(lessonId) || lessonId < 1) {
+    return json({
+      success: false,
+      error: "Invalid lesson."
+    }, 400);
+  }
+
+  const lesson = await env.DB.prepare(`
+    SELECT id, title, sort_order
+    FROM lessons
+    WHERE id = ?
+    LIMIT 1
+  `).bind(lessonId).first();
+
+  if (!lesson) {
+    return json({
+      success: false,
+      error: "Lesson not found."
+    }, 404);
+  }
+
+  const questionsResult = await env.DB.prepare(`
+    SELECT
+      id,
+      lesson_id,
+      question,
+      option_a,
+      option_b,
+      option_c,
+      option_d,
+      answer,
+      explanation,
+      question_number
+    FROM questions
+    WHERE lesson_id = ?
+    ORDER BY question_number ASC
+  `).bind(lessonId).all();
+
+  const rows = questionsResult.results || [];
+
+  if (!rows.length) {
+    return json({
+      success: false,
+      error: "No questions found."
+    }, 404);
+  }
+
+  const hasPremium =
+    rows.some(q => Number(q.question_number) > 100);
+
+  /* Free 1–100: NO LOGIN */
+
+  if (hasPremium) {
+    const user = await authenticate(request, env);
+
+    if (!user) {
+      return json({
+        success: false,
+        requiresLogin: true,
+        error: "Google login required."
+      }, 401);
+    }
+
+    const subscription =
+      await getActiveSubscription(user.id, env);
+
+    if (!subscription) {
+      return json({
+        success: false,
+        requiresSubscription: true,
+        error: "Active subscription required."
+      }, 403);
+    }
+  }
+
+  const questions = rows.map(q => ({
+    id: q.id,
+    lesson_id: q.lesson_id,
+    question: q.question,
+    options: [
+      q.option_a,
+      q.option_b,
+      q.option_c,
+      q.option_d
+    ],
+    answer: Number(q.answer),
+    explanation: q.explanation || "",
+    question_number: Number(q.question_number)
+  }));
+
+  return json({
+    success: true,
+    lesson,
+    questions
+  });
+}
+
+
+/* SUBSCRIPTION */
+
+async function getActiveSubscription(userId, env) {
+  const now = Math.floor(Date.now() / 1000);
+
+  return await env.DB.prepare(`
+    SELECT id, status, started_at, expires_at, payhere_reference
+    FROM subscriptions
+    WHERE user_id = ?
+      AND status = 'active'
+      AND (
+        expires_at IS NULL
+        OR expires_at > ?
+      )
+    ORDER BY id DESC
+    LIMIT 1
+  `).bind(userId, now).first();
+}
+
+
+/* LOGOUT */
+
+async function logout(request, env) {
+  const cookies = parseCookies(
+    request.headers.get("Cookie") || ""
+  );
+
+  const token = cookies[SESSION_COOKIE];
+
+  if (token) {
+    const hash = await sha256(token);
+
+    await env.DB.prepare(`
+      DELETE FROM sessions
+      WHERE session_token_hash = ?
+    `).bind(hash).run();
+  }
+
+  const headers = new Headers(
+    corsHeaders()
+  );
+
+  headers.set(
+    "Content-Type",
+    "application/json"
+  );
+
+  headers.append(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=; ` +
+    `Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`
+  );
+
+  return new Response(
+    JSON.stringify({
+      success: true
+    }),
+    {
+      status: 200,
+      headers
+    }
+  );
+}
+
+
+/* HELPERS */
+
+function generateToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+
+  return Array.from(bytes)
+    .map(b =>
+      b.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+
+async function sha256(value) {
+  const data = new TextEncoder().encode(value);
+
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    data
+  );
+
+  return Array.from(new Uint8Array(hash))
+    .map(b =>
+      b.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+
+function parseCookies(header) {
+  const cookies = {};
+
+  header.split(";").forEach(part => {
+    const index = part.indexOf("=");
+
+    if (index === -1) return;
+
+    const key = part
+      .slice(0, index)
+      .trim();
+
+    const value = part
+      .slice(index + 1)
+      .trim();
+
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
+  });
+
+  return cookies;
+}
+
+
+function redirectToLogin(message) {
+  const url = new URL(
+    `${SITE_URL}/Eng/login.html`
+  );
+
+  url.searchParams.set(
+    "error",
+    message
+  );
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: url.toString()
+    }
+  });
+}
+
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": SITE_URL,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type, Accept",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Vary": "Origin"
+  };
+}
+
+
+function json(data, status = 200) {
+  const headers = new Headers(
+    corsHeaders()
+  );
+
+  headers.set(
+    "Content-Type",
+    "application/json; charset=UTF-8"
+  );
+
+  headers.set(
+    "Cache-Control",
+    "no-store"
+  );
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers
+    }
+  );
+}
