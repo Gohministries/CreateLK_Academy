@@ -1,657 +1,690 @@
-const SITE_URL = "https://createlk.com";
+const SITE="https://createlk.com";
+const PAY="https://eng-payment.createlk.workers.dev";
+const GA="https://accounts.google.com/o/oauth2/v2/auth";
+const GT="https://oauth2.googleapis.com/token";
+const GU="https://openidconnect.googleapis.com/v1/userinfo";
+const SC="english_session",GC="google_state",RC="english_referral";
 
-const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
+export default{async fetch(r,e){
+ try{
+  const u=new URL(r.url),p=u.pathname;
+  if(r.method==="OPTIONS")
+   return new Response(null,{status:204,headers:cors()});
 
-const SESSION_COOKIE = "english_session";
-const GOOGLE_STATE_COOKIE = "google_state";
+  const f={
+   "/auth/google":login,
+   "/auth/callback":callback,
+   "/auth/logout":logout,
+   "/api/me":me,
+   "/api/referral":referral,
+   "/api/payment-start":payment,
+   "/api/payment-session":paymentSession,
+   "/api/titles":titles,
+   "/api/questions":questions,
+   "/api/health":()=>j({success:true,status:"online"})
+  }[p];
 
-const LONG_SESSION_DAYS = 30;
-const SHORT_SESSION_DAYS = 1;
+  return f?await f(r,e):j({success:false,error:"Not found"},404);
+ }catch(x){
+  console.error(x);
+  return j({success:false,error:"Server error"},500);
+ }
+}};
 
-export default {
-  async fetch(request, env) {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname;
+async function login(r,e){
+ if(!e.GOOGLE_CLIENT_ID||!e.GOOGLE_CLIENT_SECRET)
+  return new Response("Google OAuth is not configured.",{status:500});
 
-      if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: corsHeaders()
-        });
-      }
+ const u=new URL(r.url),s=token();
+ const ref=clean(u.searchParams.get("ref"));
 
-      if (path === "/auth/google") {
-        return startGoogleLogin(request, env);
-      }
+ const g=new URL(GA);
 
-      if (path === "/auth/callback") {
-        return handleGoogleCallback(request, env);
-      }
+ [
+  ["client_id",e.GOOGLE_CLIENT_ID],
+  ["redirect_uri",`${u.origin}/auth/callback`],
+  ["response_type","code"],
+  ["scope","openid email profile"],
+  ["state",s],
+  ["access_type","online"],
+  ["prompt","select_account"]
+ ].forEach(x=>g.searchParams.set(...x));
 
-      if (path === "/api/me") {
-        return getCurrentUser(request, env);
-      }
+ const h=new Headers({Location:g});
 
-      if (path === "/auth/logout") {
-        return logout(request, env);
-      }
+ h.append(
+  "Set-Cookie",
+  `${GC}=${encodeURIComponent(s)};Max-Age=600;Path=/;HttpOnly;Secure;SameSite=Lax`
+ );
 
-      if (path === "/api/health") {
-        return json({
-          success: true,
-          status: "online"
-        });
-      }
-
-      if (path === "/api/titles") {
-        return getLessonTitles(env);
-      }
-
-      if (path === "/api/questions") {
-        return getQuestions(request, env);
-      }
-
-      return json({
-        success: false,
-        error: "Not found"
-      }, 404);
-
-    } catch (error) {
-      console.error(error);
-
-      return json({
-        success: false,
-        error: "Server error"
-      }, 500);
-    }
-  }
-};
-
-
-/* GOOGLE LOGIN */
-
-function startGoogleLogin(request, env) {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-    return new Response("Google OAuth is not configured.", {
-      status: 500
-    });
-  }
-
-  const url = new URL(request.url);
-  const stay = url.searchParams.get("stay") === "1";
-  const state = generateToken();
-  const redirectUri = `${url.origin}/auth/callback`;
-
-  const authUrl = new URL(GOOGLE_AUTH_URL);
-
-  authUrl.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("scope", "openid email profile");
-  authUrl.searchParams.set("state", state);
-  authUrl.searchParams.set("access_type", "online");
-  authUrl.searchParams.set("prompt", "select_account");
-
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: authUrl.toString(),
-      "Set-Cookie":
-        `${GOOGLE_STATE_COOKIE}=${encodeURIComponent(state + "|" + (stay ? "1" : "0"))}; ` +
-        `Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`
-    }
-  });
-}
-
-
-/* GOOGLE CALLBACK */
-
-async function handleGoogleCallback(request, env) {
-  const url = new URL(request.url);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-
-  if (!code || !state) {
-    return redirectToLogin("Invalid Google login request.");
-  }
-
-  const cookies = parseCookies(
-    request.headers.get("Cookie") || ""
+ if(ref)
+  h.append(
+   "Set-Cookie",
+   `${RC}=${ref};Max-Age=600;Path=/;HttpOnly;Secure;SameSite=Lax`
   );
 
-  const saved = cookies[GOOGLE_STATE_COOKIE];
+ return new Response(null,{status:302,headers:h});
+}
 
-  if (!saved) {
-    return redirectToLogin("Login session expired.");
-  }
+async function callback(r,e){
+ const u=new URL(r.url),q=u.searchParams;
 
-  const parts = saved.split("|");
-  const savedState = parts[0];
-  const stay = parts[1] === "1";
+ if(!q.get("code")||!q.get("state"))
+  return bad("Invalid Google login request.");
 
-  if (savedState !== state) {
-    return redirectToLogin("Invalid login state.");
-  }
+ const c=cookies(r.headers.get("Cookie")||"");
+ const st=c[GC];
 
-  const redirectUri = `${url.origin}/auth/callback`;
+ if(!st)
+  return bad("Login session expired.");
 
-  const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri
-    })
-  });
+ if(st!==q.get("state"))
+  return bad("Invalid login state.");
 
-  if (!tokenResponse.ok) {
-    console.error(await tokenResponse.text());
-    return redirectToLogin("Google authentication failed.");
-  }
+ const tr=await fetch(GT,{
+  method:"POST",
+  headers:{"Content-Type":"application/x-www-form-urlencoded"},
+  body:new URLSearchParams({
+   client_id:e.GOOGLE_CLIENT_ID,
+   client_secret:e.GOOGLE_CLIENT_SECRET,
+   code:q.get("code"),
+   grant_type:"authorization_code",
+   redirect_uri:`${u.origin}/auth/callback`
+  })
+ });
 
-  const tokens = await tokenResponse.json();
+ if(!tr.ok)
+  return bad("Google authentication failed.");
 
-  if (!tokens.access_token) {
-    return redirectToLogin("Google access token missing.");
-  }
+ const t=await tr.json();
 
-  const userResponse = await fetch(GOOGLE_USERINFO_URL, {
-    headers: {
-      Authorization: `Bearer ${tokens.access_token}`
-    }
-  });
+ if(!t.access_token)
+  return bad("Google access token missing.");
 
-  if (!userResponse.ok) {
-    return redirectToLogin("Unable to retrieve Google account.");
-  }
+ const ur=await fetch(GU,{
+  headers:{Authorization:`Bearer ${t.access_token}`}
+ });
 
-  const googleUser = await userResponse.json();
+ if(!ur.ok)
+  return bad("Unable to retrieve Google account.");
 
-  const googleId = googleUser.sub;
-  const email = googleUser.email;
-  const name = googleUser.name || "";
-  const photoUrl = googleUser.picture || "";
+ const g=await ur.json();
 
-  if (!googleId || !email) {
-    return redirectToLogin("Google account information is incomplete.");
-  }
+ if(!g.sub||!g.email)
+  return bad("Google account information is incomplete.");
 
-  let user = await env.DB.prepare(`
-    SELECT *
-    FROM users
-    WHERE google_id = ?
-    LIMIT 1
-  `).bind(googleId).first();
+ let user=await e.DB.prepare(
+  "SELECT * FROM users WHERE google_id=? LIMIT 1"
+ ).bind(g.sub).first();
 
-  if (user) {
-    await env.DB.prepare(`
-      UPDATE users
-      SET name = ?, email = ?, photo_url = ?
-      WHERE google_id = ?
-    `).bind(
-      name,
-      email,
-      photoUrl,
-      googleId
-    ).run();
+ let fresh=false;
 
-  } else {
+ if(user){
 
-    const existing = await env.DB.prepare(`
-      SELECT *
-      FROM users
-      WHERE email = ?
-      LIMIT 1
-    `).bind(email).first();
-
-    if (existing) {
-
-      await env.DB.prepare(`
-        UPDATE users
-        SET google_id = ?, name = ?, photo_url = ?
-        WHERE email = ?
-      `).bind(
-        googleId,
-        name,
-        photoUrl,
-        email
-      ).run();
-
-    } else {
-
-      await env.DB.prepare(`
-        INSERT INTO users
-        (google_id, name, email, photo_url)
-        VALUES (?, ?, ?, ?)
-      `).bind(
-        googleId,
-        name,
-        email,
-        photoUrl
-      ).run();
-    }
-  }
-
-  user = await env.DB.prepare(`
-    SELECT *
-    FROM users
-    WHERE google_id = ?
-    LIMIT 1
-  `).bind(googleId).first();
-
-  if (!user) {
-    return redirectToLogin("Unable to create your account.");
-  }
-
-  const sessionToken = generateToken();
-  const sessionHash = await sha256(sessionToken);
-
-  const days = stay
-    ? LONG_SESSION_DAYS
-    : SHORT_SESSION_DAYS;
-
-  const expiresAt =
-    Math.floor(Date.now() / 1000) +
-    days * 86400;
-
-  await env.DB.prepare(`
-    DELETE FROM sessions
-    WHERE user_id = ?
-  `).bind(user.id).run();
-
-  await env.DB.prepare(`
-    INSERT INTO sessions
-    (session_token_hash, user_id, expires_at)
-    VALUES (?, ?, ?)
-  `).bind(
-    sessionHash,
-    user.id,
-    expiresAt
+  await e.DB.prepare(
+   "UPDATE users SET name=?,email=?,photo_url=? WHERE google_id=?"
+  ).bind(
+   g.name||"",
+   g.email,
+   g.picture||"",
+   g.sub
   ).run();
 
-  const headers = new Headers();
+ }else{
 
-  headers.set(
-    "Location",
-    `${SITE_URL}/Eng/dashboard.html`
-  );
+  user=await e.DB.prepare(
+   "SELECT * FROM users WHERE email=? LIMIT 1"
+  ).bind(g.email).first();
 
-  headers.append(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=${sessionToken}; ` +
-    `Max-Age=${days * 86400}; ` +
-    `Path=/; HttpOnly; Secure; SameSite=None`
-  );
+  if(user){
 
-  headers.append(
-    "Set-Cookie",
-    `${GOOGLE_STATE_COOKIE}=; ` +
-    `Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`
-  );
+   await e.DB.prepare(
+    "UPDATE users SET google_id=?,name=?,photo_url=? WHERE email=?"
+   ).bind(
+    g.sub,
+    g.name||"",
+    g.picture||"",
+    g.email
+   ).run();
 
-  return new Response(null, {
-    status: 302,
-    headers
-  });
-}
+  }else{
 
+   fresh=true;
 
-/* CURRENT USER */
-
-async function getCurrentUser(request, env) {
-  const user = await authenticate(request, env);
-
-  if (!user) {
-    return json({
-      loggedIn: false
-    });
+   await e.DB.prepare(`
+    INSERT INTO users
+    (google_id,name,email,photo_url,referral_code)
+    VALUES(?,?,?,?,?)
+   `).bind(
+    g.sub,
+    g.name||"",
+    g.email,
+    g.picture||"",
+    await newCode(e)
+   ).run();
   }
+ }
 
-  return json({
-    loggedIn: true,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      photo_url: user.photo_url
+ user=await e.DB.prepare(
+  "SELECT * FROM users WHERE google_id=? LIMIT 1"
+ ).bind(g.sub).first();
+
+ if(!user)
+  return bad("Unable to create your account.");
+
+ if(!user.referral_code){
+
+  const code=await newCode(e);
+
+  await e.DB.prepare(
+   "UPDATE users SET referral_code=? WHERE id=?"
+  ).bind(code,user.id).run();
+
+  user.referral_code=code;
+ }
+
+ const rc=clean(c[RC]);
+
+ if(fresh&&rc)
+  await addReferral(e,user.id,rc);
+
+ /*
+  * 30-DAY LOGIN SESSION
+  */
+ const stoken=token();
+ const hash=await sha(stoken);
+ const days=30;
+
+ await e.DB.prepare(
+  "DELETE FROM sessions WHERE user_id=?"
+ ).bind(user.id).run();
+
+ await e.DB.prepare(`
+  INSERT INTO sessions
+  (session_token_hash,user_id,expires_at)
+  VALUES(?,?,?)
+ `).bind(
+  hash,
+  user.id,
+  Math.floor(Date.now()/1000)+days*86400
+ ).run();
+
+ const h=new Headers({
+  Location:`${SITE}/Eng/quiz.html`
+ });
+
+ h.append(
+  "Set-Cookie",
+  `${SC}=${stoken};Max-Age=${days*86400};Path=/;HttpOnly;Secure;SameSite=None`
+ );
+
+ h.append(
+  "Set-Cookie",
+  `${GC}=;Max-Age=0;Path=/;HttpOnly;Secure;SameSite=Lax`
+ );
+
+ h.append(
+  "Set-Cookie",
+  `${RC}=;Max-Age=0;Path=/;HttpOnly;Secure;SameSite=Lax`
+ );
+
+ return new Response(null,{status:302,headers:h});
+}
+
+async function addReferral(e,uid,code){
+
+ const r=await e.DB.prepare(
+  "SELECT id FROM users WHERE referral_code=? LIMIT 1"
+ ).bind(code).first();
+
+ if(!r||+r.id===+uid)
+  return;
+
+ const exists=await e.DB.prepare(
+  "SELECT id FROM referrals WHERE referred_user_id=? LIMIT 1"
+ ).bind(uid).first();
+
+ if(exists)
+  return;
+
+ await e.DB.prepare(`
+  INSERT INTO referrals
+  (referrer_user_id,referred_user_id,referral_code,status,created_at)
+  VALUES(?,?,?,'registered',?)
+ `).bind(
+  r.id,
+  uid,
+  code,
+  new Date().toISOString()
+ ).run();
+}
+
+async function newCode(e){
+
+ for(let i=0;i<10;i++){
+
+  const c=
+   "CL"+
+   crypto.randomUUID()
+    .replace(/-/g,"")
+    .slice(0,8)
+    .toUpperCase();
+
+  if(!await e.DB.prepare(
+   "SELECT id FROM users WHERE referral_code=? LIMIT 1"
+  ).bind(c).first())
+   return c;
+ }
+
+ throw Error("Could not create referral code.");
+}
+
+async function referral(r,e){
+
+ const u=await auth(r,e);
+
+ if(!u)
+  return j({
+   success:false,
+   error:"Login required."
+  },401);
+
+ const x=await e.DB.prepare(
+  "SELECT referral_code FROM users WHERE id=?"
+ ).bind(u.id).first();
+
+ const n=await e.DB.prepare(
+  "SELECT COUNT(*) total FROM referrals WHERE referrer_user_id=?"
+ ).bind(u.id).first();
+
+ return j({
+  success:true,
+  referralCode:x?.referral_code||null,
+  referralLink:x?.referral_code
+   ?`${SITE}/Eng/login.html?ref=${x.referral_code}`
+   :null,
+  registered:+(n?.total||0)
+ });
+}
+
+async function me(r,e){
+
+ const u=await auth(r,e);
+
+ if(!u)
+  return j({loggedIn:false});
+
+ const s=await subscription(u.id,e);
+
+ return j({
+  loggedIn:true,
+  user:{
+   id:u.id,
+   name:u.name,
+   email:u.email,
+   photo_url:u.photo_url
+  },
+  subscription:s
+   ?{
+     active:true,
+     expires_at:s.expires_at
     }
-  });
+   :{
+     active:false
+    }
+ });
 }
 
+async function payment(r,e){
 
-/* AUTHENTICATE */
+ const u=await auth(r,e);
 
-async function authenticate(request, env) {
-  const cookies = parseCookies(
-    request.headers.get("Cookie") || ""
+ if(!u)
+  return Response.redirect(
+   `${SITE}/Eng/login.html?next=/Eng/quiz.html`,
+   302
   );
 
-  const token = cookies[SESSION_COOKIE];
-
-  if (!token) return null;
-
-  const hash = await sha256(token);
-  const now = Math.floor(Date.now() / 1000);
-
-  return await env.DB.prepare(`
-    SELECT
-      users.id,
-      users.name,
-      users.email,
-      users.photo_url,
-      sessions.expires_at
-    FROM sessions
-    JOIN users
-      ON users.id = sessions.user_id
-    WHERE sessions.session_token_hash = ?
-      AND sessions.expires_at > ?
-    LIMIT 1
-  `).bind(hash, now).first();
-}
-
-
-/* LESSON TITLES */
-
-async function getLessonTitles(env) {
-  const result = await env.DB.prepare(`
-    SELECT id, title, sort_order
-    FROM lessons
-    ORDER BY sort_order ASC
-  `).all();
-
-  return json({
-    success: true,
-    lessons: result.results || []
-  });
-}
-
-
-/* QUESTIONS */
-
-async function getQuestions(request, env) {
-  const url = new URL(request.url);
-  const lessonId = Number(
-    url.searchParams.get("lesson")
+ if(await subscription(u.id,e))
+  return Response.redirect(
+   `${SITE}/Eng/quiz.html`,
+   302
   );
 
-  if (!Number.isInteger(lessonId) || lessonId < 1) {
-    return json({
-      success: false,
-      error: "Invalid lesson."
-    }, 400);
+ const t=token();
+ const now=new Date();
+ const exp=new Date(
+  now.getTime()+10*60000
+ );
+
+ await e.DB.prepare(`
+  INSERT INTO payment_handoffs
+  (token,user_id,expires_at,created_at)
+  VALUES(?,?,?,?)
+ `).bind(
+  t,
+  u.id,
+  exp.toISOString(),
+  now.toISOString()
+ ).run();
+
+ const x=new URL(PAY);
+ x.searchParams.set("token",t);
+
+ return Response.redirect(
+  x.toString(),
+  302
+ );
+}
+
+async function paymentSession(r,e){
+
+ const t=new URL(r.url)
+  .searchParams
+  .get("token");
+
+ if(!t)
+  return j({
+   success:false,
+   error:"Missing payment token."
+  },400);
+
+ const h=await e.DB.prepare(`
+  SELECT user_id,expires_at
+  FROM payment_handoffs
+  WHERE token=?
+  LIMIT 1
+ `).bind(t).first();
+
+ if(!h)
+  return j({
+   success:false,
+   error:"Invalid payment session."
+  },401);
+
+ if(new Date(h.expires_at)<=new Date())
+  return j({
+   success:false,
+   error:"Payment session expired."
+  },401);
+
+ const u=await e.DB.prepare(`
+  SELECT id,name,email,photo_url
+  FROM users
+  WHERE id=?
+  LIMIT 1
+ `).bind(h.user_id).first();
+
+ if(!u)
+  return j({
+   success:false,
+   error:"User not found."
+  },404);
+
+ return j({
+  success:true,
+  user:u
+ });
+}
+
+async function titles(e){
+
+ const x=await e.DB.prepare(`
+  SELECT id,title,sort_order
+  FROM lessons
+  ORDER BY sort_order
+ `).all();
+
+ return j({
+  success:true,
+  lessons:x.results||[]
+ });
+}
+
+async function questions(r,e){
+
+ const id=Number(
+  new URL(r.url)
+   .searchParams
+   .get("lesson")
+ );
+
+ if(!Number.isInteger(id)||id<1)
+  return j({
+   success:false,
+   error:"Invalid lesson."
+  },400);
+
+ const lesson=await e.DB.prepare(`
+  SELECT id,title,sort_order
+  FROM lessons
+  WHERE id=?
+  LIMIT 1
+ `).bind(id).first();
+
+ if(!lesson)
+  return j({
+   success:false,
+   error:"Lesson not found."
+  },404);
+
+ const u=await auth(r,e);
+
+ if(!u)
+  return j({
+   success:false,
+   requiresLogin:true,
+   error:"Google login required."
+  },401);
+
+ if(!await subscription(u.id,e))
+  return j({
+   success:false,
+   requiresSubscription:true,
+   error:"Active subscription required."
+  },403);
+
+ const x=await e.DB.prepare(`
+  SELECT
+   id,
+   lesson_id,
+   question,
+   option_a,
+   option_b,
+   option_c,
+   option_d,
+   answer,
+   explanation,
+   question_number
+  FROM questions
+  WHERE lesson_id=?
+  ORDER BY question_number
+ `).bind(id).all();
+
+ return j({
+  success:true,
+  lesson,
+  questions:(x.results||[]).map(q=>({
+   id:q.id,
+   lesson_id:q.lesson_id,
+   question:q.question,
+   options:[
+    q.option_a,
+    q.option_b,
+    q.option_c,
+    q.option_d
+   ],
+   answer:+q.answer,
+   explanation:q.explanation||"",
+   question_number:+q.question_number
+  }))
+ });
+}
+
+async function subscription(id,e){
+
+ return e.DB.prepare(`
+  SELECT
+   id,
+   status,
+   started_at,
+   expires_at,
+   payhere_reference
+  FROM subscriptions
+  WHERE user_id=?
+   AND status='active'
+   AND (
+    expires_at IS NULL
+    OR expires_at>?
+   )
+  ORDER BY id DESC
+  LIMIT 1
+ `).bind(
+  id,
+  new Date().toISOString()
+ ).first();
+}
+
+async function auth(r,e){
+
+ const c=cookies(
+  r.headers.get("Cookie")||""
+ );
+
+ const t=c[SC];
+
+ if(!t)
+  return null;
+
+ return e.DB.prepare(`
+  SELECT
+   u.id,
+   u.name,
+   u.email,
+   u.photo_url,
+   s.expires_at
+  FROM sessions s
+  JOIN users u
+   ON u.id=s.user_id
+  WHERE
+   s.session_token_hash=?
+   AND s.expires_at>?
+  LIMIT 1
+ `).bind(
+  await sha(t),
+  Math.floor(Date.now()/1000)
+ ).first();
+}
+
+async function logout(r,e){
+
+ const c=cookies(
+  r.headers.get("Cookie")||""
+ );
+
+ if(c[SC])
+  await e.DB.prepare(
+   "DELETE FROM sessions WHERE session_token_hash=?"
+  ).bind(
+   await sha(c[SC])
+  ).run();
+
+ const h=new Headers(cors());
+
+ h.append(
+  "Set-Cookie",
+  `${SC}=;Max-Age=0;Path=/;HttpOnly;Secure;SameSite=None`
+ );
+
+ return new Response(
+  JSON.stringify({success:true}),
+  {
+   headers:{
+    ...Object.fromEntries(h),
+    "Content-Type":"application/json"
+   }
   }
+ );
+}
 
-  const lesson = await env.DB.prepare(`
-    SELECT id, title, sort_order
-    FROM lessons
-    WHERE id = ?
-    LIMIT 1
-  `).bind(lessonId).first();
+function clean(v){
 
-  if (!lesson) {
-    return json({
-      success: false,
-      error: "Lesson not found."
-    }, 404);
+ v=String(v||"")
+  .trim()
+  .toUpperCase();
+
+ return /^CL[A-F0-9]{8}$/.test(v)
+  ?v
+  :null;
+}
+
+function token(){
+
+ return crypto.randomUUID()
+  .replace(/-/g,"")+
+  crypto.randomUUID()
+  .replace(/-/g,"");
+}
+
+async function sha(v){
+
+ const h=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(v)
+ );
+
+ return [...new Uint8Array(h)]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
+}
+
+function cookies(s){
+
+ return Object.fromEntries(
+  s.split(";")
+   .map(x=>x.trim().split("="))
+   .filter(x=>x.length>1)
+   .map(([k,...v])=>[
+    k,
+    decodeURIComponent(v.join("="))
+   ])
+ );
+}
+
+function cors(){
+
+ return {
+  "Access-Control-Allow-Origin":SITE,
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Headers":"Content-Type",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
+ };
+}
+
+function j(x,status=200){
+
+ return new Response(
+  JSON.stringify(x),
+  {
+   status,
+   headers:{
+    ...cors(),
+    "Content-Type":"application/json"
+   }
   }
-
-  const questionsResult = await env.DB.prepare(`
-    SELECT
-      id,
-      lesson_id,
-      question,
-      option_a,
-      option_b,
-      option_c,
-      option_d,
-      answer,
-      explanation,
-      question_number
-    FROM questions
-    WHERE lesson_id = ?
-    ORDER BY question_number ASC
-  `).bind(lessonId).all();
-
-  const rows = questionsResult.results || [];
-
-  if (!rows.length) {
-    return json({
-      success: false,
-      error: "No questions found."
-    }, 404);
-  }
-
-  const hasPremium =
-    rows.some(q => Number(q.question_number) > 100);
-
-  /* Free 1–100: NO LOGIN */
-
-  if (hasPremium) {
-    const user = await authenticate(request, env);
-
-    if (!user) {
-      return json({
-        success: false,
-        requiresLogin: true,
-        error: "Google login required."
-      }, 401);
-    }
-
-    const subscription =
-      await getActiveSubscription(user.id, env);
-
-    if (!subscription) {
-      return json({
-        success: false,
-        requiresSubscription: true,
-        error: "Active subscription required."
-      }, 403);
-    }
-  }
-
-  const questions = rows.map(q => ({
-    id: q.id,
-    lesson_id: q.lesson_id,
-    question: q.question,
-    options: [
-      q.option_a,
-      q.option_b,
-      q.option_c,
-      q.option_d
-    ],
-    answer: Number(q.answer),
-    explanation: q.explanation || "",
-    question_number: Number(q.question_number)
-  }));
-
-  return json({
-    success: true,
-    lesson,
-    questions
-  });
+ );
 }
 
+function bad(x){
 
-/* SUBSCRIPTION */
+ const u=new URL(
+  `${SITE}/Eng/login.html`
+ );
 
-async function getActiveSubscription(userId, env) {
-  const now = Math.floor(Date.now() / 1000);
+ u.searchParams.set("error",x);
 
-  return await env.DB.prepare(`
-    SELECT id, status, started_at, expires_at, payhere_reference
-    FROM subscriptions
-    WHERE user_id = ?
-      AND status = 'active'
-      AND (
-        expires_at IS NULL
-        OR expires_at > ?
-      )
-    ORDER BY id DESC
-    LIMIT 1
-  `).bind(userId, now).first();
-}
-
-
-/* LOGOUT */
-
-async function logout(request, env) {
-  const cookies = parseCookies(
-    request.headers.get("Cookie") || ""
-  );
-
-  const token = cookies[SESSION_COOKIE];
-
-  if (token) {
-    const hash = await sha256(token);
-
-    await env.DB.prepare(`
-      DELETE FROM sessions
-      WHERE session_token_hash = ?
-    `).bind(hash).run();
-  }
-
-  const headers = new Headers(
-    corsHeaders()
-  );
-
-  headers.set(
-    "Content-Type",
-    "application/json"
-  );
-
-  headers.append(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=; ` +
-    `Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`
-  );
-
-  return new Response(
-    JSON.stringify({
-      success: true
-    }),
-    {
-      status: 200,
-      headers
-    }
-  );
-}
-
-
-/* HELPERS */
-
-function generateToken() {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-
-  return Array.from(bytes)
-    .map(b =>
-      b.toString(16).padStart(2, "0")
-    )
-    .join("");
-}
-
-
-async function sha256(value) {
-  const data = new TextEncoder().encode(value);
-
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    data
-  );
-
-  return Array.from(new Uint8Array(hash))
-    .map(b =>
-      b.toString(16).padStart(2, "0")
-    )
-    .join("");
-}
-
-
-function parseCookies(header) {
-  const cookies = {};
-
-  header.split(";").forEach(part => {
-    const index = part.indexOf("=");
-
-    if (index === -1) return;
-
-    const key = part
-      .slice(0, index)
-      .trim();
-
-    const value = part
-      .slice(index + 1)
-      .trim();
-
-    try {
-      cookies[key] = decodeURIComponent(value);
-    } catch {
-      cookies[key] = value;
-    }
-  });
-
-  return cookies;
-}
-
-
-function redirectToLogin(message) {
-  const url = new URL(
-    `${SITE_URL}/Eng/login.html`
-  );
-
-  url.searchParams.set(
-    "error",
-    message
-  );
-
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: url.toString()
-    }
-  });
-}
-
-
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": SITE_URL,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Content-Type, Accept",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Vary": "Origin"
-  };
-}
-
-
-function json(data, status = 200) {
-  const headers = new Headers(
-    corsHeaders()
-  );
-
-  headers.set(
-    "Content-Type",
-    "application/json; charset=UTF-8"
-  );
-
-  headers.set(
-    "Cache-Control",
-    "no-store"
-  );
-
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers
-    }
-  );
+ return Response.redirect(
+  u.toString(),
+  302
+ );
 }
