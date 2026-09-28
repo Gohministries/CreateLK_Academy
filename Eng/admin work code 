@@ -1,274 +1,99 @@
-const SITE = "https://createlk.com";
 
-const GA = "https://accounts.google.com/o/oauth2/v2/auth";
-const GT = "https://oauth2.googleapis.com/token";
-const GU = "https://openidconnect.googleapis.com/v1/userinfo";
+const SITE="https://createlk.com";
+const GA="https://accounts.google.com/o/oauth2/v2/auth";
+const GT="https://oauth2.googleapis.com/token";
+const GU="https://openidconnect.googleapis.com/v1/userinfo";
+const SC="english_session";
+const SESSION_DAYS=30;
 
-const SC = "english_session";
-const GC = "google_state";
-const RC = "english_referral";
-
-const SESSION_DAYS = 30;
-
-/*
-  Set these in Cloudflare Worker Variables/Secrets:
-
-  GOOGLE_CLIENT_ID
-  GOOGLE_CLIENT_SECRET
-  ADMIN_EMAIL
-*/
-
-function j(data,status=200){
+function j(data,status=200,extra={}) {
   return new Response(JSON.stringify(data),{
     status,
     headers:{
-      "Content-Type":"application/json",
-      "Access-Control-Allow-Origin":SITE,
-      "Access-Control-Allow-Credentials":"true"
+      "Content-Type":"application/json; charset=utf-8",
+      ...extra
     }
   });
 }
 
-function cookies(s){
-  const out={};
+function html(text,status=200) {
+  return new Response(text,{
+    status,
+    headers:{"Content-Type":"text/html; charset=utf-8"}
+  });
+}
 
-  for(const p of s.split(";")){
-    const i=p.indexOf("=");
-    if(i<0)continue;
+function redirect(url) {
+  return Response.redirect(url,302);
+}
 
-    out[p.slice(0,i).trim()]=decodeURIComponent(
-      p.slice(i+1).trim()
-    );
+function cookies(request) {
+  const result={};
+  const header=request.headers.get("Cookie")||"";
+
+  for(const part of header.split(";")){
+    const i=part.indexOf("=");
+    if(i===-1) continue;
+
+    const key=part.slice(0,i).trim();
+    const value=part.slice(i+1).trim();
+
+    result[key]=decodeURIComponent(value);
   }
 
-  return out;
+  return result;
 }
 
-function cookie(name,value,maxAge){
-  return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+function cookie(name,value,maxAge) {
+  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=None`;
 }
 
-async function sha(value){
+async function sha(value) {
   const data=new TextEncoder().encode(value);
   const hash=await crypto.subtle.digest("SHA-256",data);
 
   return [...new Uint8Array(hash)]
-    .map(x=>x.toString(16).padStart(2,"0"))
+    .map(b=>b.toString(16).padStart(2,"0"))
     .join("");
 }
 
-function randomToken(){
-  const a=new Uint8Array(32);
-  crypto.getRandomValues(a);
+function randomToken(length=48) {
+  const bytes=new Uint8Array(length);
+  crypto.getRandomValues(bytes);
 
-  return [...a]
-    .map(x=>x.toString(16).padStart(2,"0"))
+  return [...bytes]
+    .map(b=>b.toString(16).padStart(2,"0"))
     .join("");
 }
 
+function safeNext(value) {
+  const next=String(value||"/Eng/quiz.html");
 
-/* =========================
-   GOOGLE LOGIN
-========================= */
+  if(
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.includes("://")
+  ) return next;
 
-async function googleLogin(r,e){
-  const url=new URL(r.url);
-  const next=url.searchParams.get("next")||"/Eng/quiz.html";
-
-  const state=randomToken();
-
-  await e.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS google_states(
-      state TEXT PRIMARY KEY,
-      next TEXT NOT NULL,
-      expires_at INTEGER NOT NULL
-    )
-  `).run();
-
-  await e.DB.prepare(`
-    INSERT INTO google_states(state,next,expires_at)
-    VALUES(?,?,?)
-  `).bind(
-    state,
-    next,
-    Math.floor(Date.now()/1000)+600
-  ).run();
-
-  const params=new URLSearchParams({
-    client_id:e.GOOGLE_CLIENT_ID,
-    redirect_uri:`${SITE}/auth/callback`,
-    response_type:"code",
-    scope:"openid email profile",
-    state
-  });
-
-  return new Response(null,{
-    status:302,
-    headers:{
-      Location:`${GA}?${params}`,
-      "Set-Cookie":cookie(GC,state,600)
-    }
-  });
+  return "/Eng/quiz.html";
 }
 
+async function auth(request,env) {
+  const token=cookies(request)[SC];
 
-async function googleCallback(r,e){
-  const url=new URL(r.url);
+  if(!token) return null;
 
-  const code=url.searchParams.get("code");
-  const state=url.searchParams.get("state");
+  const hash=await sha(token);
 
-  if(!code || !state){
-    return new Response("Login failed",{status:400});
-  }
-
-  const stateRow=await e.DB.prepare(`
-    SELECT next
-    FROM google_states
-    WHERE state=?
-      AND expires_at>?
-    LIMIT 1
-  `).bind(
-    state,
-    Math.floor(Date.now()/1000)
-  ).first();
-
-  if(!stateRow){
-    return new Response("Invalid login state",{status:400});
-  }
-
-  await e.DB.prepare(`
-    DELETE FROM google_states
-    WHERE state=?
-  `).bind(state).run();
-
-  const tokenRes=await fetch(GT,{
-    method:"POST",
-    headers:{
-      "Content-Type":"application/x-www-form-urlencoded"
-    },
-    body:new URLSearchParams({
-      code,
-      client_id:e.GOOGLE_CLIENT_ID,
-      client_secret:e.GOOGLE_CLIENT_SECRET,
-      redirect_uri:`${SITE}/auth/callback`,
-      grant_type:"authorization_code"
-    })
-  });
-
-  const tokens=await tokenRes.json();
-
-  if(!tokens.access_token){
-    console.error(tokens);
-    return new Response("Google authentication failed",{status:400});
-  }
-
-  const userRes=await fetch(GU,{
-    headers:{
-      Authorization:`Bearer ${tokens.access_token}`
-    }
-  });
-
-  const g=await userRes.json();
-
-  if(!g.sub || !g.email){
-    return new Response("Google account information unavailable",{status:400});
-  }
-
-  let user=await e.DB.prepare(`
-    SELECT *
-    FROM users
-    WHERE google_id=?
-    LIMIT 1
-  `).bind(g.sub).first();
-
-  if(!user){
-    const referralCode=randomToken().slice(0,8).toUpperCase();
-
-    await e.DB.prepare(`
-      INSERT INTO users
-      (google_id,name,email,photo_url,referral_code)
-      VALUES(?,?,?,?,?)
-    `).bind(
-      g.sub,
-      g.name||"",
-      g.email,
-      g.picture||"",
-      referralCode
-    ).run();
-
-    user=await e.DB.prepare(`
-      SELECT *
-      FROM users
-      WHERE google_id=?
-      LIMIT 1
-    `).bind(g.sub).first();
-
-  }else{
-
-    await e.DB.prepare(`
-      UPDATE users
-      SET name=?,email=?,photo_url=?
-      WHERE id=?
-    `).bind(
-      g.name||"",
-      g.email,
-      g.picture||"",
-      user.id
-    ).run();
-
-    user=await e.DB.prepare(`
-      SELECT *
-      FROM users
-      WHERE id=?
-    `).bind(user.id).first();
-  }
-
-  const sessionToken=randomToken();
-
-  await e.DB.prepare(`
-    INSERT INTO sessions
-    (session_token_hash,user_id,expires_at)
-    VALUES(?,?,?)
-  `).bind(
-    await sha(sessionToken),
-    user.id,
-    Math.floor(Date.now()/1000)+SESSION_DAYS*86400
-  ).run();
-
-  const next=stateRow.next||"/Eng/quiz.html";
-
-  return new Response(null,{
-    status:302,
-    headers:{
-      Location:`${SITE}${next.startsWith("/")?next:"/Eng/quiz.html"}`,
-      "Set-Cookie":cookie(
-        SC,
-        sessionToken,
-        SESSION_DAYS*86400
-      )
-    }
-  });
-}
-
-
-/* =========================
-   AUTH
-========================= */
-
-async function auth(r,e){
-  const c=cookies(r.headers.get("Cookie")||"");
-  const sessionToken=c[SC];
-
-  if(!sessionToken)return null;
-
-  return e.DB.prepare(`
+  const row=await env.DB.prepare(`
     SELECT
       u.id,
+      u.google_id,
       u.name,
       u.email,
       u.photo_url,
       u.referral_code,
+      s.id AS session_id,
       s.expires_at
     FROM sessions s
     JOIN users u ON u.id=s.user_id
@@ -276,45 +101,241 @@ async function auth(r,e){
       AND s.expires_at>?
     LIMIT 1
   `).bind(
-    await sha(sessionToken),
+    hash,
     Math.floor(Date.now()/1000)
   ).first();
+
+  return row||null;
 }
 
+async function googleLogin(request,env) {
+  const url=new URL(request.url);
+  const next=safeNext(url.searchParams.get("next"));
 
-async function logout(r,e){
-  const c=cookies(r.headers.get("Cookie")||"");
-  const token=c[SC];
+  const state=randomToken(32);
+  const stateHash=await sha(state);
+  const expires=new Date(Date.now()+600000).toISOString();
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS google_states(
+      state_hash TEXT PRIMARY KEY,
+      next TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    INSERT INTO google_states(state_hash,next,expires_at)
+    VALUES(?,?,?)
+  `).bind(
+    stateHash,
+    next,
+    expires
+  ).run();
+
+  const params=new URLSearchParams({
+    client_id:env.GOOGLE_CLIENT_ID,
+    redirect_uri:`${SITE}/auth/callback`,
+    response_type:"code",
+    scope:"openid email profile",
+    access_type:"offline",
+    prompt:"select_account",
+    state
+  });
+
+  return redirect(`${GA}?${params}`);
+}
+
+async function googleCallback(request,env) {
+  const url=new URL(request.url);
+
+  const code=url.searchParams.get("code");
+  const state=url.searchParams.get("state");
+
+  if(!code||!state)
+    return html("Invalid Google login request.",400);
+
+  const stateHash=await sha(state);
+
+  const stateRow=await env.DB.prepare(`
+    SELECT state_hash,next,expires_at
+    FROM google_states
+    WHERE state_hash=?
+    LIMIT 1
+  `).bind(stateHash).first();
+
+  if(!stateRow)
+    return html("Invalid or expired login state.",400);
+
+  if(new Date(stateRow.expires_at).getTime()<Date.now()){
+    await env.DB.prepare(`
+      DELETE FROM google_states WHERE state_hash=?
+    `).bind(stateHash).run();
+
+    return html("Login request expired.",400);
+  }
+
+  await env.DB.prepare(`
+    DELETE FROM google_states WHERE state_hash=?
+  `).bind(stateHash).run();
+
+  const tokenResponse=await fetch(GT,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/x-www-form-urlencoded"
+    },
+    body:new URLSearchParams({
+      code,
+      client_id:env.GOOGLE_CLIENT_ID,
+      client_secret:env.GOOGLE_CLIENT_SECRET,
+      redirect_uri:`${SITE}/auth/callback`,
+      grant_type:"authorization_code"
+    })
+  });
+
+  if(!tokenResponse.ok)
+    return html("Google token exchange failed.",500);
+
+  const tokenData=await tokenResponse.json();
+  const accessToken=tokenData.access_token;
+
+  if(!accessToken)
+    return html("Google access token missing.",500);
+
+  const profileResponse=await fetch(GU,{
+    headers:{
+      Authorization:`Bearer ${accessToken}`
+    }
+  });
+
+  if(!profileResponse.ok)
+    return html("Unable to read Google account.",500);
+
+  const profile=await profileResponse.json();
+
+  const googleId=String(profile.sub||"");
+  const email=String(profile.email||"").trim().toLowerCase();
+  const name=String(profile.name||"");
+  const photoUrl=String(profile.picture||"");
+
+  if(!googleId||!email)
+    return html("Google account information is incomplete.",400);
+
+  let user=await env.DB.prepare(`
+    SELECT id,google_id,name,email,photo_url,referral_code
+    FROM users
+    WHERE google_id=?
+    LIMIT 1
+  `).bind(googleId).first();
+
+  if(!user){
+    user=await env.DB.prepare(`
+      SELECT id,google_id,name,email,photo_url,referral_code
+      FROM users
+      WHERE lower(email)=?
+      LIMIT 1
+    `).bind(email).first();
+  }
+
+  if(user){
+    await env.DB.prepare(`
+      UPDATE users
+      SET google_id=?,name=?,email=?,photo_url=?
+      WHERE id=?
+    `).bind(
+      googleId,
+      name,
+      email,
+      photoUrl,
+      user.id
+    ).run();
+  }else{
+    const referralCode=
+      "CL"+randomToken(5).toUpperCase().slice(0,8);
+
+    user=await env.DB.prepare(`
+      INSERT INTO users(
+        google_id,name,email,photo_url,referral_code
+      )
+      VALUES(?,?,?,?,?)
+      RETURNING id,google_id,name,email,photo_url,referral_code
+    `).bind(
+      googleId,
+      name,
+      email,
+      photoUrl,
+      referralCode
+    ).first();
+  }
+
+  const sessionToken=randomToken(48);
+  const sessionHash=await sha(sessionToken);
+
+  const expiresAt=
+    Math.floor(Date.now()/1000)+
+    SESSION_DAYS*86400;
+
+  await env.DB.prepare(`
+    INSERT INTO sessions(
+      session_token_hash,user_id,expires_at
+    )
+    VALUES(?,?,?)
+  `).bind(
+    sessionHash,
+    user.id,
+    expiresAt
+  ).run();
+
+  const next=safeNext(stateRow.next);
+
+  const headers=new Headers();
+
+  headers.set(
+    "Location",
+    `${SITE}${next}`
+  );
+
+  headers.append(
+    "Set-Cookie",
+    cookie(
+      SC,
+      sessionToken,
+      SESSION_DAYS*86400
+    )
+  );
+
+  return new Response(null,{
+    status:302,
+    headers
+  });
+}
+
+async function logout(request,env) {
+  const token=cookies(request)[SC];
 
   if(token){
-    await e.DB.prepare(`
+    const hash=await sha(token);
+
+    await env.DB.prepare(`
       DELETE FROM sessions
       WHERE session_token_hash=?
-    `).bind(await sha(token)).run();
+    `).bind(hash).run();
   }
 
   return new Response(null,{
     status:302,
     headers:{
-      Location:`${SITE}/`,
-      "Set-Cookie":cookie(SC,"",-1)
+      Location:`${SITE}/Eng/login.html`,
+      "Set-Cookie":cookie(SC,"",0)
     }
   });
 }
 
+async function subscription(userId,env) {
+  const now=new Date().toISOString();
 
-/* =========================
-   SUBSCRIPTION
-========================= */
-
-async function subscription(id,e){
-  return e.DB.prepare(`
-    SELECT
-      id,
-      status,
-      started_at,
-      expires_at,
-      payhere_reference
+  return await env.DB.prepare(`
+    SELECT id,status,started_at,expires_at
     FROM subscriptions
     WHERE user_id=?
       AND status='active'
@@ -324,116 +345,63 @@ async function subscription(id,e){
       )
     ORDER BY id DESC
     LIMIT 1
-  `).bind(
-    id,
-    new Date().toISOString()
-  ).first();
+  `).bind(userId,now).first();
 }
 
+async function me(request,env) {
+  const user=await auth(request,env);
 
-async function me(r,e){
-  try{
-    const u=await auth(r,e);
-
-    if(!u){
-      return j({
-        success:true,
-        loggedIn:false,
-        user:null,
-        subscription:null
-      });
-    }
-
-    const s=await subscription(u.id,e);
-
-    const pending=await e.DB.prepare(`
-      SELECT id,order_id,amount,status
-      FROM payments
-      WHERE user_id=?
-        AND status='pending'
-      ORDER BY id DESC
-      LIMIT 1
-    `).bind(u.id).first();
-
+  if(!user){
     return j({
-      success:true,
-      loggedIn:true,
-      user:{
-        id:u.id,
-        name:u.name,
-        email:u.email,
-        photo_url:u.photo_url
-      },
-      subscription:s
-        ? {
-            active:true,
-            expires_at:s.expires_at
-          }
-        : {
-            active:false
-          },
-      payment:pending
-        ? {
-            pending:true,
-            order_id:pending.order_id,
-            amount:pending.amount
-          }
-        : {
-            pending:false
-          }
+      loggedIn:false,
+      user:null
     });
-
-  }catch(err){
-
-    console.error("ME ERROR:",err);
-
-    return j({
-      success:false,
-      error:String(err)
-    },500);
   }
+
+  const premium=await subscription(user.id,env);
+
+  return j({
+    loggedIn:true,
+    user:{
+      id:user.id,
+      name:user.name,
+      email:user.email,
+      photo_url:user.photo_url,
+      referral_code:user.referral_code
+    },
+    premium:!!premium,
+    subscription:premium||null
+  });
 }
 
+async function isAdmin(request,env) {
+  const user=await auth(request,env);
 
-/* =========================
-   ADMIN
-========================= */
-
-async function isAdmin(r,e){
-  const u=await auth(r,e);
-
-  if(!u)return null;
+  if(!user) return null;
 
   if(
-    !e.ADMIN_EMAIL ||
-    u.email.toLowerCase()!==e.ADMIN_EMAIL.toLowerCase()
+    !env.ADMIN_EMAIL ||
+    user.email.toLowerCase()!==
+    env.ADMIN_EMAIL.toLowerCase()
   ){
     return null;
   }
 
-  return u;
+  return user;
 }
 
-
-async function adminMe(r,e){
-  const u=await isAdmin(r,e);
+async function adminMe(request,env) {
+  const admin=await isAdmin(request,env);
 
   return j({
-    loggedIn:!!u,
-    admin:!!u,
-    email:u?.email||null
+    loggedIn:!!admin,
+    admin:!!admin,
+    email:admin?.email||null
   });
 }
 
-
-/*
-  Admin enters customer email.
-  Premium is activated for 30 days.
-*/
-
-async function adminActivate(r,e){
-
-  const admin=await isAdmin(r,e);
+async function adminActivate(request,env) {
+  const admin=await isAdmin(request,env);
 
   if(!admin){
     return j({
@@ -445,7 +413,7 @@ async function adminActivate(r,e){
   let body;
 
   try{
-    body=await r.json();
+    body=await request.json();
   }catch{
     return j({
       success:false,
@@ -464,7 +432,7 @@ async function adminActivate(r,e){
     },400);
   }
 
-  const user=await e.DB.prepare(`
+  const user=await env.DB.prepare(`
     SELECT id,name,email
     FROM users
     WHERE lower(email)=?
@@ -478,12 +446,13 @@ async function adminActivate(r,e){
     },404);
   }
 
-  const active=await subscription(user.id,e);
+  const active=await subscription(user.id,env);
 
   if(active){
     return j({
       success:false,
-      error:"Premium is already active"
+      error:"Premium is already active",
+      expires_at:active.expires_at
     },400);
   }
 
@@ -491,33 +460,20 @@ async function adminActivate(r,e){
 
   const expires=new Date(
     now.getTime()+30*86400000
-  ).toISOString();
+  );
 
-  /*
-    Activate Premium
-  */
-
-  await e.DB.prepare(`
-    INSERT INTO subscriptions
-    (
-      user_id,
-      status,
-      started_at,
-      expires_at
+  await env.DB.prepare(`
+    INSERT INTO subscriptions(
+      user_id,status,started_at,expires_at
     )
     VALUES(?,'active',?,?)
   `).bind(
     user.id,
     now.toISOString(),
-    expires
+    expires.toISOString()
   ).run();
 
-
-  /*
-    Mark latest pending payment as paid
-  */
-
-  const payment=await e.DB.prepare(`
+  const payment=await env.DB.prepare(`
     SELECT id,amount,order_id
     FROM payments
     WHERE user_id=?
@@ -528,26 +484,17 @@ async function adminActivate(r,e){
 
   if(payment){
 
-    await e.DB.prepare(`
+    await env.DB.prepare(`
       UPDATE payments
-      SET status='paid',
-          paid_at=?
+      SET status='paid',paid_at=?
       WHERE id=?
     `).bind(
       now.toISOString(),
       payment.id
     ).run();
 
-
-    /*
-      Referral conversion
-    */
-
-    const referral=await e.DB.prepare(`
-      SELECT
-        id,
-        referrer_user_id,
-        referred_user_id
+    const referral=await env.DB.prepare(`
+      SELECT id,referrer_user_id,referred_user_id
       FROM referrals
       WHERE referred_user_id=?
         AND status='registered'
@@ -556,28 +503,23 @@ async function adminActivate(r,e){
 
     if(referral){
 
-      await e.DB.prepare(`
+      await env.DB.prepare(`
         UPDATE referrals
-        SET
-          status='converted',
-          converted_at=?
+        SET status='converted',converted_at=?
         WHERE id=?
       `).bind(
         now.toISOString(),
         referral.id
       ).run();
 
+      const amount=Number(
+        payment.amount||999
+      );
 
-      /*
-        20% referral commission
-      */
-
-      const amount=Number(payment.amount||999);
       const commission=amount*0.20;
 
-      await e.DB.prepare(`
-        INSERT OR IGNORE INTO referral_commissions
-        (
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO referral_commissions(
           referral_id,
           referrer_user_id,
           referred_user_id,
@@ -588,9 +530,7 @@ async function adminActivate(r,e){
           status,
           created_at
         )
-        VALUES(
-          ?,?,?,?,?,20,?,'pending',?
-        )
+        VALUES(?,?,?,?,?,20,?,'pending',?)
       `).bind(
         referral.id,
         referral.referrer_user_id,
@@ -607,39 +547,33 @@ async function adminActivate(r,e){
     success:true,
     email:user.email,
     name:user.name,
-    expires_at:expires
+    expires_at:expires.toISOString()
   });
 }
 
+async function lessons(request,env) {
+  const user=await auth(request,env);
 
-/* =========================
-   LESSONS
-========================= */
-
-async function titles(r,e){
-
-  const u=await auth(r,e);
-
-  if(!u){
+  if(!user){
     return j({
       success:false,
       error:"Login required"
     },401);
   }
 
-  const s=await subscription(u.id,e);
+  const premium=await subscription(user.id,env);
 
-  if(!s){
+  if(!premium){
     return j({
       success:false,
       error:"Premium required"
     },403);
   }
 
-  const rows=await e.DB.prepare(`
+  const rows=await env.DB.prepare(`
     SELECT id,title,sort_order
     FROM lessons
-    ORDER BY sort_order
+    ORDER BY sort_order ASC
   `).all();
 
   return j({
@@ -648,40 +582,38 @@ async function titles(r,e){
   });
 }
 
+async function questions(request,env) {
+  const user=await auth(request,env);
 
-async function questions(r,e){
-
-  const u=await auth(r,e);
-
-  if(!u){
+  if(!user){
     return j({
       success:false,
       error:"Login required"
     },401);
   }
 
-  const s=await subscription(u.id,e);
+  const premium=await subscription(user.id,env);
 
-  if(!s){
+  if(!premium){
     return j({
       success:false,
       error:"Premium required"
     },403);
   }
 
-  const url=new URL(r.url);
+  const url=new URL(request.url);
   const lessonId=Number(
     url.searchParams.get("lesson_id")
   );
 
-  if(!Number.isInteger(lessonId)){
+  if(!Number.isInteger(lessonId)||lessonId<1){
     return j({
       success:false,
       error:"Invalid lesson"
     },400);
   }
 
-  const rows=await e.DB.prepare(`
+  const rows=await env.DB.prepare(`
     SELECT
       id,
       lesson_id,
@@ -695,8 +627,33 @@ async function questions(r,e){
       question_number
     FROM questions
     WHERE lesson_id=?
-    ORDER BY question_number
+    ORDER BY question_number ASC
+    LIMIT 50
   `).bind(lessonId).all();
+
+  return j({
+    success:true,
+    lesson_id:lessonId,
+    questions:rows.results||[]
+  });
+}
+
+async function freeQuestions(request,env) {
+  const rows=await env.DB.prepare(`
+    SELECT
+      id,
+      question,
+      option_a,
+      option_b,
+      option_c,
+      option_d,
+      answer,
+      explanation,
+      question_number
+    FROM free_questions
+    ORDER BY question_number ASC
+    LIMIT 50
+  `).all();
 
   return j({
     success:true,
@@ -704,310 +661,91 @@ async function questions(r,e){
   });
 }
 
-
-/* =========================
-   REFERRAL
-========================= */
-
-async function referral(r,e){
-
-  const u=await auth(r,e);
-
-  if(!u){
-    return j({
-      success:false,
-      error:"Login required"
-    },401);
-  }
-
-  const url=new URL(r.url);
-  const code=
-    url.searchParams.get("code")||
-    r.headers.get("X-Referral-Code");
-
-  if(!code){
-    return j({
-      success:false,
-      error:"Referral code required"
-    },400);
-  }
-
-  const referrer=await e.DB.prepare(`
-    SELECT id,referral_code
-    FROM users
-    WHERE referral_code=?
-    LIMIT 1
-  `).bind(code).first();
-
-  if(!referrer){
-    return j({
-      success:false,
-      error:"Invalid referral code"
-    },404);
-  }
-
-  if(referrer.id===u.id){
-    return j({
-      success:false,
-      error:"You cannot refer yourself"
-    },400);
-  }
-
-  await e.DB.prepare(`
-    INSERT OR IGNORE INTO referrals
-    (
-      referrer_user_id,
-      referred_user_id,
-      referral_code,
-      status,
-      created_at
-    )
-    VALUES(?,?,?,'registered',?)
-  `).bind(
-    referrer.id,
-    u.id,
-    code,
-    new Date().toISOString()
-  ).run();
-
-  return j({
-    success:true
-  });
-}
-
-
-/* =========================
-   HEALTH
-========================= */
-
-async function health(r,e){
-  try{
-    await e.DB.prepare(`
-      SELECT 1
-    `).first();
-
-    return j({
-      success:true,
-      status:"ok"
-    });
-
-  }catch(err){
-
-    return j({
-      success:false,
-      error:String(err)
-    },500);
-  }
-}
-
-
-/* =========================
-   PAYMENT START
-========================= */
-
-async function paymentStart(r,e){
-
-  const u=await auth(r,e);
-
-  if(!u){
-    return j({
-      success:false,
-      error:"Login required"
-    },401);
-  }
-
-  const active=await subscription(u.id,e);
-
-  if(active){
-    return j({
-      success:false,
-      error:"Premium already active"
-    },400);
-  }
-
-  const pending=await e.DB.prepare(`
-    SELECT order_id
-    FROM payments
-    WHERE user_id=?
-      AND status='pending'
-    ORDER BY id DESC
-    LIMIT 1
-  `).bind(u.id).first();
-
-  if(pending){
-    return j({
-      success:true,
-      pending:true,
-      order_id:pending.order_id
-    });
-  }
-
-  const orderId=
-    "ACADEMY-" +
-    Date.now() +
-    "-" +
-    randomToken().slice(0,8);
-
-  await e.DB.prepare(`
-    INSERT INTO payments
-    (
-      user_id,
-      order_id,
-      amount,
-      currency,
-      status,
-      created_at
-    )
-    VALUES(?,?,999,'LKR','pending',?)
-  `).bind(
-    u.id,
-    orderId,
-    new Date().toISOString()
-  ).run();
-
+async function health(request,env) {
   return j({
     success:true,
-    pending:true,
-    order_id:orderId
+    service:"CreateLK Academy English API",
+    time:new Date().toISOString()
   });
 }
 
-
-/* =========================
-   PAYMENT SESSION
-========================= */
-
-async function paymentSession(r,e){
-
-  const u=await auth(r,e);
-
-  if(!u){
-    return j({
-      success:false,
-      error:"Login required"
-    },401);
-  }
-
-  const p=await e.DB.prepare(`
-    SELECT
-      id,
-      order_id,
-      amount,
-      currency,
-      status,
-      created_at,
-      paid_at
-    FROM payments
-    WHERE user_id=?
-    ORDER BY id DESC
-    LIMIT 1
-  `).bind(u.id).first();
-
-  return j({
-    success:true,
-    payment:p||null
-  });
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin":SITE,
+    "Access-Control-Allow-Credentials":"true",
+    "Access-Control-Allow-Headers":"Content-Type",
+    "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
+  };
 }
-
-
-/* =========================
-   CORS
-========================= */
-
-function cors(){
-  return new Response(null,{
-    status:204,
-    headers:{
-      "Access-Control-Allow-Origin":SITE,
-      "Access-Control-Allow-Credentials":"true",
-      "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
-      "Access-Control-Allow-Headers":"Content-Type"
-    }
-  });
-}
-
-
-/* =========================
-   MAIN
-========================= */
 
 export default {
+  async fetch(request,env) {
 
-  async fetch(r,e){
-
-    if(r.method==="OPTIONS"){
-      return cors();
-    }
-
-    const url=new URL(r.url);
+    const url=new URL(request.url);
     const path=url.pathname;
 
-    try{
+    if(request.method==="OPTIONS"){
+      return new Response(null,{
+        status:204,
+        headers:corsHeaders()
+      });
+    }
 
-      if(path==="/auth/google"){
-        return googleLogin(r,e);
-      }
+    let response;
 
-      if(path==="/auth/callback"){
-        return googleCallback(r,e);
-      }
+    if(path==="/auth/google"){
+      response=await googleLogin(request,env);
 
-      if(path==="/auth/logout"){
-        return logout(r,e);
-      }
+    }else if(path==="/auth/callback"){
+      response=await googleCallback(request,env);
 
-      if(path==="/api/me"){
-        return me(r,e);
-      }
+    }else if(path==="/auth/logout"){
+      response=await logout(request,env);
 
-      if(path==="/api/admin/me"){
-        return adminMe(r,e);
-      }
+    }else if(path==="/api/me"){
+      response=await me(request,env);
 
-      if(
-        path==="/api/admin/activate" &&
-        r.method==="POST"
-      ){
-        return adminActivate(r,e);
-      }
+    }else if(path==="/api/admin/me"){
+      response=await adminMe(request,env);
 
-      if(path==="/api/referral"){
-        return referral(r,e);
-      }
+    }else if(
+      path==="/api/admin/activate" &&
+      request.method==="POST"
+    ){
+      response=await adminActivate(request,env);
 
-      if(path==="/api/payment-start"){
-        return paymentStart(r,e);
-      }
+    }else if(path==="/api/lessons"){
+      response=await lessons(request,env);
 
-      if(path==="/api/payment-session"){
-        return paymentSession(r,e);
-      }
+    }else if(path==="/api/questions"){
+      response=await questions(request,env);
 
-      if(path==="/api/titles"){
-        return titles(r,e);
-      }
+    }else if(path==="/api/free-questions"){
+      response=await freeQuestions(request,env);
 
-      if(path==="/api/questions"){
-        return questions(r,e);
-      }
+    }else if(path==="/api/health"){
+      response=await health(request,env);
 
-      if(path==="/api/health"){
-        return health(r,e);
-      }
-
-      return j({
+    }else{
+      response=j({
         success:false,
         error:"Not found"
       },404);
-
-    }catch(err){
-
-      console.error("WORKER ERROR:",err);
-
-      return j({
-        success:false,
-        error:String(err)
-      },500);
     }
+
+    const headers=new Headers(response.headers);
+
+    for(
+      const [key,value]
+      of Object.entries(corsHeaders())
+    ){
+      headers.set(key,value);
+    }
+
+    return new Response(response.body,{
+      status:response.status,
+      statusText:response.statusText,
+      headers
+    });
   }
 };
