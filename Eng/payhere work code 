@@ -1,0 +1,749 @@
+const SITE="https://createlk.com";
+const MERCHANT_ID="257692";
+const CURRENCY="LKR";
+const PRICE=999;
+const DAYS=30;
+const COMMISSION=20;
+const MIN_REFERRALS=10;
+const PAYHERE="https://www.payhere.lk/pay/checkout";
+
+export default {
+ async fetch(r,e){
+  try{
+   const p=new URL(r.url).pathname;
+
+   if(r.method==="OPTIONS"){
+    return new Response(null,{
+     status:204,
+     headers:cors()
+    });
+   }
+
+   if(p==="/api/start"&&r.method==="POST")
+    return start(r,e);
+
+   if(p==="/api/checkout"&&r.method==="POST")
+    return checkout(r,e);
+
+   if(p==="/api/notify"&&r.method==="POST")
+    return notify(r,e);
+
+   if(p==="/api/status")
+    return status(r,e);
+
+   if(p==="/api/health")
+    return health(e);
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
+
+  }catch(x){
+   console.error(x);
+   return json({
+    success:false,
+    error:String(x)
+   },500);
+  }
+ }
+};
+
+
+/* START */
+
+async function start(r,e){
+
+ const x=await body(r);
+ const uid=Number(x.user_id);
+
+ if(!uid){
+  return json({
+   success:false,
+   error:"user_id required"
+  },400);
+ }
+
+ const u=await e.DB.prepare(`
+  SELECT id,name,email
+  FROM users
+  WHERE id=?
+  LIMIT 1
+ `).bind(uid).first();
+
+ if(!u){
+  return json({
+   success:false,
+   error:"User not found"
+  },404);
+ }
+
+ const active=await e.DB.prepare(`
+  SELECT id,expires_at
+  FROM subscriptions
+  WHERE user_id=?
+  AND status='active'
+  AND (
+   expires_at IS NULL
+   OR expires_at>?
+  )
+  ORDER BY id DESC
+  LIMIT 1
+ `).bind(
+  uid,
+  new Date().toISOString()
+ ).first();
+
+ if(active){
+  return json({
+   success:false,
+   alreadyActive:true,
+   subscription:active
+  },400);
+ }
+
+ const order_id=`ENG-${Date.now()}-${uid}`;
+
+ await e.DB.prepare(`
+  INSERT INTO payments
+  (
+   user_id,
+   order_id,
+   amount,
+   currency,
+   status,
+   created_at
+  )
+  VALUES(?,?,?,?,?,?)
+ `).bind(
+  uid,
+  order_id,
+  PRICE,
+  CURRENCY,
+  "pending",
+  new Date().toISOString()
+ ).run();
+
+ return json({
+  success:true,
+  order_id,
+  amount:PRICE,
+  currency:CURRENCY,
+  days:DAYS,
+  checkout_url:PAYHERE
+ });
+}
+
+
+/* CHECKOUT */
+
+async function checkout(r,e){
+
+ const x=await body(r);
+
+ const order_id=String(x.order_id||"");
+ const phone=String(x.phone||"");
+ const address=String(x.address||"");
+ const city=String(x.city||"");
+
+ if(!order_id||!phone){
+  return json({
+   success:false,
+   error:"order_id and phone required"
+  },400);
+ }
+
+ const p=await e.DB.prepare(`
+  SELECT
+   id,
+   user_id,
+   order_id,
+   amount,
+   currency,
+   status
+  FROM payments
+  WHERE order_id=?
+  LIMIT 1
+ `).bind(order_id).first();
+
+ if(!p){
+  return json({
+   success:false,
+   error:"Payment not found"
+  },404);
+ }
+
+ if(p.status!=="pending"){
+  return json({
+   success:false,
+   error:"Payment is not pending"
+  },400);
+ }
+
+ if(Number(p.amount)!==PRICE){
+  return json({
+   success:false,
+   error:"Invalid amount"
+  },400);
+ }
+
+ const u=await e.DB.prepare(`
+  SELECT id,name,email
+  FROM users
+  WHERE id=?
+  LIMIT 1
+ `).bind(p.user_id).first();
+
+ if(!u){
+  return json({
+   success:false,
+   error:"User not found"
+  },404);
+ }
+
+ const amount=Number(p.amount).toFixed(2);
+
+ const secretHash=(
+  await md5(e.PAYHERE_MERCHANT_SECRET)
+ ).toUpperCase();
+
+ const hash=(
+  await md5(
+   MERCHANT_ID+
+   order_id+
+   amount+
+   CURRENCY+
+   secretHash
+  )
+ ).toUpperCase();
+
+ const name=String(
+  u.name||"Customer"
+ ).trim().split(/\s+/);
+
+ const first=name.shift()||"Customer";
+ const last=name.join(" ")||"Customer";
+
+ const notify=new URL(
+  "/api/notify",
+  r.url
+ ).toString();
+
+ const esc=s=>String(s)
+  .replaceAll("&","&amp;")
+  .replaceAll('"',"&quot;")
+  .replaceAll("<","&lt;")
+  .replaceAll(">","&gt;");
+
+ const html=`
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Redirecting to PayHere</title>
+</head>
+<body>
+
+<p style="font-family:Arial;text-align:center">
+Redirecting to PayHere...
+</p>
+
+<form id="f" method="POST" action="${PAYHERE}">
+
+<input type="hidden"
+ name="merchant_id"
+ value="${MERCHANT_ID}">
+
+<input type="hidden"
+ name="return_url"
+ value="${SITE}/Eng/payment-success.html">
+
+<input type="hidden"
+ name="cancel_url"
+ value="${SITE}/Eng/payment-cancel.html">
+
+<input type="hidden"
+ name="notify_url"
+ value="${esc(notify)}">
+
+<input type="hidden"
+ name="first_name"
+ value="${esc(first)}">
+
+<input type="hidden"
+ name="last_name"
+ value="${esc(last)}">
+
+<input type="hidden"
+ name="email"
+ value="${esc(u.email)}">
+
+<input type="hidden"
+ name="phone"
+ value="${esc(phone)}">
+
+<input type="hidden"
+ name="address"
+ value="${esc(address)}">
+
+<input type="hidden"
+ name="city"
+ value="${esc(city)}">
+
+<input type="hidden"
+ name="country"
+ value="Sri Lanka">
+
+<input type="hidden"
+ name="order_id"
+ value="${esc(order_id)}">
+
+<input type="hidden"
+ name="items"
+ value="CreateLK Academy Premium - 30 Days">
+
+<input type="hidden"
+ name="currency"
+ value="${CURRENCY}">
+
+<input type="hidden"
+ name="amount"
+ value="${amount}">
+
+<input type="hidden"
+ name="hash"
+ value="${hash}">
+
+<input type="hidden"
+ name="custom_1"
+ value="${u.id}">
+
+<input type="hidden"
+ name="custom_2"
+ value="CreateLK Academy">
+
+</form>
+
+<script>
+document.getElementById("f").submit();
+</script>
+
+</body>
+</html>`;
+
+ return new Response(html,{
+  headers:{
+   "content-type":"text/html;charset=UTF-8"
+  }
+ });
+}
+
+
+/* PAYHERE NOTIFICATION */
+
+async function notify(r,e){
+
+ const f=await r.formData();
+
+ const merchant=String(
+  f.get("merchant_id")||""
+ );
+
+ const order=String(
+  f.get("order_id")||""
+ );
+
+ const paymentId=String(
+  f.get("payment_id")||""
+ );
+
+ const amount=String(
+  f.get("payhere_amount")||""
+ );
+
+ const currency=String(
+  f.get("payhere_currency")||""
+ );
+
+ const code=String(
+  f.get("status_code")||""
+ );
+
+ const sig=String(
+  f.get("md5sig")||""
+ );
+
+ if(merchant!==MERCHANT_ID){
+  return new Response(
+   "Invalid merchant",
+   {status:400}
+  );
+ }
+
+ const p=await e.DB.prepare(`
+  SELECT
+   id,
+   user_id,
+   amount,
+   status
+  FROM payments
+  WHERE order_id=?
+  LIMIT 1
+ `).bind(order).first();
+
+ if(!p){
+  return new Response(
+   "Payment not found",
+   {status:404}
+  );
+ }
+
+ if(
+  Number(p.amount).toFixed(2)!==
+  Number(amount).toFixed(2)
+ ){
+  return new Response(
+   "Amount mismatch",
+   {status:400}
+  );
+ }
+
+ if(currency!==CURRENCY){
+  return new Response(
+   "Currency mismatch",
+   {status:400}
+  );
+ }
+
+ const secretHash=(
+  await md5(e.PAYHERE_MERCHANT_SECRET)
+ ).toUpperCase();
+
+ const expected=(
+  await md5(
+   merchant+
+   order+
+   amount+
+   currency+
+   code+
+   secretHash
+  )
+ ).toUpperCase();
+
+ if(expected!==sig.toUpperCase()){
+  return new Response(
+   "Invalid signature",
+   {status:400}
+  );
+ }
+
+ /* FAILED / CANCELLED */
+
+ if(code!=="2"){
+
+  await e.DB.prepare(`
+   UPDATE payments
+   SET
+    status=?,
+    payhere_payment_id=?
+   WHERE id=?
+  `).bind(
+   paymentStatus(code),
+   paymentId||null,
+   p.id
+  ).run();
+
+  return new Response("OK");
+ }
+
+ /* ALREADY PROCESSED */
+
+ if(p.status==="paid"){
+  return new Response(
+   "Already processed"
+  );
+ }
+
+ const now=new Date();
+
+ const started=now.toISOString();
+
+ const expires=new Date(
+  now.getTime()+
+  DAYS*86400000
+ ).toISOString();
+
+ /* PAYMENT */
+
+ await e.DB.prepare(`
+  UPDATE payments
+  SET
+   status='paid',
+   payhere_payment_id=?,
+   paid_at=?
+  WHERE id=?
+ `).bind(
+  paymentId||null,
+  started,
+  p.id
+ ).run();
+
+ /* SUBSCRIPTION */
+
+ await e.DB.prepare(`
+  INSERT INTO subscriptions
+  (
+   user_id,
+   status,
+   started_at,
+   expires_at,
+   payhere_reference
+  )
+  VALUES(?,?,?,?,?)
+ `).bind(
+  p.user_id,
+  "active",
+  started,
+  expires,
+  paymentId||order
+ ).run();
+
+ /* REFERRAL */
+
+ const ref=await e.DB.prepare(`
+  SELECT
+   id,
+   referrer_user_id,
+   referred_user_id,
+   status
+  FROM referrals
+  WHERE referred_user_id=?
+  LIMIT 1
+ `).bind(
+  p.user_id
+ ).first();
+
+ if(ref){
+
+  await e.DB.prepare(`
+   UPDATE referrals
+   SET
+    status='converted',
+    converted_at=?
+   WHERE id=?
+  `).bind(
+   started,
+   ref.id
+  ).run();
+
+  const exists=await e.DB.prepare(`
+   SELECT id
+   FROM referral_commissions
+   WHERE referral_id=?
+   LIMIT 1
+  `).bind(
+   ref.id
+  ).first();
+
+  if(!exists){
+
+   const commissionAmount=Number(
+    (PRICE*COMMISSION/100).toFixed(2)
+   );
+
+   await e.DB.prepare(`
+    INSERT INTO referral_commissions
+    (
+     referral_id,
+     referrer_user_id,
+     referred_user_id,
+     payment_id,
+     payment_amount,
+     commission_percent,
+     commission_amount,
+     status,
+     created_at
+    )
+    VALUES(?,?,?,?,?,?,?,?,?)
+   `).bind(
+    ref.id,
+    ref.referrer_user_id,
+    ref.referred_user_id,
+    p.id,
+    PRICE,
+    COMMISSION,
+    commissionAmount,
+    "pending",
+    started
+   ).run();
+  }
+ }
+
+ return new Response(
+  "Payment processed"
+ );
+}
+
+
+/* STATUS */
+
+async function status(r,e){
+
+ const id=new URL(r.url)
+  .searchParams
+  .get("order_id");
+
+ if(!id){
+  return json({
+   success:false,
+   error:"order_id required"
+  },400);
+ }
+
+ const p=await e.DB.prepare(`
+  SELECT
+   id,
+   order_id,
+   amount,
+   currency,
+   status,
+   payhere_payment_id,
+   created_at,
+   paid_at
+  FROM payments
+  WHERE order_id=?
+  LIMIT 1
+ `).bind(id).first();
+
+ if(!p){
+  return json({
+   success:false,
+   error:"Payment not found"
+  },404);
+ }
+
+ return json({
+  success:true,
+  payment:p
+ });
+}
+
+
+/* HEALTH */
+
+async function health(e){
+
+ try{
+
+  const t=await e.DB.prepare(`
+   SELECT name
+   FROM sqlite_master
+   WHERE type='table'
+   ORDER BY name
+  `).all();
+
+  return json({
+   success:true,
+   database:true,
+   price:PRICE,
+   days:DAYS,
+   commission_percent:COMMISSION,
+   commission_per_referral:
+    Number(
+     (PRICE*COMMISSION/100).toFixed(2)
+    ),
+   withdrawal_referrals:MIN_REFERRALS,
+   tables:t.results||[]
+  });
+
+ }catch(x){
+
+  console.error("HEALTH ERROR",x);
+
+  return json({
+   success:false,
+   database:false,
+   error:String(x)
+  },500);
+ }
+}
+
+
+/* HELPERS */
+
+async function body(r){
+
+ try{
+  return await r.json();
+ }catch{
+  return {};
+ }
+}
+
+
+function paymentStatus(c){
+
+ return({
+  "0":"pending",
+  "-1":"cancelled",
+  "-2":"failed",
+  "-3":"chargedback"
+ })[c]||"pending";
+}
+
+
+function json(x,s=200){
+
+ return new Response(
+  JSON.stringify(x),
+  {
+   status:s,
+   headers:{
+    ...cors(),
+    "content-type":
+     "application/json;charset=UTF-8"
+   }
+  }
+ );
+}
+
+
+function cors(){
+
+ return{
+  "Access-Control-Allow-Origin":
+   "https://createlk.com",
+
+  "Access-Control-Allow-Credentials":
+   "true",
+
+  "Access-Control-Allow-Headers":
+   "Content-Type",
+
+  "Access-Control-Allow-Methods":
+   "GET,POST,OPTIONS"
+ };
+}
+
+
+/* MD5 - Cloudflare Workers */
+
+async function md5(text){
+
+ const data=new TextEncoder()
+  .encode(text);
+
+ const hash=await crypto.subtle.digest(
+  "MD5",
+  data
+ );
+
+ return Array.from(
+  new Uint8Array(hash)
+ )
+ .map(b=>
+  b.toString(16).padStart(2,"0")
+ )
+ .join("")
+ .toUpperCase();
+}
