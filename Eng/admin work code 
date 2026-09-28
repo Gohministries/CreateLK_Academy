@@ -1,0 +1,1013 @@
+const SITE = "https://createlk.com";
+
+const GA = "https://accounts.google.com/o/oauth2/v2/auth";
+const GT = "https://oauth2.googleapis.com/token";
+const GU = "https://openidconnect.googleapis.com/v1/userinfo";
+
+const SC = "english_session";
+const GC = "google_state";
+const RC = "english_referral";
+
+const SESSION_DAYS = 30;
+
+/*
+  Set these in Cloudflare Worker Variables/Secrets:
+
+  GOOGLE_CLIENT_ID
+  GOOGLE_CLIENT_SECRET
+  ADMIN_EMAIL
+*/
+
+function j(data,status=200){
+  return new Response(JSON.stringify(data),{
+    status,
+    headers:{
+      "Content-Type":"application/json",
+      "Access-Control-Allow-Origin":SITE,
+      "Access-Control-Allow-Credentials":"true"
+    }
+  });
+}
+
+function cookies(s){
+  const out={};
+
+  for(const p of s.split(";")){
+    const i=p.indexOf("=");
+    if(i<0)continue;
+
+    out[p.slice(0,i).trim()]=decodeURIComponent(
+      p.slice(i+1).trim()
+    );
+  }
+
+  return out;
+}
+
+function cookie(name,value,maxAge){
+  return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+async function sha(value){
+  const data=new TextEncoder().encode(value);
+  const hash=await crypto.subtle.digest("SHA-256",data);
+
+  return [...new Uint8Array(hash)]
+    .map(x=>x.toString(16).padStart(2,"0"))
+    .join("");
+}
+
+function randomToken(){
+  const a=new Uint8Array(32);
+  crypto.getRandomValues(a);
+
+  return [...a]
+    .map(x=>x.toString(16).padStart(2,"0"))
+    .join("");
+}
+
+
+/* =========================
+   GOOGLE LOGIN
+========================= */
+
+async function googleLogin(r,e){
+  const url=new URL(r.url);
+  const next=url.searchParams.get("next")||"/Eng/quiz.html";
+
+  const state=randomToken();
+
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS google_states(
+      state TEXT PRIMARY KEY,
+      next TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
+    )
+  `).run();
+
+  await e.DB.prepare(`
+    INSERT INTO google_states(state,next,expires_at)
+    VALUES(?,?,?)
+  `).bind(
+    state,
+    next,
+    Math.floor(Date.now()/1000)+600
+  ).run();
+
+  const params=new URLSearchParams({
+    client_id:e.GOOGLE_CLIENT_ID,
+    redirect_uri:`${SITE}/auth/callback`,
+    response_type:"code",
+    scope:"openid email profile",
+    state
+  });
+
+  return new Response(null,{
+    status:302,
+    headers:{
+      Location:`${GA}?${params}`,
+      "Set-Cookie":cookie(GC,state,600)
+    }
+  });
+}
+
+
+async function googleCallback(r,e){
+  const url=new URL(r.url);
+
+  const code=url.searchParams.get("code");
+  const state=url.searchParams.get("state");
+
+  if(!code || !state){
+    return new Response("Login failed",{status:400});
+  }
+
+  const stateRow=await e.DB.prepare(`
+    SELECT next
+    FROM google_states
+    WHERE state=?
+      AND expires_at>?
+    LIMIT 1
+  `).bind(
+    state,
+    Math.floor(Date.now()/1000)
+  ).first();
+
+  if(!stateRow){
+    return new Response("Invalid login state",{status:400});
+  }
+
+  await e.DB.prepare(`
+    DELETE FROM google_states
+    WHERE state=?
+  `).bind(state).run();
+
+  const tokenRes=await fetch(GT,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/x-www-form-urlencoded"
+    },
+    body:new URLSearchParams({
+      code,
+      client_id:e.GOOGLE_CLIENT_ID,
+      client_secret:e.GOOGLE_CLIENT_SECRET,
+      redirect_uri:`${SITE}/auth/callback`,
+      grant_type:"authorization_code"
+    })
+  });
+
+  const tokens=await tokenRes.json();
+
+  if(!tokens.access_token){
+    console.error(tokens);
+    return new Response("Google authentication failed",{status:400});
+  }
+
+  const userRes=await fetch(GU,{
+    headers:{
+      Authorization:`Bearer ${tokens.access_token}`
+    }
+  });
+
+  const g=await userRes.json();
+
+  if(!g.sub || !g.email){
+    return new Response("Google account information unavailable",{status:400});
+  }
+
+  let user=await e.DB.prepare(`
+    SELECT *
+    FROM users
+    WHERE google_id=?
+    LIMIT 1
+  `).bind(g.sub).first();
+
+  if(!user){
+    const referralCode=randomToken().slice(0,8).toUpperCase();
+
+    await e.DB.prepare(`
+      INSERT INTO users
+      (google_id,name,email,photo_url,referral_code)
+      VALUES(?,?,?,?,?)
+    `).bind(
+      g.sub,
+      g.name||"",
+      g.email,
+      g.picture||"",
+      referralCode
+    ).run();
+
+    user=await e.DB.prepare(`
+      SELECT *
+      FROM users
+      WHERE google_id=?
+      LIMIT 1
+    `).bind(g.sub).first();
+
+  }else{
+
+    await e.DB.prepare(`
+      UPDATE users
+      SET name=?,email=?,photo_url=?
+      WHERE id=?
+    `).bind(
+      g.name||"",
+      g.email,
+      g.picture||"",
+      user.id
+    ).run();
+
+    user=await e.DB.prepare(`
+      SELECT *
+      FROM users
+      WHERE id=?
+    `).bind(user.id).first();
+  }
+
+  const sessionToken=randomToken();
+
+  await e.DB.prepare(`
+    INSERT INTO sessions
+    (session_token_hash,user_id,expires_at)
+    VALUES(?,?,?)
+  `).bind(
+    await sha(sessionToken),
+    user.id,
+    Math.floor(Date.now()/1000)+SESSION_DAYS*86400
+  ).run();
+
+  const next=stateRow.next||"/Eng/quiz.html";
+
+  return new Response(null,{
+    status:302,
+    headers:{
+      Location:`${SITE}${next.startsWith("/")?next:"/Eng/quiz.html"}`,
+      "Set-Cookie":cookie(
+        SC,
+        sessionToken,
+        SESSION_DAYS*86400
+      )
+    }
+  });
+}
+
+
+/* =========================
+   AUTH
+========================= */
+
+async function auth(r,e){
+  const c=cookies(r.headers.get("Cookie")||"");
+  const sessionToken=c[SC];
+
+  if(!sessionToken)return null;
+
+  return e.DB.prepare(`
+    SELECT
+      u.id,
+      u.name,
+      u.email,
+      u.photo_url,
+      u.referral_code,
+      s.expires_at
+    FROM sessions s
+    JOIN users u ON u.id=s.user_id
+    WHERE s.session_token_hash=?
+      AND s.expires_at>?
+    LIMIT 1
+  `).bind(
+    await sha(sessionToken),
+    Math.floor(Date.now()/1000)
+  ).first();
+}
+
+
+async function logout(r,e){
+  const c=cookies(r.headers.get("Cookie")||"");
+  const token=c[SC];
+
+  if(token){
+    await e.DB.prepare(`
+      DELETE FROM sessions
+      WHERE session_token_hash=?
+    `).bind(await sha(token)).run();
+  }
+
+  return new Response(null,{
+    status:302,
+    headers:{
+      Location:`${SITE}/`,
+      "Set-Cookie":cookie(SC,"",-1)
+    }
+  });
+}
+
+
+/* =========================
+   SUBSCRIPTION
+========================= */
+
+async function subscription(id,e){
+  return e.DB.prepare(`
+    SELECT
+      id,
+      status,
+      started_at,
+      expires_at,
+      payhere_reference
+    FROM subscriptions
+    WHERE user_id=?
+      AND status='active'
+      AND (
+        expires_at IS NULL
+        OR expires_at>?
+      )
+    ORDER BY id DESC
+    LIMIT 1
+  `).bind(
+    id,
+    new Date().toISOString()
+  ).first();
+}
+
+
+async function me(r,e){
+  try{
+    const u=await auth(r,e);
+
+    if(!u){
+      return j({
+        success:true,
+        loggedIn:false,
+        user:null,
+        subscription:null
+      });
+    }
+
+    const s=await subscription(u.id,e);
+
+    const pending=await e.DB.prepare(`
+      SELECT id,order_id,amount,status
+      FROM payments
+      WHERE user_id=?
+        AND status='pending'
+      ORDER BY id DESC
+      LIMIT 1
+    `).bind(u.id).first();
+
+    return j({
+      success:true,
+      loggedIn:true,
+      user:{
+        id:u.id,
+        name:u.name,
+        email:u.email,
+        photo_url:u.photo_url
+      },
+      subscription:s
+        ? {
+            active:true,
+            expires_at:s.expires_at
+          }
+        : {
+            active:false
+          },
+      payment:pending
+        ? {
+            pending:true,
+            order_id:pending.order_id,
+            amount:pending.amount
+          }
+        : {
+            pending:false
+          }
+    });
+
+  }catch(err){
+
+    console.error("ME ERROR:",err);
+
+    return j({
+      success:false,
+      error:String(err)
+    },500);
+  }
+}
+
+
+/* =========================
+   ADMIN
+========================= */
+
+async function isAdmin(r,e){
+  const u=await auth(r,e);
+
+  if(!u)return null;
+
+  if(
+    !e.ADMIN_EMAIL ||
+    u.email.toLowerCase()!==e.ADMIN_EMAIL.toLowerCase()
+  ){
+    return null;
+  }
+
+  return u;
+}
+
+
+async function adminMe(r,e){
+  const u=await isAdmin(r,e);
+
+  return j({
+    loggedIn:!!u,
+    admin:!!u,
+    email:u?.email||null
+  });
+}
+
+
+/*
+  Admin enters customer email.
+  Premium is activated for 30 days.
+*/
+
+async function adminActivate(r,e){
+
+  const admin=await isAdmin(r,e);
+
+  if(!admin){
+    return j({
+      success:false,
+      error:"Unauthorized"
+    },403);
+  }
+
+  let body;
+
+  try{
+    body=await r.json();
+  }catch{
+    return j({
+      success:false,
+      error:"Invalid request"
+    },400);
+  }
+
+  const email=String(body.email||"")
+    .trim()
+    .toLowerCase();
+
+  if(!email){
+    return j({
+      success:false,
+      error:"Email required"
+    },400);
+  }
+
+  const user=await e.DB.prepare(`
+    SELECT id,name,email
+    FROM users
+    WHERE lower(email)=?
+    LIMIT 1
+  `).bind(email).first();
+
+  if(!user){
+    return j({
+      success:false,
+      error:"User not found"
+    },404);
+  }
+
+  const active=await subscription(user.id,e);
+
+  if(active){
+    return j({
+      success:false,
+      error:"Premium is already active"
+    },400);
+  }
+
+  const now=new Date();
+
+  const expires=new Date(
+    now.getTime()+30*86400000
+  ).toISOString();
+
+  /*
+    Activate Premium
+  */
+
+  await e.DB.prepare(`
+    INSERT INTO subscriptions
+    (
+      user_id,
+      status,
+      started_at,
+      expires_at
+    )
+    VALUES(?,'active',?,?)
+  `).bind(
+    user.id,
+    now.toISOString(),
+    expires
+  ).run();
+
+
+  /*
+    Mark latest pending payment as paid
+  */
+
+  const payment=await e.DB.prepare(`
+    SELECT id,amount,order_id
+    FROM payments
+    WHERE user_id=?
+      AND status='pending'
+    ORDER BY id DESC
+    LIMIT 1
+  `).bind(user.id).first();
+
+  if(payment){
+
+    await e.DB.prepare(`
+      UPDATE payments
+      SET status='paid',
+          paid_at=?
+      WHERE id=?
+    `).bind(
+      now.toISOString(),
+      payment.id
+    ).run();
+
+
+    /*
+      Referral conversion
+    */
+
+    const referral=await e.DB.prepare(`
+      SELECT
+        id,
+        referrer_user_id,
+        referred_user_id
+      FROM referrals
+      WHERE referred_user_id=?
+        AND status='registered'
+      LIMIT 1
+    `).bind(user.id).first();
+
+    if(referral){
+
+      await e.DB.prepare(`
+        UPDATE referrals
+        SET
+          status='converted',
+          converted_at=?
+        WHERE id=?
+      `).bind(
+        now.toISOString(),
+        referral.id
+      ).run();
+
+
+      /*
+        20% referral commission
+      */
+
+      const amount=Number(payment.amount||999);
+      const commission=amount*0.20;
+
+      await e.DB.prepare(`
+        INSERT OR IGNORE INTO referral_commissions
+        (
+          referral_id,
+          referrer_user_id,
+          referred_user_id,
+          payment_id,
+          payment_amount,
+          commission_percent,
+          commission_amount,
+          status,
+          created_at
+        )
+        VALUES(
+          ?,?,?,?,?,20,?,'pending',?
+        )
+      `).bind(
+        referral.id,
+        referral.referrer_user_id,
+        referral.referred_user_id,
+        payment.id,
+        amount,
+        commission,
+        now.toISOString()
+      ).run();
+    }
+  }
+
+  return j({
+    success:true,
+    email:user.email,
+    name:user.name,
+    expires_at:expires
+  });
+}
+
+
+/* =========================
+   LESSONS
+========================= */
+
+async function titles(r,e){
+
+  const u=await auth(r,e);
+
+  if(!u){
+    return j({
+      success:false,
+      error:"Login required"
+    },401);
+  }
+
+  const s=await subscription(u.id,e);
+
+  if(!s){
+    return j({
+      success:false,
+      error:"Premium required"
+    },403);
+  }
+
+  const rows=await e.DB.prepare(`
+    SELECT id,title,sort_order
+    FROM lessons
+    ORDER BY sort_order
+  `).all();
+
+  return j({
+    success:true,
+    lessons:rows.results||[]
+  });
+}
+
+
+async function questions(r,e){
+
+  const u=await auth(r,e);
+
+  if(!u){
+    return j({
+      success:false,
+      error:"Login required"
+    },401);
+  }
+
+  const s=await subscription(u.id,e);
+
+  if(!s){
+    return j({
+      success:false,
+      error:"Premium required"
+    },403);
+  }
+
+  const url=new URL(r.url);
+  const lessonId=Number(
+    url.searchParams.get("lesson_id")
+  );
+
+  if(!Number.isInteger(lessonId)){
+    return j({
+      success:false,
+      error:"Invalid lesson"
+    },400);
+  }
+
+  const rows=await e.DB.prepare(`
+    SELECT
+      id,
+      lesson_id,
+      question,
+      option_a,
+      option_b,
+      option_c,
+      option_d,
+      answer,
+      explanation,
+      question_number
+    FROM questions
+    WHERE lesson_id=?
+    ORDER BY question_number
+  `).bind(lessonId).all();
+
+  return j({
+    success:true,
+    questions:rows.results||[]
+  });
+}
+
+
+/* =========================
+   REFERRAL
+========================= */
+
+async function referral(r,e){
+
+  const u=await auth(r,e);
+
+  if(!u){
+    return j({
+      success:false,
+      error:"Login required"
+    },401);
+  }
+
+  const url=new URL(r.url);
+  const code=
+    url.searchParams.get("code")||
+    r.headers.get("X-Referral-Code");
+
+  if(!code){
+    return j({
+      success:false,
+      error:"Referral code required"
+    },400);
+  }
+
+  const referrer=await e.DB.prepare(`
+    SELECT id,referral_code
+    FROM users
+    WHERE referral_code=?
+    LIMIT 1
+  `).bind(code).first();
+
+  if(!referrer){
+    return j({
+      success:false,
+      error:"Invalid referral code"
+    },404);
+  }
+
+  if(referrer.id===u.id){
+    return j({
+      success:false,
+      error:"You cannot refer yourself"
+    },400);
+  }
+
+  await e.DB.prepare(`
+    INSERT OR IGNORE INTO referrals
+    (
+      referrer_user_id,
+      referred_user_id,
+      referral_code,
+      status,
+      created_at
+    )
+    VALUES(?,?,?,'registered',?)
+  `).bind(
+    referrer.id,
+    u.id,
+    code,
+    new Date().toISOString()
+  ).run();
+
+  return j({
+    success:true
+  });
+}
+
+
+/* =========================
+   HEALTH
+========================= */
+
+async function health(r,e){
+  try{
+    await e.DB.prepare(`
+      SELECT 1
+    `).first();
+
+    return j({
+      success:true,
+      status:"ok"
+    });
+
+  }catch(err){
+
+    return j({
+      success:false,
+      error:String(err)
+    },500);
+  }
+}
+
+
+/* =========================
+   PAYMENT START
+========================= */
+
+async function paymentStart(r,e){
+
+  const u=await auth(r,e);
+
+  if(!u){
+    return j({
+      success:false,
+      error:"Login required"
+    },401);
+  }
+
+  const active=await subscription(u.id,e);
+
+  if(active){
+    return j({
+      success:false,
+      error:"Premium already active"
+    },400);
+  }
+
+  const pending=await e.DB.prepare(`
+    SELECT order_id
+    FROM payments
+    WHERE user_id=?
+      AND status='pending'
+    ORDER BY id DESC
+    LIMIT 1
+  `).bind(u.id).first();
+
+  if(pending){
+    return j({
+      success:true,
+      pending:true,
+      order_id:pending.order_id
+    });
+  }
+
+  const orderId=
+    "ACADEMY-" +
+    Date.now() +
+    "-" +
+    randomToken().slice(0,8);
+
+  await e.DB.prepare(`
+    INSERT INTO payments
+    (
+      user_id,
+      order_id,
+      amount,
+      currency,
+      status,
+      created_at
+    )
+    VALUES(?,?,999,'LKR','pending',?)
+  `).bind(
+    u.id,
+    orderId,
+    new Date().toISOString()
+  ).run();
+
+  return j({
+    success:true,
+    pending:true,
+    order_id:orderId
+  });
+}
+
+
+/* =========================
+   PAYMENT SESSION
+========================= */
+
+async function paymentSession(r,e){
+
+  const u=await auth(r,e);
+
+  if(!u){
+    return j({
+      success:false,
+      error:"Login required"
+    },401);
+  }
+
+  const p=await e.DB.prepare(`
+    SELECT
+      id,
+      order_id,
+      amount,
+      currency,
+      status,
+      created_at,
+      paid_at
+    FROM payments
+    WHERE user_id=?
+    ORDER BY id DESC
+    LIMIT 1
+  `).bind(u.id).first();
+
+  return j({
+    success:true,
+    payment:p||null
+  });
+}
+
+
+/* =========================
+   CORS
+========================= */
+
+function cors(){
+  return new Response(null,{
+    status:204,
+    headers:{
+      "Access-Control-Allow-Origin":SITE,
+      "Access-Control-Allow-Credentials":"true",
+      "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers":"Content-Type"
+    }
+  });
+}
+
+
+/* =========================
+   MAIN
+========================= */
+
+export default {
+
+  async fetch(r,e){
+
+    if(r.method==="OPTIONS"){
+      return cors();
+    }
+
+    const url=new URL(r.url);
+    const path=url.pathname;
+
+    try{
+
+      if(path==="/auth/google"){
+        return googleLogin(r,e);
+      }
+
+      if(path==="/auth/callback"){
+        return googleCallback(r,e);
+      }
+
+      if(path==="/auth/logout"){
+        return logout(r,e);
+      }
+
+      if(path==="/api/me"){
+        return me(r,e);
+      }
+
+      if(path==="/api/admin/me"){
+        return adminMe(r,e);
+      }
+
+      if(
+        path==="/api/admin/activate" &&
+        r.method==="POST"
+      ){
+        return adminActivate(r,e);
+      }
+
+      if(path==="/api/referral"){
+        return referral(r,e);
+      }
+
+      if(path==="/api/payment-start"){
+        return paymentStart(r,e);
+      }
+
+      if(path==="/api/payment-session"){
+        return paymentSession(r,e);
+      }
+
+      if(path==="/api/titles"){
+        return titles(r,e);
+      }
+
+      if(path==="/api/questions"){
+        return questions(r,e);
+      }
+
+      if(path==="/api/health"){
+        return health(r,e);
+      }
+
+      return j({
+        success:false,
+        error:"Not found"
+      },404);
+
+    }catch(err){
+
+      console.error("WORKER ERROR:",err);
+
+      return j({
+        success:false,
+        error:String(err)
+      },500);
+    }
+  }
+};
