@@ -1,50 +1,62 @@
-const ORIGIN = "https://createlk.com";
+const ALLOWED_ORIGINS = [
+  "https://createlk.com",
+  "https://www.createlk.com"
+];
+
 const SESSION_TTL = 7 * 86400;
 
 export default {
-  async fetch(req, env) {
-    const url = new URL(req.url);
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const origin = request.headers.get("Origin") || "";
+    const cors = getCors(origin);
 
-    if (req.method === "OPTIONS")
-      return new Response(null, { headers: cors() });
+    if (request.method === "OPTIONS")
+      return new Response(null, { status: 204, headers: cors });
 
     try {
       // LOGIN
-      if (url.pathname === "/auth" && req.method === "POST") {
-        const { password } = await req.json();
+      if (url.pathname === "/auth" && request.method === "POST") {
+        const body = await request.json().catch(() => null);
 
-        if (!env.ADMIN_PASSWORD || password !== env.ADMIN_PASSWORD)
-          return json({ success: false, error: "Invalid password" }, 401);
+        if (!body || body.password !== env.ADMIN_PASSWORD) {
+          return json({ success: false, error: "Invalid password" }, 401, cors);
+        }
 
-        if (!env.SESSION_SECRET)
-          return json({ success: false, error: "SESSION_SECRET not configured" }, 500);
+        if (!env.SESSION_SECRET) {
+          return json({
+            success: false,
+            error: "SESSION_SECRET is not configured"
+          }, 500, cors);
+        }
 
         return json({
           success: true,
-          token: await token(env.SESSION_SECRET),
+          token: await createToken(env.SESSION_SECRET),
           expiresIn: SESSION_TTL
-        });
+        }, 200, cors);
       }
 
       // AUTH
-      if (!await auth(req, env.SESSION_SECRET))
-        return json({ success: false, error: "Unauthorized" }, 401);
+      if (!await verifyToken(request, env.SESSION_SECRET)) {
+        return json({ success: false, error: "Unauthorized" }, 401, cors);
+      }
 
       // LIST
-      if (url.pathname === "/list") {
+      if (url.pathname === "/list" && request.method === "GET") {
         const prefix = cleanPrefix(url.searchParams.get("prefix"));
-        const r = await env.BUCKET.list({
+        const result = await env.BUCKET.list({
           prefix,
           delimiter: "/",
           limit: 1000
         });
 
-        const folders = (r.delimitedPrefixes || []).map(key => ({
+        const folders = (result.delimitedPrefixes || []).map(key => ({
           key,
           name: key.slice(prefix.length).replace(/\/$/, "")
         }));
 
-        const files = (r.objects || [])
+        const files = (result.objects || [])
           .filter(o => !o.key.endsWith("/"))
           .map(o => ({
             key: o.key,
@@ -55,294 +67,399 @@ export default {
             type: o.httpMetadata?.contentType || mime(o.key)
           }));
 
-        return json({ success: true, prefix, folders, files });
+        return json({
+          success: true,
+          prefix,
+          folders,
+          files
+        }, 200, cors);
       }
 
       // CREATE FOLDER
-      if (url.pathname === "/create-folder" && req.method === "POST") {
-        const { name, prefix } = await req.json();
-        const folder = clean(name);
-        if (!folder) return json({ success: false, error: "Folder name required" }, 400);
+      if (url.pathname === "/create-folder" && request.method === "POST") {
+        const body = await request.json();
+        const name = clean(body.name);
+        const prefix = cleanPrefix(body.prefix);
 
-        const key = cleanPrefix(prefix) + folder + "/";
-        await env.BUCKET.put(key, "");
+        if (!name)
+          return json({ success: false, error: "Folder name required" }, 400, cors);
 
-        return json({ success: true, key });
+        const key = prefix + name + "/";
+
+        await env.BUCKET.put(key, new Uint8Array(0), {
+          customMetadata: { folder: "true" }
+        });
+
+        return json({ success: true, key }, 200, cors);
       }
 
       // UPLOAD
-      if (url.pathname === "/upload" && req.method === "POST") {
-        const form = await req.formData();
+      if (url.pathname === "/upload" && request.method === "POST") {
+        const form = await request.formData();
         const file = form.get("file");
         const prefix = cleanPrefix(form.get("prefix"));
 
         if (!file || typeof file === "string")
-          return json({ success: false, error: "No file selected" }, 400);
+          return json({ success: false, error: "No file selected" }, 400, cors);
 
-        const name = clean(file.name || "file");
-        const key = prefix + name;
+        const filename = clean(file.name || "file");
+
+        if (!filename)
+          return json({ success: false, error: "Invalid filename" }, 400, cors);
+
+        const key = prefix + filename;
 
         await env.BUCKET.put(key, file.stream(), {
           httpMetadata: {
-            contentType: file.type || mime(name)
+            contentType: file.type || mime(filename)
           },
           customMetadata: {
-            originalName: name,
-            uploadedAt: new Date().toISOString()
+            originalName: filename,
+            uploadedAt: new Date().toISOString(),
+            saved: "false"
           }
         });
 
-        return json({ success: true, key, name });
+        return json({
+          success: true,
+          key,
+          name: filename
+        }, 200, cors);
       }
 
-      // OPEN FILE
-      if (url.pathname === "/photo") {
+      // VIEW / DOWNLOAD
+      if (url.pathname === "/photo" && request.method === "GET") {
         const key = url.searchParams.get("key");
-        if (!key) return json({ success: false, error: "Key required" }, 400);
 
-        const obj = await env.BUCKET.get(key);
-        if (!obj) return json({ success: false, error: "File not found" }, 404);
+        if (!key)
+          return json({ success: false, error: "Key required" }, 400, cors);
 
-        const h = new Headers(cors());
-        obj.writeHttpMetadata(h);
-        h.set("Cache-Control", "private, max-age=3600");
-        h.set("ETag", obj.httpEtag);
+        const object = await env.BUCKET.get(key);
 
-        return new Response(obj.body, { headers: h });
+        if (!object)
+          return json({ success: false, error: "File not found" }, 404, cors);
+
+        const headers = new Headers(cors);
+
+        object.writeHttpMetadata(headers);
+
+        headers.set(
+          "Content-Type",
+          object.httpMetadata?.contentType || mime(key)
+        );
+
+        if (object.httpEtag)
+          headers.set("ETag", object.httpEtag);
+
+        headers.set("Cache-Control", "private, max-age=3600");
+
+        return new Response(object.body, {
+          status: 200,
+          headers
+        });
       }
 
       // SAVE / UNSAVE
       if (
         (url.pathname === "/save" || url.pathname === "/unsave") &&
-        req.method === "POST"
+        request.method === "POST"
       ) {
-        const { key } = await req.json();
-        const obj = await env.BUCKET.get(key);
+        const body = await request.json();
+        const key = body.key;
 
-        if (!obj)
-          return json({ success: false, error: "File not found" }, 404);
+        if (!key)
+          return json({ success: false, error: "Key required" }, 400, cors);
 
-        const meta = { ...(obj.customMetadata || {}) };
+        const object = await env.BUCKET.get(key);
+
+        if (!object)
+          return json({ success: false, error: "File not found" }, 404, cors);
+
+        const metadata = {
+          ...(object.customMetadata || {})
+        };
 
         if (url.pathname === "/save") {
-          meta.saved = "true";
-          meta.savedAt = new Date().toISOString();
+          metadata.saved = "true";
+          metadata.savedAt = new Date().toISOString();
         } else {
-          delete meta.saved;
-          delete meta.savedAt;
+          metadata.saved = "false";
+          delete metadata.savedAt;
         }
 
-        await env.BUCKET.put(key, obj.body, {
-          httpMetadata: obj.httpMetadata,
-          customMetadata: meta
+        await env.BUCKET.put(key, object.body, {
+          httpMetadata: object.httpMetadata,
+          customMetadata: metadata
         });
 
-        return json({ success: true });
+        return json({ success: true }, 200, cors);
       }
 
       // RENAME FILE
-      if (url.pathname === "/rename" && req.method === "POST") {
-        const { oldKey, newName } = await req.json();
-        const name = clean(newName);
+      if (url.pathname === "/rename" && request.method === "POST") {
+        const body = await request.json();
+        const oldKey = body.oldKey;
+        const newName = clean(body.newName);
 
-        if (!oldKey || !name)
-          return json({ success: false, error: "Invalid filename" }, 400);
+        if (!oldKey || !newName)
+          return json({ success: false, error: "Invalid filename" }, 400, cors);
 
-        const obj = await env.BUCKET.get(oldKey);
-        if (!obj)
-          return json({ success: false, error: "File not found" }, 404);
+        const object = await env.BUCKET.get(oldKey);
 
-        const folder =
-          oldKey.includes("/")
-            ? oldKey.slice(0, oldKey.lastIndexOf("/") + 1)
-            : "";
+        if (!object)
+          return json({ success: false, error: "File not found" }, 404, cors);
 
-        const newKey = folder + name;
+        const slash = oldKey.lastIndexOf("/");
+        const folder = slash >= 0 ? oldKey.slice(0, slash + 1) : "";
+        const newKey = folder + newName;
 
         if (await env.BUCKET.head(newKey))
-          return json({ success: false, error: "File already exists" }, 409);
+          return json({
+            success: false,
+            error: "A file with that name already exists"
+          }, 409, cors);
 
-        await env.BUCKET.put(newKey, obj.body, {
-          httpMetadata: obj.httpMetadata,
-          customMetadata: obj.customMetadata
+        await env.BUCKET.put(newKey, object.body, {
+          httpMetadata: object.httpMetadata,
+          customMetadata: object.customMetadata
         });
 
         await env.BUCKET.delete(oldKey);
 
-        return json({ success: true, oldKey, newKey });
+        return json({
+          success: true,
+          oldKey,
+          newKey
+        }, 200, cors);
       }
 
       // DELETE FILE
-      if (url.pathname === "/delete" && req.method === "POST") {
-        const { key } = await req.json();
+      if (url.pathname === "/delete" && request.method === "POST") {
+        const body = await request.json();
 
-        if (!key)
-          return json({ success: false, error: "Key required" }, 400);
+        if (!body.key)
+          return json({ success: false, error: "Key required" }, 400, cors);
 
-        await env.BUCKET.delete(key);
+        await env.BUCKET.delete(body.key);
 
-        return json({ success: true });
+        return json({ success: true }, 200, cors);
       }
 
       // DELETE FOLDER
-      if (url.pathname === "/delete-folder" && req.method === "POST") {
-        const { prefix } = await req.json();
-        const p = cleanPrefix(prefix);
+      if (url.pathname === "/delete-folder" && request.method === "POST") {
+        const body = await request.json();
+        const prefix = cleanPrefix(body.prefix);
 
-        if (!p)
-          return json({ success: false, error: "Prefix required" }, 400);
+        if (!prefix)
+          return json({ success: false, error: "Prefix required" }, 400, cors);
 
         let cursor;
 
         do {
-          const r = await env.BUCKET.list({
-            prefix: p,
+          const result = await env.BUCKET.list({
+            prefix,
             cursor,
             limit: 1000
           });
 
-          const keys = r.objects.map(o => o.key);
-          if (keys.length) await env.BUCKET.delete(keys);
+          const keys = result.objects.map(o => o.key);
 
-          cursor = r.truncated ? r.cursor : undefined;
+          if (keys.length)
+            await env.BUCKET.delete(keys);
+
+          cursor = result.truncated ? result.cursor : undefined;
         } while (cursor);
 
-        return json({ success: true });
+        return json({ success: true }, 200, cors);
       }
 
       // RENAME FOLDER
-      if (url.pathname === "/rename-folder" && req.method === "POST") {
-        const { oldPrefix, newName } = await req.json();
+      if (url.pathname === "/rename-folder" && request.method === "POST") {
+        const body = await request.json();
 
-        const oldP = cleanPrefix(oldPrefix);
-        const name = clean(newName);
+        const oldPrefix = cleanPrefix(body.oldPrefix);
+        const newName = clean(body.newName);
 
-        if (!oldP || !name)
-          return json({ success: false, error: "Invalid folder" }, 400);
+        if (!oldPrefix || !newName)
+          return json({ success: false, error: "Invalid folder" }, 400, cors);
 
-        const parent =
-          oldP.includes("/")
-            ? oldP.slice(0, oldP.lastIndexOf("/", oldP.length - 2) + 1)
-            : "";
+        const slash = oldPrefix.lastIndexOf("/", oldPrefix.length - 2);
+        const parent = slash >= 0
+          ? oldPrefix.slice(0, slash + 1)
+          : "";
 
-        const newP = parent + name + "/";
+        const newPrefix = parent + newName + "/";
 
-        if (oldP === newP)
-          return json({ success: false, error: "Same folder name" }, 400);
+        if (oldPrefix === newPrefix)
+          return json({
+            success: false,
+            error: "Folder name is unchanged"
+          }, 400, cors);
 
         let cursor;
 
         do {
-          const r = await env.BUCKET.list({
-            prefix: oldP,
+          const result = await env.BUCKET.list({
+            prefix: oldPrefix,
             cursor,
             limit: 1000
           });
 
-          for (const item of r.objects) {
-            const obj = await env.BUCKET.get(item.key);
-            if (!obj) continue;
+          for (const item of result.objects) {
+            const object = await env.BUCKET.get(item.key);
+
+            if (!object) continue;
 
             const newKey =
-              newP + item.key.slice(oldP.length);
+              newPrefix +
+              item.key.slice(oldPrefix.length);
 
-            await env.BUCKET.put(newKey, obj.body, {
-              httpMetadata: obj.httpMetadata,
-              customMetadata: obj.customMetadata
+            await env.BUCKET.put(newKey, object.body, {
+              httpMetadata: object.httpMetadata,
+              customMetadata: object.customMetadata
             });
 
             await env.BUCKET.delete(item.key);
           }
 
-          cursor = r.truncated ? r.cursor : undefined;
+          cursor = result.truncated ? result.cursor : undefined;
         } while (cursor);
 
         return json({
           success: true,
-          oldPrefix: oldP,
-          newPrefix: newP
-        });
+          oldPrefix,
+          newPrefix
+        }, 200, cors);
       }
 
-      return json({ success: false, error: "Not found" }, 404);
-
-    } catch (e) {
       return json({
         success: false,
-        error: e.message || "Server error"
-      }, 500);
+        error: "Not found"
+      }, 404, cors);
+
+    } catch (error) {
+      return json({
+        success: false,
+        error: error?.message || "Server error"
+      }, 500, cors);
     }
   }
 };
 
 
-// AUTH
-async function auth(req, secret) {
-  if (!secret) return false;
+// ==============================
+// CORS
+// ==============================
 
-  const h = req.headers.get("Authorization") || "";
-  if (!h.startsWith("Bearer ")) return false;
+function getCors(origin) {
+  return {
+    "Access-Control-Allow-Origin":
+      ALLOWED_ORIGINS.includes(origin)
+        ? origin
+        : ALLOWED_ORIGINS[0],
 
-  return verify(h.slice(7), secret);
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization",
+
+    "Access-Control-Expose-Headers":
+      "Content-Type, Content-Length, ETag",
+
+    "Vary": "Origin"
+  };
 }
 
 
-// CREATE TOKEN
-async function token(secret) {
-  const data =
-    `${Math.floor(Date.now() / 1000) + SESSION_TTL}.${crypto.randomUUID()}`;
+// ==============================
+// TOKEN
+// ==============================
 
-  return b64(data) + "." + await sign(data, secret);
-}
-
-
-// VERIFY TOKEN
-async function verify(t, secret) {
+async function verifyToken(request, secret) {
   try {
-    const p = t.split(".");
-    if (p.length !== 2) return false;
+    if (!secret) return false;
 
-    const data = fromB64(p[0]);
-    const parts = data.split(".");
+    const header =
+      request.headers.get("Authorization") || "";
+
+    if (!header.startsWith("Bearer "))
+      return false;
+
+    const token = header.slice(7);
+    const parts = token.split(".");
+
+    if (parts.length !== 2)
+      return false;
+
+    const data = decodeBase64Url(parts[0]);
+    const values = data.split(".");
+
+    if (values.length !== 2)
+      return false;
+
+    const expiry = Number(values[0]);
 
     if (
-      parts.length !== 2 ||
-      Number(parts[0]) < Math.floor(Date.now() / 1000)
-    ) return false;
+      !Number.isFinite(expiry) ||
+      expiry < Math.floor(Date.now() / 1000)
+    ) {
+      return false;
+    }
 
-    return safeEqual(
-      p[1],
-      await sign(data, secret)
-    );
+    const signature = await sign(data, secret);
+
+    return safeEqual(parts[1], signature);
+
   } catch {
     return false;
   }
 }
 
 
-// SIGN
+async function createToken(secret) {
+  const data =
+    (
+      Math.floor(Date.now() / 1000) +
+      SESSION_TTL
+    ) +
+    "." +
+    crypto.randomUUID();
+
+  return (
+    encodeBase64Url(data) +
+    "." +
+    await sign(data, secret)
+  );
+}
+
+
 async function sign(data, secret) {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
     false,
     ["sign"]
   );
 
-  const sig = await crypto.subtle.sign(
+  const signature = await crypto.subtle.sign(
     "HMAC",
     key,
     new TextEncoder().encode(data)
   );
 
-  return b64(new Uint8Array(sig));
+  return encodeBase64Url(
+    new Uint8Array(signature)
+  );
 }
 
 
-// BASE64 URL
-function b64(value) {
-  let s = "";
+function encodeBase64Url(value) {
+  let binary = "";
 
   if (typeof value === "string") {
     return btoa(value)
@@ -351,41 +468,48 @@ function b64(value) {
       .replace(/=+$/, "");
   }
 
-  for (const x of value)
-    s += String.fromCharCode(x);
+  for (const byte of value)
+    binary += String.fromCharCode(byte);
 
-  return btoa(s)
+  return btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 }
 
 
-function fromB64(value) {
-  const s = value
+function decodeBase64Url(value) {
+  let text = value
     .replace(/-/g, "+")
     .replace(/_/g, "/");
 
-  return atob(
-    s + "=".repeat((4 - s.length % 4) % 4)
+  text += "=".repeat(
+    (4 - text.length % 4) % 4
   );
+
+  return atob(text);
 }
 
 
-// SAFE COMPARE
 function safeEqual(a, b) {
-  if (a.length !== b.length) return false;
+  if (a.length !== b.length)
+    return false;
 
   let result = 0;
 
   for (let i = 0; i < a.length; i++)
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    result |=
+      a.charCodeAt(i) ^
+      b.charCodeAt(i);
 
   return result === 0;
 }
 
 
-// CLEAN NAME
+// ==============================
+// CLEAN
+// ==============================
+
 function clean(value) {
   return String(value || "")
     .replace(/[\\/:*?"<>|]/g, "_")
@@ -395,73 +519,89 @@ function clean(value) {
 }
 
 
-// CLEAN PREFIX
 function cleanPrefix(value) {
-  let p = String(value || "")
+  let prefix = String(value || "")
     .replace(/\\/g, "/")
     .replace(/^\/+/, "");
 
-  p = p
+  prefix = prefix
     .split("/")
-    .filter(x => x && x !== "." && x !== "..")
+    .filter(
+      part =>
+        part &&
+        part !== "." &&
+        part !== ".."
+    )
     .join("/");
 
-  return p ? p + "/" : "";
+  return prefix ? prefix + "/" : "";
 }
 
 
+// ==============================
 // MIME
-function mime(name) {
-  const e =
-    name.split(".").pop().toLowerCase();
+// ==============================
 
-  return {
-    apk: "application/vnd.android.package-archive",
-    pdf: "application/pdf",
-    doc: "application/msword",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xls: "application/vnd.ms-excel",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ppt: "application/vnd.ms-powerpoint",
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    zip: "application/zip",
-    rar: "application/vnd.rar",
-    "7z": "application/x-7z-compressed",
+function mime(name) {
+  const ext =
+    name
+      .split(".")
+      .pop()
+      .toLowerCase();
+
+  const types = {
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     png: "image/png",
     gif: "image/gif",
     webp: "image/webp",
     svg: "image/svg+xml",
-    mp3: "audio/mpeg",
-    mp4: "video/mp4",
-    wav: "audio/wav",
+
+    pdf: "application/pdf",
     txt: "text/plain",
     csv: "text/csv",
-    json: "application/json"
-  }[e] || "application/octet-stream";
-}
+    json: "application/json",
 
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
 
-// CORS
-function cors() {
-  return {
-    "Access-Control-Allow-Origin": ORIGIN,
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization"
+    mp4: "video/mp4",
+    webm: "video/webm",
+
+    zip: "application/zip",
+    rar: "application/vnd.rar",
+    "7z": "application/x-7z-compressed",
+
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+
+    apk: "application/vnd.android.package-archive"
   };
+
+  return types[ext] ||
+    "application/octet-stream";
 }
 
 
+// ==============================
 // JSON
-function json(data, status = 200) {
+// ==============================
+
+function json(data, status, cors) {
   return new Response(
     JSON.stringify(data),
     {
       status,
       headers: {
-        ...cors(),
-        "Content-Type": "application/json"
+        ...cors,
+        "Content-Type":
+          "application/json; charset=UTF-8"
       }
     }
   );
