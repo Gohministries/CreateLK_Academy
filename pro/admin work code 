@@ -18,8 +18,12 @@ const json = (x, s = 200) =>
     }
   });
 
+/* SESSION COOKIE
+   SameSite=None is required because
+   createlk.com and workers.dev are different sites.
+*/
 const cookie = (v, age = 2592000) =>
-  `${COOKIE}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${age}`;
+  `${COOKIE}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${age}`;
 
 function getCookie(r) {
   const m = (r.headers.get("Cookie") || "").match(
@@ -40,7 +44,9 @@ async function hash(x) {
     .join("");
 }
 
-/* ADMIN SESSION */
+/* =========================
+   ADMIN SESSION
+========================= */
 
 async function admin(r, e) {
   const token = getCookie(r);
@@ -78,7 +84,9 @@ async function auth(r, e) {
   }, 401);
 }
 
-/* GOOGLE LOGIN */
+/* =========================
+   GOOGLE LOGIN
+========================= */
 
 function login(r, e) {
 
@@ -123,34 +131,43 @@ function login(r, e) {
   return Response.redirect(u, 302);
 }
 
+/* =========================
+   GOOGLE CALLBACK
+========================= */
+
 async function callback(r, e) {
 
   try {
 
-    if (!e.GOOGLE_CLIENT_ID)
+    if (!e.GOOGLE_CLIENT_ID) {
       return json({
         error: "GOOGLE_CLIENT_ID secret is missing"
       }, 500);
+    }
 
-    if (!e.GOOGLE_CLIENT_SECRET)
+    if (!e.GOOGLE_CLIENT_SECRET) {
       return json({
         error: "GOOGLE_CLIENT_SECRET secret is missing"
       }, 500);
+    }
 
     const code =
       new URL(r.url).searchParams.get("code");
 
-    if (!code)
+    if (!code) {
       return new Response(
         "Missing code",
         { status: 400 }
       );
+    }
 
     const redirectUri =
       new URL(
         "/auth/callback",
         r.url
       ).toString();
+
+    /* EXCHANGE GOOGLE CODE */
 
     const tr = await fetch(
       "https://oauth2.googleapis.com/token",
@@ -188,6 +205,8 @@ async function callback(r, e) {
       }, 400);
     }
 
+    /* GET GOOGLE USER */
+
     const ur = await fetch(
       "https://openidconnect.googleapis.com/v1/userinfo",
       {
@@ -217,10 +236,13 @@ async function callback(r, e) {
         .trim()
         .toLowerCase();
 
-    if (!email)
+    if (!email) {
       return json({
         error: "Google account email not found"
       }, 400);
+    }
+
+    /* ADMIN EMAIL CHECK */
 
     if (email !== ADMIN) {
 
@@ -230,7 +252,9 @@ async function callback(r, e) {
       );
     }
 
-    /* FIND EXISTING USER */
+    /* =========================
+       FIND EXISTING USER
+    ========================= */
 
     let u = await e.PRO_DB.prepare(`
       SELECT *
@@ -239,38 +263,87 @@ async function callback(r, e) {
       LIMIT 1
     `).bind(email).first();
 
-    /* CREATE OR UPDATE USER */
+    /* =========================
+       CREATE OR UPDATE USER
+    ========================= */
 
     if (u) {
 
-      await e.PRO_DB.prepare(`
-        UPDATE users
-        SET
-          name = ?,
-          photo_url = ?
-        WHERE id = ?
-      `).bind(
-        g.name || "",
-        g.picture || "",
-        u.id
-      ).run();
+      /*
+        Make sure the existing user has an ID.
+        Your users.id is TEXT PRIMARY KEY.
+      */
+
+      if (!u.id) {
+
+        const newId =
+          "admin-" +
+          crypto.randomUUID();
+
+        await e.PRO_DB.prepare(`
+          UPDATE users
+          SET
+            id = ?,
+            name = ?,
+            photo_url = ?
+          WHERE lower(email) = ?
+        `).bind(
+          newId,
+          g.name || "",
+          g.picture || "",
+          email
+        ).run();
+
+      } else {
+
+        await e.PRO_DB.prepare(`
+          UPDATE users
+          SET
+            name = ?,
+            photo_url = ?
+          WHERE id = ?
+        `).bind(
+          g.name || "",
+          g.picture || "",
+          u.id
+        ).run();
+      }
 
       u = await e.PRO_DB.prepare(`
         SELECT *
         FROM users
-        WHERE id = ?
+        WHERE lower(email) = ?
         LIMIT 1
-      `).bind(u.id).first();
+      `).bind(email).first();
 
     } else {
 
+      /*
+        users.id is TEXT PRIMARY KEY,
+        therefore create an ID explicitly.
+      */
+
+      const newId =
+        "admin-" +
+        crypto.randomUUID();
+
       await e.PRO_DB.prepare(`
         INSERT INTO users
-        (email, name, photo_url)
-        VALUES (?, ?, ?)
+        (
+          id,
+          google_id,
+          email,
+          name,
+          picture,
+          photo_url
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
       `).bind(
+        newId,
+        String(g.sub || ""),
         email,
         g.name || "",
+        g.picture || "",
         g.picture || ""
       ).run();
 
@@ -288,7 +361,15 @@ async function callback(r, e) {
       }, 500);
     }
 
-    /* CREATE ADMIN SESSION */
+    if (!u.id) {
+      return json({
+        error: "Admin user has no valid ID"
+      }, 500);
+    }
+
+    /* =========================
+       CREATE ADMIN SESSION
+    ========================= */
 
     const raw =
       crypto.randomUUID() +
@@ -299,7 +380,11 @@ async function callback(r, e) {
 
     await e.PRO_DB.prepare(`
       INSERT INTO admin_sessions
-      (id, user_id, expires_at)
+      (
+        id,
+        user_id,
+        expires_at
+      )
       VALUES (
         ?,
         ?,
@@ -310,11 +395,16 @@ async function callback(r, e) {
       u.id
     ).run();
 
+    /* =========================
+       LOGIN SUCCESS
+    ========================= */
+
     return new Response(null, {
       status: 302,
       headers: {
         Location:
           SITE + "/pro/admin.html",
+
         "Set-Cookie":
           cookie(raw)
       }
@@ -335,7 +425,9 @@ async function callback(r, e) {
   }
 }
 
-/* LOGOUT */
+/* =========================
+   LOGOUT
+========================= */
 
 async function logout(r, e) {
 
@@ -356,22 +448,26 @@ async function logout(r, e) {
     headers: {
       Location:
         SITE + "/pro/admin.html",
+
       "Set-Cookie":
         cookie("", 0)
     }
   });
 }
 
-/* ME */
+/* =========================
+   ME
+========================= */
 
 async function me(r, e) {
 
   const a = await admin(r, e);
 
-  if (!a)
+  if (!a) {
     return json({
       user: null
     });
+  }
 
   return json({
     user: {
@@ -383,7 +479,9 @@ async function me(r, e) {
   });
 }
 
-/* CATEGORIES */
+/* =========================
+   CATEGORIES
+========================= */
 
 async function categories(r, e) {
 
@@ -416,10 +514,11 @@ async function addCategory(r, e) {
   const name =
     String(b.name || "").trim();
 
-  if (!name)
+  if (!name) {
     return json({
       error: "Category name required"
     }, 400);
+  }
 
   await e.PRO_DB.prepare(`
     INSERT INTO pro_categories(name)
@@ -431,7 +530,9 @@ async function addCategory(r, e) {
   });
 }
 
-/* PROMPTS */
+/* =========================
+   PROMPTS
+========================= */
 
 async function prompts(r, e) {
 
@@ -454,6 +555,7 @@ async function prompts(r, e) {
   return json({
     prompts: (results || []).map(p => ({
       ...p,
+
       image_url: p.image_key
         ? new URL(
             "/api/pro/images/" +
@@ -489,17 +591,21 @@ async function addPrompt(r, e) {
   const image =
     String(b.image || "");
 
-  if (!title)
+  if (!title) {
     return json({
       error: "Title required"
     }, 400);
+  }
 
-  if (!prompt && !image)
+  if (!prompt && !image) {
     return json({
       error: "Prompt or image required"
     }, 400);
+  }
 
   let image_key = null;
+
+  /* UPLOAD IMAGE */
 
   if (image) {
 
@@ -507,10 +613,11 @@ async function addPrompt(r, e) {
       /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/
     );
 
-    if (!m)
+    if (!m) {
       return json({
         error: "Invalid image"
       }, 400);
+    }
 
     const type = m[1];
 
@@ -541,9 +648,17 @@ async function addPrompt(r, e) {
     );
   }
 
+  /* INSERT PROMPT */
+
   await e.PRO_DB.prepare(`
     INSERT INTO pro_prompts
-    (title, description, prompt, category_id, image_key)
+    (
+      title,
+      description,
+      prompt,
+      category_id,
+      image_key
+    )
     VALUES (?, ?, ?, ?, ?)
   `).bind(
     title,
@@ -558,18 +673,21 @@ async function addPrompt(r, e) {
   });
 }
 
-/* IMAGES */
+/* =========================
+   IMAGES
+========================= */
 
 async function image(r, e, key) {
 
   const o =
     await e.PRO_IMAGES.get(key);
 
-  if (!o)
+  if (!o) {
     return new Response(
       "Not found",
       { status: 404 }
     );
+  }
 
   const h = new Headers();
 
@@ -582,11 +700,15 @@ async function image(r, e, key) {
 
   return new Response(
     o.body,
-    { headers: h }
+    {
+      headers: h
+    }
   );
 }
 
-/* PACKAGES */
+/* =========================
+   PACKAGES
+========================= */
 
 async function packages(r, e) {
 
@@ -631,30 +753,45 @@ async function addPackage(r, e) {
   const active =
     b.active === false ? 0 : 1;
 
-  if (!name)
+  if (!name) {
     return json({
       error: "Package name required"
     }, 400);
+  }
 
   if (
     !Number.isInteger(credits) ||
     credits < 100
-  )
+  ) {
     return json({
       error: "Minimum is 100 coins"
     }, 400);
+  }
 
   if (
     !Number.isInteger(bonus) ||
     bonus < 0
-  )
+  ) {
     return json({
       error: "Invalid bonus"
     }, 400);
+  }
+
+  /*
+    1 coin = LKR 1
+    Therefore price is always equal to credits.
+  */
 
   await e.PRO_DB.prepare(`
     INSERT INTO credit_packages
-    (name, credits, price, bonus, popular, active)
+    (
+      name,
+      credits,
+      price,
+      bonus,
+      popular,
+      active
+    )
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(
     name,
@@ -698,18 +835,20 @@ async function updatePackage(r, e, id) {
     !name ||
     !Number.isInteger(credits) ||
     credits < 100
-  )
+  ) {
     return json({
       error: "Invalid package"
     }, 400);
+  }
 
   if (
     !Number.isInteger(bonus) ||
     bonus < 0
-  )
+  ) {
     return json({
       error: "Invalid bonus"
     }, 400);
+  }
 
   await e.PRO_DB.prepare(`
     UPDATE credit_packages
@@ -753,7 +892,9 @@ async function deletePackage(r, e, id) {
   });
 }
 
-/* DEPOSITS */
+/* =========================
+   DEPOSITS
+========================= */
 
 async function deposits(r, e) {
 
@@ -790,10 +931,13 @@ async function depositAction(r, e, id) {
 
   const action = b.action;
 
-  if (!["approve", "reject"].includes(action))
+  if (
+    !["approve", "reject"].includes(action)
+  ) {
     return json({
       error: "Invalid action"
     }, 400);
+  }
 
   const d =
     await e.PRO_DB.prepare(`
@@ -803,15 +947,19 @@ async function depositAction(r, e, id) {
       LIMIT 1
     `).bind(id).first();
 
-  if (!d)
+  if (!d) {
     return json({
       error: "Deposit not found"
     }, 404);
+  }
 
-  if (d.status !== "pending")
+  if (d.status !== "pending") {
     return json({
       error: "Already processed"
     }, 400);
+  }
+
+  /* REJECT */
 
   if (action === "reject") {
 
@@ -827,6 +975,8 @@ async function depositAction(r, e, id) {
     });
   }
 
+  /* APPROVE */
+
   const amount =
     Number(
       d.amount ??
@@ -837,10 +987,11 @@ async function depositAction(r, e, id) {
   if (
     !Number.isInteger(amount) ||
     amount <= 0
-  )
+  ) {
     return json({
       error: "Invalid deposit amount"
     }, 400);
+  }
 
   const result =
     await e.PRO_DB.prepare(`
@@ -850,10 +1001,22 @@ async function depositAction(r, e, id) {
         AND status = 'pending'
     `).bind(id).run();
 
-  if (!result.meta.changes)
+  if (!result.meta.changes) {
     return json({
       error: "Already processed"
     }, 400);
+  }
+
+  /*
+    IMPORTANT:
+    Your current users schema may not contain
+    a credits column.
+
+    This update is kept from your original Worker.
+    If your users table does not contain credits,
+    remove this UPDATE and use your actual
+    pro_credits schema instead.
+  */
 
   await e.PRO_DB.prepare(`
     UPDATE users
@@ -864,32 +1027,36 @@ async function depositAction(r, e, id) {
     d.user_id
   ).run();
 
-  /*
-    Transaction logging is intentionally omitted here
-    until the exact pro_credits schema is confirmed.
-  */
-
   return json({
     ok: true
   });
 }
 
-/* ROUTER */
+/* =========================
+   ROUTER
+========================= */
 
 export default {
 
   async fetch(r, e) {
 
-    if (r.method === "OPTIONS")
+    /* CORS PREFLIGHT */
+
+    if (r.method === "OPTIONS") {
       return new Response(
         null,
-        { headers: CORS }
+        {
+          headers: CORS
+        }
       );
+    }
 
     const p =
       new URL(r.url).pathname;
 
     try {
+
+      /* GOOGLE */
 
       if (p === "/auth/google")
         return login(r, e);
@@ -900,13 +1067,19 @@ export default {
       if (p === "/auth/logout")
         return logout(r, e);
 
+      /* HEALTH */
+
       if (p === "/api/health")
         return json({
           ok: true
         });
 
+      /* ME */
+
       if (p === "/api/me")
         return me(r, e);
+
+      /* CATEGORIES */
 
       if (
         p === "/api/pro/admin/categories"
@@ -919,6 +1092,8 @@ export default {
           return addCategory(r, e);
       }
 
+      /* PROMPTS */
+
       if (
         p === "/api/pro/admin/prompts"
       ) {
@@ -930,17 +1105,22 @@ export default {
           return addPrompt(r, e);
       }
 
+      /* IMAGES */
+
       const im =
         p.match(
           /^\/api\/pro\/images\/(.+)$/
         );
 
-      if (im)
+      if (im) {
         return image(
           r,
           e,
           decodeURIComponent(im[1])
         );
+      }
+
+      /* PACKAGES */
 
       if (
         p === "/api/pro/admin/packages"
@@ -960,26 +1140,31 @@ export default {
 
       if (pm) {
 
-        if (r.method === "PUT")
+        if (r.method === "PUT") {
           return updatePackage(
             r,
             e,
             pm[1]
           );
+        }
 
-        if (r.method === "DELETE")
+        if (r.method === "DELETE") {
           return deletePackage(
             r,
             e,
             pm[1]
           );
+        }
       }
+
+      /* DEPOSITS */
 
       if (
         p === "/api/pro/admin/deposits" &&
         r.method === "GET"
-      )
+      ) {
         return deposits(r, e);
+      }
 
       const dm =
         p.match(
@@ -989,12 +1174,15 @@ export default {
       if (
         dm &&
         r.method === "POST"
-      )
+      ) {
         return depositAction(
           r,
           e,
           dm[1]
         );
+      }
+
+      /* NOT FOUND */
 
       return json({
         error: "Not found"
