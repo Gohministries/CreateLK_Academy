@@ -1,804 +1,995 @@
-const SITE = "https://createlk.com";
-const COPY_COST = 10;
-const MIN_DEPOSIT = 100;
-const COOKIE = "pro_session";
-const SESSION_DAYS = 30;
+const SITE="https://createlk.com";
+const COST=10;
+const MIN=100;
+const DAYS=30;
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+export default{async fetch(req,env){
+ const u=new URL(req.url),p=u.pathname;
+ if(req.method==="OPTIONS")return cors(new Response(null,{status:204}));
 
-    if (request.method === "OPTIONS")
-      return cors(new Response(null, { status: 204 }));
+ try{
+  if(p==="/api/health")return out({ok:true,service:"CreateLK Pro"});
+  if(p==="/auth/google")return login(u,env);
+  if(p==="/auth/callback")return callback(req,u,env);
+  if(p==="/auth/logout")return logout(req,env);
+  if(p==="/api/me")return me(req,env);
+  if(p==="/api/pro/categories")return cats(env);
+  if(p==="/api/pro/prompts")return prompts(u,env);
 
-    try {
-      if (path === "/auth/google")
-        return googleLogin(url, env);
+  let m=p.match(/^\/api\/pro\/prompts\/(\d+)$/);
+  if(m)return detail(+m[1],env);
 
-      if (path === "/auth/callback")
-        return await googleCallback(url, env);
+  m=p.match(/^\/api\/pro\/prompts\/(\d+)\/copy$/);
+  if(m&&req.method==="POST")return copy(req,env,+m[1]);
 
-      if (path === "/auth/logout")
-        return await logout(request, env);
+  if(p==="/api/pro/credits/balance")return balance(req,env);
+  if(p==="/api/pro/credits/deposit"&&req.method==="POST")
+   return deposit(req,env);
+  if(p==="/api/pro/credits/deposits")return deposits(req,env);
+  if(p==="/api/pro/credits/transactions")return transactions(req,env);
+  if(p==="/api/pro/deposit/receipt")return receipt(req,u,env);
 
-      if (path === "/api/me")
-        return await me(request, env);
+  if(p.startsWith("/api/pro/admin/"))
+   return admin(req,u,env);
 
-      if (path === "/api/pro/categories")
-        return await categories(env);
+  if(p.startsWith("/pro/images/"))
+   return image(p,env);
 
-      if (path === "/api/pro/prompts")
-        return await prompts(url, env);
+  return out({error:"Not found"},404);
+ }catch(e){
+  console.error(e);
+  return out({error:"Server error"},500);
+ }
+}};
 
-      const copy = path.match(
-        /^\/api\/pro\/prompts\/(\d+)\/copy$/
-      );
-      if (copy)
-        return await copyPrompt(request, env, Number(copy[1]));
+/* BASIC */
 
-      if (path.match(/^\/api\/pro\/prompts\/\d+$/))
-        return await promptDetails(path, env);
-
-      if (path === "/api/pro/credits/balance")
-        return await balance(request, env);
-
-      if (path === "/api/pro/credits/deposit")
-        return await createDeposit(request, env);
-
-      if (path === "/api/pro/credits/deposits")
-        return await deposits(request, env);
-
-      if (path === "/api/pro/credits/transactions")
-        return await transactions(request, env);
-
-      if (path === "/api/pro/deposit/receipt")
-        return await receipt(request, url, env);
-
-      if (path.startsWith("/api/pro/admin/"))
-        return await admin(request, url, env);
-
-      if (path.startsWith("/pro/images/"))
-        return await image(request, path, env);
-
-      return json({ error: "Not found" }, 404);
-
-    } catch (e) {
-      return json({ error: e.message }, 500);
-    }
-  }
-};
-
-/* LOGIN */
-
-function googleLogin(url, env) {
-  const state = crypto.randomUUID();
-
-  const q = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
-    redirect_uri: `${url.origin}/auth/callback`,
-    response_type: "code",
-    scope: "openid email profile",
-    state,
-    prompt: "select_account"
-  });
-
-  return Response.redirect(
-    "https://accounts.google.com/o/oauth2/v2/auth?" + q,
-    302
-  );
+function cors(r){
+ const h=new Headers(r.headers);
+ h.set("Access-Control-Allow-Origin",SITE);
+ h.set("Access-Control-Allow-Credentials","true");
+ h.set("Access-Control-Allow-Methods","GET,POST,PUT,DELETE,OPTIONS");
+ h.set("Access-Control-Allow-Headers","Content-Type");
+ return new Response(r.body,{status:r.status,headers:h});
 }
 
-async function googleCallback(url, env) {
-  const code = url.searchParams.get("code");
-  if (!code) return json({ error: "Missing code" }, 400);
-
-  const r = await fetch(
-    "https://oauth2.googleapis.com/token",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        code,
-        client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: `${url.origin}/auth/callback`,
-        grant_type: "authorization_code"
-      })
-    }
-  );
-
-  const token = await r.json();
-
-  if (!token.access_token)
-    return json({ error: "Google login failed" }, 400);
-
-  const g = await (
-    await fetch(
-      "https://openidconnect.googleapis.com/v1/userinfo",
-      {
-        headers: {
-          Authorization:
-            `Bearer ${token.access_token}`
-        }
-      }
-    )
-  ).json();
-
-  if (!g.sub || !g.email)
-    return json({ error: "Invalid Google account" }, 400);
-
-  let user = await env.PRO_DB.prepare(
-    `SELECT * FROM users
-     WHERE google_id = ? OR email = ?
-     LIMIT 1`
-  ).bind(g.sub, g.email).first();
-
-  if (!user) {
-    const referral =
-      "PRO" +
-      crypto.randomUUID()
-        .replace(/-/g, "")
-        .slice(0, 8)
-        .toUpperCase();
-
-    const x = await env.PRO_DB.prepare(
-      `INSERT INTO users
-       (google_id,name,email,photo_url,referral_code)
-       VALUES (?,?,?,?,?)`
-    ).bind(
-      g.sub,
-      g.name || "",
-      g.email,
-      g.picture || "",
-      referral
-    ).run();
-
-    user = await env.PRO_DB.prepare(
-      `SELECT * FROM users WHERE id = ?`
-    ).bind(x.meta.last_row_id).first();
-
-  } else {
-    await env.PRO_DB.prepare(
-      `UPDATE users
-       SET google_id=?,name=?,photo_url=?
-       WHERE id=?`
-    ).bind(
-      g.sub,
-      g.name || user.name || "",
-      g.picture || user.photo_url || "",
-      user.id
-    ).run();
+function out(d,s=200){
+ return cors(new Response(JSON.stringify(d),{
+  status:s,
+  headers:{
+   "Content-Type":"application/json",
+   "Cache-Control":"no-store"
   }
-
-  await env.PRO_DB.prepare(
-    `INSERT OR IGNORE INTO pro_credits
-     (user_id,credits) VALUES (?,0)`
-  ).bind(user.id).run();
-
-  const session =
-    crypto.randomUUID() + crypto.randomUUID();
-
-  const hash = await sha256(session);
-
-  const expires = new Date(
-    Date.now() + SESSION_DAYS * 86400000
-  ).toISOString();
-
-  await env.PRO_DB.prepare(
-    `INSERT INTO sessions
-     (session_token_hash,user_id,expires_at)
-     VALUES (?,?,?)`
-  ).bind(hash, user.id, expires).run();
-
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${SITE}/pro/`,
-      "Set-Cookie":
-        `${COOKIE}=${session}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_DAYS * 86400}`
-    }
-  });
+ }));
 }
 
-async function logout(request, env) {
-  const token = cookie(request, COOKIE);
+function ck(req,n){
+ const x=(req.headers.get("Cookie")||"").split(";")
+  .find(x=>x.trim().startsWith(n+"="));
+ return x?x.split("=").slice(1).join("=").trim():null;
+}
 
-  if (token) {
-    await env.PRO_DB.prepare(
-      `DELETE FROM sessions
-       WHERE session_token_hash=?`
-    ).bind(await sha256(token)).run();
+function setck(n,v,a){
+ return `${n}=${v}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${a}`;
+}
+
+function delck(n){
+ return setck(n,"",0);
+}
+
+async function hash(v){
+ const b=await crypto.subtle.digest(
+  "SHA-256",new TextEncoder().encode(v)
+ );
+ return [...new Uint8Array(b)]
+  .map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+function rnd(n=32){
+ const b=new Uint8Array(n);
+ crypto.getRandomValues(b);
+ return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+/* GOOGLE LOGIN */
+
+function login(u,env){
+ const state=rnd(16);
+ const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+
+ g.searchParams.set("client_id",env.GOOGLE_CLIENT_ID);
+ g.searchParams.set("redirect_uri",u.origin+"/auth/callback");
+ g.searchParams.set("response_type","code");
+ g.searchParams.set("scope","openid email profile");
+ g.searchParams.set("state",state);
+
+ const r=new Response(null,{
+  status:302,
+  headers:{Location:g.toString()}
+ });
+
+ r.headers.append(
+  "Set-Cookie",
+  setck("pro_oauth_state",state,600)
+ );
+
+ return cors(r);
+}
+
+async function callback(req,u,env){
+ const code=u.searchParams.get("code");
+ const state=u.searchParams.get("state");
+
+ if(!code||state!==ck(req,"pro_oauth_state"))
+  return out({error:"Invalid Google login"},400);
+
+ const redirect=u.origin+"/auth/callback";
+
+ const tr=await fetch(
+  "https://oauth2.googleapis.com/token",
+  {
+   method:"POST",
+   headers:{
+    "Content-Type":
+     "application/x-www-form-urlencoded"
+   },
+   body:new URLSearchParams({
+    client_id:env.GOOGLE_CLIENT_ID,
+    client_secret:env.GOOGLE_CLIENT_SECRET,
+    code,
+    redirect_uri:redirect,
+    grant_type:"authorization_code"
+   })
   }
+ );
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${SITE}/pro/`,
-      "Set-Cookie":
-        `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`
-    }
-  });
+ const token=await tr.json();
+
+ if(!token.access_token)
+  return out({error:"Google token failed"},400);
+
+ const gr=await fetch(
+  "https://openidconnect.googleapis.com/v1/userinfo",
+  {
+   headers:{
+    Authorization:`Bearer ${token.access_token}`
+   }
+  }
+ );
+
+ const g=await gr.json();
+
+ if(!g.email)
+  return out({
+   error:"Google account unavailable"
+  },400);
+
+ const email=g.email.toLowerCase();
+
+ let user=await env.PRO_DB.prepare(`
+  SELECT * FROM users
+  WHERE google_id=? OR email=?
+  LIMIT 1
+ `).bind(String(g.sub),email).first();
+
+ if(!user){
+  const ref="CLP"+
+   rnd(5).slice(0,8).toUpperCase();
+
+  const r=await env.PRO_DB.prepare(`
+   INSERT INTO users
+   (google_id,name,email,photo_url,referral_code)
+   VALUES (?,?,?,?,?)
+  `).bind(
+   String(g.sub),
+   g.name||email.split("@")[0],
+   email,
+   g.picture||null,
+   ref
+  ).run();
+
+  user=await env.PRO_DB.prepare(
+   `SELECT * FROM users WHERE id=?`
+  ).bind(r.meta.last_row_id).first();
+
+ }else{
+  await env.PRO_DB.prepare(`
+   UPDATE users
+   SET google_id=?,name=?,photo_url=?
+   WHERE id=?
+  `).bind(
+   String(g.sub),
+   g.name||user.name,
+   g.picture||user.photo_url,
+   user.id
+  ).run();
+ }
+
+ await env.PRO_DB.prepare(`
+  INSERT OR IGNORE INTO pro_credits(user_id,credits)
+  VALUES (?,0)
+ `).bind(user.id).run();
+
+ const session=rnd(32);
+
+ const expires=new Date(
+  Date.now()+DAYS*86400000
+ ).toISOString();
+
+ await env.PRO_DB.prepare(`
+  INSERT INTO sessions
+  (session_token_hash,user_id,expires_at)
+  VALUES (?,?,?)
+ `).bind(
+  await hash(session),
+  user.id,
+  expires
+ ).run();
+
+ const r=new Response(null,{
+  status:302,
+  headers:{
+   Location:SITE+"/pro/"
+  }
+ });
+
+ r.headers.append(
+  "Set-Cookie",
+  setck("pro_session",session,DAYS*86400)
+ );
+
+ r.headers.append(
+  "Set-Cookie",
+  delck("pro_oauth_state")
+ );
+
+ return cors(r);
 }
 
 /* USER */
 
-async function me(request, env) {
-  const user = await auth(request, env);
+async function user(req,env){
+ const s=ck(req,"pro_session");
+ if(!s)return null;
 
-  if (!user)
-    return json({ logged_in: false });
+ return env.PRO_DB.prepare(`
+  SELECT u.*
+  FROM sessions s
+  JOIN users u ON u.id=s.user_id
+  WHERE s.session_token_hash=?
+  AND s.expires_at>CURRENT_TIMESTAMP
+  LIMIT 1
+ `).bind(await hash(s)).first();
+}
 
-  const c = await env.PRO_DB.prepare(
-    `SELECT credits FROM pro_credits WHERE user_id=?`
-  ).bind(user.id).first();
+async function me(req,env){
+ const u=await user(req,env);
 
-  return json({
-    logged_in: true,
-    user,
-    credits: c?.credits || 0
+ if(!u)
+  return out({
+   logged_in:false,
+   user:null,
+   credits:0
   });
+
+ const c=await env.PRO_DB.prepare(`
+  SELECT credits FROM pro_credits
+  WHERE user_id=?
+ `).bind(u.id).first();
+
+ return out({
+  logged_in:true,
+  user:{
+   id:u.id,
+   name:u.name,
+   email:u.email,
+   photo_url:u.photo_url,
+   referral_code:u.referral_code
+  },
+  credits:Number(c?.credits||0)
+ });
+}
+
+async function logout(req,env){
+ const s=ck(req,"pro_session");
+
+ if(s)
+  await env.PRO_DB.prepare(`
+   DELETE FROM sessions
+   WHERE session_token_hash=?
+  `).bind(await hash(s)).run();
+
+ const r=out({ok:true});
+ r.headers.append(
+  "Set-Cookie",
+  delck("pro_session")
+ );
+ return r;
 }
 
 /* CATEGORIES */
 
-async function categories(env) {
-  const r = await env.PRO_DB.prepare(
-    `SELECT c.id,c.name,
-     COUNT(p.id) prompt_count
-     FROM pro_categories c
-     LEFT JOIN pro_prompts p
-     ON p.category_id=c.id AND p.active=1
-     WHERE c.active=1
-     GROUP BY c.id
-     ORDER BY c.id`
-  ).all();
+async function cats(env){
+ const r=await env.PRO_DB.prepare(`
+  SELECT c.id,c.name,c.active,
+   COUNT(p.id) prompt_count
+  FROM pro_categories c
+  LEFT JOIN pro_prompts p
+   ON p.category_id=c.id
+   AND p.active=1
+  WHERE c.active=1
+  GROUP BY c.id,c.name,c.active
+  ORDER BY c.name COLLATE NOCASE
+ `).all();
 
-  return json(r.results);
+ return out({
+  categories:r.results||[]
+ });
 }
 
 /* PROMPTS */
 
-async function prompts(url, env) {
-  const category = url.searchParams.get("category");
-  const search = url.searchParams.get("search") || "";
+async function prompts(u,env){
+ const cat=u.searchParams.get("category_id")||
+  u.searchParams.get("category");
 
-  const limit = Math.min(
-    Math.max(Number(url.searchParams.get("limit") || 24), 1),
-    100
-  );
+ const search=u.searchParams.get("search")||"";
 
-  const offset = Math.max(
-    Number(url.searchParams.get("offset") || 0),
-    0
-  );
+ const limit=Math.min(
+  Math.max(Number(u.searchParams.get("limit"))||30,1),
+  100
+ );
 
-  let sql = `
-    SELECT p.id,p.category_id,
-    c.name category_name,
-    p.title,p.description,p.image_url,p.created_at
-    FROM pro_prompts p
-    LEFT JOIN pro_categories c
-    ON c.id=p.category_id
-    WHERE p.active=1
+ const offset=Math.max(
+  Number(u.searchParams.get("offset"))||0,
+  0
+ );
+
+ let sql=`
+  SELECT
+   p.id,
+   p.category_id,
+   c.name category_name,
+   p.title,
+   p.description,
+   p.image_key,
+   p.image_url,
+   p.created_at
+  FROM pro_prompts p
+  LEFT JOIN pro_categories c
+   ON c.id=p.category_id
+  WHERE p.active=1
+ `;
+
+ const a=[];
+
+ if(cat&&Number.isInteger(+cat)){
+  sql+=" AND p.category_id=?";
+  a.push(+cat);
+ }
+
+ if(search.trim()){
+  sql+=`
+   AND(
+    p.title LIKE ?
+    OR p.description LIKE ?
+    OR c.name LIKE ?
+   )
   `;
 
-  const v = [];
+  const x=`%${search.trim()}%`;
+  a.push(x,x,x);
+ }
 
-  if (category) {
-    sql += ` AND p.category_id=?`;
-    v.push(category);
-  }
+ sql+=" ORDER BY p.id DESC LIMIT ? OFFSET ?";
+ a.push(limit,offset);
 
-  if (search) {
-    sql += `
-      AND (
-        p.title LIKE ?
-        OR p.description LIKE ?
-        OR c.name LIKE ?
-      )
-    `;
-    const s = `%${search}%`;
-    v.push(s, s, s);
-  }
+ const r=await env.PRO_DB.prepare(sql)
+  .bind(...a).all();
 
-  sql += ` ORDER BY p.id DESC LIMIT ? OFFSET ?`;
-  v.push(limit, offset);
-
-  const r = await env.PRO_DB
-    .prepare(sql)
-    .bind(...v)
-    .all();
-
-  return json(r.results);
+ return out({
+  prompts:r.results||[],
+  limit,
+  offset
+ });
 }
 
-async function promptDetails(path, env) {
-  const id = path.match(/\d+$/)[0];
+async function detail(id,env){
+ const p=await env.PRO_DB.prepare(`
+  SELECT
+   p.id,
+   p.category_id,
+   c.name category_name,
+   p.title,
+   p.description,
+   p.image_key,
+   p.image_url,
+   p.created_at
+  FROM pro_prompts p
+  LEFT JOIN pro_categories c
+   ON c.id=p.category_id
+  WHERE p.id=? AND p.active=1
+ `).bind(id).first();
 
-  const p = await env.PRO_DB.prepare(
-    `SELECT p.id,p.category_id,
-     c.name category_name,
-     p.title,p.description,p.image_url,p.created_at
-     FROM pro_prompts p
-     LEFT JOIN pro_categories c
-     ON c.id=p.category_id
-     WHERE p.id=? AND p.active=1`
-  ).bind(id).first();
+ if(!p)
+  return out({
+   error:"Prompt not found"
+  },404);
 
-  return p
-    ? json(p)
-    : json({ error: "Prompt not found" }, 404);
+ return out({prompt:p});
 }
 
-/* COPY */
+/* COPY PROMPT */
 
-async function copyPrompt(request, env, id) {
-  const user = await auth(request, env);
+async function copy(req,env,id){
+ const u=await user(req,env);
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ if(!u)
+  return out({
+   error:"Login required"
+  },401);
 
-  const p = await env.PRO_DB.prepare(
-    `SELECT id,title,prompt
-     FROM pro_prompts
-     WHERE id=? AND active=1`
-  ).bind(id).first();
+ const p=await env.PRO_DB.prepare(`
+  SELECT id,title,prompt
+  FROM pro_prompts
+  WHERE id=? AND active=1
+ `).bind(id).first();
 
-  if (!p)
-    return json({ error: "Prompt not found" }, 404);
+ if(!p)
+  return out({
+   error:"Prompt not found"
+  },404);
 
-  const c = await env.PRO_DB.prepare(
-    `SELECT credits FROM pro_credits WHERE user_id=?`
-  ).bind(user.id).first();
+ await env.PRO_DB.prepare(`
+  INSERT OR IGNORE INTO pro_credits
+  (user_id,credits)
+  VALUES (?,0)
+ `).bind(u.id).run();
 
-  const balance = c?.credits || 0;
+ const r=await env.PRO_DB.prepare(`
+  UPDATE pro_credits
+  SET credits=credits-?,
+      updated_at=CURRENT_TIMESTAMP
+  WHERE user_id=? AND credits>=?
+ `).bind(
+  COST,
+  u.id,
+  COST
+ ).run();
 
-  if (balance < COPY_COST)
-    return json({
-      error: "Insufficient credits",
-      required: COPY_COST,
-      balance
-    }, 400);
+ if(r.meta.changes!==1){
+  const c=await env.PRO_DB.prepare(`
+   SELECT credits
+   FROM pro_credits
+   WHERE user_id=?
+  `).bind(u.id).first();
 
-  const n = balance - COPY_COST;
+  return out({
+   error:"Insufficient credits",
+   code:"INSUFFICIENT_CREDITS",
+   credits:Number(c?.credits||0),
+   required:COST
+  },402);
+ }
 
-  await env.PRO_DB.prepare(
-    `UPDATE pro_credits
-     SET credits=?,updated_at=CURRENT_TIMESTAMP
-     WHERE user_id=?`
-  ).bind(n, user.id).run();
-
-  await env.PRO_DB.prepare(
-    `INSERT INTO pro_transactions
-     (user_id,type,credits,reference)
-     VALUES (?,?,?,?)`
-  ).bind(
-    user.id,
-    "copy",
-    -COPY_COST,
+ try{
+  await env.PRO_DB.batch([
+   env.PRO_DB.prepare(`
+    INSERT INTO pro_transactions
+    (user_id,type,credits,reference)
+    VALUES (?,'copy',?,?)
+   `).bind(
+    u.id,
+    -COST,
     `prompt:${id}`
-  ).run();
+   ),
 
-  await env.PRO_DB.prepare(
-    `INSERT INTO pro_copy_logs
-     (user_id,prompt_id,credits)
-     VALUES (?,?,?)`
-  ).bind(user.id, id, COPY_COST).run();
+   env.PRO_DB.prepare(`
+    INSERT INTO pro_copy_logs
+    (user_id,prompt_id,credits)
+    VALUES (?,?,?)
+   `).bind(
+    u.id,
+    id,
+    COST
+   )
+  ]);
+ }catch(e){
+  await env.PRO_DB.prepare(`
+   UPDATE pro_credits
+   SET credits=credits+?,
+       updated_at=CURRENT_TIMESTAMP
+   WHERE user_id=?
+  `).bind(COST,u.id).run();
 
-  return json({
-    success: true,
-    title: p.title,
-    prompt: p.prompt,
-    credits_used: COPY_COST,
-    balance: n
-  });
+  throw e;
+ }
+
+ const c=await env.PRO_DB.prepare(`
+  SELECT credits
+  FROM pro_credits
+  WHERE user_id=?
+ `).bind(u.id).first();
+
+ return out({
+  ok:true,
+  prompt:{
+   id:p.id,
+   title:p.title,
+   prompt:p.prompt
+  },
+  credits:Number(c?.credits||0)
+ });
 }
 
 /* CREDITS */
 
-async function balance(request, env) {
-  const user = await auth(request, env);
+async function balance(req,env){
+ const u=await user(req,env);
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ if(!u)
+  return out({
+   error:"Login required"
+  },401);
 
-  const c = await env.PRO_DB.prepare(
-    `SELECT credits FROM pro_credits WHERE user_id=?`
-  ).bind(user.id).first();
+ const c=await env.PRO_DB.prepare(`
+  SELECT credits FROM pro_credits
+  WHERE user_id=?
+ `).bind(u.id).first();
 
-  return json({ credits: c?.credits || 0 });
+ return out({
+  credits:Number(c?.credits||0)
+ });
 }
 
-async function createDeposit(request, env) {
-  const user = await auth(request, env);
+async function deposit(req,env){
+ const u=await user(req,env);
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ if(!u)
+  return out({
+   error:"Login required"
+  },401);
 
-  const b = await request.json();
-  const amount = Number(b.amount);
-  const reference = String(b.reference || "").trim();
+ const b=await req.json();
 
-  if (!Number.isInteger(amount) || amount < MIN_DEPOSIT)
-    return json({
-      error: `Minimum deposit is Rs.${MIN_DEPOSIT}`
-    }, 400);
+ const amount=Number(b.amount);
+ const reference=String(
+  b.reference||""
+ ).trim();
 
-  const r = await env.PRO_DB.prepare(
-    `INSERT INTO pro_deposits
-     (user_id,amount,reference,status)
-     VALUES (?,?,?,'pending')`
-  ).bind(
-    user.id,
-    amount,
-    reference
-  ).run();
+ if(!Number.isInteger(amount)||amount<MIN)
+  return out({
+   error:`Minimum deposit is Rs.${MIN}`
+  },400);
 
-  return json({
-    success: true,
-    deposit_id: r.meta.last_row_id,
-    status: "pending"
-  });
+ if(!reference)
+  return out({
+   error:"Bank reference required"
+  },400);
+
+ const r=await env.PRO_DB.prepare(`
+  INSERT INTO pro_deposits
+  (user_id,amount,reference,status)
+  VALUES (?,?,?,'pending')
+ `).bind(
+  u.id,
+  amount,
+  reference
+ ).run();
+
+ return out({
+  ok:true,
+  deposit_id:r.meta.last_row_id,
+  status:"pending"
+ });
 }
 
-async function deposits(request, env) {
-  const user = await auth(request, env);
+async function deposits(req,env){
+ const u=await user(req,env);
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ if(!u)
+  return out({
+   error:"Login required"
+  },401);
 
-  const r = await env.PRO_DB.prepare(
-    `SELECT id,amount,reference,status,
-     receipt_key,created_at,approved_at
-     FROM pro_deposits
-     WHERE user_id=?
-     ORDER BY id DESC`
-  ).bind(user.id).all();
+ const r=await env.PRO_DB.prepare(`
+  SELECT id,amount,reference,receipt_key,
+   status,created_at,approved_at
+  FROM pro_deposits
+  WHERE user_id=?
+  ORDER BY id DESC
+ `).bind(u.id).all();
 
-  return json(r.results);
+ return out({
+  deposits:r.results||[]
+ });
 }
 
-async function transactions(request, env) {
-  const user = await auth(request, env);
+async function transactions(req,env){
+ const u=await user(req,env);
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ if(!u)
+  return out({
+   error:"Login required"
+  },401);
 
-  const r = await env.PRO_DB.prepare(
-    `SELECT id,type,credits,reference,created_at
-     FROM pro_transactions
-     WHERE user_id=?
-     ORDER BY id DESC
-     LIMIT 100`
-  ).bind(user.id).all();
+ const r=await env.PRO_DB.prepare(`
+  SELECT id,type,credits,reference,created_at
+  FROM pro_transactions
+  WHERE user_id=?
+  ORDER BY id DESC
+  LIMIT 200
+ `).bind(u.id).all();
 
-  return json(r.results);
+ return out({
+  transactions:r.results||[]
+ });
 }
 
 /* RECEIPT */
 
-async function receipt(request, url, env) {
-  const user = await auth(request, env);
+async function receipt(req,url,env){
+ const u=await user(req,env);
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ if(!u)
+  return out({
+   error:"Login required"
+  },401);
 
-  const id = url.searchParams.get("deposit_id");
+ const id=Number(
+  url.searchParams.get("deposit_id")
+ );
 
-  if (!id)
-    return json({ error: "Missing deposit_id" }, 400);
+ if(!Number.isInteger(id))
+  return out({
+   error:"Invalid deposit ID"
+  },400);
 
-  const d = await env.PRO_DB.prepare(
-    `SELECT id FROM pro_deposits
-     WHERE id=? AND user_id=?`
-  ).bind(id, user.id).first();
+ const d=await env.PRO_DB.prepare(`
+  SELECT id,status
+  FROM pro_deposits
+  WHERE id=? AND user_id=?
+ `).bind(id,u.id).first();
 
-  if (!d)
-    return json({ error: "Deposit not found" }, 404);
+ if(!d)
+  return out({
+   error:"Deposit not found"
+  },404);
 
-  const type =
-    request.headers.get("content-type") || "";
+ if(d.status!=="pending")
+  return out({
+   error:"Deposit already processed"
+  },400);
 
-  if (!type.startsWith("image/"))
-    return json({ error: "Image required" }, 400);
+ const type=req.headers.get("Content-Type")||"";
 
-  const key =
-    `receipts/${user.id}/${id}-${crypto.randomUUID()}`;
+ if(!type.startsWith("image/"))
+  return out({
+   error:"Receipt must be an image"
+  },400);
 
-  await env.PRO_IMAGES.put(
-    key,
-    request.body,
-    {
-      httpMetadata: {
-        contentType: type
-      }
-    }
-  );
+ const ext=type.includes("png")?"png":
+  type.includes("webp")?"webp":"jpg";
 
-  await env.PRO_DB.prepare(
-    `UPDATE pro_deposits
-     SET receipt_key=?
-     WHERE id=? AND user_id=?`
-  ).bind(key, id, user.id).run();
+ const key=
+  `receipts/${u.id}/${id}-${Date.now()}.${ext}`;
 
-  return json({
-    success: true,
-    receipt_key: key
-  });
+ await env.PRO_IMAGES.put(
+  key,
+  await req.arrayBuffer(),
+  {
+   httpMetadata:{
+    contentType:type
+   }
+  }
+ );
+
+ await env.PRO_DB.prepare(`
+  UPDATE pro_deposits
+  SET receipt_key=?
+  WHERE id=? AND user_id=?
+ `).bind(key,id,u.id).run();
+
+ return out({
+  ok:true,
+  receipt_key:key
+ });
 }
 
 /* ADMIN */
 
-async function admin(request, url, env) {
-  const user = await auth(request, env);
+async function isAdmin(req,env){
+ const u=await user(req,env);
+ if(!u)return null;
 
-  if (!user)
-    return json({ error: "Login required" }, 401);
+ const list=String(
+  env.PRO_ADMIN_EMAILS||""
+ ).split(",")
+  .map(x=>x.trim().toLowerCase())
+  .filter(Boolean);
 
-  const admins = String(
-    env.PRO_ADMIN_EMAILS || ""
-  ).split(",")
-   .map(x => x.trim().toLowerCase());
-
-  if (!admins.includes(
-    String(user.email).toLowerCase()
-  ))
-    return json({ error: "Admin access required" }, 403);
-
-  const path = url.pathname;
-
-  if (
-    path === "/api/pro/admin/categories" &&
-    request.method === "GET"
-  ) {
-    const r = await env.PRO_DB.prepare(
-      `SELECT c.id,c.name,c.active,
-       COUNT(p.id) prompt_count
-       FROM pro_categories c
-       LEFT JOIN pro_prompts p
-       ON p.category_id=c.id
-       GROUP BY c.id
-       ORDER BY c.id`
-    ).all();
-
-    return json(r.results);
-  }
-
-  if (
-    path === "/api/pro/admin/categories" &&
-    request.method === "POST"
-  ) {
-    const b = await request.json();
-
-    await env.PRO_DB.prepare(
-      `INSERT INTO pro_categories(name)
-       VALUES (?)`
-    ).bind(String(b.name || "").trim()).run();
-
-    return json({ success: true });
-  }
-
-  if (
-    path === "/api/pro/admin/prompts" &&
-    request.method === "POST"
-  ) {
-    const b = await request.json();
-
-    if (!b.title || !b.prompt)
-      return json({
-        error: "Title and prompt required"
-      }, 400);
-
-    await env.PRO_DB.prepare(
-      `INSERT INTO pro_prompts
-       (category_id,title,description,prompt,image_url)
-       VALUES (?,?,?,?,?)`
-    ).bind(
-      b.category_id || null,
-      b.title,
-      b.description || "",
-      b.prompt,
-      b.image_url || ""
-    ).run();
-
-    return json({ success: true });
-  }
-
-  if (
-    path === "/api/pro/admin/deposits" &&
-    request.method === "GET"
-  ) {
-    const r = await env.PRO_DB.prepare(
-      `SELECT d.*,u.name,u.email
-       FROM pro_deposits d
-       JOIN users u ON u.id=d.user_id
-       ORDER BY d.id DESC`
-    ).all();
-
-    return json(r.results);
-  }
-
-  const approve =
-    path.match(
-      /^\/api\/pro\/admin\/deposits\/(\d+)\/approve$/
-    );
-
-  if (approve && request.method === "POST")
-    return await approveDeposit(
-      env,
-      Number(approve[1])
-    );
-
-  const reject =
-    path.match(
-      /^\/api\/pro\/admin\/deposits\/(\d+)\/reject$/
-    );
-
-  if (reject && request.method === "POST") {
-    await env.PRO_DB.prepare(
-      `UPDATE pro_deposits
-       SET status='rejected'
-       WHERE id=? AND status='pending'`
-    ).bind(Number(reject[1])).run();
-
-    return json({ success: true });
-  }
-
-  return json({ error: "Admin endpoint not found" }, 404);
+ return list.includes(
+  u.email.toLowerCase()
+ )?u:null;
 }
 
-async function approveDeposit(env, id) {
-  const d = await env.PRO_DB.prepare(
-    `SELECT * FROM pro_deposits
-     WHERE id=? AND status='pending'`
-  ).bind(id).first();
+async function admin(req,url,env){
+ const u=await isAdmin(req,env);
 
-  if (!d)
-    return json({
-      error: "Pending deposit not found"
-    }, 404);
+ if(!u)
+  return out({
+   error:"Admin access denied"
+  },403);
 
-  await env.PRO_DB.prepare(
-    `INSERT OR IGNORE INTO pro_credits
-     (user_id,credits) VALUES (?,0)`
-  ).bind(d.user_id).run();
+ const p=url.pathname;
 
-  await env.PRO_DB.prepare(
-    `UPDATE pro_credits
-     SET credits=credits+?,
-         updated_at=CURRENT_TIMESTAMP
-     WHERE user_id=?`
-  ).bind(d.amount, d.user_id).run();
+ /* CATEGORIES */
 
-  await env.PRO_DB.prepare(
-    `INSERT INTO pro_transactions
-     (user_id,type,credits,reference)
-     VALUES (?,?,?,?)`
-  ).bind(
+ if(p==="/api/pro/admin/categories"){
+  if(req.method==="GET"){
+   const r=await env.PRO_DB.prepare(`
+    SELECT * FROM pro_categories
+    ORDER BY name COLLATE NOCASE
+   `).all();
+
+   return out({
+    categories:r.results||[]
+   });
+  }
+
+  if(req.method==="POST"){
+   const b=await req.json();
+   const name=String(
+    b.name||""
+   ).trim();
+
+   if(!name)
+    return out({
+     error:"Category name required"
+    },400);
+
+   try{
+    const r=await env.PRO_DB.prepare(`
+     INSERT INTO pro_categories(name,active)
+     VALUES (?,1)
+    `).bind(name).run();
+
+    return out({
+     ok:true,
+     id:r.meta.last_row_id
+    });
+   }catch{
+    return out({
+     error:"Category already exists"
+    },409);
+   }
+  }
+ }
+
+ /* PROMPTS */
+
+ if(p==="/api/pro/admin/prompts"){
+  if(req.method==="GET"){
+   const r=await env.PRO_DB.prepare(`
+    SELECT p.*,c.name category_name
+    FROM pro_prompts p
+    LEFT JOIN pro_categories c
+     ON c.id=p.category_id
+    ORDER BY p.id DESC
+    LIMIT 500
+   `).all();
+
+   return out({
+    prompts:r.results||[]
+   });
+  }
+
+  if(req.method==="POST"){
+   const b=await req.json();
+
+   const category=Number(b.category_id);
+   const title=String(b.title||"").trim();
+   const description=String(
+    b.description||""
+   ).trim();
+   const prompt=String(
+    b.prompt||""
+   ).trim();
+   const imageKey=String(
+    b.image_key||""
+   ).trim();
+   const imageUrl=String(
+    b.image_url||""
+   ).trim();
+
+   if(!Number.isInteger(category))
+    return out({
+     error:"Invalid category"
+    },400);
+
+   if(!title||!prompt)
+    return out({
+     error:"Title and prompt required"
+    },400);
+
+   const r=await env.PRO_DB.prepare(`
+    INSERT INTO pro_prompts
+    (category_id,title,description,prompt,
+     image_key,image_url,active)
+    VALUES (?,?,?,?,?,?,1)
+   `).bind(
+    category,
+    title,
+    description,
+    prompt,
+    imageKey||null,
+    imageUrl||null
+   ).run();
+
+   return out({
+    ok:true,
+    id:r.meta.last_row_id
+   });
+  }
+ }
+
+ /* DEPOSITS */
+
+ if(p==="/api/pro/admin/deposits"){
+  const r=await env.PRO_DB.prepare(`
+   SELECT d.*,u.name,u.email
+   FROM pro_deposits d
+   JOIN users u ON u.id=d.user_id
+   ORDER BY d.id DESC
+   LIMIT 500
+  `).all();
+
+  return out({
+   deposits:r.results||[]
+  });
+ }
+
+ /* APPROVE */
+
+ let m=p.match(
+  /^\/api\/pro\/admin\/deposits\/(\d+)\/approve$/
+ );
+
+ if(m&&req.method==="POST")
+  return approve(+m[1],env);
+
+ /* REJECT */
+
+ m=p.match(
+  /^\/api\/pro\/admin\/deposits\/(\d+)\/reject$/
+ );
+
+ if(m&&req.method==="POST")
+  return reject(+m[1],env);
+
+ return out({
+  error:"Admin endpoint not found"
+ },404);
+}
+
+/* APPROVE */
+
+async function approve(id,env){
+ const d=await env.PRO_DB.prepare(`
+  SELECT id,user_id,amount,status
+  FROM pro_deposits
+  WHERE id=?
+ `).bind(id).first();
+
+ if(!d)
+  return out({
+   error:"Deposit not found"
+  },404);
+
+ if(d.status!=="pending")
+  return out({
+   error:"Deposit already processed"
+  },400);
+
+ const claim=await env.PRO_DB.prepare(`
+  UPDATE pro_deposits
+  SET status='approved',
+      approved_at=CURRENT_TIMESTAMP
+  WHERE id=? AND status='pending'
+ `).bind(id).run();
+
+ if(claim.meta.changes!==1)
+  return out({
+   error:"Deposit already processed"
+  },409);
+
+ try{
+  await env.PRO_DB.prepare(`
+   INSERT OR IGNORE INTO pro_credits
+   (user_id,credits)
+   VALUES (?,0)
+  `).bind(d.user_id).run();
+
+  await env.PRO_DB.batch([
+   env.PRO_DB.prepare(`
+    UPDATE pro_credits
+    SET credits=credits+?,
+        updated_at=CURRENT_TIMESTAMP
+    WHERE user_id=?
+   `).bind(d.amount,d.user_id),
+
+   env.PRO_DB.prepare(`
+    INSERT INTO pro_transactions
+    (user_id,type,credits,reference)
+    VALUES (?,'deposit',?,?)
+   `).bind(
     d.user_id,
-    "deposit",
     d.amount,
     `deposit:${id}`
-  ).run();
+   )
+  ]);
 
-  await env.PRO_DB.prepare(
-    `UPDATE pro_deposits
-     SET status='approved',
-         approved_at=CURRENT_TIMESTAMP
-     WHERE id=?`
-  ).bind(id).run();
-
-  return json({
-    success: true,
-    credits_added: d.amount
+  return out({
+   ok:true,
+   deposit_id:id,
+   credits_added:d.amount
   });
+
+ }catch(e){
+  await env.PRO_DB.prepare(`
+   UPDATE pro_deposits
+   SET status='pending',
+       approved_at=NULL
+   WHERE id=? AND status='approved'
+  `).bind(id).run();
+
+  throw e;
+ }
 }
 
-/* IMAGE */
+/* REJECT */
 
-async function image(request, path, env) {
-  const key = decodeURIComponent(
-    path.replace("/pro/images/", "")
-  );
+async function reject(id,env){
+ const r=await env.PRO_DB.prepare(`
+  UPDATE pro_deposits
+  SET status='rejected'
+  WHERE id=? AND status='pending'
+ `).bind(id).run();
 
-  const obj = await env.PRO_IMAGES.get(key);
+ if(r.meta.changes!==1)
+  return out({
+   error:"Deposit not found or already processed"
+  },400);
 
-  if (!obj)
-    return new Response("Not found", { status: 404 });
+ return out({
+  ok:true,
+  deposit_id:id,
+  status:"rejected"
+ });
+}
 
-  const h = new Headers();
-  obj.writeHttpMetadata(h);
-  h.set(
-    "Cache-Control",
+/* IMAGES */
+
+async function image(path,env){
+ const key=path.replace(
+  "/pro/images/",""
+ );
+
+ if(!key.startsWith("prompts/"))
+  return new Response("Not found",{status:404});
+
+ const o=await env.PRO_IMAGES.get(key);
+
+ if(!o)
+  return new Response("Not found",{status:404});
+
+ return new Response(o.body,{
+  headers:{
+   "Content-Type":
+    o.httpMetadata?.contentType||
+    "image/jpeg",
+   "Cache-Control":
     "public,max-age=31536000"
-  );
-
-  return new Response(obj.body, { headers: h });
-}
-
-/* AUTH */
-
-async function auth(request, env) {
-  const token = cookie(request, COOKIE);
-
-  if (!token) return null;
-
-  return await env.PRO_DB.prepare(
-    `SELECT u.id,u.google_id,u.name,u.email,
-     u.photo_url,u.referral_code
-     FROM sessions s
-     JOIN users u ON u.id=s.user_id
-     WHERE s.session_token_hash=?
-     AND s.expires_at>CURRENT_TIMESTAMP
-     LIMIT 1`
-  ).bind(await sha256(token)).first();
-}
-
-/* HELPERS */
-
-async function sha256(value) {
-  const data = new TextEncoder().encode(value);
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    data
-  );
-
-  return [...new Uint8Array(hash)]
-    .map(x => x.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function cookie(request, name) {
-  const h = request.headers.get("Cookie") || "";
-
-  for (const x of h.split(";")) {
-    const [k, ...v] = x.trim().split("=");
-
-    if (k === name)
-      return v.join("=");
   }
-
-  return null;
-}
-
-function json(data, status = 200) {
-  return cors(new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }
-  ));
-}
-
-function cors(response) {
-  const h = new Headers(response.headers);
-
-  h.set(
-    "Access-Control-Allow-Origin",
-    SITE
-  );
-  h.set(
-    "Access-Control-Allow-Credentials",
-    "true"
-  );
-  h.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type"
-  );
-  h.set(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,DELETE,OPTIONS"
-  );
-
-  return new Response(response.body, {
-    status: response.status,
-    headers: h
-  });
+ });
 }
