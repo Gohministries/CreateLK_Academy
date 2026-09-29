@@ -1,28 +1,26 @@
 const SITE="https://createlk.com";
 const COST=10,MIN=100,DAYS=30;
 
-function json(x,s=200){
-  return new Response(JSON.stringify(x),{
-    status:s,
-    headers:{"Content-Type":"application/json"}
-  });
-}
+const json=(x,s=200)=>new Response(JSON.stringify(x),{
+  status:s,
+  headers:{"Content-Type":"application/json"}
+});
 
 function cors(r){
   const h=new Headers(r.headers);
   h.set("Access-Control-Allow-Origin",SITE);
   h.set("Access-Control-Allow-Credentials","true");
-  h.set("Access-Control-Allow-Methods","GET,POST,PUT,DELETE,OPTIONS");
+  h.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");
   h.set("Access-Control-Allow-Headers","Content-Type,Authorization");
   return new Response(r.body,{status:r.status,headers:h});
 }
 
-function out(x,s=200){return cors(json(x,s));}
+const out=(x,s=200)=>cors(json(x,s));
 
 function rnd(n=16){
-  const a=new Uint8Array(n);
-  crypto.getRandomValues(a);
-  return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+  const b=new Uint8Array(n);
+  crypto.getRandomValues(b);
+  return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
 }
 
 async function hash(x){
@@ -31,64 +29,55 @@ async function hash(x){
     new TextEncoder().encode(x)
   );
   return [...new Uint8Array(b)]
-    .map(x=>x.toString(16).padStart(2,"0"))
-    .join("");
+    .map(x=>x.toString(16).padStart(2,"0")).join("");
 }
 
 function cookie(n,v,max){
   return `${n}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${max}`;
 }
 
-function delcookie(n){
+function delCookie(n){
   return `${n}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`;
 }
 
-function ck(req,n){
+function getCookie(req,n){
   const c=req.headers.get("Cookie")||"";
   const x=c.split(";").find(x=>x.trim().startsWith(n+"="));
   return x?decodeURIComponent(x.trim().slice(n.length+1)):null;
 }
 
 async function getUser(req,env){
-  const s=ck(req,"pro_session");
+  const s=getCookie(req,"pro_session");
   if(!s)return null;
 
-  return await env.PRO_DB.prepare(`
-    SELECT u.*
-    FROM sessions s
+  return env.PRO_DB.prepare(`
+    SELECT u.* FROM sessions s
     JOIN users u ON u.id=s.user_id
     WHERE s.session_token_hash=?
-      AND s.expires_at>datetime('now')
+    AND s.expires_at>datetime('now')
     LIMIT 1
   `).bind(await hash(s)).first();
 }
 
-/* GOOGLE LOGIN */
+function isAdmin(u,env){
+  if(!u)return false;
+  return String(env.PRO_ADMIN_EMAILS||"")
+    .split(",")
+    .map(x=>x.trim().toLowerCase())
+    .includes(String(u.email||"").toLowerCase());
+}
 
-function googleLogin(u,env){
+
+/* GOOGLE */
+
+function googleLogin(url,env){
   const state=rnd(16);
+  const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
-  const g=new URL(
-    "https://accounts.google.com/o/oauth2/v2/auth"
-  );
-
-  g.searchParams.set(
-    "client_id",
-    String(env.GOOGLE_CLIENT_ID||"")
-  );
-
-  g.searchParams.set(
-    "redirect_uri",
-    u.origin+"/auth/callback"
-  );
-
+  g.searchParams.set("client_id",env.GOOGLE_CLIENT_ID||"");
+  g.searchParams.set("redirect_uri",url.origin+"/auth/callback");
   g.searchParams.set("response_type","code");
-
-  g.searchParams.set(
-    "scope",
-    "openid email profile"
-  );
-
+  g.searchParams.set("scope","openid email profile");
   g.searchParams.set("state",state);
 
   const r=new Response(null,{
@@ -104,38 +93,23 @@ function googleLogin(u,env){
   return cors(r);
 }
 
-/* GOOGLE CALLBACK */
+async function googleCallback(req,url,env){
+  const code=url.searchParams.get("code");
+  const state=url.searchParams.get("state");
 
-async function googleCallback(req,u,env){
-  const code=u.searchParams.get("code");
-  const state=u.searchParams.get("state");
-
-  if(!code||state!==ck(req,"pro_oauth_state"))
+  if(!code||state!==getCookie(req,"pro_oauth_state"))
     return out({error:"Invalid Google login"},400);
 
-  const clientId=String(env.GOOGLE_CLIENT_ID||"");
-  const clientSecret=String(env.GOOGLE_CLIENT_SECRET||"");
-  const redirect=u.origin+"/auth/callback";
-
-  if(!clientId||!clientSecret){
-    return out({
-      error:"Google OAuth configuration missing",
-      client_id_present:!!clientId,
-      client_secret_present:!!clientSecret
-    },500);
-  }
+  const redirect=url.origin+"/auth/callback";
 
   const tr=await fetch(
     "https://oauth2.googleapis.com/token",
     {
       method:"POST",
-      headers:{
-        "Content-Type":
-          "application/x-www-form-urlencoded"
-      },
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
       body:new URLSearchParams({
-        client_id:clientId,
-        client_secret:clientSecret,
+        client_id:env.GOOGLE_CLIENT_ID||"",
+        client_secret:env.GOOGLE_CLIENT_SECRET||"",
         code,
         redirect_uri:redirect,
         grant_type:"authorization_code"
@@ -145,68 +119,41 @@ async function googleCallback(req,u,env){
 
   const token=await tr.json();
 
-  if(!tr.ok||!token.access_token){
-    console.error("GOOGLE TOKEN ERROR",token);
-
+  if(!tr.ok||!token.access_token)
     return out({
       error:"Google token failed",
       google_error:token.error||null,
-      google_description:
-        token.error_description||null
+      google_description:token.error_description||null
     },400);
-  }
 
   const gr=await fetch(
     "https://openidconnect.googleapis.com/v1/userinfo",
-    {
-      headers:{
-        Authorization:
-          `Bearer ${token.access_token}`
-      }
-    }
+    {headers:{Authorization:`Bearer ${token.access_token}`}}
   );
 
   const g=await gr.json();
 
-  if(!gr.ok||!g.email){
-    console.error("GOOGLE USER ERROR",g);
-
-    return out({
-      error:"Google account unavailable",
-      google_error:g.error||null
-    },400);
-  }
+  if(!gr.ok||!g.email)
+    return out({error:"Google account unavailable"},400);
 
   const email=g.email.toLowerCase();
 
-  let usr=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM users
+  let u=await env.PRO_DB.prepare(`
+    SELECT * FROM users
     WHERE google_id=? OR email=?
     LIMIT 1
-  `).bind(
-    String(g.sub),
-    email
-  ).first();
+  `).bind(String(g.sub),email).first();
 
-  /*
-    NEW USER
-    users.id is TEXT, so we generate the ID ourselves.
-  */
-
-  if(!usr){
-
-    const userId=crypto.randomUUID();
-
-    const ref=
-      "CLP"+rnd(5).slice(0,8).toUpperCase();
+  if(!u){
+    const id=crypto.randomUUID();
+    const ref="CLP"+rnd(5).slice(0,8).toUpperCase();
 
     await env.PRO_DB.prepare(`
       INSERT INTO users
       (id,google_id,name,email,photo_url,referral_code)
       VALUES (?,?,?,?,?,?)
     `).bind(
-      userId,
+      id,
       String(g.sub),
       g.name||email.split("@")[0],
       email,
@@ -214,12 +161,9 @@ async function googleCallback(req,u,env){
       ref
     ).run();
 
-    usr=await env.PRO_DB.prepare(`
-      SELECT *
-      FROM users
-      WHERE id=?
-      LIMIT 1
-    `).bind(userId).first();
+    u=await env.PRO_DB.prepare(
+      "SELECT * FROM users WHERE id=?"
+    ).bind(id).first();
 
   }else{
 
@@ -229,80 +173,87 @@ async function googleCallback(req,u,env){
       WHERE id=?
     `).bind(
       String(g.sub),
-      g.name||usr.name,
-      g.picture||usr.photo_url,
-      usr.id
+      g.name||u.name,
+      g.picture||u.photo_url,
+      u.id
     ).run();
 
+    u=await env.PRO_DB.prepare(
+      "SELECT * FROM users WHERE id=?"
+    ).bind(u.id).first();
   }
 
-  if(!usr){
-    return out({
-      error:"User creation failed"
-    },500);
-  }
+  if(!u?.id)
+    return out({error:"User creation failed"},500);
 
   await env.PRO_DB.prepare(`
-    INSERT OR IGNORE INTO pro_credits
-    (user_id,credits)
+    INSERT OR IGNORE INTO pro_credits(user_id,credits)
     VALUES (?,0)
-  `).bind(usr.id).run();
+  `).bind(u.id).run();
 
   const session=rnd(32);
-
   const expires=new Date(
     Date.now()+DAYS*86400000
   ).toISOString();
 
   await env.PRO_DB.prepare(`
     INSERT INTO sessions
-    (session_token_hash,user_id,expires_at)
-    VALUES (?,?,?)
+    (id,session_token_hash,user_id,expires_at)
+    VALUES (?,?,?,?)
   `).bind(
+    crypto.randomUUID(),
     await hash(session),
-    usr.id,
+    u.id,
     expires
   ).run();
 
   const r=new Response(null,{
     status:302,
-    headers:{
-      Location:SITE+"/pro/"
-    }
+    headers:{Location:SITE+"/pro/"}
   });
 
   r.headers.append(
     "Set-Cookie",
-    cookie(
-      "pro_session",
-      session,
-      DAYS*86400
-    )
+    cookie("pro_session",session,DAYS*86400)
   );
 
   r.headers.append(
     "Set-Cookie",
-    delcookie("pro_oauth_state")
+    delCookie("pro_oauth_state")
   );
 
   return cors(r);
 }
 
+
+/* ME */
+
+async function me(req,env){
+  return out({
+    user:await getUser(req,env)
+  });
+}
+
+
 /* CATEGORIES */
 
 async function categories(env){
   const r=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM pro_categories
+    SELECT * FROM pro_categories
     ORDER BY name
   `).all();
 
-  return out({
-    categories:r.results||[]
-  });
+  return out({categories:r.results||[]});
 }
 
+
 /* PROMPTS */
+
+function imageUrl(key){
+  return key
+    ? SITE+"/api/pro/images/"+encodeURIComponent(key)
+    : null;
+}
 
 async function prompts(req,env){
   const u=new URL(req.url);
@@ -310,10 +261,9 @@ async function prompts(req,env){
   const search=u.searchParams.get("search");
 
   let sql=`
-    SELECT p.*,c.name AS category_name
+    SELECT p.*,c.name category_name
     FROM pro_prompts p
-    LEFT JOIN pro_categories c
-      ON c.id=p.category_id
+    LEFT JOIN pro_categories c ON c.id=p.category_id
     WHERE 1=1
   `;
 
@@ -332,98 +282,79 @@ async function prompts(req,env){
         OR p.prompt LIKE ?
       )
     `;
-
     const s=`%${search}%`;
-
     a.push(s,s,s);
   }
 
   sql+=" ORDER BY p.id DESC";
 
-  const r=await env.PRO_DB
-    .prepare(sql)
-    .bind(...a)
-    .all();
+  const r=await env.PRO_DB.prepare(sql).bind(...a).all();
 
   return out({
-    prompts:r.results||[]
+    prompts:(r.results||[]).map(p=>({
+      ...p,
+      image_url:imageUrl(p.image_key)
+    }))
   });
 }
 
-async function prompt(id,env){
-  const r=await env.PRO_DB.prepare(`
-    SELECT p.*,c.name AS category_name
+async function getPrompt(id,env){
+  const p=await env.PRO_DB.prepare(`
+    SELECT p.*,c.name category_name
     FROM pro_prompts p
-    LEFT JOIN pro_categories c
-      ON c.id=p.category_id
-    WHERE p.id=?
-    LIMIT 1
+    LEFT JOIN pro_categories c ON c.id=p.category_id
+    WHERE p.id=? LIMIT 1
   `).bind(id).first();
 
-  if(!r)
-    return out({
-      error:"Prompt not found"
-    },404);
+  if(!p)return out({error:"Prompt not found"},404);
 
   return out({
-    prompt:r
+    prompt:{
+      ...p,
+      image_url:imageUrl(p.image_key)
+    }
   });
 }
+
 
 /* COPY */
 
 async function copyPrompt(req,id,env){
-  const usr=await getUser(req,env);
+  const u=await getUser(req,env);
+  if(!u)return out({error:"Please login first"},401);
 
-  if(!usr)
-    return out({
-      error:"Please login first"
-    },401);
+  const p=await env.PRO_DB.prepare(
+    "SELECT * FROM pro_prompts WHERE id=? LIMIT 1"
+  ).bind(id).first();
 
-  const p=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM pro_prompts
-    WHERE id=?
-    LIMIT 1
-  `).bind(id).first();
+  if(!p)return out({error:"Prompt not found"},404);
 
-  if(!p)
-    return out({
-      error:"Prompt not found"
-    },404);
-
-  const c=await env.PRO_DB.prepare(`
-    SELECT credits
-    FROM pro_credits
-    WHERE user_id=?
-    LIMIT 1
-  `).bind(usr.id).first();
+  const c=await env.PRO_DB.prepare(
+    "SELECT credits FROM pro_credits WHERE user_id=?"
+  ).bind(u.id).first();
 
   const credits=Number(c?.credits||0);
 
-  if(credits<COST){
+  if(credits<COST)
     return out({
       error:"Insufficient credits",
       required:COST,
       credits
     },402);
-  }
 
   await env.PRO_DB.prepare(`
     UPDATE pro_credits
-    SET credits=credits-?
+    SET credits=credits-?,
+        updated_at=CURRENT_TIMESTAMP
     WHERE user_id=?
-  `).bind(
-    COST,
-    usr.id
-  ).run();
+  `).bind(COST,u.id).run();
 
   await env.PRO_DB.prepare(`
     INSERT INTO pro_transactions
     (user_id,type,amount,description)
     VALUES (?,?,?,?)
   `).bind(
-    usr.id,
+    u.id,
     "debit",
     COST,
     `Copied prompt #${id}`
@@ -433,55 +364,44 @@ async function copyPrompt(req,id,env){
     INSERT INTO pro_copy_logs
     (user_id,prompt_id,credits)
     VALUES (?,?,?)
-  `).bind(
-    usr.id,
-    id,
-    COST
-  ).run();
+  `).bind(u.id,id,COST).run();
 
   return out({
     ok:true,
-    prompt:p.prompt,
+    prompt:p.prompt||"",
+    image_url:imageUrl(p.image_key),
     credits:credits-COST
   });
 }
 
+
 /* BALANCE */
 
 async function balance(req,env){
-  const usr=await getUser(req,env);
+  const u=await getUser(req,env);
+  if(!u)return out({error:"Unauthorized"},401);
 
-  if(!usr)
-    return out({
-      error:"Unauthorized"
-    },401);
-
-  const r=await env.PRO_DB.prepare(`
-    SELECT credits
-    FROM pro_credits
-    WHERE user_id=?
-    LIMIT 1
-  `).bind(usr.id).first();
+  const c=await env.PRO_DB.prepare(
+    "SELECT credits FROM pro_credits WHERE user_id=?"
+  ).bind(u.id).first();
 
   return out({
-    credits:Number(r?.credits||0)
+    credits:Number(c?.credits||0)
   });
 }
 
+
 /* DEPOSIT */
 
-async function deposit(req,env){
-  const usr=await getUser(req,env);
-
-  if(!usr)
-    return out({
-      error:"Unauthorized"
-    },401);
+async function createDeposit(req,env){
+  const u=await getUser(req,env);
+  if(!u)return out({error:"Unauthorized"},401);
 
   const d=await req.json();
 
   const amount=Number(d.amount);
   const reference=String(d.reference||"").trim();
+  const method=String(d.payment_method||"").trim();
 
   if(!Number.isFinite(amount)||amount<MIN)
     return out({
@@ -489,18 +409,21 @@ async function deposit(req,env){
     },400);
 
   if(!reference)
-    return out({
-      error:"Reference is required"
-    },400);
+    return out({error:"Reference is required"},400);
+
+  if(!method)
+    return out({error:"Payment method is required"},400);
 
   const r=await env.PRO_DB.prepare(`
     INSERT INTO pro_deposits
-    (user_id,amount,reference,status)
-    VALUES (?,?,?,'pending')
+    (user_id,amount,reference,payment_method,status)
+    VALUES (?,?,?,?,?)
   `).bind(
-    usr.id,
+    u.id,
     amount,
-    reference
+    reference,
+    method,
+    "pending"
   ).run();
 
   return out({
@@ -509,62 +432,35 @@ async function deposit(req,env){
   });
 }
 
-/* DEPOSITS */
 
-async function deposits(req,env){
-  const usr=await getUser(req,env);
+/* USER DEPOSITS */
 
-  if(!usr)
-    return out({
-      error:"Unauthorized"
-    },401);
+async function userDeposits(req,env){
+  const u=await getUser(req,env);
+  if(!u)return out({error:"Unauthorized"},401);
 
   const r=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM pro_deposits
+    SELECT * FROM pro_deposits
     WHERE user_id=?
     ORDER BY id DESC
-  `).bind(usr.id).all();
+  `).bind(u.id).all();
 
   return out({
-    deposits:r.results||[]
+    deposits:(r.results||[]).map(d=>({
+      ...d,
+      receipt_url:imageUrl(d.receipt_key)
+    }))
   });
 }
 
-/* TRANSACTIONS */
-
-async function transactions(req,env){
-  const usr=await getUser(req,env);
-
-  if(!usr)
-    return out({
-      error:"Unauthorized"
-    },401);
-
-  const r=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM pro_transactions
-    WHERE user_id=?
-    ORDER BY id DESC
-  `).bind(usr.id).all();
-
-  return out({
-    transactions:r.results||[]
-  });
-}
 
 /* RECEIPT */
 
-async function receipt(req,env){
-  const usr=await getUser(req,env);
-
-  if(!usr)
-    return out({
-      error:"Unauthorized"
-    },401);
+async function uploadReceipt(req,env){
+  const u=await getUser(req,env);
+  if(!u)return out({error:"Unauthorized"},401);
 
   const d=await req.json();
-
   const id=Number(d.deposit_id);
   const image=String(d.image||"");
 
@@ -574,34 +470,20 @@ async function receipt(req,env){
     },400);
 
   const dep=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM pro_deposits
+    SELECT * FROM pro_deposits
     WHERE id=? AND user_id=?
     LIMIT 1
-  `).bind(
-    id,
-    usr.id
-  ).first();
+  `).bind(id,u.id).first();
 
-  if(!dep)
-    return out({
-      error:"Deposit not found"
-    },404);
+  if(!dep)return out({error:"Deposit not found"},404);
 
   const m=image.match(
     /^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i
   );
 
-  if(!m)
-    return out({
-      error:"Invalid image format"
-    },400);
+  if(!m)return out({error:"Invalid image format"},400);
 
-  const type=m[1].replace(
-    "image/jpg",
-    "image/jpeg"
-  );
-
+  const type=m[1].replace("image/jpg","image/jpeg");
   const raw=atob(m[2]);
   const bytes=new Uint8Array(raw.length);
 
@@ -609,91 +491,70 @@ async function receipt(req,env){
     bytes[i]=raw.charCodeAt(i);
 
   const ext=
-    type==="image/png"
-      ?"png":
-    type==="image/webp"
-      ?"webp":
-    "jpg";
+    type==="image/png"?"png":
+    type==="image/webp"?"webp":"jpg";
 
   const key=
-    `deposits/${usr.id}/${id}-${rnd(8)}.${ext}`;
+    `deposits/${u.id}/${id}-${rnd(8)}.${ext}`;
 
-  await env.PRO_IMAGES.put(
-    key,
-    bytes,
-    {
-      httpMetadata:{
-        contentType:type
-      }
-    }
-  );
+  await env.PRO_IMAGES.put(key,bytes,{
+    httpMetadata:{contentType:type}
+  });
 
   await env.PRO_DB.prepare(`
     UPDATE pro_deposits
     SET receipt_key=?
     WHERE id=? AND user_id=?
-  `).bind(
-    key,
-    id,
-    usr.id
-  ).run();
+  `).bind(key,id,u.id).run();
 
   return out({
-    ok:true
+    ok:true,
+    receipt_url:imageUrl(key)
   });
 }
 
-/* IMAGE */
 
-async function imageRoute(req,env,key){
+/* TRANSACTIONS */
+
+async function transactions(req,env){
+  const u=await getUser(req,env);
+  if(!u)return out({error:"Unauthorized"},401);
+
+  const r=await env.PRO_DB.prepare(`
+    SELECT * FROM pro_transactions
+    WHERE user_id=?
+    ORDER BY id DESC
+  `).bind(u.id).all();
+
+  return out({
+    transactions:r.results||[]
+  });
+}
+
+
+/* R2 */
+
+async function imageRoute(env,key){
   const obj=await env.PRO_IMAGES.get(key);
 
   if(!obj)
-    return new Response(
-      "Not found",
-      {status:404}
-    );
+    return new Response("Not found",{status:404});
 
   const h=new Headers();
-
   obj.writeHttpMetadata(h);
+  h.set("Cache-Control","public,max-age=86400");
 
-  h.set(
-    "Cache-Control",
-    "public,max-age=86400"
-  );
-
-  return cors(
-    new Response(
-      obj.body,
-      {headers:h}
-    )
-  );
+  return cors(new Response(obj.body,{headers:h}));
 }
 
-/* ADMIN */
 
-function admin(usr,env){
-  if(!usr)return false;
-
-  const list=String(
-    env.PRO_ADMIN_EMAILS||""
-  ).split(",")
-   .map(x=>x.trim().toLowerCase())
-   .filter(Boolean);
-
-  return list.includes(
-    String(usr.email||"").toLowerCase()
-  );
-}
+/* ADMIN CATEGORIES */
 
 async function adminCategories(req,env){
-  const usr=await getUser(req,env);
+  const u=await getUser(req,env);
 
-  if(!admin(usr,env))
-    return out({
-      error:"Forbidden"
-    },403);
+  if(!isAdmin(u,env))
+    return out({error:"Forbidden"},403);
 
   if(req.method==="GET")
     return categories(env);
@@ -717,17 +578,18 @@ async function adminCategories(req,env){
   });
 }
 
-async function adminPrompts(req,env){
-  const usr=await getUser(req,env);
 
-  if(!admin(usr,env))
-    return out({
-      error:"Forbidden"
-    },403);
+/* ADMIN PROMPTS */
+
+async function adminPrompts(req,env){
+  const u=await getUser(req,env);
+
+  if(!isAdmin(u,env))
+    return out({error:"Forbidden"},403);
 
   if(req.method==="GET"){
     const r=await env.PRO_DB.prepare(`
-      SELECT p.*,c.name AS category_name
+      SELECT p.*,c.name category_name
       FROM pro_prompts p
       LEFT JOIN pro_categories c
         ON c.id=p.category_id
@@ -735,7 +597,10 @@ async function adminPrompts(req,env){
     `).all();
 
     return out({
-      prompts:r.results||[]
+      prompts:(r.results||[]).map(p=>({
+        ...p,
+        image_url:imageUrl(p.image_key)
+      }))
     });
   }
 
@@ -743,83 +608,121 @@ async function adminPrompts(req,env){
 
   const title=String(d.title||"").trim();
   const description=String(d.description||"").trim();
-  const promptText=String(d.prompt||"").trim();
+  const prompt=String(d.prompt||"").trim();
+  const image=String(d.image||"");
+  const category=d.category_id
+    ? Number(d.category_id)
+    : null;
 
-  const category=d.category_id?
-    Number(d.category_id):
-    null;
+  if(!title)
+    return out({error:"Title is required"},400);
 
-  if(!title||!promptText)
+  if(!prompt&&!image)
     return out({
-      error:"Title and prompt are required"
+      error:"Add prompt text or image"
     },400);
+
+  let key=null;
+
+  if(image){
+    const m=image.match(
+      /^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i
+    );
+
+    if(!m)
+      return out({
+        error:"Invalid prompt image"
+      },400);
+
+    const type=m[1].replace("image/jpg","image/jpeg");
+    const raw=atob(m[2]);
+    const bytes=new Uint8Array(raw.length);
+
+    for(let i=0;i<raw.length;i++)
+      bytes[i]=raw.charCodeAt(i);
+
+    const ext=
+      type==="image/png"?"png":
+      type==="image/webp"?"webp":"jpg";
+
+    key=`prompts/${rnd(16)}.${ext}`;
+
+    await env.PRO_IMAGES.put(key,bytes,{
+      httpMetadata:{contentType:type}
+    });
+  }
 
   const r=await env.PRO_DB.prepare(`
     INSERT INTO pro_prompts
-    (category_id,title,description,prompt)
-    VALUES (?,?,?,?)
+    (category_id,title,description,prompt,image_key)
+    VALUES (?,?,?,?,?)
   `).bind(
     category,
     title,
     description,
-    promptText
+    prompt||null,
+    key
   ).run();
 
   return out({
     ok:true,
-    id:r.meta.last_row_id
+    id:r.meta.last_row_id,
+    image_url:imageUrl(key)
   });
 }
 
-async function adminDeposits(req,env){
-  const usr=await getUser(req,env);
 
-  if(!admin(usr,env))
-    return out({
-      error:"Forbidden"
-    },403);
+/* ADMIN DEPOSITS */
+
+async function adminDeposits(req,env){
+  const u=await getUser(req,env);
+
+  if(!isAdmin(u,env))
+    return out({error:"Forbidden"},403);
 
   const r=await env.PRO_DB.prepare(`
-    SELECT d.*,u.name,u.email
+    SELECT
+      d.*,
+      u.name,
+      u.email,
+      u.photo_url
     FROM pro_deposits d
     JOIN users u ON u.id=d.user_id
     ORDER BY d.id DESC
   `).all();
 
   return out({
-    deposits:r.results||[]
+    deposits:(r.results||[]).map(d=>({
+      ...d,
+      receipt_url:imageUrl(d.receipt_key)
+    }))
   });
 }
 
-async function adminDepositAction(req,id,env){
-  const usr=await getUser(req,env);
 
-  if(!admin(usr,env))
-    return out({
-      error:"Forbidden"
-    },403);
+/* ADMIN APPROVE / REJECT */
+
+async function adminDepositAction(req,id,env){
+  const u=await getUser(req,env);
+
+  if(!isAdmin(u,env))
+    return out({error:"Forbidden"},403);
 
   const d=await req.json();
-  const action=String(
-    d.action||""
-  ).toLowerCase();
+  const action=String(d.action||"").toLowerCase();
 
   if(!["approve","reject"].includes(action))
     return out({
-      error:"Invalid action"
+      error:"Action must be approve or reject"
     },400);
 
   const dep=await env.PRO_DB.prepare(`
-    SELECT *
-    FROM pro_deposits
-    WHERE id=?
-    LIMIT 1
+    SELECT * FROM pro_deposits
+    WHERE id=? LIMIT 1
   `).bind(id).first();
 
   if(!dep)
-    return out({
-      error:"Deposit not found"
-    },404);
+    return out({error:"Deposit not found"},404);
 
   if(dep.status!=="pending")
     return out({
@@ -844,13 +747,13 @@ async function adminDepositAction(req,id,env){
     INSERT OR IGNORE INTO pro_credits
     (user_id,credits)
     VALUES (?,0)
-  `).bind(
-    dep.user_id
-  ).run();
+  `).bind(dep.user_id).run();
 
   await env.PRO_DB.prepare(`
     UPDATE pro_credits
-    SET credits=credits+?
+    SET
+      credits=credits+?,
+      updated_at=CURRENT_TIMESTAMP
     WHERE user_id=?
   `).bind(
     dep.amount,
@@ -876,9 +779,11 @@ async function adminDepositAction(req,id,env){
 
   return out({
     ok:true,
-    status:"approved"
+    status:"approved",
+    credited:dep.amount
   });
 }
+
 
 /* ROUTER */
 
@@ -889,15 +794,11 @@ export default{
 
       if(req.method==="OPTIONS")
         return cors(
-          new Response(null,{
-            status:204
-          })
+          new Response(null,{status:204})
         );
 
-      const u=new URL(req.url);
-
-      const p=
-        u.pathname.replace(/\/+$/,"")||"/";
+      const url=new URL(req.url);
+      const p=url.pathname.replace(/\/+$/,"")||"/";
 
       if(p==="/api/health")
         return out({
@@ -906,56 +807,36 @@ export default{
         });
 
       if(p==="/auth/google")
-        return googleLogin(u,env);
+        return googleLogin(url,env);
 
       if(p==="/auth/callback")
-        return await googleCallback(
-          req,
-          u,
-          env
-        );
+        return googleCallback(req,url,env);
 
       if(p==="/auth/logout"){
 
-        const s=ck(
-          req,
-          "pro_session"
-        );
+        const s=getCookie(req,"pro_session");
 
         if(s)
           await env.PRO_DB.prepare(`
             DELETE FROM sessions
             WHERE session_token_hash=?
-          `).bind(
-            await hash(s)
-          ).run();
+          `).bind(await hash(s)).run();
 
         const r=new Response(null,{
           status:302,
-          headers:{
-            Location:SITE+"/pro/"
-          }
+          headers:{Location:SITE+"/pro/"}
         });
 
         r.headers.append(
           "Set-Cookie",
-          delcookie("pro_session")
+          delCookie("pro_session")
         );
 
         return cors(r);
       }
 
-      if(p==="/api/me"){
-
-        const usr=await getUser(
-          req,
-          env
-        );
-
-        return out({
-          user:usr||null
-        });
-      }
+      if(p==="/api/me")
+        return me(req,env);
 
       if(p==="/api/pro/categories")
         return categories(env);
@@ -968,70 +849,49 @@ export default{
       );
 
       if(m)
-        return prompt(
-          m[1],
-          env
-        );
+        return getPrompt(m[1],env);
 
       m=p.match(
         /^\/api\/pro\/prompts\/(\d+)\/copy$/
       );
 
       if(m&&req.method==="POST")
-        return copyPrompt(
-          req,
-          m[1],
-          env
-        );
+        return copyPrompt(req,m[1],env);
 
       if(p==="/api/pro/credits/balance")
         return balance(req,env);
 
       if(p==="/api/pro/credits/deposit")
-        return deposit(req,env);
+        return createDeposit(req,env);
 
       if(p==="/api/pro/credits/deposits")
-        return deposits(req,env);
+        return userDeposits(req,env);
 
       if(p==="/api/pro/credits/transactions")
         return transactions(req,env);
 
       if(p==="/api/pro/deposit/receipt")
-        return receipt(req,env);
+        return uploadReceipt(req,env);
 
-      if(p.startsWith("/pro/images/")){
-
+      if(p.startsWith("/api/pro/images/"))
         return imageRoute(
-          req,
           env,
           decodeURIComponent(
-            p.slice(
-              "/pro/images/".length
-            )
+            p.slice("/api/pro/images/".length)
           )
         );
-      }
 
       if(p==="/api/pro/admin/categories")
-        return adminCategories(
-          req,
-          env
-        );
+        return adminCategories(req,env);
 
       if(p==="/api/pro/admin/prompts")
-        return adminPrompts(
-          req,
-          env
-        );
+        return adminPrompts(req,env);
 
       if(
         p==="/api/pro/admin/deposits" &&
         req.method==="GET"
       )
-        return adminDeposits(
-          req,
-          env
-        );
+        return adminDeposits(req,env);
 
       m=p.match(
         /^\/api\/pro\/admin\/deposits\/(\d+)$/
@@ -1044,16 +904,11 @@ export default{
           env
         );
 
-      return out({
-        error:"Not found"
-      },404);
+      return out({error:"Not found"},404);
 
     }catch(e){
 
-      console.error(
-        "WORKER ERROR",
-        e
-      );
+      console.error(e);
 
       return out({
         error:"Server error",
