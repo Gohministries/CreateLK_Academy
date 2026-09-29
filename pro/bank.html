@@ -8,7 +8,7 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font:14px Arial;color:#171923;background:linear-gradient(135deg,#f7f5ff,#fff5fc,#f1f8ff)}
-button,input,textarea{font:inherit}
+button,input,select,textarea{font:inherit}
 button{border:0;cursor:pointer}
 
 header{position:sticky;top:0;z-index:20;background:#ffffffee;backdrop-filter:blur(14px);border-bottom:1px solid #e7e2f5}
@@ -49,11 +49,11 @@ main{max-width:760px;margin:auto;padding:25px 18px 60px}
 
 label{display:block;font-weight:800;margin-bottom:7px}
 
-select,input[type=date],input[type=file],input[type=text]{
+select,input[type=date],input[type=file]{
 width:100%;border:1px solid #ddd9ed;border-radius:11px;padding:12px;outline:0;background:#fff
 }
 
-select:focus,input:focus,textarea:focus{
+select:focus,input:focus{
 border-color:#8b5cf6;box-shadow:0 0 0 3px #8b5cf622
 }
 
@@ -62,8 +62,6 @@ border-color:#8b5cf6;box-shadow:0 0 0 3px #8b5cf622
 .amount{margin-top:14px;padding:16px;border-radius:13px;background:#eeebff;text-align:center;color:#5b4bdc}
 .amount small{display:block;font-weight:700;margin-bottom:4px}
 .amount strong{font-size:27px}
-
-textarea{width:100%;min-height:80px;resize:vertical;border:1px solid #ddd9ed;border-radius:11px;padding:12px;outline:0;background:#fff}
 
 .note{margin:12px 0 0;font-size:12px;line-height:1.6;color:#697184}
 
@@ -106,6 +104,7 @@ main{padding:18px 10px 50px}
 
 <header>
 <nav>
+
 <div class="logo">Create<span>LK</span> Pro</div>
 
 <div class="right">
@@ -147,11 +146,14 @@ Library
 <main>
 
 <section class="hero">
+
 <h1>💎 Add Coins</h1>
+
 <p>
-Select a coin amount, make your bank transfer,
+Select a coin package, make your bank transfer,
 then submit your payment details.
 </p>
+
 </section>
 
 <div class="box">
@@ -201,17 +203,41 @@ Copy
 
 <div class="field">
 
-<label for="amountInput">
-Coin Amount
+<label for="package">
+Coin Package
 </label>
 
-<input
-id="amountInput"
-type="text"
-inputmode="numeric"
-placeholder="Example: 100"
-oninput="amountChange()"
->
+<select id="package" onchange="packageChange()">
+
+<option value="">
+Select a package
+</option>
+
+<option value="100">
+100 Coins — LKR 100
+</option>
+
+<option value="250">
+250 Coins — LKR 250
+</option>
+
+<option value="500">
+500 Coins — LKR 500
+</option>
+
+<option value="1000">
+1,000 Coins — LKR 1,000
+</option>
+
+<option value="2500">
+2,500 Coins — LKR 2,500
+</option>
+
+<option value="5000">
+5,000 Coins — LKR 5,000
+</option>
+
+</select>
 
 <div id="amountBox" class="amount" style="display:none">
 
@@ -237,20 +263,6 @@ LKR 0
 
 <div class="field">
 
-<label for="reference">
-Transaction Reference
-</label>
-
-<input
-id="reference"
-type="text"
-placeholder="Bank transaction/reference number"
->
-
-</div>
-
-<div class="field">
-
 <label for="slip">
 📷 Payment Slip
 </label>
@@ -264,9 +276,8 @@ accept="image/png,image/jpeg,image/webp"
 </div>
 
 <p class="note">
-Please make the bank transfer first. Enter the exact
-amount, payment date and transaction reference, then
-upload your payment slip.
+Please make the bank transfer first. Select your
+package, payment date and upload your payment slip.
 </p>
 
 <button
@@ -325,19 +336,32 @@ const API="https://public.createlk.workers.dev";
 const $=id=>document.getElementById(id);
 
 let me=null;
-let depositAmount=0;
+let selected=null;
+
+const PACKAGES=[
+ {coins:100,price:100},
+ {coins:250,price:250},
+ {coins:500,price:500},
+ {coins:1000,price:1000},
+ {coins:2500,price:2500},
+ {coins:5000,price:5000}
+];
 
 async function api(path,options={}){
 
 const r=await fetch(API+path,{
-credentials:"include",
-...options
+ credentials:"include",
+ ...options
 });
 
 const d=await r.json().catch(()=>({}));
 
 if(!r.ok)
-throw Error(d.error||d.message||"Request failed");
+ throw Error(
+  d.error||
+  d.message||
+  "Request failed"
+ );
 
 return d;
 }
@@ -360,10 +384,14 @@ return;
 
 me=d.user;
 
-const b=await api("/api/pro/credits/balance");
+const b=await api(
+ "/api/pro/credits/balance"
+);
 
 $("creditCount").textContent=
-Number(b.credits||0).toLocaleString();
+Number(
+ b.credits||0
+).toLocaleString();
 
 }catch(e){
 
@@ -374,29 +402,32 @@ location.href=API+"/auth/google";
 }
 
 
-/* AMOUNT */
+/* PACKAGE */
 
-function amountChange(){
+function packageChange(){
 
-let v=$("amountInput").value
-.replace(/[^\d]/g,"");
+const value=$("package").value;
 
-$("amountInput").value=v;
+if(!value){
 
-depositAmount=Number(v||0);
-
-if(depositAmount>0){
-
-$("amount").textContent=
-"LKR "+depositAmount.toLocaleString();
-
-$("amountBox").style.display="block";
-
-}else{
+selected=null;
 
 $("amountBox").style.display="none";
 
+return;
+
 }
+
+selected=
+PACKAGES.find(
+ p=>String(p.coins)===value
+);
+
+$("amount").textContent=
+"LKR "+
+Number(selected.price).toLocaleString();
+
+$("amountBox").style.display="block";
 
 }
 
@@ -408,7 +439,7 @@ async function copyAccount(){
 try{
 
 await navigator.clipboard.writeText(
-$("accountNo").textContent.trim()
+ $("accountNo").textContent.trim()
 );
 
 toast("Account number copied!");
@@ -426,8 +457,11 @@ toast("Copy failed");
 
 function showWhatsApp(){
 
-$("whatsappToggle").classList.add("hidden");
-$("whatsapp").classList.add("show");
+$("whatsappToggle")
+.classList.add("hidden");
+
+$("whatsapp")
+.classList.add("show");
 
 }
 
@@ -454,7 +488,7 @@ t.style.display="block";
 clearTimeout(window.toastTimer);
 
 window.toastTimer=setTimeout(()=>{
-t.style.display="none";
+ t.style.display="none";
 },2500);
 
 }
@@ -468,10 +502,15 @@ return new Promise((resolve,reject)=>{
 
 const reader=new FileReader();
 
-reader.onload=()=>resolve(reader.result);
-reader.onerror=()=>reject(
-Error("Could not read payment slip")
-);
+reader.onload=()=>{
+ resolve(reader.result);
+};
+
+reader.onerror=()=>{
+ reject(
+  Error("Could not read payment slip")
+ );
+};
 
 reader.readAsDataURL(file);
 
@@ -491,12 +530,14 @@ return;
 
 }
 
-if(!depositAmount||depositAmount<100){
+if(!selected){
 
 showMsg(
-"Minimum deposit is LKR 100.",
-"err"
+ "Please select a coin package.",
+ "err"
 );
+
+$("package").focus();
 
 return;
 
@@ -507,26 +548,11 @@ const date=$("paymentDate").value;
 if(!date){
 
 showMsg(
-"Please select the payment date.",
-"err"
+ "Please select the payment date.",
+ "err"
 );
 
 $("paymentDate").focus();
-
-return;
-
-}
-
-const reference=$("reference").value.trim();
-
-if(!reference){
-
-showMsg(
-"Please enter the transaction reference.",
-"err"
-);
-
-$("reference").focus();
 
 return;
 
@@ -537,8 +563,8 @@ const file=$("slip").files[0];
 if(!file){
 
 showMsg(
-"Please upload your payment slip.",
-"err"
+ "Please upload your payment slip.",
+ "err"
 );
 
 $("slip").focus();
@@ -547,11 +573,15 @@ return;
 
 }
 
-if(!["image/png","image/jpeg","image/webp"].includes(file.type)){
+if(![
+ "image/png",
+ "image/jpeg",
+ "image/webp"
+].includes(file.type)){
 
 showMsg(
-"Please upload a PNG, JPG or WebP image.",
-"err"
+ "Please upload a PNG, JPG or WebP image.",
+ "err"
 );
 
 return;
@@ -561,8 +591,8 @@ return;
 if(file.size>10*1024*1024){
 
 showMsg(
-"Payment slip must be below 10MB.",
-"err"
+ "Payment slip must be below 10MB.",
+ "err"
 );
 
 return;
@@ -576,33 +606,41 @@ btn.textContent="Submitting...";
 
 try{
 
-/* CREATE DEPOSIT */
+/*
+ Automatically create reference.
+ User does not need to enter one.
+*/
+
+const reference=
+"WEB-"+Date.now().toString(36).toUpperCase();
 
 const d=await api(
-"/api/pro/credits/deposit",
-{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
+ "/api/pro/credits/deposit",
+ {
+  method:"POST",
+  headers:{
+   "Content-Type":"application/json"
+  },
+  body:JSON.stringify({
 
-amount:depositAmount,
+   amount:selected.price,
 
-reference:reference,
+   reference:reference,
 
-payment_method:"Bank",
+   payment_method:"Bank",
 
-payment_date:date
+   payment_date:date
 
-})
-}
+  })
+ }
 );
 
 const depositId=d.deposit_id;
 
 if(!depositId)
-throw Error("Deposit ID was not created");
+ throw Error(
+  "Deposit ID was not created"
+ );
 
 
 /* UPLOAD SLIP */
@@ -610,33 +648,32 @@ throw Error("Deposit ID was not created");
 const image=await imageData(file);
 
 await api(
-"/api/pro/deposit/receipt",
-{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
+ "/api/pro/deposit/receipt",
+ {
+  method:"POST",
+  headers:{
+   "Content-Type":"application/json"
+  },
+  body:JSON.stringify({
 
-deposit_id:depositId,
+   deposit_id:depositId,
 
-image:image
+   image:image
 
-})
-}
+  })
+ }
 );
 
 showMsg(
-"Deposit submitted successfully. Your Coins will be added after verification.",
-"ok"
+ "Deposit submitted successfully. Your Coins will be added after verification.",
+ "ok"
 );
 
-$("amountInput").value="";
+$("package").value="";
 $("paymentDate").value="";
-$("reference").value="";
 $("slip").value="";
 
-depositAmount=0;
+selected=null;
 
 $("amountBox").style.display="none";
 
@@ -645,8 +682,9 @@ toast("Deposit submitted!");
 }catch(e){
 
 showMsg(
-e.message||"Deposit submission failed.",
-"err"
+ e.message||
+ "Deposit submission failed.",
+ "err"
 );
 
 }
@@ -659,18 +697,23 @@ btn.textContent="Submit Deposit";
 
 /* MENU */
 
-document.addEventListener("click",e=>{
+document.addEventListener(
+ "click",
+ e=>{
 
-if(!e.target.closest(".menu-wrap"))
-$("menu").classList.remove("show");
+  if(!e.target.closest(".menu-wrap"))
+   $("menu").classList.remove("show");
 
-});
+ }
+);
 
 
 /* DATE */
 
 $("paymentDate").max=
-new Date().toISOString().split("T")[0];
+new Date()
+.toISOString()
+.split("T")[0];
 
 
 /* START */
