@@ -1,1205 +1,633 @@
-const SITE = "https://createlk.com";
-const ADMIN = "gateofheavensl1@gmail.com";
-const COOKIE = "admin_session";
+const SITE="https://createlk.com";
+const ADMIN="gateofheavensl1@gmail.com";
+const COOKIE="admin_session";
 
-const CORS = {
-  "Access-Control-Allow-Origin": SITE,
-  "Access-Control-Allow-Credentials": "true",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS"
+const CORS={
+  "Access-Control-Allow-Origin":SITE,
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Headers":"Content-Type",
+  "Access-Control-Allow-Methods":"GET,POST,PUT,DELETE,OPTIONS"
 };
 
-const json = (x, s = 200) =>
-  new Response(JSON.stringify(x), {
-    status: s,
-    headers: {
-      "Content-Type": "application/json",
-      ...CORS
-    }
-  });
+const json=(x,s=200)=>new Response(JSON.stringify(x),{
+  status:s,headers:{"Content-Type":"application/json",...CORS}
+});
 
-/* SESSION COOKIE
-   SameSite=None is required because
-   createlk.com and workers.dev are different sites.
-*/
-const cookie = (v, age = 2592000) =>
+const cookie=(v,age=2592000)=>
   `${COOKIE}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${age}`;
 
-function getCookie(r) {
-  const m = (r.headers.get("Cookie") || "").match(
+function getCookie(r){
+  const m=(r.headers.get("Cookie")||"").match(
     new RegExp(`${COOKIE}=([^;]+)`)
   );
-
-  return m ? decodeURIComponent(m[1]) : null;
+  return m?decodeURIComponent(m[1]):null;
 }
 
-async function hash(x) {
-  const b = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(x)
+async function hash(x){
+  const b=await crypto.subtle.digest(
+    "SHA-256",new TextEncoder().encode(x)
   );
-
   return [...new Uint8Array(b)]
-    .map(x => x.toString(16).padStart(2, "0"))
-    .join("");
+    .map(x=>x.toString(16).padStart(2,"0")).join("");
 }
 
-/* =========================
-   ADMIN SESSION
-========================= */
+/* AUTH */
 
-async function admin(r, e) {
-  const token = getCookie(r);
+async function admin(r,e){
+  const token=getCookie(r);
+  if(!token)return null;
 
-  if (!token) return null;
-
-  const row = await e.PRO_DB.prepare(`
-    SELECT
-      s.*,
-      u.email,
-      u.name,
-      u.photo_url
+  const row=await e.PRO_DB.prepare(`
+    SELECT s.*,u.email,u.name,u.photo_url
     FROM admin_sessions s
-    JOIN users u
-      ON u.id = s.user_id
-    WHERE s.id = ?
-      AND s.expires_at > datetime('now')
+    JOIN users u ON u.id=s.user_id
+    WHERE s.id=? AND s.expires_at>datetime('now')
     LIMIT 1
-  `).bind(
-    await hash(token)
-  ).first();
+  `).bind(await hash(token)).first();
 
-  if (!row) return null;
-
-  return String(row.email || "").toLowerCase() === ADMIN
-    ? row
-    : null;
+  return row&&String(row.email||"").toLowerCase()===ADMIN?row:null;
 }
 
-async function auth(r, e) {
-  const a = await admin(r, e);
-
-  return a || json({
-    error: "Admin login required"
-  }, 401);
+async function auth(r,e){
+  const a=await admin(r,e);
+  return a||json({error:"Admin login required"},401);
 }
 
-/* =========================
-   GOOGLE LOGIN
-========================= */
+/* GOOGLE */
 
-function login(r, e) {
+function login(r,e){
+  if(!e.GOOGLE_CLIENT_ID)
+    return json({error:"GOOGLE_CLIENT_ID secret is missing"},500);
 
-  if (!e.GOOGLE_CLIENT_ID) {
-    return json({
-      error: "GOOGLE_CLIENT_ID secret is missing"
-    }, 500);
-  }
+  const u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
-  const u = new URL(
-    "https://accounts.google.com/o/oauth2/v2/auth"
-  );
+  u.searchParams.set("client_id",e.GOOGLE_CLIENT_ID);
+  u.searchParams.set("redirect_uri",new URL("/auth/callback",r.url));
+  u.searchParams.set("response_type","code");
+  u.searchParams.set("scope","openid email profile");
+  u.searchParams.set("prompt","select_account");
 
-  u.searchParams.set(
-    "client_id",
-    e.GOOGLE_CLIENT_ID
-  );
-
-  u.searchParams.set(
-    "redirect_uri",
-    new URL(
-      "/auth/callback",
-      r.url
-    ).toString()
-  );
-
-  u.searchParams.set(
-    "response_type",
-    "code"
-  );
-
-  u.searchParams.set(
-    "scope",
-    "openid email profile"
-  );
-
-  u.searchParams.set(
-    "prompt",
-    "select_account"
-  );
-
-  return Response.redirect(u, 302);
+  return Response.redirect(u,302);
 }
 
-/* =========================
-   GOOGLE CALLBACK
-========================= */
+async function callback(r,e){
+  try{
+    if(!e.GOOGLE_CLIENT_ID||!e.GOOGLE_CLIENT_SECRET)
+      return json({error:"Google secrets missing"},500);
 
-async function callback(r, e) {
+    const code=new URL(r.url).searchParams.get("code");
+    if(!code)return new Response("Missing code",{status:400});
 
-  try {
+    const redirectUri=new URL("/auth/callback",r.url).toString();
 
-    if (!e.GOOGLE_CLIENT_ID) {
-      return json({
-        error: "GOOGLE_CLIENT_ID secret is missing"
-      }, 500);
-    }
+    const tr=await fetch("https://oauth2.googleapis.com/token",{
+      method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({
+        code,
+        client_id:e.GOOGLE_CLIENT_ID,
+        client_secret:e.GOOGLE_CLIENT_SECRET,
+        redirect_uri:redirectUri,
+        grant_type:"authorization_code"
+      })
+    });
 
-    if (!e.GOOGLE_CLIENT_SECRET) {
-      return json({
-        error: "GOOGLE_CLIENT_SECRET secret is missing"
-      }, 500);
-    }
+    const token=await tr.json();
 
-    const code =
-      new URL(r.url).searchParams.get("code");
+    if(!tr.ok||!token.access_token)
+      return json({error:"Google login failed"},400);
 
-    if (!code) {
-      return new Response(
-        "Missing code",
-        { status: 400 }
-      );
-    }
-
-    const redirectUri =
-      new URL(
-        "/auth/callback",
-        r.url
-      ).toString();
-
-    /* EXCHANGE GOOGLE CODE */
-
-    const tr = await fetch(
-      "https://oauth2.googleapis.com/token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          code,
-          client_id: e.GOOGLE_CLIENT_ID,
-          client_secret: e.GOOGLE_CLIENT_SECRET,
-          redirect_uri: redirectUri,
-          grant_type: "authorization_code"
-        })
-      }
-    );
-
-    const token = await tr.json();
-
-    if (!tr.ok || !token.access_token) {
-
-      console.error(
-        "Google token error:",
-        JSON.stringify(token)
-      );
-
-      return json({
-        error: "Google login failed",
-        details:
-          token.error_description ||
-          token.error ||
-          "Token exchange failed"
-      }, 400);
-    }
-
-    /* GET GOOGLE USER */
-
-    const ur = await fetch(
+    const ur=await fetch(
       "https://openidconnect.googleapis.com/v1/userinfo",
-      {
-        headers: {
-          Authorization:
-            `Bearer ${token.access_token}`
-        }
-      }
+      {headers:{Authorization:`Bearer ${token.access_token}`}}
     );
 
-    const g = await ur.json();
+    const g=await ur.json();
+    const email=String(g.email||"").trim().toLowerCase();
 
-    if (!ur.ok) {
+    if(!ur.ok||!email)
+      return json({error:"Could not read Google account"},400);
 
-      console.error(
-        "Google userinfo error:",
-        JSON.stringify(g)
-      );
-
-      return json({
-        error: "Could not read Google account"
-      }, 400);
-    }
-
-    const email =
-      String(g.email || "")
-        .trim()
-        .toLowerCase();
-
-    if (!email) {
-      return json({
-        error: "Google account email not found"
-      }, 400);
-    }
-
-    /* ADMIN EMAIL CHECK */
-
-    if (email !== ADMIN) {
-
+    if(email!==ADMIN)
       return new Response(
         "Access denied. Admin account required.",
-        { status: 403 }
+        {status:403}
       );
-    }
 
-    /* =========================
-       FIND EXISTING USER
-    ========================= */
-
-    let u = await e.PRO_DB.prepare(`
-      SELECT *
-      FROM users
-      WHERE lower(email) = ?
-      LIMIT 1
+    let u=await e.PRO_DB.prepare(`
+      SELECT * FROM users
+      WHERE lower(email)=? LIMIT 1
     `).bind(email).first();
 
-    /* =========================
-       CREATE OR UPDATE USER
-    ========================= */
-
-    if (u) {
-
-      /*
-        Make sure the existing user has an ID.
-        Your users.id is TEXT PRIMARY KEY.
-      */
-
-      if (!u.id) {
-
-        const newId =
-          "admin-" +
-          crypto.randomUUID();
+    if(u){
+      if(!u.id){
+        const id="admin-"+crypto.randomUUID();
 
         await e.PRO_DB.prepare(`
           UPDATE users
-          SET
-            id = ?,
-            name = ?,
-            photo_url = ?
-          WHERE lower(email) = ?
+          SET id=?,name=?,photo_url=?
+          WHERE lower(email)=?
         `).bind(
-          newId,
-          g.name || "",
-          g.picture || "",
-          email
+          id,g.name||"",g.picture||"",email
         ).run();
-
-      } else {
-
+      }else{
         await e.PRO_DB.prepare(`
-          UPDATE users
-          SET
-            name = ?,
-            photo_url = ?
-          WHERE id = ?
+          UPDATE users SET name=?,photo_url=?
+          WHERE id=?
         `).bind(
-          g.name || "",
-          g.picture || "",
-          u.id
+          g.name||"",g.picture||"",u.id
         ).run();
       }
-
-      u = await e.PRO_DB.prepare(`
-        SELECT *
-        FROM users
-        WHERE lower(email) = ?
-        LIMIT 1
-      `).bind(email).first();
-
-    } else {
-
-      /*
-        users.id is TEXT PRIMARY KEY,
-        therefore create an ID explicitly.
-      */
-
-      const newId =
-        "admin-" +
-        crypto.randomUUID();
+    }else{
+      const id="admin-"+crypto.randomUUID();
 
       await e.PRO_DB.prepare(`
         INSERT INTO users
-        (
-          id,
-          google_id,
-          email,
-          name,
-          picture,
-          photo_url
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
+        (id,google_id,email,name,picture,photo_url)
+        VALUES(?,?,?,?,?,?)
       `).bind(
-        newId,
-        String(g.sub || ""),
-        email,
-        g.name || "",
-        g.picture || "",
-        g.picture || ""
+        id,String(g.sub||""),
+        email,g.name||"",g.picture||"",g.picture||""
       ).run();
-
-      u = await e.PRO_DB.prepare(`
-        SELECT *
-        FROM users
-        WHERE lower(email) = ?
-        LIMIT 1
-      `).bind(email).first();
     }
 
-    if (!u) {
-      return json({
-        error: "Admin user could not be loaded"
-      }, 500);
-    }
+    u=await e.PRO_DB.prepare(`
+      SELECT * FROM users
+      WHERE lower(email)=? LIMIT 1
+    `).bind(email).first();
 
-    if (!u.id) {
-      return json({
-        error: "Admin user has no valid ID"
-      }, 500);
-    }
+    if(!u?.id)
+      return json({error:"Admin user could not be loaded"},500);
 
-    /* =========================
-       CREATE ADMIN SESSION
-    ========================= */
-
-    const raw =
-      crypto.randomUUID() +
-      crypto.randomUUID();
-
-    const sessionId =
-      await hash(raw);
+    const raw=crypto.randomUUID()+crypto.randomUUID();
 
     await e.PRO_DB.prepare(`
-      INSERT INTO admin_sessions
-      (
-        id,
-        user_id,
-        expires_at
-      )
-      VALUES (
-        ?,
-        ?,
-        datetime('now', '+30 days')
-      )
-    `).bind(
-      sessionId,
-      u.id
-    ).run();
+      INSERT INTO admin_sessions(id,user_id,expires_at)
+      VALUES(?,?,datetime('now','+30 days'))
+    `).bind(await hash(raw),u.id).run();
 
-    /* =========================
-       LOGIN SUCCESS
-    ========================= */
-
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location:
-          SITE + "/pro/admin.html",
-
-        "Set-Cookie":
-          cookie(raw)
+    return new Response(null,{
+      status:302,
+      headers:{
+        Location:SITE+"/pro/admin.html",
+        "Set-Cookie":cookie(raw)
       }
     });
 
-  } catch (err) {
-
-    console.error(
-      "ADMIN CALLBACK ERROR:",
-      err
-    );
-
-    return json({
-      error:
-        err?.message ||
-        "Admin callback failed"
-    }, 500);
+  }catch(err){
+    console.error(err);
+    return json({error:err?.message||"Admin callback failed"},500);
   }
 }
 
-/* =========================
-   LOGOUT
-========================= */
+async function logout(r,e){
+  const token=getCookie(r);
 
-async function logout(r, e) {
-
-  const token = getCookie(r);
-
-  if (token) {
-
+  if(token){
     await e.PRO_DB.prepare(`
-      DELETE FROM admin_sessions
-      WHERE id = ?
-    `).bind(
-      await hash(token)
-    ).run();
+      DELETE FROM admin_sessions WHERE id=?
+    `).bind(await hash(token)).run();
   }
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location:
-        SITE + "/pro/admin.html",
-
-      "Set-Cookie":
-        cookie("", 0)
+  return new Response(null,{
+    status:302,
+    headers:{
+      Location:SITE+"/pro/admin.html",
+      "Set-Cookie":cookie("",0)
     }
   });
 }
 
-/* =========================
-   ME
-========================= */
-
-async function me(r, e) {
-
-  const a = await admin(r, e);
-
-  if (!a) {
-    return json({
-      user: null
-    });
-  }
+async function me(r,e){
+  const a=await admin(r,e);
 
   return json({
-    user: {
-      id: a.user_id,
-      email: a.email,
-      name: a.name,
-      photo_url: a.photo_url
-    }
+    user:a?{
+      id:a.user_id,
+      email:a.email,
+      name:a.name,
+      photo_url:a.photo_url
+    }:null
   });
 }
 
-/* =========================
-   CATEGORIES
-========================= */
+/* CATEGORIES */
 
-async function categories(r, e) {
+async function categories(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const {results}=await e.PRO_DB.prepare(`
+    SELECT * FROM pro_categories ORDER BY name
+  `).all();
 
-  if (a instanceof Response)
-    return a;
-
-  const { results } =
-    await e.PRO_DB.prepare(`
-      SELECT *
-      FROM pro_categories
-      ORDER BY name
-    `).all();
-
-  return json({
-    categories: results || []
-  });
+  return json({categories:results||[]});
 }
 
-async function addCategory(r, e) {
+async function addCategory(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const b=await r.json();
+  const name=String(b.name||"").trim();
 
-  if (a instanceof Response)
-    return a;
-
-  const b = await r.json();
-
-  const name =
-    String(b.name || "").trim();
-
-  if (!name) {
-    return json({
-      error: "Category name required"
-    }, 400);
-  }
+  if(!name)return json({error:"Category name required"},400);
 
   await e.PRO_DB.prepare(`
-    INSERT INTO pro_categories(name)
-    VALUES(?)
+    INSERT INTO pro_categories(name) VALUES(?)
   `).bind(name).run();
 
-  return json({
-    ok: true
-  });
+  return json({ok:true});
 }
 
-/* =========================
-   PROMPTS
-========================= */
+/* PROMPTS */
 
-async function prompts(r, e) {
+async function prompts(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
-
-  if (a instanceof Response)
-    return a;
-
-  const { results } =
-    await e.PRO_DB.prepare(`
-      SELECT
-        p.*,
-        c.name AS category_name
-      FROM pro_prompts p
-      LEFT JOIN pro_categories c
-        ON c.id = p.category_id
-      ORDER BY p.id DESC
-    `).all();
+  const {results}=await e.PRO_DB.prepare(`
+    SELECT p.*,c.name AS category_name
+    FROM pro_prompts p
+    LEFT JOIN pro_categories c ON c.id=p.category_id
+    ORDER BY p.id DESC
+  `).all();
 
   return json({
-    prompts: (results || []).map(p => ({
+    prompts:(results||[]).map(p=>({
       ...p,
-
-      image_url: p.image_key
-        ? new URL(
-            "/api/pro/images/" +
-            encodeURIComponent(p.image_key),
-            r.url
-          ).toString()
-        : null
+      image_url:p.image_key?
+        new URL(
+          "/api/pro/images/"+encodeURIComponent(p.image_key),
+          r.url
+        ).toString():null
     }))
   });
 }
 
-async function addPrompt(r, e) {
+async function addPrompt(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const b=await r.json();
+  const title=String(b.title||"").trim();
+  const description=String(b.description||"").trim();
+  const prompt=String(b.prompt||"").trim();
+  const category_id=b.category_id||null;
+  const image=String(b.image||"");
 
-  if (a instanceof Response)
-    return a;
+  if(!title)return json({error:"Title required"},400);
+  if(!prompt&&!image)
+    return json({error:"Prompt or image required"},400);
 
-  const b = await r.json();
+  let image_key=null;
 
-  const title =
-    String(b.title || "").trim();
-
-  const description =
-    String(b.description || "").trim();
-
-  const prompt =
-    String(b.prompt || "").trim();
-
-  const category_id =
-    b.category_id || null;
-
-  const image =
-    String(b.image || "");
-
-  if (!title) {
-    return json({
-      error: "Title required"
-    }, 400);
-  }
-
-  if (!prompt && !image) {
-    return json({
-      error: "Prompt or image required"
-    }, 400);
-  }
-
-  let image_key = null;
-
-  /* UPLOAD IMAGE */
-
-  if (image) {
-
-    const m = image.match(
+  if(image){
+    const m=image.match(
       /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/
     );
 
-    if (!m) {
-      return json({
-        error: "Invalid image"
-      }, 400);
-    }
+    if(!m)return json({error:"Invalid image"},400);
 
-    const type = m[1];
+    const type=m[1];
+    const ext=type==="image/png"?"png":
+              type==="image/webp"?"webp":"jpg";
 
-    const bytes =
-      Uint8Array.from(
-        atob(m[2]),
-        c => c.charCodeAt(0)
-      );
-
-    const ext =
-      type === "image/png"
-        ? "png"
-        : type === "image/webp"
-          ? "webp"
-          : "jpg";
-
-    image_key =
-      `prompts/${crypto.randomUUID()}.${ext}`;
+    image_key=`prompts/${crypto.randomUUID()}.${ext}`;
 
     await e.PRO_IMAGES.put(
       image_key,
-      bytes,
-      {
-        httpMetadata: {
-          contentType: type
-        }
-      }
+      Uint8Array.from(atob(m[2]),c=>c.charCodeAt(0)),
+      {httpMetadata:{contentType:type}}
     );
   }
-
-  /* INSERT PROMPT */
 
   await e.PRO_DB.prepare(`
     INSERT INTO pro_prompts
-    (
-      title,
-      description,
-      prompt,
-      category_id,
-      image_key
-    )
-    VALUES (?, ?, ?, ?, ?)
+    (title,description,prompt,category_id,image_key)
+    VALUES(?,?,?,?,?)
   `).bind(
-    title,
-    description,
-    prompt,
-    category_id,
-    image_key
+    title,description,prompt,category_id,image_key
   ).run();
 
-  return json({
-    ok: true
-  });
+  return json({ok:true});
 }
 
-/* =========================
-   IMAGES
-========================= */
+/* EDIT PROMPT + PHOTO */
 
-async function image(r, e, key) {
+async function updatePrompt(r,e,id){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const o =
-    await e.PRO_IMAGES.get(key);
+  const b=await r.json();
 
-  if (!o) {
-    return new Response(
-      "Not found",
-      { status: 404 }
+  const title=String(b.title||"").trim();
+  const description=String(b.description||"").trim();
+  const prompt=String(b.prompt||"").trim();
+  const category_id=b.category_id||null;
+  const image=String(b.image||"");
+
+  if(!title)return json({error:"Title required"},400);
+
+  const old=await e.PRO_DB.prepare(`
+    SELECT image_key FROM pro_prompts
+    WHERE id=? LIMIT 1
+  `).bind(id).first();
+
+  if(!old)return json({error:"Prompt not found"},404);
+
+  let image_key=old.image_key||null;
+
+  if(image){
+    const m=image.match(
+      /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/
     );
+
+    if(!m)return json({error:"Invalid image"},400);
+
+    const type=m[1];
+    const ext=type==="image/png"?"png":
+              type==="image/webp"?"webp":"jpg";
+
+    image_key=`prompts/${crypto.randomUUID()}.${ext}`;
+
+    await e.PRO_IMAGES.put(
+      image_key,
+      Uint8Array.from(atob(m[2]),c=>c.charCodeAt(0)),
+      {httpMetadata:{contentType:type}}
+    );
+
+    if(old.image_key)
+      await e.PRO_IMAGES.delete(old.image_key);
   }
 
-  const h = new Headers();
+  await e.PRO_DB.prepare(`
+    UPDATE pro_prompts
+    SET title=?,description=?,prompt=?,category_id=?,image_key=?
+    WHERE id=?
+  `).bind(
+    title,description,prompt,category_id,image_key,id
+  ).run();
 
+  return json({ok:true});
+}
+
+/* IMAGES */
+
+async function image(r,e,key){
+  const o=await e.PRO_IMAGES.get(key);
+
+  if(!o)return new Response("Not found",{status:404});
+
+  const h=new Headers();
   o.writeHttpMetadata(h);
+  h.set("Cache-Control","public,max-age=31536000");
 
-  h.set(
-    "Cache-Control",
-    "public,max-age=31536000"
-  );
-
-  return new Response(
-    o.body,
-    {
-      headers: h
-    }
-  );
+  return new Response(o.body,{headers:h});
 }
 
-/* =========================
-   PACKAGES
-========================= */
+/* PACKAGES */
 
-async function packages(r, e) {
+async function packages(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const {results}=await e.PRO_DB.prepare(`
+    SELECT * FROM credit_packages ORDER BY id
+  `).all();
 
-  if (a instanceof Response)
-    return a;
-
-  const { results } =
-    await e.PRO_DB.prepare(`
-      SELECT *
-      FROM credit_packages
-      ORDER BY id
-    `).all();
-
-  return json({
-    packages: results || []
-  });
+  return json({packages:results||[]});
 }
 
-async function addPackage(r, e) {
+async function addPackage(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const b=await r.json();
+  const name=String(b.name||"").trim();
+  const credits=Number(b.credits);
+  const bonus=Number(b.bonus||0);
+  const popular=b.popular?1:0;
+  const active=b.active===false?0:1;
 
-  if (a instanceof Response)
-    return a;
+  if(!name)return json({error:"Package name required"},400);
 
-  const b = await r.json();
+  if(!Number.isInteger(credits)||credits<100)
+    return json({error:"Minimum is 100 coins"},400);
 
-  const name =
-    String(b.name || "").trim();
-
-  const credits =
-    Number(b.credits);
-
-  const bonus =
-    Number(b.bonus || 0);
-
-  const popular =
-    b.popular ? 1 : 0;
-
-  const active =
-    b.active === false ? 0 : 1;
-
-  if (!name) {
-    return json({
-      error: "Package name required"
-    }, 400);
-  }
-
-  if (
-    !Number.isInteger(credits) ||
-    credits < 100
-  ) {
-    return json({
-      error: "Minimum is 100 coins"
-    }, 400);
-  }
-
-  if (
-    !Number.isInteger(bonus) ||
-    bonus < 0
-  ) {
-    return json({
-      error: "Invalid bonus"
-    }, 400);
-  }
-
-  /*
-    1 coin = LKR 1
-    Therefore price is always equal to credits.
-  */
+  if(!Number.isInteger(bonus)||bonus<0)
+    return json({error:"Invalid bonus"},400);
 
   await e.PRO_DB.prepare(`
     INSERT INTO credit_packages
-    (
-      name,
-      credits,
-      price,
-      bonus,
-      popular,
-      active
-    )
-    VALUES (?, ?, ?, ?, ?, ?)
+    (name,credits,price,bonus,popular,active)
+    VALUES(?,?,?,?,?,?)
   `).bind(
-    name,
-    credits,
-    credits,
-    bonus,
-    popular,
-    active
+    name,credits,credits,bonus,popular,active
   ).run();
 
-  return json({
-    ok: true
-  });
+  return json({ok:true});
 }
 
-async function updatePackage(r, e, id) {
+async function updatePackage(r,e,id){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const b=await r.json();
+  const name=String(b.name||"").trim();
+  const credits=Number(b.credits);
+  const bonus=Number(b.bonus||0);
+  const popular=b.popular?1:0;
+  const active=b.active?1:0;
 
-  if (a instanceof Response)
-    return a;
+  if(!name||!Number.isInteger(credits)||credits<100)
+    return json({error:"Invalid package"},400);
 
-  const b = await r.json();
-
-  const name =
-    String(b.name || "").trim();
-
-  const credits =
-    Number(b.credits);
-
-  const bonus =
-    Number(b.bonus || 0);
-
-  const popular =
-    b.popular ? 1 : 0;
-
-  const active =
-    b.active ? 1 : 0;
-
-  if (
-    !name ||
-    !Number.isInteger(credits) ||
-    credits < 100
-  ) {
-    return json({
-      error: "Invalid package"
-    }, 400);
-  }
-
-  if (
-    !Number.isInteger(bonus) ||
-    bonus < 0
-  ) {
-    return json({
-      error: "Invalid bonus"
-    }, 400);
-  }
+  if(!Number.isInteger(bonus)||bonus<0)
+    return json({error:"Invalid bonus"},400);
 
   await e.PRO_DB.prepare(`
     UPDATE credit_packages
-    SET
-      name = ?,
-      credits = ?,
-      price = ?,
-      bonus = ?,
-      popular = ?,
-      active = ?
-    WHERE id = ?
+    SET name=?,credits=?,price=?,bonus=?,popular=?,active=?
+    WHERE id=?
   `).bind(
-    name,
-    credits,
-    credits,
-    bonus,
-    popular,
-    active,
-    id
+    name,credits,credits,bonus,popular,active,id
   ).run();
 
-  return json({
-    ok: true
-  });
+  return json({ok:true});
 }
 
-async function deletePackage(r, e, id) {
-
-  const a = await auth(r, e);
-
-  if (a instanceof Response)
-    return a;
+async function deletePackage(r,e,id){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
   await e.PRO_DB.prepare(`
-    DELETE FROM credit_packages
-    WHERE id = ?
+    DELETE FROM credit_packages WHERE id=?
   `).bind(id).run();
 
-  return json({
-    ok: true
-  });
+  return json({ok:true});
 }
 
-/* =========================
-   DEPOSITS
-========================= */
+/* DEPOSITS */
 
-async function deposits(r, e) {
+async function deposits(r,e){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const {results}=await e.PRO_DB.prepare(`
+    SELECT d.*,u.name,u.email
+    FROM pro_deposits d
+    LEFT JOIN users u ON u.id=d.user_id
+    ORDER BY d.id DESC
+  `).all();
 
-  if (a instanceof Response)
-    return a;
-
-  const { results } =
-    await e.PRO_DB.prepare(`
-      SELECT
-        d.*,
-        u.name,
-        u.email
-      FROM pro_deposits d
-      LEFT JOIN users u
-        ON u.id = d.user_id
-      ORDER BY d.id DESC
-    `).all();
-
-  return json({
-    deposits: results || []
-  });
+  return json({deposits:results||[]});
 }
 
-async function depositAction(r, e, id) {
+async function depositAction(r,e,id){
+  const a=await auth(r,e);
+  if(a instanceof Response)return a;
 
-  const a = await auth(r, e);
+  const b=await r.json();
+  const action=b.action;
 
-  if (a instanceof Response)
-    return a;
+  if(!["approve","reject"].includes(action))
+    return json({error:"Invalid action"},400);
 
-  const b = await r.json();
+  const d=await e.PRO_DB.prepare(`
+    SELECT * FROM pro_deposits
+    WHERE id=? LIMIT 1
+  `).bind(id).first();
 
-  const action = b.action;
+  if(!d)return json({error:"Deposit not found"},404);
+  if(d.status!=="pending")
+    return json({error:"Already processed"},400);
 
-  if (
-    !["approve", "reject"].includes(action)
-  ) {
-    return json({
-      error: "Invalid action"
-    }, 400);
-  }
-
-  const d =
-    await e.PRO_DB.prepare(`
-      SELECT *
-      FROM pro_deposits
-      WHERE id = ?
-      LIMIT 1
-    `).bind(id).first();
-
-  if (!d) {
-    return json({
-      error: "Deposit not found"
-    }, 404);
-  }
-
-  if (d.status !== "pending") {
-    return json({
-      error: "Already processed"
-    }, 400);
-  }
-
-  /* REJECT */
-
-  if (action === "reject") {
-
+  if(action==="reject"){
     await e.PRO_DB.prepare(`
       UPDATE pro_deposits
-      SET status = 'rejected'
-      WHERE id = ?
-        AND status = 'pending'
+      SET status='rejected'
+      WHERE id=? AND status='pending'
     `).bind(id).run();
 
-    return json({
-      ok: true
-    });
+    return json({ok:true});
   }
 
-  /* APPROVE */
+  const amount=Number(d.amount??d.credits??0);
 
-  const amount =
-    Number(
-      d.amount ??
-      d.credits ??
-      0
-    );
+  if(!Number.isInteger(amount)||amount<=0)
+    return json({error:"Invalid deposit amount"},400);
 
-  if (
-    !Number.isInteger(amount) ||
-    amount <= 0
-  ) {
-    return json({
-      error: "Invalid deposit amount"
-    }, 400);
-  }
+  const result=await e.PRO_DB.prepare(`
+    UPDATE pro_deposits
+    SET status='approved'
+    WHERE id=? AND status='pending'
+  `).bind(id).run();
 
-  const result =
-    await e.PRO_DB.prepare(`
-      UPDATE pro_deposits
-      SET status = 'approved'
-      WHERE id = ?
-        AND status = 'pending'
-    `).bind(id).run();
-
-  if (!result.meta.changes) {
-    return json({
-      error: "Already processed"
-    }, 400);
-  }
-
-  /*
-    IMPORTANT:
-    Your current users schema may not contain
-    a credits column.
-
-    This update is kept from your original Worker.
-    If your users table does not contain credits,
-    remove this UPDATE and use your actual
-    pro_credits schema instead.
-  */
+  if(!result.meta.changes)
+    return json({error:"Already processed"},400);
 
   await e.PRO_DB.prepare(`
     UPDATE users
-    SET credits = COALESCE(credits, 0) + ?
-    WHERE id = ?
-  `).bind(
-    amount,
-    d.user_id
-  ).run();
+    SET credits=COALESCE(credits,0)+?
+    WHERE id=?
+  `).bind(amount,d.user_id).run();
 
-  return json({
-    ok: true
-  });
+  return json({ok:true});
 }
 
-/* =========================
-   ROUTER
-========================= */
+/* ROUTER */
 
-export default {
+export default{
+  async fetch(r,e){
 
-  async fetch(r, e) {
+    if(r.method==="OPTIONS")
+      return new Response(null,{headers:CORS});
 
-    /* CORS PREFLIGHT */
+    const p=new URL(r.url).pathname;
 
-    if (r.method === "OPTIONS") {
-      return new Response(
-        null,
-        {
-          headers: CORS
-        }
-      );
-    }
+    try{
 
-    const p =
-      new URL(r.url).pathname;
-
-    try {
-
-      /* GOOGLE */
-
-      if (p === "/auth/google")
-        return login(r, e);
-
-      if (p === "/auth/callback")
-        return callback(r, e);
-
-      if (p === "/auth/logout")
-        return logout(r, e);
-
-      /* HEALTH */
-
-      if (p === "/api/health")
-        return json({
-          ok: true
-        });
-
-      /* ME */
-
-      if (p === "/api/me")
-        return me(r, e);
+      if(p==="/auth/google")return login(r,e);
+      if(p==="/auth/callback")return callback(r,e);
+      if(p==="/auth/logout")return logout(r,e);
+      if(p==="/api/health")return json({ok:true});
+      if(p==="/api/me")return me(r,e);
 
       /* CATEGORIES */
 
-      if (
-        p === "/api/pro/admin/categories"
-      ) {
-
-        if (r.method === "GET")
-          return categories(r, e);
-
-        if (r.method === "POST")
-          return addCategory(r, e);
+      if(p==="/api/pro/admin/categories"){
+        if(r.method==="GET")return categories(r,e);
+        if(r.method==="POST")return addCategory(r,e);
       }
 
       /* PROMPTS */
 
-      if (
-        p === "/api/pro/admin/prompts"
-      ) {
-
-        if (r.method === "GET")
-          return prompts(r, e);
-
-        if (r.method === "POST")
-          return addPrompt(r, e);
+      if(p==="/api/pro/admin/prompts"){
+        if(r.method==="GET")return prompts(r,e);
+        if(r.method==="POST")return addPrompt(r,e);
       }
+
+      const pr=p.match(
+        /^\/api\/pro\/admin\/prompts\/(\d+)$/
+      );
+
+      if(pr&&r.method==="PUT")
+        return updatePrompt(r,e,pr[1]);
 
       /* IMAGES */
 
-      const im =
-        p.match(
-          /^\/api\/pro\/images\/(.+)$/
-        );
+      const im=p.match(
+        /^\/api\/pro\/images\/(.+)$/
+      );
 
-      if (im) {
+      if(im)
         return image(
-          r,
-          e,
-          decodeURIComponent(im[1])
+          r,e,decodeURIComponent(im[1])
         );
-      }
 
       /* PACKAGES */
 
-      if (
-        p === "/api/pro/admin/packages"
-      ) {
-
-        if (r.method === "GET")
-          return packages(r, e);
-
-        if (r.method === "POST")
-          return addPackage(r, e);
+      if(p==="/api/pro/admin/packages"){
+        if(r.method==="GET")return packages(r,e);
+        if(r.method==="POST")return addPackage(r,e);
       }
 
-      const pm =
-        p.match(
-          /^\/api\/pro\/admin\/packages\/(\d+)$/
-        );
+      const pm=p.match(
+        /^\/api\/pro\/admin\/packages\/(\d+)$/
+      );
 
-      if (pm) {
+      if(pm){
+        if(r.method==="PUT")
+          return updatePackage(r,e,pm[1]);
 
-        if (r.method === "PUT") {
-          return updatePackage(
-            r,
-            e,
-            pm[1]
-          );
-        }
-
-        if (r.method === "DELETE") {
-          return deletePackage(
-            r,
-            e,
-            pm[1]
-          );
-        }
+        if(r.method==="DELETE")
+          return deletePackage(r,e,pm[1]);
       }
 
       /* DEPOSITS */
 
-      if (
-        p === "/api/pro/admin/deposits" &&
-        r.method === "GET"
-      ) {
-        return deposits(r, e);
-      }
+      if(
+        p==="/api/pro/admin/deposits" &&
+        r.method==="GET"
+      )
+        return deposits(r,e);
 
-      const dm =
-        p.match(
-          /^\/api\/pro\/admin\/deposits\/(\d+)$/
-        );
-
-      if (
-        dm &&
-        r.method === "POST"
-      ) {
-        return depositAction(
-          r,
-          e,
-          dm[1]
-        );
-      }
-
-      /* NOT FOUND */
-
-      return json({
-        error: "Not found"
-      }, 404);
-
-    } catch (err) {
-
-      console.error(
-        "WORKER ERROR:",
-        err
+      const dm=p.match(
+        /^\/api\/pro\/admin\/deposits\/(\d+)$/
       );
 
+      if(dm&&r.method==="POST")
+        return depositAction(r,e,dm[1]);
+
+      return json({error:"Not found"},404);
+
+    }catch(err){
+      console.error("WORKER ERROR:",err);
+
       return json({
-        error:
-          err?.message ||
-          "Server error"
-      }, 500);
+        error:err?.message||"Server error"
+      },500);
     }
   }
 };
