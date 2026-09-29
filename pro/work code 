@@ -5,29 +5,56 @@ const DAYS=30;
 
 export default{async fetch(req,env){
  const u=new URL(req.url),p=u.pathname;
- if(req.method==="OPTIONS")return cors(new Response(null,{status:204}));
+
+ if(req.method==="OPTIONS")
+  return cors(new Response(null,{status:204}));
 
  try{
-  if(p==="/api/health")return out({ok:true,service:"CreateLK Pro"});
-  if(p==="/auth/google")return login(u,env);
-  if(p==="/auth/callback")return callback(req,u,env);
-  if(p==="/auth/logout")return logout(req,env);
-  if(p==="/api/me")return me(req,env);
-  if(p==="/api/pro/categories")return cats(env);
-  if(p==="/api/pro/prompts")return prompts(u,env);
+  if(p==="/api/health")
+   return out({ok:true,service:"CreateLK Pro"});
+
+  if(p==="/auth/google")
+   return login(u,env);
+
+  if(p==="/auth/callback")
+   return callback(req,u,env);
+
+  if(p==="/auth/logout")
+   return logout(req,env);
+
+  if(p==="/api/me")
+   return me(req,env);
+
+  if(p==="/api/pro/categories")
+   return cats(env);
+
+  if(p==="/api/pro/prompts")
+   return prompts(u,env);
 
   let m=p.match(/^\/api\/pro\/prompts\/(\d+)$/);
-  if(m)return detail(+m[1],env);
+
+  if(m)
+   return detail(+m[1],env);
 
   m=p.match(/^\/api\/pro\/prompts\/(\d+)\/copy$/);
-  if(m&&req.method==="POST")return copy(req,env,+m[1]);
 
-  if(p==="/api/pro/credits/balance")return balance(req,env);
+  if(m&&req.method==="POST")
+   return copy(req,env,+m[1]);
+
+  if(p==="/api/pro/credits/balance")
+   return balance(req,env);
+
   if(p==="/api/pro/credits/deposit"&&req.method==="POST")
    return deposit(req,env);
-  if(p==="/api/pro/credits/deposits")return deposits(req,env);
-  if(p==="/api/pro/credits/transactions")return transactions(req,env);
-  if(p==="/api/pro/deposit/receipt")return receipt(req,u,env);
+
+  if(p==="/api/pro/credits/deposits")
+   return deposits(req,env);
+
+  if(p==="/api/pro/credits/transactions")
+   return transactions(req,env);
+
+  if(p==="/api/pro/deposit/receipt")
+   return receipt(req,u,env);
 
   if(p.startsWith("/api/pro/admin/"))
    return admin(req,u,env);
@@ -36,6 +63,7 @@ export default{async fetch(req,env){
    return image(p,env);
 
   return out({error:"Not found"},404);
+
  }catch(e){
   console.error(e);
   return out({error:"Server error"},500);
@@ -46,27 +74,45 @@ export default{async fetch(req,env){
 
 function cors(r){
  const h=new Headers(r.headers);
+
  h.set("Access-Control-Allow-Origin",SITE);
  h.set("Access-Control-Allow-Credentials","true");
- h.set("Access-Control-Allow-Methods","GET,POST,PUT,DELETE,OPTIONS");
- h.set("Access-Control-Allow-Headers","Content-Type");
- return new Response(r.body,{status:r.status,headers:h});
+ h.set(
+  "Access-Control-Allow-Methods",
+  "GET,POST,PUT,DELETE,OPTIONS"
+ );
+ h.set(
+  "Access-Control-Allow-Headers",
+  "Content-Type"
+ );
+
+ return new Response(r.body,{
+  status:r.status,
+  headers:h
+ });
 }
 
 function out(d,s=200){
- return cors(new Response(JSON.stringify(d),{
-  status:s,
-  headers:{
-   "Content-Type":"application/json",
-   "Cache-Control":"no-store"
+ return cors(new Response(
+  JSON.stringify(d),
+  {
+   status:s,
+   headers:{
+    "Content-Type":"application/json",
+    "Cache-Control":"no-store"
+   }
   }
- }));
+ ));
 }
 
 function ck(req,n){
- const x=(req.headers.get("Cookie")||"").split(";")
+ const x=(req.headers.get("Cookie")||"")
+  .split(";")
   .find(x=>x.trim().startsWith(n+"="));
- return x?x.split("=").slice(1).join("=").trim():null;
+
+ return x
+  ?x.split("=").slice(1).join("=").trim()
+  :null;
 }
 
 function setck(n,v,a){
@@ -79,33 +125,63 @@ function delck(n){
 
 async function hash(v){
  const b=await crypto.subtle.digest(
-  "SHA-256",new TextEncoder().encode(v)
+  "SHA-256",
+  new TextEncoder().encode(v)
  );
+
  return [...new Uint8Array(b)]
-  .map(x=>x.toString(16).padStart(2,"0")).join("");
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
 }
 
 function rnd(n=32){
  const b=new Uint8Array(n);
  crypto.getRandomValues(b);
- return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
+
+ return [...b]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
 }
 
 /* GOOGLE LOGIN */
 
 function login(u,env){
  const state=rnd(16);
- const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
- g.searchParams.set("client_id",env.GOOGLE_CLIENT_ID);
- g.searchParams.set("redirect_uri",u.origin+"/auth/callback");
- g.searchParams.set("response_type","code");
- g.searchParams.set("scope","openid email profile");
- g.searchParams.set("state",state);
+ const g=new URL(
+  "https://accounts.google.com/o/oauth2/v2/auth"
+ );
+
+ g.searchParams.set(
+  "client_id",
+  env.GOOGLE_CLIENT_ID
+ );
+
+ g.searchParams.set(
+  "redirect_uri",
+  u.origin+"/auth/callback"
+ );
+
+ g.searchParams.set(
+  "response_type",
+  "code"
+ );
+
+ g.searchParams.set(
+  "scope",
+  "openid email profile"
+ );
+
+ g.searchParams.set(
+  "state",
+  state
+ );
 
  const r=new Response(null,{
   status:302,
-  headers:{Location:g.toString()}
+  headers:{
+   Location:g.toString()
+  }
  });
 
  r.headers.append(
@@ -120,10 +196,16 @@ async function callback(req,u,env){
  const code=u.searchParams.get("code");
  const state=u.searchParams.get("state");
 
- if(!code||state!==ck(req,"pro_oauth_state"))
-  return out({error:"Invalid Google login"},400);
+ if(
+  !code||
+  state!==ck(req,"pro_oauth_state")
+ )
+  return out({
+   error:"Invalid Google login"
+  },400);
 
- const redirect=u.origin+"/auth/callback";
+ const redirect=
+  u.origin+"/auth/callback";
 
  const tr=await fetch(
   "https://oauth2.googleapis.com/token",
@@ -146,13 +228,16 @@ async function callback(req,u,env){
  const token=await tr.json();
 
  if(!token.access_token)
-  return out({error:"Google token failed"},400);
+  return out({
+   error:"Google token failed"
+  },400);
 
  const gr=await fetch(
   "https://openidconnect.googleapis.com/v1/userinfo",
   {
    headers:{
-    Authorization:`Bearer ${token.access_token}`
+    Authorization:
+     `Bearer ${token.access_token}`
    }
   }
  );
@@ -167,13 +252,18 @@ async function callback(req,u,env){
  const email=g.email.toLowerCase();
 
  let user=await env.PRO_DB.prepare(`
-  SELECT * FROM users
+  SELECT *
+  FROM users
   WHERE google_id=? OR email=?
   LIMIT 1
- `).bind(String(g.sub),email).first();
+ `).bind(
+  String(g.sub),
+  email
+ ).first();
 
  if(!user){
-  const ref="CLP"+
+  const ref=
+   "CLP"+
    rnd(5).slice(0,8).toUpperCase();
 
   const r=await env.PRO_DB.prepare(`
@@ -188,11 +278,16 @@ async function callback(req,u,env){
    ref
   ).run();
 
-  user=await env.PRO_DB.prepare(
-   `SELECT * FROM users WHERE id=?`
-  ).bind(r.meta.last_row_id).first();
+  user=await env.PRO_DB.prepare(`
+   SELECT *
+   FROM users
+   WHERE id=?
+  `).bind(
+   r.meta.last_row_id
+  ).first();
 
  }else{
+
   await env.PRO_DB.prepare(`
    UPDATE users
    SET google_id=?,name=?,photo_url=?
@@ -206,7 +301,8 @@ async function callback(req,u,env){
  }
 
  await env.PRO_DB.prepare(`
-  INSERT OR IGNORE INTO pro_credits(user_id,credits)
+  INSERT OR IGNORE INTO pro_credits
+  (user_id,credits)
   VALUES (?,0)
  `).bind(user.id).run();
 
@@ -235,7 +331,11 @@ async function callback(req,u,env){
 
  r.headers.append(
   "Set-Cookie",
-  setck("pro_session",session,DAYS*86400)
+  setck(
+   "pro_session",
+   session,
+   DAYS*86400
+  )
  );
 
  r.headers.append(
@@ -250,16 +350,21 @@ async function callback(req,u,env){
 
 async function user(req,env){
  const s=ck(req,"pro_session");
- if(!s)return null;
+
+ if(!s)
+  return null;
 
  return env.PRO_DB.prepare(`
   SELECT u.*
   FROM sessions s
-  JOIN users u ON u.id=s.user_id
+  JOIN users u
+   ON u.id=s.user_id
   WHERE s.session_token_hash=?
   AND s.expires_at>CURRENT_TIMESTAMP
   LIMIT 1
- `).bind(await hash(s)).first();
+ `).bind(
+  await hash(s)
+ ).first();
 }
 
 async function me(req,env){
@@ -273,7 +378,8 @@ async function me(req,env){
   });
 
  const c=await env.PRO_DB.prepare(`
-  SELECT credits FROM pro_credits
+  SELECT credits
+  FROM pro_credits
   WHERE user_id=?
  `).bind(u.id).first();
 
@@ -293,17 +399,22 @@ async function me(req,env){
 async function logout(req,env){
  const s=ck(req,"pro_session");
 
- if(s)
+ if(s){
   await env.PRO_DB.prepare(`
    DELETE FROM sessions
    WHERE session_token_hash=?
-  `).bind(await hash(s)).run();
+  `).bind(
+   await hash(s)
+  ).run();
+ }
 
  const r=out({ok:true});
+
  r.headers.append(
   "Set-Cookie",
   delck("pro_session")
  );
+
  return r;
 }
 
@@ -311,15 +422,10 @@ async function logout(req,env){
 
 async function cats(env){
  const r=await env.PRO_DB.prepare(`
-  SELECT c.id,c.name,c.active,
-   COUNT(p.id) prompt_count
-  FROM pro_categories c
-  LEFT JOIN pro_prompts p
-   ON p.category_id=c.id
-   AND p.active=1
-  WHERE c.active=1
-  GROUP BY c.id,c.name,c.active
-  ORDER BY c.name COLLATE NOCASE
+  SELECT id,name,active
+  FROM pro_categories
+  WHERE active=1
+  ORDER BY id
  `).all();
 
  return out({
@@ -330,13 +436,18 @@ async function cats(env){
 /* PROMPTS */
 
 async function prompts(u,env){
- const cat=u.searchParams.get("category_id")||
+ const cat=
+  u.searchParams.get("category_id")||
   u.searchParams.get("category");
 
- const search=u.searchParams.get("search")||"";
+ const search=
+  u.searchParams.get("search")||"";
 
  const limit=Math.min(
-  Math.max(Number(u.searchParams.get("limit"))||30,1),
+  Math.max(
+   Number(u.searchParams.get("limit"))||30,
+   1
+  ),
   100
  );
 
@@ -363,7 +474,10 @@ async function prompts(u,env){
 
  const a=[];
 
- if(cat&&Number.isInteger(+cat)){
+ if(
+  cat&&
+  Number.isInteger(+cat)
+ ){
   sql+=" AND p.category_id=?";
   a.push(+cat);
  }
@@ -378,14 +492,20 @@ async function prompts(u,env){
   `;
 
   const x=`%${search.trim()}%`;
+
   a.push(x,x,x);
  }
 
- sql+=" ORDER BY p.id DESC LIMIT ? OFFSET ?";
+ sql+=`
+  ORDER BY p.id DESC
+  LIMIT ? OFFSET ?
+ `;
+
  a.push(limit,offset);
 
  const r=await env.PRO_DB.prepare(sql)
-  .bind(...a).all();
+  .bind(...a)
+  .all();
 
  return out({
   prompts:r.results||[],
@@ -416,7 +536,9 @@ async function detail(id,env){
    error:"Prompt not found"
   },404);
 
- return out({prompt:p});
+ return out({
+  prompt:p
+ });
 }
 
 /* COPY PROMPT */
@@ -458,6 +580,7 @@ async function copy(req,env,id){
  ).run();
 
  if(r.meta.changes!==1){
+
   const c=await env.PRO_DB.prepare(`
    SELECT credits
    FROM pro_credits
@@ -473,7 +596,9 @@ async function copy(req,env,id){
  }
 
  try{
+
   await env.PRO_DB.batch([
+
    env.PRO_DB.prepare(`
     INSERT INTO pro_transactions
     (user_id,type,credits,reference)
@@ -493,14 +618,20 @@ async function copy(req,env,id){
     id,
     COST
    )
+
   ]);
+
  }catch(e){
+
   await env.PRO_DB.prepare(`
    UPDATE pro_credits
    SET credits=credits+?,
        updated_at=CURRENT_TIMESTAMP
    WHERE user_id=?
-  `).bind(COST,u.id).run();
+  `).bind(
+   COST,
+   u.id
+  ).run();
 
   throw e;
  }
@@ -533,7 +664,8 @@ async function balance(req,env){
   },401);
 
  const c=await env.PRO_DB.prepare(`
-  SELECT credits FROM pro_credits
+  SELECT credits
+  FROM pro_credits
   WHERE user_id=?
  `).bind(u.id).first();
 
@@ -553,11 +685,15 @@ async function deposit(req,env){
  const b=await req.json();
 
  const amount=Number(b.amount);
+
  const reference=String(
   b.reference||""
  ).trim();
 
- if(!Number.isInteger(amount)||amount<MIN)
+ if(
+  !Number.isInteger(amount)||
+  amount<MIN
+ )
   return out({
    error:`Minimum deposit is Rs.${MIN}`
   },400);
@@ -593,8 +729,14 @@ async function deposits(req,env){
   },401);
 
  const r=await env.PRO_DB.prepare(`
-  SELECT id,amount,reference,receipt_key,
-   status,created_at,approved_at
+  SELECT
+   id,
+   amount,
+   reference,
+   receipt_key,
+   status,
+   created_at,
+   approved_at
   FROM pro_deposits
   WHERE user_id=?
   ORDER BY id DESC
@@ -614,7 +756,12 @@ async function transactions(req,env){
   },401);
 
  const r=await env.PRO_DB.prepare(`
-  SELECT id,type,credits,reference,created_at
+  SELECT
+   id,
+   type,
+   credits,
+   reference,
+   created_at
   FROM pro_transactions
   WHERE user_id=?
   ORDER BY id DESC
@@ -649,7 +796,10 @@ async function receipt(req,url,env){
   SELECT id,status
   FROM pro_deposits
   WHERE id=? AND user_id=?
- `).bind(id,u.id).first();
+ `).bind(
+  id,
+  u.id
+ ).first();
 
  if(!d)
   return out({
@@ -661,15 +811,20 @@ async function receipt(req,url,env){
    error:"Deposit already processed"
   },400);
 
- const type=req.headers.get("Content-Type")||"";
+ const type=
+  req.headers.get("Content-Type")||"";
 
  if(!type.startsWith("image/"))
   return out({
    error:"Receipt must be an image"
   },400);
 
- const ext=type.includes("png")?"png":
-  type.includes("webp")?"webp":"jpg";
+ const ext=
+  type.includes("png")
+   ?"png"
+   :type.includes("webp")
+    ?"webp"
+    :"jpg";
 
  const key=
   `receipts/${u.id}/${id}-${Date.now()}.${ext}`;
@@ -688,7 +843,11 @@ async function receipt(req,url,env){
   UPDATE pro_deposits
   SET receipt_key=?
   WHERE id=? AND user_id=?
- `).bind(key,id,u.id).run();
+ `).bind(
+  key,
+  id,
+  u.id
+ ).run();
 
  return out({
   ok:true,
@@ -700,17 +859,22 @@ async function receipt(req,url,env){
 
 async function isAdmin(req,env){
  const u=await user(req,env);
- if(!u)return null;
+
+ if(!u)
+  return null;
 
  const list=String(
   env.PRO_ADMIN_EMAILS||""
- ).split(",")
-  .map(x=>x.trim().toLowerCase())
-  .filter(Boolean);
+ )
+ .split(",")
+ .map(x=>x.trim().toLowerCase())
+ .filter(Boolean);
 
  return list.includes(
   u.email.toLowerCase()
- )?u:null;
+ )
+  ?u
+  :null;
 }
 
 async function admin(req,url,env){
@@ -726,9 +890,12 @@ async function admin(req,url,env){
  /* CATEGORIES */
 
  if(p==="/api/pro/admin/categories"){
+
   if(req.method==="GET"){
+
    const r=await env.PRO_DB.prepare(`
-    SELECT * FROM pro_categories
+    SELECT *
+    FROM pro_categories
     ORDER BY name COLLATE NOCASE
    `).all();
 
@@ -738,7 +905,9 @@ async function admin(req,url,env){
   }
 
   if(req.method==="POST"){
+
    const b=await req.json();
+
    const name=String(
     b.name||""
    ).trim();
@@ -749,8 +918,10 @@ async function admin(req,url,env){
     },400);
 
    try{
+
     const r=await env.PRO_DB.prepare(`
-     INSERT INTO pro_categories(name,active)
+     INSERT INTO pro_categories
+     (name,active)
      VALUES (?,1)
     `).bind(name).run();
 
@@ -758,7 +929,9 @@ async function admin(req,url,env){
      ok:true,
      id:r.meta.last_row_id
     });
+
    }catch{
+
     return out({
      error:"Category already exists"
     },409);
@@ -769,9 +942,13 @@ async function admin(req,url,env){
  /* PROMPTS */
 
  if(p==="/api/pro/admin/prompts"){
+
   if(req.method==="GET"){
+
    const r=await env.PRO_DB.prepare(`
-    SELECT p.*,c.name category_name
+    SELECT
+     p.*,
+     c.name category_name
     FROM pro_prompts p
     LEFT JOIN pro_categories c
      ON c.id=p.category_id
@@ -785,22 +962,26 @@ async function admin(req,url,env){
   }
 
   if(req.method==="POST"){
+
    const b=await req.json();
 
-   const category=Number(b.category_id);
-   const title=String(b.title||"").trim();
-   const description=String(
-    b.description||""
-   ).trim();
-   const prompt=String(
-    b.prompt||""
-   ).trim();
-   const imageKey=String(
-    b.image_key||""
-   ).trim();
-   const imageUrl=String(
-    b.image_url||""
-   ).trim();
+   const category=
+    Number(b.category_id);
+
+   const title=
+    String(b.title||"").trim();
+
+   const description=
+    String(b.description||"").trim();
+
+   const prompt=
+    String(b.prompt||"").trim();
+
+   const imageKey=
+    String(b.image_key||"").trim();
+
+   const imageUrl=
+    String(b.image_url||"").trim();
 
    if(!Number.isInteger(category))
     return out({
@@ -814,8 +995,15 @@ async function admin(req,url,env){
 
    const r=await env.PRO_DB.prepare(`
     INSERT INTO pro_prompts
-    (category_id,title,description,prompt,
-     image_key,image_url,active)
+    (
+     category_id,
+     title,
+     description,
+     prompt,
+     image_key,
+     image_url,
+     active
+    )
     VALUES (?,?,?,?,?,?,1)
    `).bind(
     category,
@@ -836,10 +1024,15 @@ async function admin(req,url,env){
  /* DEPOSITS */
 
  if(p==="/api/pro/admin/deposits"){
+
   const r=await env.PRO_DB.prepare(`
-   SELECT d.*,u.name,u.email
+   SELECT
+    d.*,
+    u.name,
+    u.email
    FROM pro_deposits d
-   JOIN users u ON u.id=d.user_id
+   JOIN users u
+    ON u.id=d.user_id
    ORDER BY d.id DESC
    LIMIT 500
   `).all();
@@ -855,7 +1048,10 @@ async function admin(req,url,env){
   /^\/api\/pro\/admin\/deposits\/(\d+)\/approve$/
  );
 
- if(m&&req.method==="POST")
+ if(
+  m&&
+  req.method==="POST"
+ )
   return approve(+m[1],env);
 
  /* REJECT */
@@ -864,7 +1060,10 @@ async function admin(req,url,env){
   /^\/api\/pro\/admin\/deposits\/(\d+)\/reject$/
  );
 
- if(m&&req.method==="POST")
+ if(
+  m&&
+  req.method==="POST"
+ )
   return reject(+m[1],env);
 
  return out({
@@ -875,8 +1074,13 @@ async function admin(req,url,env){
 /* APPROVE */
 
 async function approve(id,env){
+
  const d=await env.PRO_DB.prepare(`
-  SELECT id,user_id,amount,status
+  SELECT
+   id,
+   user_id,
+   amount,
+   status
   FROM pro_deposits
   WHERE id=?
  `).bind(id).first();
@@ -893,8 +1097,9 @@ async function approve(id,env){
 
  const claim=await env.PRO_DB.prepare(`
   UPDATE pro_deposits
-  SET status='approved',
-      approved_at=CURRENT_TIMESTAMP
+  SET
+   status='approved',
+   approved_at=CURRENT_TIMESTAMP
   WHERE id=? AND status='pending'
  `).bind(id).run();
 
@@ -904,6 +1109,7 @@ async function approve(id,env){
   },409);
 
  try{
+
   await env.PRO_DB.prepare(`
    INSERT OR IGNORE INTO pro_credits
    (user_id,credits)
@@ -911,12 +1117,17 @@ async function approve(id,env){
   `).bind(d.user_id).run();
 
   await env.PRO_DB.batch([
+
    env.PRO_DB.prepare(`
     UPDATE pro_credits
-    SET credits=credits+?,
-        updated_at=CURRENT_TIMESTAMP
+    SET
+     credits=credits+?,
+     updated_at=CURRENT_TIMESTAMP
     WHERE user_id=?
-   `).bind(d.amount,d.user_id),
+   `).bind(
+    d.amount,
+    d.user_id
+   ),
 
    env.PRO_DB.prepare(`
     INSERT INTO pro_transactions
@@ -927,6 +1138,7 @@ async function approve(id,env){
     d.amount,
     `deposit:${id}`
    )
+
   ]);
 
   return out({
@@ -936,10 +1148,12 @@ async function approve(id,env){
   });
 
  }catch(e){
+
   await env.PRO_DB.prepare(`
    UPDATE pro_deposits
-   SET status='pending',
-       approved_at=NULL
+   SET
+    status='pending',
+    approved_at=NULL
    WHERE id=? AND status='approved'
   `).bind(id).run();
 
@@ -950,6 +1164,7 @@ async function approve(id,env){
 /* REJECT */
 
 async function reject(id,env){
+
  const r=await env.PRO_DB.prepare(`
   UPDATE pro_deposits
   SET status='rejected'
@@ -971,25 +1186,37 @@ async function reject(id,env){
 /* IMAGES */
 
 async function image(path,env){
+
  const key=path.replace(
-  "/pro/images/",""
+  "/pro/images/",
+  ""
  );
 
  if(!key.startsWith("prompts/"))
-  return new Response("Not found",{status:404});
+  return new Response(
+   "Not found",
+   {status:404}
+  );
 
  const o=await env.PRO_IMAGES.get(key);
 
  if(!o)
-  return new Response("Not found",{status:404});
+  return new Response(
+   "Not found",
+   {status:404}
+  );
 
- return new Response(o.body,{
-  headers:{
-   "Content-Type":
-    o.httpMetadata?.contentType||
-    "image/jpeg",
-   "Cache-Control":
-    "public,max-age=31536000"
+ return new Response(
+  o.body,
+  {
+   headers:{
+    "Content-Type":
+     o.httpMetadata?.contentType||
+     "image/jpeg",
+
+    "Cache-Control":
+     "public,max-age=31536000"
+   }
   }
- });
+ );
 }
