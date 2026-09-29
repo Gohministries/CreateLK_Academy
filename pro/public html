@@ -1,0 +1,409 @@
+const SITE="https://createlk.com",MIN=100,DAYS=30;
+
+const out=(x,s=200)=>new Response(JSON.stringify(x),{
+ status:s,headers:{
+  "Content-Type":"application/json",
+  "Access-Control-Allow-Origin":SITE,
+  "Access-Control-Allow-Credentials":"true"
+ }
+});
+
+function cookie(n,v,max){
+ return `${n}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${max}`;
+}
+
+function getCookie(req,n){
+ const c=req.headers.get("Cookie")||"";
+ const x=c.split(";").find(x=>x.trim().startsWith(n+"="));
+ return x?decodeURIComponent(x.trim().slice(n.length+1)):null;
+}
+
+async function hash(x){
+ const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(x));
+ return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+function rnd(n=16){
+ const b=new Uint8Array(n);crypto.getRandomValues(b);
+ return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+async function getUser(req,env){
+ const s=getCookie(req,"pro_session");
+ if(!s)return null;
+ return env.PRO_DB.prepare(`
+  SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
+  WHERE s.session_token_hash=? AND s.expires_at>datetime('now') LIMIT 1
+ `).bind(await hash(s)).first();
+}
+
+function isAdmin(u,env){
+ return !!u&&String(env.PRO_ADMIN_EMAILS||"").split(",")
+  .map(x=>x.trim().toLowerCase())
+  .includes(String(u.email||"").toLowerCase());
+}
+
+function googleLogin(req,url,env){
+ const old=getCookie(req,"pro_session");
+ if(old)return Response.redirect(SITE+"/pro/",302);
+
+ const state=rnd();
+ const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+ g.searchParams.set("client_id",env.GOOGLE_CLIENT_ID||"");
+ g.searchParams.set("redirect_uri",url.origin+"/auth/callback");
+ g.searchParams.set("response_type","code");
+ g.searchParams.set("scope","openid email profile");
+ g.searchParams.set("state",state);
+
+ const r=new Response(null,{status:302,headers:{Location:g.toString()}});
+ r.headers.append("Set-Cookie",cookie("pro_oauth_state",state,600));
+ return r;
+}
+
+async function googleCallback(req,url,env){
+ const code=url.searchParams.get("code");
+ const state=url.searchParams.get("state");
+
+ if(!code||state!==getCookie(req,"pro_oauth_state"))
+  return out({error:"Invalid Google login"},400);
+
+ const redirect=url.origin+"/auth/callback";
+
+ const tr=await fetch("https://oauth2.googleapis.com/token",{
+  method:"POST",
+  headers:{"Content-Type":"application/x-www-form-urlencoded"},
+  body:new URLSearchParams({
+   client_id:env.GOOGLE_CLIENT_ID||"",
+   client_secret:env.GOOGLE_CLIENT_SECRET||"",
+   code,redirect_uri:redirect,
+   grant_type:"authorization_code"
+  })
+ });
+
+ const token=await tr.json();
+
+ if(!tr.ok||!token.access_token)
+  return out({error:"Google token failed"},400);
+
+ const gr=await fetch(
+  "https://openidconnect.googleapis.com/v1/userinfo",
+  {headers:{Authorization:`Bearer ${token.access_token}`}}
+ );
+
+ const g=await gr.json();
+
+ if(!gr.ok||!g.email)
+  return out({error:"Google account unavailable"},400);
+
+ const email=String(g.email).toLowerCase();
+
+ let u=await env.PRO_DB.prepare(`
+  SELECT * FROM users WHERE google_id=? OR email=? LIMIT 1
+ `).bind(String(g.sub),email).first();
+
+ if(!u){
+  const id=crypto.randomUUID();
+  const ref="CLP"+rnd(5).slice(0,8).toUpperCase();
+
+  await env.PRO_DB.prepare(`
+   INSERT INTO users
+   (id,google_id,name,email,photo_url,referral_code)
+   VALUES (?,?,?,?,?,?)
+  `).bind(
+   id,String(g.sub),g.name||email.split("@")[0],
+   email,g.picture||null,ref
+  ).run();
+
+  u=await env.PRO_DB.prepare(
+   "SELECT * FROM users WHERE id=?"
+  ).bind(id).first();
+ }else{
+  await env.PRO_DB.prepare(`
+   UPDATE users SET google_id=?,name=?,photo_url=? WHERE id=?
+  `).bind(
+   String(g.sub),g.name||u.name,g.picture||u.photo_url,u.id
+  ).run();
+ }
+
+ await env.PRO_DB.prepare(`
+  INSERT OR IGNORE INTO pro_credits(user_id,credits) VALUES (?,0)
+ `).bind(u.id).run();
+
+ const session=rnd(32);
+ const expires=new Date(Date.now()+DAYS*86400000).toISOString();
+
+ await env.PRO_DB.prepare(`
+  INSERT INTO sessions
+  (id,session_token_hash,user_id,expires_at)
+  VALUES (?,?,?,?)
+ `).bind(
+  crypto.randomUUID(),await hash(session),u.id,expires
+ ).run();
+
+ const r=new Response(null,{
+  status:302,headers:{Location:SITE+"/pro/"}
+ });
+
+ r.headers.append(
+  "Set-Cookie",cookie("pro_session",session,DAYS*86400)
+ );
+
+ return r;
+}
+
+async function me(req,env){
+ const u=await getUser(req,env);
+ return out({user:u});
+}
+
+async function balance(req,env){
+ const u=await getUser(req,env);
+ if(!u)return out({error:"Unauthorized"},401);
+
+ const c=await env.PRO_DB.prepare(
+  "SELECT credits FROM pro_credits WHERE user_id=?"
+ ).bind(u.id).first();
+
+ return out({credits:Number(c?.credits||0)});
+}
+
+async function createDeposit(req,env){
+ const u=await getUser(req,env);
+ if(!u)return out({error:"Unauthorized"},401);
+
+ const d=await req.json();
+ const amount=Number(d.amount);
+ const reference=String(d.reference||"").trim();
+ const method=String(d.payment_method||"Bank").trim();
+ const paymentDate=String(d.payment_date||"").trim();
+
+ if(!Number.isFinite(amount)||amount<MIN)
+  return out({error:`Minimum deposit is ${MIN}`},400);
+
+ if(!reference)
+  return out({error:"Reference is required"},400);
+
+ if(!paymentDate)
+  return out({error:"Payment date is required"},400);
+
+ const r=await env.PRO_DB.prepare(`
+  INSERT INTO pro_deposits
+  (user_id,amount,reference,payment_method,payment_date,status)
+  VALUES (?,?,?,?,?,?)
+ `).bind(
+  u.id,amount,reference,method,paymentDate,"pending"
+ ).run();
+
+ return out({ok:true,deposit_id:r.meta.last_row_id});
+}
+
+async function uploadReceipt(req,env){
+ const u=await getUser(req,env);
+ if(!u)return out({error:"Unauthorized"},401);
+
+ const d=await req.json();
+ const id=Number(d.deposit_id);
+ const image=String(d.image||"");
+
+ if(!id||!image)
+  return out({error:"Deposit ID and image are required"},400);
+
+ const dep=await env.PRO_DB.prepare(`
+  SELECT * FROM pro_deposits
+  WHERE id=? AND user_id=? LIMIT 1
+ `).bind(id,u.id).first();
+
+ if(!dep)return out({error:"Deposit not found"},404);
+ if(dep.status!=="pending")
+  return out({error:"Deposit already processed"},400);
+
+ const m=image.match(
+  /^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i
+ );
+
+ if(!m)return out({error:"Invalid image format"},400);
+
+ const type=m[1].replace("image/jpg","image/jpeg");
+ const raw=atob(m[2]);
+ const bytes=new Uint8Array(raw.length);
+
+ for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+
+ const ext=type==="image/png"?"png":type==="image/webp"?"webp":"jpg";
+ const key=`deposits/${u.id}/${id}-${rnd(8)}.${ext}`;
+
+ await env.PRO_IMAGES.put(key,bytes,{
+  httpMetadata:{contentType:type}
+ });
+
+ await env.PRO_DB.prepare(`
+  UPDATE pro_deposits SET receipt_key=?
+  WHERE id=? AND user_id=?
+ `).bind(key,id,u.id).run();
+
+ return out({ok:true,receipt_key:key});
+}
+
+async function userDeposits(req,env){
+ const u=await getUser(req,env);
+ if(!u)return out({error:"Unauthorized"},401);
+
+ const r=await env.PRO_DB.prepare(`
+  SELECT * FROM pro_deposits
+  WHERE user_id=? ORDER BY id DESC
+ `).bind(u.id).all();
+
+ return out({deposits:r.results||[]});
+}
+
+async function transactions(req,env){
+ const u=await getUser(req,env);
+ if(!u)return out({error:"Unauthorized"},401);
+
+ const r=await env.PRO_DB.prepare(`
+  SELECT * FROM pro_transactions
+  WHERE user_id=? ORDER BY id DESC
+ `).bind(u.id).all();
+
+ return out({transactions:r.results||[]});
+}
+
+async function adminDeposits(req,env){
+ const u=await getUser(req,env);
+ if(!isAdmin(u,env))return out({error:"Forbidden"},403);
+
+ const r=await env.PRO_DB.prepare(`
+  SELECT d.*,u.name,u.email,u.photo_url
+  FROM pro_deposits d JOIN users u ON u.id=d.user_id
+  ORDER BY d.id DESC
+ `).all();
+
+ return out({deposits:r.results||[]});
+}
+
+async function adminDepositAction(req,id,env){
+ const u=await getUser(req,env);
+ if(!isAdmin(u,env))return out({error:"Forbidden"},403);
+
+ const d=await req.json();
+ const action=String(d.action||"").toLowerCase();
+
+ if(!["approve","reject"].includes(action))
+  return out({error:"Invalid action"},400);
+
+ const dep=await env.PRO_DB.prepare(
+  "SELECT * FROM pro_deposits WHERE id=? LIMIT 1"
+ ).bind(id).first();
+
+ if(!dep)return out({error:"Deposit not found"},404);
+ if(dep.status!=="pending")
+  return out({error:"Deposit already processed"},400);
+
+ if(action==="reject"){
+  await env.PRO_DB.prepare(
+   "UPDATE pro_deposits SET status='rejected' WHERE id=?"
+  ).bind(id).run();
+
+  return out({ok:true,status:"rejected"});
+ }
+
+ await env.PRO_DB.prepare(`
+  INSERT OR IGNORE INTO pro_credits(user_id,credits)
+  VALUES (?,0)
+ `).bind(dep.user_id).run();
+
+ await env.PRO_DB.prepare(`
+  UPDATE pro_credits
+  SET credits=credits+?,updated_at=CURRENT_TIMESTAMP
+  WHERE user_id=?
+ `).bind(dep.amount,dep.user_id).run();
+
+ await env.PRO_DB.prepare(`
+  UPDATE pro_deposits SET status='approved' WHERE id=?
+ `).bind(id).run();
+
+ await env.PRO_DB.prepare(`
+  INSERT INTO pro_transactions
+  (user_id,type,amount,description)
+  VALUES (?,?,?,?)
+ `).bind(
+  dep.user_id,"credit",dep.amount,
+  `Deposit #${id} approved`
+ ).run();
+
+ return out({
+  ok:true,
+  status:"approved",
+  credited:dep.amount
+ });
+}
+
+export default{
+ async fetch(req,env){
+  if(req.method==="OPTIONS")
+   return new Response(null,{
+    status:204,
+    headers:{
+     "Access-Control-Allow-Origin":SITE,
+     "Access-Control-Allow-Credentials":"true",
+     "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+     "Access-Control-Allow-Headers":"Content-Type,Authorization"
+    }
+   });
+
+  const url=new URL(req.url);
+  const p=url.pathname.replace(/\/+$/,"")||"/";
+
+  if(p==="/api/health")
+   return out({ok:true,service:"CreateLK Pro"});
+
+  if(p==="/auth/google")
+   return googleLogin(req,url,env);
+
+  if(p==="/auth/callback")
+   return googleCallback(req,url,env);
+
+  if(p==="/api/me")
+   return me(req,env);
+
+  if(p==="/api/pro/credits/balance")
+   return balance(req,env);
+
+  if(p==="/api/pro/credits/deposit"&&req.method==="POST")
+   return createDeposit(req,env);
+
+  if(p==="/api/pro/deposit/receipt"&&req.method==="POST")
+   return uploadReceipt(req,env);
+
+  if(p==="/api/pro/credits/deposits")
+   return userDeposits(req,env);
+
+  if(p==="/api/pro/credits/transactions")
+   return transactions(req,env);
+
+  if(p==="/api/pro/admin/deposits"&&req.method==="GET")
+   return adminDeposits(req,env);
+
+  const m=p.match(
+   /^\/api\/pro\/admin\/deposits\/(\d+)$/
+  );
+
+  if(m&&req.method==="POST")
+   return adminDepositAction(req,m[1],env);
+
+  if(p.startsWith("/api/pro/images/")){
+   const key=decodeURIComponent(
+    p.slice("/api/pro/images/".length)
+   );
+
+   const obj=await env.PRO_IMAGES.get(key);
+   if(!obj)return new Response("Not found",{status:404});
+
+   const h=new Headers();
+   obj.writeHttpMetadata(h);
+   return new Response(obj.body,{headers:h});
+  }
+
+  return out({error:"Not found"},404);
+ }
+};
