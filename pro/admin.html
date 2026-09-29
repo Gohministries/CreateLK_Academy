@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK Pro Admin</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px Arial,sans-serif;background:#f5f6f8;color:#171717}
+button,input,textarea,select{font:inherit}
+button{border:0;border-radius:9px;padding:10px 14px;cursor:pointer}
+.top{height:64px;background:#111;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+.logo{font-size:19px;font-weight:700}.logo span{color:#aaa}
+.user{display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#555}
+.wrap{max-width:1200px;margin:auto;padding:20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.card{background:#fff;border:1px solid #ddd;border-radius:14px;padding:18px;margin-bottom:18px}
+h2{margin:0 0 15px;font-size:19px}
+h3{margin:0 0 10px}
+input,textarea,select{width:100%;padding:11px;border:1px solid #ccc;border-radius:8px;margin:6px 0 10px}
+textarea{min-height:130px;resize:vertical}
+.primary{background:#111;color:#fff}.green{background:#16834a;color:#fff}
+.red{background:#c62828;color:#fff}.light{background:#eee}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.tab.active{background:#111;color:#fff}
+.section{display:none}.section.active{display:block}
+.list{display:grid;gap:10px}
+.item{border:1px solid #ddd;border-radius:10px;padding:12px;background:#fafafa}
+.item img{width:100px;height:100px;object-fit:cover;border-radius:8px}
+.meta{color:#666;font-size:12px;margin:4px 0}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.badge{display:inline-block;padding:4px 8px;border-radius:20px;background:#eee;font-size:12px}
+.pending{background:#fff1c7}.approved{background:#d9f5e5}.rejected{background:#ffdcdc}
+.empty{text-align:center;color:#777;padding:25px}
+#login{position:fixed;inset:0;background:#f5f6f8;display:grid;place-items:center}
+.loginbox{background:#fff;padding:30px;border-radius:16px;width:min(400px,90%);text-align:center}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px}
+.modal.show{display:flex}.modalbox{background:#fff;border-radius:14px;padding:20px;width:min(600px,100%);max-height:90vh;overflow:auto}
+.close{float:right;background:#eee}
+.toast{position:fixed;right:20px;bottom:20px;background:#111;color:#fff;padding:12px 16px;border-radius:9px;display:none}
+@media(max-width:750px){.grid{grid-template-columns:1fr}.wrap{padding:12px}.top{padding:0 12px}.user span{display:none}}
+</style>
+</head>
+
+<body>
+
+<div id="login">
+  <div class="loginbox">
+    <h1>CreateLK Pro</h1>
+    <p>Admin Dashboard</p>
+    <button class="primary" onclick="login()">Continue with Google</button>
+  </div>
+</div>
+
+<header class="top" id="top" style="display:none">
+  <div class="logo">CreateLK <span>Pro Admin</span></div>
+  <div class="user">
+    <img id="avatar" class="avatar">
+    <span id="name"></span>
+    <button class="light" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<main class="wrap" id="app" style="display:none">
+
+  <div class="tabs">
+    <button class="tab active" onclick="tab('prompts',this)">Prompts</button>
+    <button class="tab" onclick="tab('categories',this)">Categories</button>
+    <button class="tab" onclick="tab('deposits',this)">Deposits</button>
+  </div>
+
+  <section id="prompts" class="section active">
+    <div class="grid">
+      <div class="card">
+        <h2>Add Prompt</h2>
+
+        <input id="title" placeholder="Title">
+        <input id="description" placeholder="Short description">
+
+        <select id="category">
+          <option value="">Select category</option>
+        </select>
+
+        <textarea id="prompt" placeholder="Prompt text"></textarea>
+
+        <input id="promptImage" type="file" accept="image/png,image/jpeg,image/webp">
+
+        <button class="primary" onclick="addPrompt()">Add Prompt</button>
+      </div>
+
+      <div class="card">
+        <h2>Prompts</h2>
+        <div id="promptList" class="list"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="categories" class="section">
+    <div class="card">
+      <h2>Add Category</h2>
+      <div class="row">
+        <input id="categoryName" placeholder="Category name">
+        <button class="primary" onclick="addCategory()">Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Categories</h2>
+      <div id="categoryList" class="list"></div>
+    </div>
+  </section>
+
+  <section id="deposits" class="section">
+    <div class="card">
+      <h2>Deposits</h2>
+      <div id="depositList" class="list"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="receiptModal" class="modal">
+  <div class="modalbox">
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Payment Receipt</h2>
+    <img id="receiptImage" style="width:100%;max-height:70vh;object-fit:contain">
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const API="https://pro.createlk.workers.dev";
+
+const $=id=>document.getElementById(id);
+
+async function api(path,opt={}){
+  const r=await fetch(API+path,{
+    credentials:"include",
+    ...opt,
+    headers:{
+      "Content-Type":"application/json",
+      ...(opt.headers||{})
+    }
+  });
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error(d.error||"Request failed");
+  return d;
+}
+
+function toast(x){
+  $("toast").textContent=x;
+  $("toast").style.display="block";
+  setTimeout(()=>$("toast").style.display="none",2500);
+}
+
+function login(){
+  location.href=API+"/auth/google";
+}
+
+function logout(){
+  location.href=API+"/auth/logout";
+}
+
+function tab(id,btn){
+  document.querySelectorAll(".section").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  $(id).classList.add("active");
+  btn.classList.add("active");
+  if(id==="deposits")loadDeposits();
+}
+
+function closeModal(){
+  $("receiptModal").classList.remove("show");
+}
+
+function esc(x=""){
+  return String(x).replace(/[&<>"']/g,m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",
+    '"':"&quot;","'":"&#039;"
+  }[m]));
+}
+
+async function fileData(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result);
+    r.onerror=rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function load(){
+  try{
+    const d=await api("/api/me");
+
+    if(!d.user){
+      $("login").style.display="grid";
+      return;
+    }
+
+    $("login").style.display="none";
+    $("top").style.display="flex";
+    $("app").style.display="block";
+
+    $("name").textContent=d.user.name||d.user.email;
+    $("avatar").src=d.user.photo_url||"";
+    
+    await Promise.all([
+      loadCategories(),
+      loadPrompts(),
+      loadDeposits()
+    ]);
+
+  }catch(e){
+    toast(e.message);
+  }
+}
+
+async function loadCategories(){
+  const d=await api("/api/pro/admin/categories");
+  const cats=d.categories||[];
+
+  $("category").innerHTML=
+    '<option value="">Select category</option>'+
+    cats.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
+
+  $("categoryList").innerHTML=cats.length
+    ?cats.map(c=>`<div class="item">${esc(c.name)}</div>`).join("")
+    :'<div class="empty">No categories</div>';
+}
+
+async function addCategory(){
+  const name=$("categoryName").value.trim();
+  if(!name)return toast("Enter category name");
+
+  try{
+    await api("/api/pro/admin/categories",{
+      method:"POST",
+      body:JSON.stringify({name})
+    });
+
+    $("categoryName").value="";
+    await loadCategories();
+    toast("Category added");
+  }catch(e){toast(e.message)}
+}
+
+async function loadPrompts(){
+  const d=await api("/api/pro/admin/prompts");
+  const list=d.prompts||[];
+
+  $("promptList").innerHTML=list.length
+    ?list.map(p=>`
+      <div class="item">
+        <div class="row">
+          ${p.image_url?`<img src="${p.image_url}">`:""}
+          <div>
+            <h3>${esc(p.title)}</h3>
+            <div class="meta">${esc(p.category_name||"No category")}</div>
+            <div>${esc(p.description||"")}</div>
+          </div>
+        </div>
+      </div>
+    `).join("")
+    :'<div class="empty">No prompts</div>';
+}
+
+async function addPrompt(){
+  const title=$("title").value.trim();
+  const description=$("description").value.trim();
+  const prompt=$("prompt").value.trim();
+  const category_id=$("category").value||null;
+  const file=$("promptImage").files[0];
+
+  if(!title)return toast("Title is required");
+  if(!prompt&&!file)return toast("Add prompt text or image");
+
+  try{
+    const image=file?await fileData(file):"";
+
+    await api("/api/pro/admin/prompts",{
+      method:"POST",
+      body:JSON.stringify({
+        title,
+        description,
+        prompt,
+        category_id,
+        image
+      })
+    });
+
+    ["title","description","prompt"].forEach(id=>$(id).value="");
+    $("category").value="";
+    $("promptImage").value="";
+
+    await loadPrompts();
+    toast("Prompt added");
+  }catch(e){toast(e.message)}
+}
+
+async function loadDeposits(){
+  try{
+    const d=await api("/api/pro/admin/deposits");
+    const list=d.deposits||[];
+
+    $("depositList").innerHTML=list.length
+      ?list.map(x=>`
+        <div class="item">
+          <div class="row">
+            <div>
+              <h3>${esc(x.name||"User")}</h3>
+              <div class="meta">${esc(x.email||"")}</div>
+              <div><b>${x.amount} Coins</b></div>
+              <div class="meta">Deposit #${x.id} · ${esc(x.payment_date||x.created_at||"")}</div>
+              <span class="badge ${esc(x.status)}">${esc(x.status)}</span>
+            </div>
+            ${x.receipt_url?`<button class="light" onclick='receipt(${JSON.stringify(x.receipt_url)})'>Receipt</button>`:""}
+          </div>
+
+          ${x.status==="pending"?`
+            <div class="actions">
+              <button class="green" onclick="depositAction(${x.id},'approve')">Approve</button>
+              <button class="red" onclick="depositAction(${x.id},'reject')">Reject</button>
+            </div>
+          `:""}
+        </div>
+      `).join("")
+      :'<div class="empty">No deposits</div>';
+  }catch(e){
+    toast(e.message);
+  }
+}
+
+function receipt(url){
+  $("receiptImage").src=url;
+  $("receiptModal").classList.add("show");
+}
+
+async function depositAction(id,action){
+  if(!confirm(action==="approve"
+    ?"Approve this deposit?"
+    :"Reject this deposit?"))return;
+
+  try{
+    await api("/api/pro/admin/deposits/"+id,{
+      method:"POST",
+      body:JSON.stringify({action})
+    });
+
+    await loadDeposits();
+    toast("Deposit "+action+"d");
+  }catch(e){toast(e.message)}
+}
+
+load();
+</script>
+
+</body>
+</html>
