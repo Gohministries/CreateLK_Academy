@@ -1,0 +1,848 @@
+const SITE = "https://createlk.com";
+const CURRENCY = "LKR";
+
+const SANDBOX_URL = "https://sandbox.payhere.lk/pay/checkout";
+const LIVE_URL = "https://www.payhere.lk/pay/checkout";
+
+const PACKAGES = {
+  "20": {
+    coins: 20,
+    amount: 20,
+    name: "20 Coins"
+  },
+  "100": {
+    coins: 100,
+    amount: 100,
+    name: "100 Coins"
+  },
+  "250": {
+    coins: 250,
+    amount: 250,
+    name: "250 Coins"
+  },
+  "500": {
+    coins: 500,
+    amount: 500,
+    name: "500 Coins"
+  },
+  "1000": {
+    coins: 1000,
+    amount: 1000,
+    name: "1,000 Coins"
+  }
+};
+
+function json(data, status = 200, origin = SITE) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+    }
+  });
+}
+
+function text(data, status = 200) {
+  return new Response(data, {
+    status,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8"
+    }
+  });
+}
+
+function cors(request) {
+  const origin = request.headers.get("Origin") || "";
+
+  return origin === SITE ? SITE : SITE;
+}
+
+function md5(input) {
+  function safeAdd(x, y) {
+    const lsw = (x & 0xffff) + (y & 0xffff);
+    const msw = (x >>> 16) + (y >>> 16) + (lsw >>> 16);
+    return (msw << 16) | (lsw & 0xffff);
+  }
+
+  function rol(num, cnt) {
+    return (num << cnt) | (num >>> (32 - cnt));
+  }
+
+  function cmn(q, a, b, x, s, t) {
+    return safeAdd(rol(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b);
+  }
+
+  function ff(a, b, c, d, x, s, t) {
+    return cmn((b & c) | (~b & d), a, b, x, s, t);
+  }
+
+  function gg(a, b, c, d, x, s, t) {
+    return cmn((b & d) | (c & ~d), a, b, x, s, t);
+  }
+
+  function hh(a, b, c, d, x, s, t) {
+    return cmn(b ^ c ^ d, a, b, x, s, t);
+  }
+
+  function ii(a, b, c, d, x, s, t) {
+    return cmn(c ^ (b | ~d), a, b, x, s, t);
+  }
+
+  const utf8 = unescape(encodeURIComponent(input));
+  const bytes = [];
+  for (let i = 0; i < utf8.length; i++) {
+    bytes.push(utf8.charCodeAt(i));
+  }
+
+  const originalLength = bytes.length;
+
+  bytes.push(0x80);
+
+  while ((bytes.length % 64) !== 56) {
+    bytes.push(0);
+  }
+
+  const bitLength = originalLength * 8;
+
+  for (let i = 0; i < 8; i++) {
+    bytes.push((bitLength >>> (8 * i)) & 0xff);
+  }
+
+  const x = [];
+
+  for (let i = 0; i < bytes.length; i += 4) {
+    x.push(
+      bytes[i] |
+      (bytes[i + 1] << 8) |
+      (bytes[i + 2] << 16) |
+      (bytes[i + 3] << 24)
+    );
+  }
+
+  let a = 0x67452301;
+  let b = 0xefcdab89;
+  let c = 0x98badcfe;
+  let d = 0x10325476;
+
+  for (let i = 0; i < x.length; i += 16) {
+    const aa = a;
+    const bb = b;
+    const cc = c;
+    const dd = d;
+
+    a = ff(a,b,c,d,x[i+0],7,-680876936);
+    d = ff(d,a,b,c,x[i+1],12,-389564586);
+    c = ff(c,d,a,b,x[i+2],17,606105819);
+    b = ff(b,c,d,a,x[i+3],22,-1044525330);
+    a = ff(a,b,c,d,x[i+4],7,-176418897);
+    d = ff(d,a,b,c,x[i+5],12,1200080426);
+    c = ff(c,d,a,b,x[i+6],17,-1473231341);
+    b = ff(b,c,d,a,x[i+7],22,-45705983);
+    a = ff(a,b,c,d,x[i+8],7,1770035416);
+    d = ff(d,a,b,c,x[i+9],12,-1958414417);
+    c = ff(c,d,a,b,x[i+10],17,-42063);
+    b = ff(b,c,d,a,x[i+11],22,-1990404162);
+    a = ff(a,b,c,d,x[i+12],7,1804603682);
+    d = ff(d,a,b,c,x[i+13],12,-40341101);
+    c = ff(c,d,a,b,x[i+14],17,-1502002290);
+    b = ff(b,c,d,a,x[i+15],22,1236535329);
+
+    a = gg(a,b,c,d,x[i+1],5,-165796510);
+    d = gg(d,a,b,c,x[i+6],9,-1069501632);
+    c = gg(c,d,a,b,x[i+11],14,643717713);
+    b = gg(b,c,d,a,x[i+0],20,-373897302);
+    a = gg(a,b,c,d,x[i+5],5,-701558691);
+    d = gg(d,a,b,c,x[i+10],9,38016083);
+    c = gg(c,d,a,b,x[i+15],14,-660478335);
+    b = gg(b,c,d,a,x[i+4],20,-405537848);
+    a = gg(a,b,c,d,x[i+9],5,568446438);
+    d = gg(d,a,b,c,x[i+14],9,-1019803690);
+    c = gg(c,d,a,b,x[i+3],14,-187363961);
+    b = gg(b,c,d,a,x[i+8],20,1163531501);
+    a = gg(a,b,c,d,x[i+13],5,-1444681467);
+    d = gg(d,a,b,c,x[i+2],9,-51403784);
+    c = gg(c,d,a,b,x[i+7],14,1735328473);
+    b = gg(b,c,d,a,x[i+12],20,-1926607734);
+
+    a = hh(a,b,c,d,x[i+5],4,-378558);
+    d = hh(d,a,b,c,x[i+8],11,-2022574463);
+    c = hh(c,d,a,b,x[i+11],16,1839030562);
+    b = hh(b,c,d,a,x[i+14],23,-35309556);
+    a = hh(a,b,c,d,x[i+1],4,-1530992060);
+    d = hh(d,a,b,c,x[i+4],11,1272893353);
+    c = hh(c,d,a,b,x[i+7],16,-155497632);
+    b = hh(b,c,d,a,x[i+10],23,-1094730640);
+    a = hh(a,b,c,d,x[i+13],4,681279174);
+    d = hh(d,a,b,c,x[i+0],11,-358537222);
+    c = hh(c,d,a,b,x[i+3],16,-722521979);
+    b = hh(b,c,d,a,x[i+6],23,76029189);
+    a = hh(a,b,c,d,x[i+9],4,-640364487);
+    d = hh(d,a,b,c,x[i+12],11,-421815835);
+    c = hh(c,d,a,b,x[i+15],16,530742520);
+    b = hh(b,c,d,a,x[i+2],23,-995338651);
+
+    a = ii(a,b,c,d,x[i+0],6,-198630844);
+    d = ii(d,a,b,c,x[i+7],10,1126891415);
+    c = ii(c,d,a,b,x[i+14],15,-1416354905);
+    b = ii(b,c,d,a,x[i+5],21,-57434055);
+    a = ii(a,b,c,d,x[i+12],6,1700485571);
+    d = ii(d,a,b,c,x[i+3],10,-1894986606);
+    c = ii(c,d,a,b,x[i+10],15,-1051523);
+    b = ii(b,c,d,a,x[i+1],21,-2054922799);
+    a = ii(a,b,c,d,x[i+8],6,1873313359);
+    d = ii(d,a,b,c,x[i+15],10,-30611744);
+    c = ii(c,d,a,b,x[i+6],15,-1560198380);
+    b = ii(b,c,d,a,x[i+13],21,1309151649);
+    a = ii(a,b,c,d,x[i+4],6,-145523070);
+    d = ii(d,a,b,c,x[i+11],10,-1120210379);
+    c = ii(c,d,a,b,x[i+2],15,718787259);
+    b = ii(b,c,d,a,x[i+9],21,-343485551);
+
+    a = safeAdd(a, aa);
+    b = safeAdd(b, bb);
+    c = safeAdd(c, cc);
+    d = safeAdd(d, dd);
+  }
+
+  const words = [a,b,c,d];
+  let out = "";
+
+  for (const word of words) {
+    for (let i = 0; i < 4; i++) {
+      const byte = (word >>> (8 * i)) & 0xff;
+      out += byte.toString(16).padStart(2, "0");
+    }
+  }
+
+  return out;
+}
+
+async function sha256(value) {
+  const data = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+
+  return [...new Uint8Array(hash)]
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function amountString(amount) {
+  return Number(amount).toFixed(2);
+}
+
+function checkoutHash(merchantId, orderId, amount, currency, secret) {
+  const secretHash = md5(secret).toUpperCase();
+
+  return md5(
+    String(merchantId) +
+    String(orderId) +
+    amountString(amount) +
+    String(currency) +
+    secretHash
+  ).toUpperCase();
+}
+
+function notificationHash(
+  merchantId,
+  orderId,
+  amount,
+  currency,
+  statusCode,
+  secret
+) {
+  const secretHash = md5(secret).toUpperCase();
+
+  return md5(
+    String(merchantId) +
+    String(orderId) +
+    String(amount) +
+    String(currency) +
+    String(statusCode) +
+    secretHash
+  ).toUpperCase();
+}
+
+function safeEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+
+  let result = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+
+  return result === 0;
+}
+
+function randomOrderId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+
+  return (
+    "CLP-" +
+    Date.now().toString(36).toUpperCase() +
+    "-" +
+    [...bytes]
+      .map(x => x.toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase()
+  );
+}
+
+async function getUserFromToken(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+
+  if (!auth.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = auth.slice(7).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  const expected = await sha256(
+    token + ":" + env.PAYHERE_AUTH_SECRET
+  );
+
+  const supplied = request.headers.get("X-PayHere-Auth") || "";
+
+  if (!safeEqual(expected, supplied)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(atob(token));
+  } catch {
+    return null;
+  }
+}
+
+async function getPayment(request, env, user) {
+  const body = await request.json().catch(() => null);
+
+  if (!body) {
+    return {
+      error: "Invalid JSON"
+    };
+  }
+
+  const packageId = String(body.package || "");
+
+  const pack = PACKAGES[packageId];
+
+  if (!pack) {
+    return {
+      error: "Invalid package"
+    };
+  }
+
+  const orderId = randomOrderId();
+
+  await env.PRO_DB.prepare(`
+    INSERT INTO pro_payments
+    (
+      user_id,
+      order_id,
+      amount,
+      coins,
+      currency,
+      status
+    )
+    VALUES (?, ?, ?, ?, ?, 'pending')
+  `)
+    .bind(
+      user.id,
+      orderId,
+      pack.amount,
+      pack.coins,
+      CURRENCY
+    )
+    .run();
+
+  const merchantId = env.PAYHERE_MERCHANT_ID;
+  const merchantSecret = env.PAYHERE_MERCHANT_SECRET;
+
+  const hash = checkoutHash(
+    merchantId,
+    orderId,
+    pack.amount,
+    CURRENCY,
+    merchantSecret
+  );
+
+  const checkoutUrl =
+    env.PAYHERE_LIVE === "true"
+      ? LIVE_URL
+      : SANDBOX_URL;
+
+  const customer = {
+    first_name: user.name || "CreateLK",
+    last_name: "",
+    email: user.email || "",
+    phone: user.phone || "",
+    address: "",
+    city: "Jaffna",
+    country: "Sri Lanka"
+  };
+
+  return {
+    success: true,
+    order_id: orderId,
+    package: packageId,
+    coins: pack.coins,
+    amount: amountString(pack.amount),
+    currency: CURRENCY,
+    checkout_url: checkoutUrl,
+    hash,
+    merchant_id: merchantId,
+    return_url:
+      SITE +
+      "/pro/bank.html?payment=return&order_id=" +
+      encodeURIComponent(orderId),
+    cancel_url:
+      SITE +
+      "/pro/bank.html?payment=cancel&order_id=" +
+      encodeURIComponent(orderId),
+    notify_url:
+      new URL(request.url).origin +
+      "/payhere/notify",
+    customer
+  };
+}
+
+async function notify(request, env) {
+  const contentType =
+    request.headers.get("content-type") || "";
+
+  let data = {};
+
+  if (contentType.includes("application/json")) {
+    data = await request.json().catch(() => ({}));
+  } else {
+    const form = await request.formData().catch(() => null);
+
+    if (form) {
+      for (const [key, value] of form.entries()) {
+        data[key] = String(value);
+      }
+    }
+  }
+
+  const merchantId = String(data.merchant_id || "");
+  const orderId = String(data.order_id || "");
+  const amount = String(data.payhere_amount || "");
+  const currency = String(data.payhere_currency || "");
+  const statusCode = Number(data.status_code || 0);
+  const suppliedMd5 = String(data.md5sig || "").toUpperCase();
+
+  if (!merchantId || !orderId || !amount || !currency) {
+    return text("INVALID");
+  }
+
+  if (
+    merchantId !== String(env.PAYHERE_MERCHANT_ID) ||
+    currency !== CURRENCY
+  ) {
+    return text("INVALID");
+  }
+
+  const payment = await env.PRO_DB.prepare(`
+    SELECT *
+    FROM pro_payments
+    WHERE order_id = ?
+    LIMIT 1
+  `)
+    .bind(orderId)
+    .first();
+
+  if (!payment) {
+    return text("INVALID");
+  }
+
+  const expectedMd5 = notificationHash(
+    merchantId,
+    orderId,
+    amount,
+    currency,
+    statusCode,
+    env.PAYHERE_MERCHANT_SECRET
+  );
+
+  if (!safeEqual(expectedMd5, suppliedMd5)) {
+    return text("INVALID");
+  }
+
+  const receivedAmount = Number(amount);
+  const expectedAmount = Number(payment.amount);
+
+  if (
+    !Number.isFinite(receivedAmount) ||
+    Math.abs(receivedAmount - expectedAmount) > 0.001
+  ) {
+    return text("INVALID");
+  }
+
+  if (payment.status === "paid") {
+    return text("OK");
+  }
+
+  if (statusCode !== 2) {
+    await env.PRO_DB.prepare(`
+      UPDATE pro_payments
+      SET
+        status = 'failed',
+        payhere_payment_id = ?,
+        method = ?,
+        payhere_status_code = ?,
+        md5sig = ?
+      WHERE order_id = ?
+      AND status = 'pending'
+    `)
+      .bind(
+        data.payment_id || null,
+        data.method || null,
+        statusCode,
+        suppliedMd5,
+        orderId
+      )
+      .run();
+
+    return text("OK");
+  }
+
+  const userId = payment.user_id;
+  const coins = Number(payment.coins);
+
+  const existing = await env.PRO_DB.prepare(`
+    SELECT id
+    FROM pro_transactions
+    WHERE reference = ?
+    LIMIT 1
+  `)
+    .bind("PAYHERE:" + orderId)
+    .first();
+
+  if (existing) {
+    await env.PRO_DB.prepare(`
+      UPDATE pro_payments
+      SET
+        status = 'paid',
+        payhere_payment_id = ?,
+        method = ?,
+        payhere_status_code = ?,
+        md5sig = ?,
+        paid_at = CURRENT_TIMESTAMP
+      WHERE order_id = ?
+    `)
+      .bind(
+        data.payment_id || null,
+        data.method || null,
+        statusCode,
+        suppliedMd5,
+        orderId
+      )
+      .run();
+
+    return text("OK");
+  }
+
+  await env.PRO_DB.prepare(`
+    INSERT INTO pro_credits (user_id, balance)
+    VALUES (?, 0)
+    ON CONFLICT(user_id)
+    DO NOTHING
+  `)
+    .bind(userId)
+    .run();
+
+  await env.PRO_DB.prepare(`
+    UPDATE pro_credits
+    SET balance = balance + ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+  `)
+    .bind(coins, userId)
+    .run();
+
+  await env.PRO_DB.prepare(`
+    INSERT INTO pro_transactions
+    (
+      user_id,
+      type,
+      amount,
+      balance_after,
+      reference,
+      description
+    )
+    SELECT
+      ?,
+      'credit',
+      ?,
+      balance,
+      ?,
+      ?
+    FROM pro_credits
+    WHERE user_id = ?
+  `)
+    .bind(
+      userId,
+      coins,
+      "PAYHERE:" + orderId,
+      "PayHere payment - " + coins + " Coins",
+      userId
+    )
+    .run();
+
+  await env.PRO_DB.prepare(`
+    UPDATE pro_payments
+    SET
+      status = 'paid',
+      payhere_payment_id = ?,
+      method = ?,
+      payhere_status_code = ?,
+      md5sig = ?,
+      paid_at = CURRENT_TIMESTAMP
+    WHERE order_id = ?
+    AND status = 'pending'
+  `)
+    .bind(
+      data.payment_id || null,
+      data.method || null,
+      statusCode,
+      suppliedMd5,
+      orderId
+    )
+    .run();
+
+  return text("OK");
+}
+
+async function status(request, env) {
+  const user = await getUserFromToken(request, env);
+
+  if (!user) {
+    return json(
+      { error: "Unauthorized" },
+      401,
+      cors(request)
+    );
+  }
+
+  const url = new URL(request.url);
+  const orderId = url.searchParams.get("order_id");
+
+  if (!orderId) {
+    return json(
+      { error: "Missing order_id" },
+      400,
+      cors(request)
+    );
+  }
+
+  const payment = await env.PRO_DB.prepare(`
+    SELECT
+      order_id,
+      amount,
+      coins,
+      currency,
+      status,
+      payhere_payment_id,
+      method,
+      created_at,
+      paid_at
+    FROM pro_payments
+    WHERE order_id = ?
+    AND user_id = ?
+    LIMIT 1
+  `)
+    .bind(orderId, user.id)
+    .first();
+
+  if (!payment) {
+    return json(
+      { error: "Payment not found" },
+      404,
+      cors(request)
+    );
+  }
+
+  return json(
+    {
+      success: true,
+      payment
+    },
+    200,
+    cors(request)
+  );
+}
+
+async function history(request, env) {
+  const user = await getUserFromToken(request, env);
+
+  if (!user) {
+    return json(
+      { error: "Unauthorized" },
+      401,
+      cors(request)
+    );
+  }
+
+  const result = await env.PRO_DB.prepare(`
+    SELECT
+      order_id,
+      amount,
+      coins,
+      currency,
+      status,
+      payhere_payment_id,
+      method,
+      created_at,
+      paid_at
+    FROM pro_payments
+    WHERE user_id = ?
+    ORDER BY id DESC
+    LIMIT 50
+  `)
+    .bind(user.id)
+    .all();
+
+  return json(
+    {
+      success: true,
+      payments: result.results || []
+    },
+    200,
+    cors(request)
+  );
+}
+
+async function packages(request) {
+  return json(
+    {
+      success: true,
+      currency: CURRENCY,
+      packages: Object.entries(PACKAGES).map(
+        ([id, pack]) => ({
+          id,
+          coins: pack.coins,
+          amount: pack.amount,
+          name: pack.name
+        })
+      )
+    },
+    200,
+    cors(request)
+  );
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": SITE,
+          "Access-Control-Allow-Credentials": "true",
+          "Access-Control-Allow-Headers":
+            "Content-Type, Authorization, X-PayHere-Auth",
+          "Access-Control-Allow-Methods":
+            "GET, POST, OPTIONS"
+        }
+      });
+    }
+
+    try {
+      if (
+        request.method === "GET" &&
+        url.pathname === "/"
+      ) {
+        return text("CreateLK PayHere Worker OK");
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/pro/payhere/packages"
+      ) {
+        return packages(request);
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/pro/payhere/create"
+      ) {
+        const user = await getUserFromToken(request, env);
+
+        if (!user) {
+          return json(
+            { error: "Unauthorized" },
+            401,
+            cors(request)
+          );
+        }
+
+        const result = await getPayment(
+          request,
+          env,
+          user
+        );
+
+        if (result.error) {
+          return json(
+            result,
+            400,
+            cors(request)
+          );
+        }
+
+        return json(
+          result,
+          200,
+          cors(request)
+        );
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/payhere/notify"
+      ) {
+        return notify(request, env);
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/pro/payhere/status"
+      ) {
+        return status(request, env);
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/pro/payhere/history"
+      ) {
+        return history(request, env);
+      }
+
+      return json(
+        { error: "Not found" },
+        404,
+        cors(request)
+      );
+    } catch (error) {
+      console.error(error);
+
+      return json(
+        {
+          error: "Internal server error"
+        },
+        500,
+        cors(request)
+      );
+    }
+  }
+};
