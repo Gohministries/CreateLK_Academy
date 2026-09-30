@@ -39,6 +39,37 @@ textarea{min-height:80px;resize:vertical}
 .note{margin:12px 0 0;font-size:12px;line-height:1.6;color:#697184}
 .submit{width:100%;height:48px;margin-top:5px;border-radius:11px;background:linear-gradient(135deg,#635bff,#8b5cf6,#d946ef);color:#fff;font-weight:900}
 .submit:disabled{opacity:.6;cursor:not-allowed}
+
+.payhere-box{
+ margin-top:18px;
+ padding:18px;
+ border-radius:16px;
+ background:linear-gradient(135deg,#f4f0ff,#fff5fc);
+ border:1px solid #ddd5fa;
+ text-align:center
+}
+
+.payhere-box p{
+ margin:7px 0 14px;
+ color:#697184;
+ font-size:12px;
+ line-height:1.5
+}
+
+.payhere-btn{
+ width:100%;
+ height:48px;
+ border-radius:11px;
+ background:linear-gradient(135deg,#635bff,#8b5cf6,#d946ef);
+ color:#fff;
+ font-weight:900;
+ font-size:14px
+}
+
+.payhere-btn:hover{
+ opacity:.94
+}
+
 .msg{margin-top:12px;padding:12px;border-radius:10px;display:none;line-height:1.5}
 .msg.ok{display:block;background:#eafaf0;color:#18743b}.msg.err{display:block;background:#fff0f0;color:#b42318}
 .whatsapp{position:fixed;right:18px;bottom:18px;z-index:250;display:none;align-items:center;gap:8px;padding:11px 15px;border-radius:30px;background:#25D366;color:#fff;font-weight:900;text-decoration:none;box-shadow:0 8px 25px #0003;white-space:nowrap}
@@ -47,6 +78,7 @@ textarea{min-height:80px;resize:vertical}
 .whatsapp-toggle img{width:30px}.whatsapp-toggle.hidden{display:none!important}
 footer{background:#171326;color:#aaa;padding:25px;text-align:center}
 .toast{position:fixed;right:18px;bottom:80px;background:#171923;color:#fff;padding:12px 16px;border-radius:10px;display:none;z-index:300}
+
 @media(max-width:600px){
 nav{padding:7px 10px}.logo{font-size:17px}.credits{height:36px;font-size:12px;padding:0 8px}
 .btn{height:36px;padding:0 10px}.menu-btn{width:36px;height:36px}
@@ -99,6 +131,35 @@ Library
 <h1>💎 Add Coins</h1>
 <p>Select a package, make your bank transfer, then submit your payment details.</p>
 </section>
+
+<!-- PAYHERE ONLINE PAYMENT -->
+
+<div class="box">
+
+<h2>💳 Pay Online</h2>
+
+<div class="payhere-box">
+
+<div style="font-size:30px">💳</div>
+
+<strong>Pay securely with PayHere</strong>
+
+<p>
+Buy Coins online using PayHere. Your payment is processed securely through PayHere.
+</p>
+
+<button
+ class="payhere-btn"
+ onclick="openPayHere()"
+>
+💳 Pay Online with PayHere
+</button>
+
+</div>
+
+</div>
+
+<!-- BANK TRANSFER -->
 
 <div class="box">
 
@@ -197,6 +258,8 @@ Submit Deposit
 <script>
 
 const API="https://public.createlk.workers.dev";
+const PAYHERE_WORKER="https://pro-payhere.createlk.workers.dev";
+
 const $=id=>document.getElementById(id);
 
 let selected=null;
@@ -216,8 +279,12 @@ async function api(path,options={}){
   credentials:"include",
   ...options
  });
+
  const d=await r.json().catch(()=>({}));
- if(!r.ok)throw Error(d.error||d.message||"Request failed");
+
+ if(!r.ok)
+  throw Error(d.error||d.message||"Request failed");
+
  return d;
 }
 
@@ -278,11 +345,31 @@ async function loadUser(){
 
 }
 
+/*
+ * PayHere button.
+ *
+ * This opens the separate PayHere Worker.
+ * The PayHere Worker must provide the checkout flow.
+ */
+function openPayHere(){
+
+ if(!me){
+  location.href=API+"/auth/google";
+  return;
+ }
+
+ window.location.href=PAYHERE_WORKER;
+}
+
 async function copyAccount(){
 
  try{
-  await navigator.clipboard.writeText($("accountNo").textContent.trim());
+  await navigator.clipboard.writeText(
+   $("accountNo").textContent.trim()
+  );
+
   toast("Account number copied!");
+
  }catch{
   toast("Copy failed");
  }
@@ -359,10 +446,6 @@ async function submitDeposit(){
 
  try{
 
-  /*
-   * Worker requires JSON.
-   * Generate reference internally.
-   */
   const reference=
    "WEB-"+Date.now().toString(36).toUpperCase();
 
@@ -377,7 +460,8 @@ async function submitDeposit(){
      amount:selected.price,
      reference,
      payment_method:"Bank",
-     payment_date:date
+     payment_date:date,
+     description:$("description").value.trim()
     })
    }
   );
@@ -388,7 +472,9 @@ async function submitDeposit(){
    deposit.deposit?.id;
 
   if(!depositId)
-   throw Error("Deposit was created but no deposit ID was returned.");
+   throw Error(
+    "Deposit was created but no deposit ID was returned."
+   );
 
   btn.textContent="Uploading slip...";
 
@@ -417,7 +503,9 @@ async function submitDeposit(){
   $("paymentDate").value="";
   $("slip").value="";
   $("description").value="";
+
   selected=null;
+
   $("amountBox").style.display="none";
 
   toast("Deposit submitted!");
@@ -425,7 +513,11 @@ async function submitDeposit(){
  }catch(e){
 
   console.error(e);
-  showMsg(e.message||"Deposit failed.","err");
+
+  showMsg(
+   e.message||"Deposit failed.",
+   "err"
+  );
 
  }
 
@@ -450,8 +542,10 @@ function toast(text){
 }
 
 document.addEventListener("click",e=>{
+
  if(!e.target.closest(".menu-wrap"))
   $("menu").classList.remove("show");
+
 });
 
 $("paymentDate").max=
