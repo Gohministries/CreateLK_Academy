@@ -10,7 +10,11 @@ const CORS={
 };
 
 const json=(x,s=200)=>new Response(JSON.stringify(x),{
-  status:s,headers:{"Content-Type":"application/json",...CORS}
+  status:s,
+  headers:{
+    "Content-Type":"application/json",
+    ...CORS
+  }
 });
 
 const cookie=(v,age=2592000)=>
@@ -25,88 +29,164 @@ function getCookie(r){
 
 async function hash(x){
   const b=await crypto.subtle.digest(
-    "SHA-256",new TextEncoder().encode(x)
+    "SHA-256",
+    new TextEncoder().encode(x)
   );
+
   return [...new Uint8Array(b)]
-    .map(x=>x.toString(16).padStart(2,"0")).join("");
+    .map(x=>x.toString(16).padStart(2,"0"))
+    .join("");
 }
+
 
 /* AUTH */
 
 async function admin(r,e){
+
   const token=getCookie(r);
+
   if(!token)return null;
 
   const row=await e.PRO_DB.prepare(`
     SELECT s.*,u.email,u.name,u.photo_url
     FROM admin_sessions s
     JOIN users u ON u.id=s.user_id
-    WHERE s.id=? AND s.expires_at>datetime('now')
+    WHERE s.id=?
+    AND s.expires_at>datetime('now')
     LIMIT 1
-  `).bind(await hash(token)).first();
+  `)
+  .bind(await hash(token))
+  .first();
 
-  return row&&String(row.email||"").toLowerCase()===ADMIN?row:null;
+  return row&&
+    String(row.email||"").toLowerCase()===ADMIN
+    ?row
+    :null;
 }
+
 
 async function auth(r,e){
+
   const a=await admin(r,e);
-  return a||json({error:"Admin login required"},401);
+
+  return a||json({
+    error:"Admin login required"
+  },401);
 }
+
 
 /* GOOGLE */
 
 function login(r,e){
+
   if(!e.GOOGLE_CLIENT_ID)
-    return json({error:"GOOGLE_CLIENT_ID secret is missing"},500);
+    return json({
+      error:"GOOGLE_CLIENT_ID secret is missing"
+    },500);
 
-  const u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  const u=new URL(
+    "https://accounts.google.com/o/oauth2/v2/auth"
+  );
 
-  u.searchParams.set("client_id",e.GOOGLE_CLIENT_ID);
-  u.searchParams.set("redirect_uri",new URL("/auth/callback",r.url));
-  u.searchParams.set("response_type","code");
-  u.searchParams.set("scope","openid email profile");
-  u.searchParams.set("prompt","select_account");
+  u.searchParams.set(
+    "client_id",
+    e.GOOGLE_CLIENT_ID
+  );
+
+  u.searchParams.set(
+    "redirect_uri",
+    new URL("/auth/callback",r.url)
+  );
+
+  u.searchParams.set(
+    "response_type",
+    "code"
+  );
+
+  u.searchParams.set(
+    "scope",
+    "openid email profile"
+  );
+
+  u.searchParams.set(
+    "prompt",
+    "select_account"
+  );
 
   return Response.redirect(u,302);
 }
 
+
 async function callback(r,e){
+
   try{
-    if(!e.GOOGLE_CLIENT_ID||!e.GOOGLE_CLIENT_SECRET)
-      return json({error:"Google secrets missing"},500);
 
-    const code=new URL(r.url).searchParams.get("code");
-    if(!code)return new Response("Missing code",{status:400});
+    if(
+      !e.GOOGLE_CLIENT_ID||
+      !e.GOOGLE_CLIENT_SECRET
+    )
+      return json({
+        error:"Google secrets missing"
+      },500);
 
-    const redirectUri=new URL("/auth/callback",r.url).toString();
+    const code=
+      new URL(r.url).searchParams.get("code");
 
-    const tr=await fetch("https://oauth2.googleapis.com/token",{
-      method:"POST",
-      headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:new URLSearchParams({
-        code,
-        client_id:e.GOOGLE_CLIENT_ID,
-        client_secret:e.GOOGLE_CLIENT_SECRET,
-        redirect_uri:redirectUri,
-        grant_type:"authorization_code"
-      })
-    });
+    if(!code)
+      return new Response(
+        "Missing code",
+        {status:400}
+      );
+
+    const redirectUri=
+      new URL("/auth/callback",r.url).toString();
+
+    const tr=await fetch(
+      "https://oauth2.googleapis.com/token",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":
+            "application/x-www-form-urlencoded"
+        },
+        body:new URLSearchParams({
+          code,
+          client_id:e.GOOGLE_CLIENT_ID,
+          client_secret:e.GOOGLE_CLIENT_SECRET,
+          redirect_uri:redirectUri,
+          grant_type:"authorization_code"
+        })
+      }
+    );
 
     const token=await tr.json();
 
     if(!tr.ok||!token.access_token)
-      return json({error:"Google login failed"},400);
+      return json({
+        error:"Google login failed"
+      },400);
 
     const ur=await fetch(
       "https://openidconnect.googleapis.com/v1/userinfo",
-      {headers:{Authorization:`Bearer ${token.access_token}`}}
+      {
+        headers:{
+          Authorization:
+            `Bearer ${token.access_token}`
+        }
+      }
     );
 
     const g=await ur.json();
-    const email=String(g.email||"").trim().toLowerCase();
+
+    const email=
+      String(g.email||"")
+      .trim()
+      .toLowerCase();
 
     if(!ur.ok||!email)
-      return json({error:"Could not read Google account"},400);
+      return json({
+        error:"Could not read Google account"
+      },400);
 
     if(email!==ADMIN)
       return new Response(
@@ -116,464 +196,899 @@ async function callback(r,e){
 
     let u=await e.PRO_DB.prepare(`
       SELECT * FROM users
-      WHERE lower(email)=? LIMIT 1
-    `).bind(email).first();
+      WHERE lower(email)=?
+      LIMIT 1
+    `)
+    .bind(email)
+    .first();
 
     if(u){
+
       if(!u.id){
-        const id="admin-"+crypto.randomUUID();
+
+        const id=
+          "admin-"+crypto.randomUUID();
 
         await e.PRO_DB.prepare(`
           UPDATE users
           SET id=?,name=?,photo_url=?
           WHERE lower(email)=?
-        `).bind(
-          id,g.name||"",g.picture||"",email
-        ).run();
+        `)
+        .bind(
+          id,
+          g.name||"",
+          g.picture||"",
+          email
+        )
+        .run();
+
       }else{
+
         await e.PRO_DB.prepare(`
-          UPDATE users SET name=?,photo_url=?
+          UPDATE users
+          SET name=?,photo_url=?
           WHERE id=?
-        `).bind(
-          g.name||"",g.picture||"",u.id
-        ).run();
+        `)
+        .bind(
+          g.name||"",
+          g.picture||"",
+          u.id
+        )
+        .run();
+
       }
+
     }else{
-      const id="admin-"+crypto.randomUUID();
+
+      const id=
+        "admin-"+crypto.randomUUID();
 
       await e.PRO_DB.prepare(`
         INSERT INTO users
         (id,google_id,email,name,picture,photo_url)
         VALUES(?,?,?,?,?,?)
-      `).bind(
-        id,String(g.sub||""),
-        email,g.name||"",g.picture||"",g.picture||""
-      ).run();
+      `)
+      .bind(
+        id,
+        String(g.sub||""),
+        email,
+        g.name||"",
+        g.picture||"",
+        g.picture||""
+      )
+      .run();
+
     }
 
     u=await e.PRO_DB.prepare(`
       SELECT * FROM users
-      WHERE lower(email)=? LIMIT 1
-    `).bind(email).first();
+      WHERE lower(email)=?
+      LIMIT 1
+    `)
+    .bind(email)
+    .first();
 
     if(!u?.id)
-      return json({error:"Admin user could not be loaded"},500);
+      return json({
+        error:"Admin user could not be loaded"
+      },500);
 
-    const raw=crypto.randomUUID()+crypto.randomUUID();
+    const raw=
+      crypto.randomUUID()+
+      crypto.randomUUID();
 
     await e.PRO_DB.prepare(`
-      INSERT INTO admin_sessions(id,user_id,expires_at)
+      INSERT INTO admin_sessions
+      (id,user_id,expires_at)
       VALUES(?,?,datetime('now','+30 days'))
-    `).bind(await hash(raw),u.id).run();
+    `)
+    .bind(
+      await hash(raw),
+      u.id
+    )
+    .run();
 
     return new Response(null,{
       status:302,
       headers:{
-        Location:SITE+"/pro/admin.html",
-        "Set-Cookie":cookie(raw)
+        Location:
+          SITE+"/pro/admin.html",
+        "Set-Cookie":
+          cookie(raw)
       }
     });
 
   }catch(err){
+
     console.error(err);
-    return json({error:err?.message||"Admin callback failed"},500);
+
+    return json({
+      error:
+        err?.message||
+        "Admin callback failed"
+    },500);
+
   }
+
 }
 
+
 async function logout(r,e){
+
   const token=getCookie(r);
 
   if(token){
+
     await e.PRO_DB.prepare(`
-      DELETE FROM admin_sessions WHERE id=?
-    `).bind(await hash(token)).run();
+      DELETE FROM admin_sessions
+      WHERE id=?
+    `)
+    .bind(await hash(token))
+    .run();
+
   }
 
   return new Response(null,{
     status:302,
     headers:{
-      Location:SITE+"/pro/admin.html",
-      "Set-Cookie":cookie("",0)
+      Location:
+        SITE+"/pro/admin.html",
+      "Set-Cookie":
+        cookie("",0)
     }
   });
+
 }
 
+
 async function me(r,e){
+
   const a=await admin(r,e);
 
   return json({
-    user:a?{
+    user:a?
+    {
       id:a.user_id,
       email:a.email,
       name:a.name,
       photo_url:a.photo_url
-    }:null
+    }
+    :null
   });
+
 }
+
 
 /* CATEGORIES */
 
 async function categories(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const {results}=await e.PRO_DB.prepare(`
-    SELECT * FROM pro_categories ORDER BY name
+    SELECT * FROM pro_categories
+    ORDER BY name
   `).all();
 
-  return json({categories:results||[]});
+  return json({
+    categories:results||[]
+  });
+
 }
+
 
 async function addCategory(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const b=await r.json();
-  const name=String(b.name||"").trim();
 
-  if(!name)return json({error:"Category name required"},400);
+  const name=
+    String(b.name||"").trim();
+
+  if(!name)
+    return json({
+      error:"Category name required"
+    },400);
 
   await e.PRO_DB.prepare(`
-    INSERT INTO pro_categories(name) VALUES(?)
-  `).bind(name).run();
+    INSERT INTO pro_categories(name)
+    VALUES(?)
+  `)
+  .bind(name)
+  .run();
 
   return json({ok:true});
+
 }
+
 
 /* PROMPTS */
 
 async function prompts(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const {results}=await e.PRO_DB.prepare(`
     SELECT p.*,c.name AS category_name
     FROM pro_prompts p
-    LEFT JOIN pro_categories c ON c.id=p.category_id
+    LEFT JOIN pro_categories c
+      ON c.id=p.category_id
     ORDER BY p.id DESC
   `).all();
 
   return json({
     prompts:(results||[]).map(p=>({
+
       ...p,
+
       image_url:p.image_key?
         new URL(
-          "/api/pro/images/"+encodeURIComponent(p.image_key),
+          "/api/pro/images/"+
+          encodeURIComponent(p.image_key),
           r.url
-        ).toString():null
+        ).toString()
+        :null
+
     }))
   });
+
 }
 
+
 async function addPrompt(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const b=await r.json();
-  const title=String(b.title||"").trim();
-  const description=String(b.description||"").trim();
-  const prompt=String(b.prompt||"").trim();
-  const category_id=b.category_id||null;
-  const image=String(b.image||"");
 
-  if(!title)return json({error:"Title required"},400);
+  const title=
+    String(b.title||"").trim();
+
+  const description=
+    String(b.description||"").trim();
+
+  const prompt=
+    String(b.prompt||"").trim();
+
+  const category_id=
+    b.category_id||null;
+
+  const image=
+    String(b.image||"");
+
+  if(!title)
+    return json({
+      error:"Title required"
+    },400);
+
   if(!prompt&&!image)
-    return json({error:"Prompt or image required"},400);
+    return json({
+      error:"Prompt or image required"
+    },400);
 
   let image_key=null;
 
   if(image){
+
     const m=image.match(
       /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/
     );
 
-    if(!m)return json({error:"Invalid image"},400);
+    if(!m)
+      return json({
+        error:"Invalid image"
+      },400);
 
     const type=m[1];
-    const ext=type==="image/png"?"png":
-              type==="image/webp"?"webp":"jpg";
 
-    image_key=`prompts/${crypto.randomUUID()}.${ext}`;
+    const ext=
+      type==="image/png"
+      ?"png"
+      :
+      type==="image/webp"
+      ?"webp"
+      :
+      "jpg";
+
+    image_key=
+      `prompts/${crypto.randomUUID()}.${ext}`;
 
     await e.PRO_IMAGES.put(
       image_key,
-      Uint8Array.from(atob(m[2]),c=>c.charCodeAt(0)),
-      {httpMetadata:{contentType:type}}
+      Uint8Array.from(
+        atob(m[2]),
+        c=>c.charCodeAt(0)
+      ),
+      {
+        httpMetadata:{
+          contentType:type
+        }
+      }
     );
+
   }
 
   await e.PRO_DB.prepare(`
     INSERT INTO pro_prompts
     (title,description,prompt,category_id,image_key)
     VALUES(?,?,?,?,?)
-  `).bind(
-    title,description,prompt,category_id,image_key
-  ).run();
+  `)
+  .bind(
+    title,
+    description,
+    prompt,
+    category_id,
+    image_key
+  )
+  .run();
 
   return json({ok:true});
+
 }
+
 
 /* EDIT PROMPT + PHOTO */
 
 async function updatePrompt(r,e,id){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const b=await r.json();
 
-  const title=String(b.title||"").trim();
-  const description=String(b.description||"").trim();
-  const prompt=String(b.prompt||"").trim();
-  const category_id=b.category_id||null;
-  const image=String(b.image||"");
+  const title=
+    String(b.title||"").trim();
 
-  if(!title)return json({error:"Title required"},400);
+  const description=
+    String(b.description||"").trim();
+
+  const prompt=
+    String(b.prompt||"").trim();
+
+  const category_id=
+    b.category_id||null;
+
+  const image=
+    String(b.image||"");
+
+  if(!title)
+    return json({
+      error:"Title required"
+    },400);
 
   const old=await e.PRO_DB.prepare(`
-    SELECT image_key FROM pro_prompts
-    WHERE id=? LIMIT 1
-  `).bind(id).first();
+    SELECT image_key
+    FROM pro_prompts
+    WHERE id=?
+    LIMIT 1
+  `)
+  .bind(id)
+  .first();
 
-  if(!old)return json({error:"Prompt not found"},404);
+  if(!old)
+    return json({
+      error:"Prompt not found"
+    },404);
 
-  let image_key=old.image_key||null;
+  let image_key=
+    old.image_key||null;
 
   if(image){
+
     const m=image.match(
       /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/
     );
 
-    if(!m)return json({error:"Invalid image"},400);
+    if(!m)
+      return json({
+        error:"Invalid image"
+      },400);
 
     const type=m[1];
-    const ext=type==="image/png"?"png":
-              type==="image/webp"?"webp":"jpg";
 
-    image_key=`prompts/${crypto.randomUUID()}.${ext}`;
+    const ext=
+      type==="image/png"
+      ?"png"
+      :
+      type==="image/webp"
+      ?"webp"
+      :
+      "jpg";
+
+    image_key=
+      `prompts/${crypto.randomUUID()}.${ext}`;
 
     await e.PRO_IMAGES.put(
       image_key,
-      Uint8Array.from(atob(m[2]),c=>c.charCodeAt(0)),
-      {httpMetadata:{contentType:type}}
+      Uint8Array.from(
+        atob(m[2]),
+        c=>c.charCodeAt(0)
+      ),
+      {
+        httpMetadata:{
+          contentType:type
+        }
+      }
     );
 
     if(old.image_key)
-      await e.PRO_IMAGES.delete(old.image_key);
+      await e.PRO_IMAGES.delete(
+        old.image_key
+      );
+
   }
 
   await e.PRO_DB.prepare(`
     UPDATE pro_prompts
-    SET title=?,description=?,prompt=?,category_id=?,image_key=?
+    SET title=?,
+        description=?,
+        prompt=?,
+        category_id=?,
+        image_key=?
     WHERE id=?
-  `).bind(
-    title,description,prompt,category_id,image_key,id
-  ).run();
+  `)
+  .bind(
+    title,
+    description,
+    prompt,
+    category_id,
+    image_key,
+    id
+  )
+  .run();
 
   return json({ok:true});
+
 }
+
 
 /* IMAGES */
 
 async function image(r,e,key){
-  const o=await e.PRO_IMAGES.get(key);
 
-  if(!o)return new Response("Not found",{status:404});
+  const o=
+    await e.PRO_IMAGES.get(key);
+
+  if(!o)
+    return new Response(
+      "Not found",
+      {status:404}
+    );
 
   const h=new Headers();
-  o.writeHttpMetadata(h);
-  h.set("Cache-Control","public,max-age=31536000");
 
-  return new Response(o.body,{headers:h});
+  o.writeHttpMetadata(h);
+
+  h.set(
+    "Cache-Control",
+    "public,max-age=31536000"
+  );
+
+  return new Response(
+    o.body,
+    {headers:h}
+  );
+
 }
+
+
+/* PAYMENT SLIP */
+
+async function depositReceipt(r,e,key){
+
+  const o=
+    await e.PRO_IMAGES.get(key);
+
+  if(!o)
+    return new Response(
+      "Receipt not found",
+      {status:404}
+    );
+
+  const h=new Headers();
+
+  o.writeHttpMetadata(h);
+
+  h.set(
+    "Cache-Control",
+    "private,max-age=3600"
+  );
+
+  h.set(
+    "Access-Control-Allow-Origin",
+    SITE
+  );
+
+  return new Response(
+    o.body,
+    {headers:h}
+  );
+
+}
+
 
 /* PACKAGES */
 
 async function packages(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const {results}=await e.PRO_DB.prepare(`
-    SELECT * FROM credit_packages ORDER BY id
+    SELECT * FROM credit_packages
+    ORDER BY id
   `).all();
 
-  return json({packages:results||[]});
+  return json({
+    packages:results||[]
+  });
+
 }
 
+
 async function addPackage(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const b=await r.json();
-  const name=String(b.name||"").trim();
-  const credits=Number(b.credits);
-  const bonus=Number(b.bonus||0);
-  const popular=b.popular?1:0;
-  const active=b.active===false?0:1;
 
-  if(!name)return json({error:"Package name required"},400);
+  const name=
+    String(b.name||"").trim();
 
-  if(!Number.isInteger(credits)||credits<100)
-    return json({error:"Minimum is 100 coins"},400);
+  const credits=
+    Number(b.credits);
 
-  if(!Number.isInteger(bonus)||bonus<0)
-    return json({error:"Invalid bonus"},400);
+  const bonus=
+    Number(b.bonus||0);
+
+  const popular=
+    b.popular?1:0;
+
+  const active=
+    b.active===false?0:1;
+
+  if(!name)
+    return json({
+      error:"Package name required"
+    },400);
+
+  if(
+    !Number.isInteger(credits)||
+    credits<100
+  )
+    return json({
+      error:"Minimum is 100 coins"
+    },400);
+
+  if(
+    !Number.isInteger(bonus)||
+    bonus<0
+  )
+    return json({
+      error:"Invalid bonus"
+    },400);
 
   await e.PRO_DB.prepare(`
     INSERT INTO credit_packages
     (name,credits,price,bonus,popular,active)
     VALUES(?,?,?,?,?,?)
-  `).bind(
-    name,credits,credits,bonus,popular,active
-  ).run();
+  `)
+  .bind(
+    name,
+    credits,
+    credits,
+    bonus,
+    popular,
+    active
+  )
+  .run();
 
   return json({ok:true});
+
 }
 
+
 async function updatePackage(r,e,id){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const b=await r.json();
-  const name=String(b.name||"").trim();
-  const credits=Number(b.credits);
-  const bonus=Number(b.bonus||0);
-  const popular=b.popular?1:0;
-  const active=b.active?1:0;
 
-  if(!name||!Number.isInteger(credits)||credits<100)
-    return json({error:"Invalid package"},400);
+  const name=
+    String(b.name||"").trim();
 
-  if(!Number.isInteger(bonus)||bonus<0)
-    return json({error:"Invalid bonus"},400);
+  const credits=
+    Number(b.credits);
+
+  const bonus=
+    Number(b.bonus||0);
+
+  const popular=
+    b.popular?1:0;
+
+  const active=
+    b.active?1:0;
+
+  if(
+    !name||
+    !Number.isInteger(credits)||
+    credits<100
+  )
+    return json({
+      error:"Invalid package"
+    },400);
+
+  if(
+    !Number.isInteger(bonus)||
+    bonus<0
+  )
+    return json({
+      error:"Invalid bonus"
+    },400);
 
   await e.PRO_DB.prepare(`
     UPDATE credit_packages
-    SET name=?,credits=?,price=?,bonus=?,popular=?,active=?
+    SET name=?,
+        credits=?,
+        price=?,
+        bonus=?,
+        popular=?,
+        active=?
     WHERE id=?
-  `).bind(
-    name,credits,credits,bonus,popular,active,id
-  ).run();
+  `)
+  .bind(
+    name,
+    credits,
+    credits,
+    bonus,
+    popular,
+    active,
+    id
+  )
+  .run();
 
   return json({ok:true});
+
 }
+
 
 async function deletePackage(r,e,id){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   await e.PRO_DB.prepare(`
-    DELETE FROM credit_packages WHERE id=?
-  `).bind(id).run();
+    DELETE FROM credit_packages
+    WHERE id=?
+  `)
+  .bind(id)
+  .run();
 
   return json({ok:true});
+
 }
+
 
 /* DEPOSITS */
 
 async function deposits(r,e){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const {results}=await e.PRO_DB.prepare(`
     SELECT d.*,u.name,u.email
     FROM pro_deposits d
-    LEFT JOIN users u ON u.id=d.user_id
+    LEFT JOIN users u
+      ON u.id=d.user_id
     ORDER BY d.id DESC
   `).all();
 
-  return json({deposits:results||[]});
+  return json({
+    deposits:results||[]
+  });
+
 }
 
+
 async function depositAction(r,e,id){
+
   const a=await auth(r,e);
-  if(a instanceof Response)return a;
+
+  if(a instanceof Response)
+    return a;
 
   const b=await r.json();
+
   const action=b.action;
 
-  if(!["approve","reject"].includes(action))
-    return json({error:"Invalid action"},400);
+  if(
+    !["approve","reject"].includes(action)
+  )
+    return json({
+      error:"Invalid action"
+    },400);
 
   const d=await e.PRO_DB.prepare(`
     SELECT * FROM pro_deposits
-    WHERE id=? LIMIT 1
-  `).bind(id).first();
+    WHERE id=?
+    LIMIT 1
+  `)
+  .bind(id)
+  .first();
 
-  if(!d)return json({error:"Deposit not found"},404);
+  if(!d)
+    return json({
+      error:"Deposit not found"
+    },404);
+
   if(d.status!=="pending")
-    return json({error:"Already processed"},400);
+    return json({
+      error:"Already processed"
+    },400);
+
 
   if(action==="reject"){
+
     await e.PRO_DB.prepare(`
       UPDATE pro_deposits
       SET status='rejected'
-      WHERE id=? AND status='pending'
-    `).bind(id).run();
+      WHERE id=?
+      AND status='pending'
+    `)
+    .bind(id)
+    .run();
 
     return json({ok:true});
+
   }
 
-  const amount=Number(d.amount??d.credits??0);
 
-  if(!Number.isInteger(amount)||amount<=0)
-    return json({error:"Invalid deposit amount"},400);
+  const amount=
+    Number(d.amount??d.credits??0);
+
+  if(
+    !Number.isInteger(amount)||
+    amount<=0
+  )
+    return json({
+      error:"Invalid deposit amount"
+    },400);
+
 
   const result=await e.PRO_DB.prepare(`
     UPDATE pro_deposits
     SET status='approved'
-    WHERE id=? AND status='pending'
-  `).bind(id).run();
+    WHERE id=?
+    AND status='pending'
+  `)
+  .bind(id)
+  .run();
 
   if(!result.meta.changes)
-    return json({error:"Already processed"},400);
+    return json({
+      error:"Already processed"
+    },400);
+
 
   await e.PRO_DB.prepare(`
     UPDATE users
     SET credits=COALESCE(credits,0)+?
     WHERE id=?
-  `).bind(amount,d.user_id).run();
+  `)
+  .bind(
+    amount,
+    d.user_id
+  )
+  .run();
 
   return json({ok:true});
+
 }
+
 
 /* ROUTER */
 
 export default{
+
   async fetch(r,e){
 
     if(r.method==="OPTIONS")
-      return new Response(null,{headers:CORS});
+      return new Response(
+        null,
+        {headers:CORS}
+      );
 
-    const p=new URL(r.url).pathname;
+    const p=
+      new URL(r.url).pathname;
 
     try{
 
-      if(p==="/auth/google")return login(r,e);
-      if(p==="/auth/callback")return callback(r,e);
-      if(p==="/auth/logout")return logout(r,e);
-      if(p==="/api/health")return json({ok:true});
-      if(p==="/api/me")return me(r,e);
+      if(p==="/auth/google")
+        return login(r,e);
+
+      if(p==="/auth/callback")
+        return callback(r,e);
+
+      if(p==="/auth/logout")
+        return logout(r,e);
+
+      if(p==="/api/health")
+        return json({ok:true});
+
+      if(p==="/api/me")
+        return me(r,e);
+
 
       /* CATEGORIES */
 
-      if(p==="/api/pro/admin/categories"){
-        if(r.method==="GET")return categories(r,e);
-        if(r.method==="POST")return addCategory(r,e);
+      if(
+        p==="/api/pro/admin/categories"
+      ){
+
+        if(r.method==="GET")
+          return categories(r,e);
+
+        if(r.method==="POST")
+          return addCategory(r,e);
+
       }
+
 
       /* PROMPTS */
 
-      if(p==="/api/pro/admin/prompts"){
-        if(r.method==="GET")return prompts(r,e);
-        if(r.method==="POST")return addPrompt(r,e);
+      if(
+        p==="/api/pro/admin/prompts"
+      ){
+
+        if(r.method==="GET")
+          return prompts(r,e);
+
+        if(r.method==="POST")
+          return addPrompt(r,e);
+
       }
+
 
       const pr=p.match(
         /^\/api\/pro\/admin\/prompts\/(\d+)$/
       );
 
-      if(pr&&r.method==="PUT")
-        return updatePrompt(r,e,pr[1]);
+      if(
+        pr&&
+        r.method==="PUT"
+      )
+        return updatePrompt(
+          r,e,pr[1]
+        );
+
 
       /* IMAGES */
 
@@ -583,27 +1098,45 @@ export default{
 
       if(im)
         return image(
-          r,e,decodeURIComponent(im[1])
+          r,
+          e,
+          decodeURIComponent(im[1])
         );
+
 
       /* PACKAGES */
 
-      if(p==="/api/pro/admin/packages"){
-        if(r.method==="GET")return packages(r,e);
-        if(r.method==="POST")return addPackage(r,e);
+      if(
+        p==="/api/pro/admin/packages"
+      ){
+
+        if(r.method==="GET")
+          return packages(r,e);
+
+        if(r.method==="POST")
+          return addPackage(r,e);
+
       }
+
 
       const pm=p.match(
         /^\/api\/pro\/admin\/packages\/(\d+)$/
       );
 
       if(pm){
+
         if(r.method==="PUT")
-          return updatePackage(r,e,pm[1]);
+          return updatePackage(
+            r,e,pm[1]
+          );
 
         if(r.method==="DELETE")
-          return deletePackage(r,e,pm[1]);
+          return deletePackage(
+            r,e,pm[1]
+          );
+
       }
+
 
       /* DEPOSITS */
 
@@ -613,21 +1146,80 @@ export default{
       )
         return deposits(r,e);
 
+
       const dm=p.match(
         /^\/api\/pro\/admin\/deposits\/(\d+)$/
       );
 
-      if(dm&&r.method==="POST")
-        return depositAction(r,e,dm[1]);
+      if(
+        dm&&
+        r.method==="POST"
+      )
+        return depositAction(
+          r,e,dm[1]
+        );
 
-      return json({error:"Not found"},404);
 
-    }catch(err){
-      console.error("WORKER ERROR:",err);
+      /* PAYMENT SLIP */
+
+      const dr=p.match(
+        /^\/api\/pro\/admin\/deposits\/(\d+)\/receipt$/
+      );
+
+      if(
+        dr&&
+        r.method==="GET"
+      ){
+
+        const a=await auth(r,e);
+
+        if(a instanceof Response)
+          return a;
+
+        const d=await e.PRO_DB.prepare(`
+          SELECT receipt_key
+          FROM pro_deposits
+          WHERE id=?
+          LIMIT 1
+        `)
+        .bind(dr[1])
+        .first();
+
+        if(!d?.receipt_key)
+          return new Response(
+            "Receipt not found",
+            {status:404}
+          );
+
+        return depositReceipt(
+          r,
+          e,
+          d.receipt_key
+        );
+
+      }
+
 
       return json({
-        error:err?.message||"Server error"
+        error:"Not found"
+      },404);
+
+
+    }catch(err){
+
+      console.error(
+        "WORKER ERROR:",
+        err
+      );
+
+      return json({
+        error:
+          err?.message||
+          "Server error"
       },500);
+
     }
+
   }
+
 };
