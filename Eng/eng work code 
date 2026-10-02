@@ -1,1738 +1,931 @@
 const SITE="https://createlk.com";
 const SESSION="english_session";
 const STATE="google_state";
-
 const GOOGLE_AUTH="https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN="https://oauth2.googleapis.com/token";
 const GOOGLE_USER="https://openidconnect.googleapis.com/v1/userinfo";
 
 const SESSION_DAYS=30;
 const STATE_MINUTES=10;
+const COINS_PER_CORRECT=5;
+const XP_PER_CORRECT=10;
 
 export default{
 async fetch(request,env){
-try{
-const url=new URL(request.url);
+ try{
+  const url=new URL(request.url);
 
-if(request.method==="OPTIONS")
-return cors(new Response(null,{status:204}));
+  if(request.method==="OPTIONS")
+   return cors(new Response(null,{status:204}));
 
-if(url.pathname==="/auth/google")return googleLogin(request,env);
-if(url.pathname==="/auth/callback")return googleCallback(request,env);
-if(url.pathname==="/auth/logout")return logout(request,env);
+  const routes={
+   "/auth/google":googleLogin,
+   "/auth/callback":googleCallback,
+   "/auth/logout":logout,
+   "/api/me":me,
+   "/api/referral":referral,
+   "/api/titles":titles,
+   "/api/questions":questions,
+   "/api/quiz/start":startQuiz,
+   "/api/quiz/check":checkAnswer,
+   "/api/quiz/submit":submitQuiz,
+   "/api/leaderboard":leaderboard,
+   "/api/leaderboard/me":leaderboardMe
+  };
 
-if(url.pathname==="/api/me")return me(request,env);
-if(url.pathname==="/api/referral")return referral(request,env);
-if(url.pathname==="/api/titles")return titles(request,env);
-if(url.pathname==="/api/questions")return questions(request,env);
-if(url.pathname==="/api/quiz/check")return checkAnswer(request,env);
-if(url.pathname==="/api/quiz/submit")return submitQuiz(request,env);
-if(url.pathname==="/api/leaderboard")return leaderboard(request,env);
-if(url.pathname==="/api/leaderboard/me")return leaderboardMe(request,env);
+  if(routes[url.pathname])
+   return routes[url.pathname](request,env);
 
-if(url.pathname==="/api/health")
-return json({
-success:true,
-message:"English API is running"
-});
+  if(url.pathname==="/api/health")
+   return json({success:true,message:"English API is running"});
 
-return json({
-success:false,
-error:"Not found"
-},404);
+  return json({success:false,error:"Not found"},404);
 
-}catch(error){
-
-console.error(error);
-
-return json({
-success:false,
-error:"Server error"
-},500);
-
-}
-}
-};
+ }catch(e){
+  console.error(e);
+  return json({success:false,error:"Server error"},500);
+ }
+}};
 
 
-/* GOOGLE */
+/* AUTH */
 
 async function googleLogin(request,env){
+ const url=new URL(request.url);
+ const referral=clean(url.searchParams.get("ref"));
+ const state=token(32);
 
-const url=new URL(request.url);
-const referral=clean(url.searchParams.get("ref"));
-const state=token(32);
+ const data={
+  state,
+  referral,
+  expires:Date.now()+STATE_MINUTES*60000
+ };
 
-const stateData={
-state,
-referral:referral||"",
-expires:Date.now()+STATE_MINUTES*60000
-};
+ const params=new URLSearchParams({
+  client_id:env.GOOGLE_CLIENT_ID,
+  redirect_uri:env.GOOGLE_REDIRECT_URI,
+  response_type:"code",
+  scope:"openid email profile",
+  access_type:"offline",
+  prompt:"select_account",
+  state:btoa(JSON.stringify(data))
+ });
 
-const params=new URLSearchParams({
-client_id:env.GOOGLE_CLIENT_ID,
-redirect_uri:env.GOOGLE_REDIRECT_URI,
-response_type:"code",
-scope:"openid email profile",
-access_type:"offline",
-prompt:"select_account",
-state:btoa(JSON.stringify(stateData))
-});
-
-return new Response(null,{
-status:302,
-headers:{
-Location:`${GOOGLE_AUTH}?${params}`,
-"Set-Cookie":
-`${STATE}=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=600`
-}
-});
-
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${GOOGLE_AUTH}?${params}`,
+   "Set-Cookie":
+   `${STATE}=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=600`
+  }
+ });
 }
 
 
 async function googleCallback(request,env){
+ const url=new URL(request.url);
+ const code=url.searchParams.get("code");
+ const stateParam=url.searchParams.get("state");
 
-const url=new URL(request.url);
+ if(!code||!stateParam)
+  return new Response("Invalid Google login.",{status:400});
 
-const code=
-url.searchParams.get("code");
+ let state;
+ try{
+  state=JSON.parse(atob(stateParam));
+ }catch{
+  return new Response("Invalid state.",{status:400});
+ }
 
-const stateParam=
-url.searchParams.get("state");
+ if(!state.state||state.expires<Date.now())
+  return new Response("Login expired.",{status:400});
 
-if(!code||!stateParam)
-return new Response(
-"Invalid Google login.",
-{status:400}
-);
+ if(parseCookies(request)[STATE]!==state.state)
+  return new Response("Invalid login state.",{status:400});
 
-let stateData;
+ const tr=await fetch(GOOGLE_TOKEN,{
+  method:"POST",
+  headers:{"Content-Type":"application/x-www-form-urlencoded"},
+  body:new URLSearchParams({
+   client_id:env.GOOGLE_CLIENT_ID,
+   client_secret:env.GOOGLE_CLIENT_SECRET,
+   code,
+   grant_type:"authorization_code",
+   redirect_uri:env.GOOGLE_REDIRECT_URI
+  })
+ });
 
-try{
+ const td=await tr.json();
 
-stateData=
-JSON.parse(atob(stateParam));
+ if(!td.access_token)
+  return new Response("Google authentication failed.",{status:400});
 
-}catch{
+ const gr=await fetch(GOOGLE_USER,{
+  headers:{Authorization:`Bearer ${td.access_token}`}
+ });
 
-return new Response(
-"Invalid state.",
-{status:400}
-);
+ const g=await gr.json();
 
-}
+ if(!g.sub||!g.email)
+  return new Response("Unable to get Google account.",{status:400});
 
-if(
-!stateData.state||
-stateData.expires<Date.now()
-)
-return new Response(
-"Login expired.",
-{status:400}
-);
+ const googleId=clean(g.sub);
+ const email=clean(g.email);
+ const name=clean(g.name)||email.split("@")[0];
+ const picture=clean(g.picture);
 
-const cookies=parseCookies(request);
+ let user=await env.DB.prepare(`
+  SELECT * FROM users
+  WHERE google_id=? OR email=?
+  LIMIT 1
+ `).bind(googleId,email).first();
 
-if(
-cookies[STATE]!==stateData.state
-)
-return new Response(
-"Invalid login state.",
-{status:400}
-);
+ if(!user){
+  const r=await env.DB.prepare(`
+   INSERT INTO users
+   (google_id,name,email,membership_status,membership_expiry,
+    auth_provider,picture,last_active_at)
+   VALUES(?,?,?,'FREE',NULL,'google',?,?)
+  `).bind(
+   googleId,name,email,picture,Date.now()
+  ).run();
 
-const tokenResponse=
-await fetch(GOOGLE_TOKEN,{
-method:"POST",
-headers:{
-"Content-Type":
-"application/x-www-form-urlencoded"
-},
-body:new URLSearchParams({
-client_id:env.GOOGLE_CLIENT_ID,
-client_secret:env.GOOGLE_CLIENT_SECRET,
-code,
-grant_type:"authorization_code",
-redirect_uri:env.GOOGLE_REDIRECT_URI
-})
-});
+  user=await env.DB.prepare(`
+   SELECT * FROM users WHERE id=? LIMIT 1
+  `).bind(r.meta.last_row_id).first();
 
-const tokenData=
-await tokenResponse.json();
+ }else{
+  await env.DB.prepare(`
+   UPDATE users
+   SET google_id=?,name=?,email=?,picture=?,last_active_at=?
+   WHERE id=?
+  `).bind(
+   googleId,name,email,picture,Date.now(),user.id
+  ).run();
+ }
 
-if(!tokenData.access_token)
-return new Response(
-"Google authentication failed.",
-{status:400}
-);
+ await ensureRewards(env,user.id);
 
-const googleResponse=
-await fetch(GOOGLE_USER,{
-headers:{
-Authorization:
-`Bearer ${tokenData.access_token}`
-}
-});
+ if(state.referral)
+  await createReferral(env,user.id,state.referral);
 
-const googleUser=
-await googleResponse.json();
+ const session=token(48);
+ const hash=await sha256(session);
+ const expiry=new Date(
+  Date.now()+SESSION_DAYS*86400000
+ ).toISOString();
 
-if(
-!googleUser.sub||
-!googleUser.email
-)
-return new Response(
-"Unable to get Google account.",
-{status:400}
-);
+ await env.DB.prepare(`
+  INSERT INTO sessions(user_id,token_hash,expires_at)
+  VALUES(?,?,?)
+ `).bind(user.id,hash,expiry).run();
 
-const googleId=
-clean(googleUser.sub);
-
-const email=
-clean(googleUser.email);
-
-const name=
-clean(googleUser.name)||
-email.split("@")[0];
-
-const picture=
-clean(googleUser.picture);
-
-let user=
-await env.DB.prepare(`
-SELECT *
-FROM users
-WHERE google_id=? OR email=?
-LIMIT 1
-`).bind(
-googleId,
-email
-).first();
-
-if(!user){
-
-const result=
-await env.DB.prepare(`
-INSERT INTO users
-(
-google_id,
-name,
-email,
-membership_status,
-membership_expiry,
-auth_provider,
-picture,
-last_active_at
-)
-VALUES(
-?,
-?,
-?,
-'FREE',
-NULL,
-'google',
-?,
-?
-)
-`).bind(
-googleId,
-name,
-email,
-picture,
-Date.now()
-).run();
-
-user=
-await env.DB.prepare(`
-SELECT *
-FROM users
-WHERE id=?
-LIMIT 1
-`).bind(
-result.meta.last_row_id
-).first();
-
-}else{
-
-await env.DB.prepare(`
-UPDATE users
-SET
-google_id=?,
-name=?,
-email=?,
-picture=?,
-last_active_at=?
-WHERE id=?
-`).bind(
-googleId,
-name,
-email,
-picture,
-Date.now(),
-user.id
-).run();
-
-user=
-await env.DB.prepare(`
-SELECT *
-FROM users
-WHERE id=?
-LIMIT 1
-`).bind(
-user.id
-).first();
-
-}
-
-await env.DB.prepare(`
-INSERT OR IGNORE INTO user_rewards
-(
-user_id,
-coins,
-xp,
-updated_at
-)
-VALUES(
-?,
-0,
-0,
-?
-)
-`).bind(
-user.id,
-new Date().toISOString()
-).run();
-
-if(stateData.referral)
-await createReferral(
-env,
-user.id,
-stateData.referral
-);
-
-const sessionToken=
-token(48);
-
-const sessionHash=
-await sha256(sessionToken);
-
-const expiresAt=
-new Date(
-Date.now()+
-SESSION_DAYS*86400000
-).toISOString();
-
-await env.DB.prepare(`
-INSERT INTO sessions
-(
-user_id,
-token_hash,
-expires_at
-)
-VALUES(?,?,?)
-`).bind(
-user.id,
-sessionHash,
-expiresAt
-).run();
-
-return new Response(null,{
-status:302,
-headers:{
-Location:`${SITE}/Eng/`,
-"Set-Cookie":
-`${SESSION}=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_DAYS*86400}`
-}
-});
-
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${SITE}/Eng/`,
+   "Set-Cookie":
+   `${SESSION}=${session}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_DAYS*86400}`
+  }
+ });
 }
 
 
 /* USER */
 
-async function currentUser(
-request,
-env
-){
+async function currentUser(request,env){
+ const session=parseCookies(request)[SESSION];
+ if(!session)return null;
 
-const cookies=
-parseCookies(request);
-
-const sessionToken=
-cookies[SESSION];
-
-if(!sessionToken)
-return null;
-
-const hash=
-await sha256(sessionToken);
-
-return env.DB.prepare(`
-SELECT u.*
-FROM sessions s
-JOIN users u
-ON u.id=s.user_id
-WHERE s.token_hash=?
-AND s.expires_at>?
-LIMIT 1
-`).bind(
-hash,
-new Date().toISOString()
-).first();
-
+ return env.DB.prepare(`
+  SELECT u.*
+  FROM sessions s
+  JOIN users u ON u.id=s.user_id
+  WHERE s.token_hash=?
+  AND s.expires_at>?
+  LIMIT 1
+ `).bind(
+  await sha256(session),
+  new Date().toISOString()
+ ).first();
 }
 
 
 async function me(request,env){
+ const user=await currentUser(request,env);
 
-const user=
-await currentUser(
-request,
-env
-);
+ if(!user)
+  return json({
+   success:true,
+   logged_in:false,
+   user:null,
+   premium:false
+  });
 
-if(!user){
+ const rewards=await getRewards(env,user.id);
 
-return json({
-success:true,
-logged_in:false,
-user:null,
-premium:false
-});
-
-}
-
-const rewards=
-await getRewards(
-env,
-user.id
-);
-
-return json({
-success:true,
-logged_in:true,
-user:{
-id:user.id,
-name:user.name,
-email:user.email,
-picture:user.picture||"",
-membership_status:
-user.membership_status,
-membership_expiry:
-user.membership_expiry,
-coins:rewards.coins,
-xp:rewards.xp
-},
-premium:
-await premium(
-env,
-user.id
-)
-});
-
+ return json({
+  success:true,
+  logged_in:true,
+  user:{
+   id:user.id,
+   name:user.name,
+   email:user.email,
+   picture:user.picture||"",
+   membership_status:user.membership_status,
+   membership_expiry:user.membership_expiry,
+   coins:rewards.coins,
+   xp:rewards.xp
+  },
+  premium:await premium(env,user.id)
+ });
 }
 
 
 /* REWARDS */
 
-async function getRewards(
-env,
-userId
-){
-
-await env.DB.prepare(`
-INSERT OR IGNORE INTO user_rewards
-(
-user_id,
-coins,
-xp,
-updated_at
-)
-VALUES(
-?,
-0,
-0,
-?
-)
-`).bind(
-userId,
-new Date().toISOString()
-).run();
-
-const row=
-await env.DB.prepare(`
-SELECT
-coins,
-xp
-FROM user_rewards
-WHERE user_id=?
-LIMIT 1
-`).bind(
-userId
-).first();
-
-return{
-coins:Number(row?.coins||0),
-xp:Number(row?.xp||0)
-};
-
+async function ensureRewards(env,userId){
+ await env.DB.prepare(`
+  INSERT OR IGNORE INTO user_rewards
+  (user_id,coins,xp,updated_at)
+  VALUES(?,0,0,?)
+ `).bind(
+  userId,new Date().toISOString()
+ ).run();
 }
 
 
-async function addRewards(
-env,
-userId,
-coins,
-xp
-){
+async function getRewards(env,userId){
+ await ensureRewards(env,userId);
 
-const now=
-new Date().toISOString();
+ const r=await env.DB.prepare(`
+  SELECT coins,xp FROM user_rewards
+  WHERE user_id=? LIMIT 1
+ `).bind(userId).first();
 
-await env.DB.prepare(`
-INSERT OR IGNORE INTO user_rewards
-(
-user_id,
-coins,
-xp,
-updated_at
-)
-VALUES(
-?,
-0,
-0,
-?
-)
-`).bind(
-userId,
-now
-).run();
+ return{
+  coins:Number(r?.coins||0),
+  xp:Number(r?.xp||0)
+ };
+}
 
-await env.DB.prepare(`
-UPDATE user_rewards
-SET
-coins=
-COALESCE(coins,0)+?,
-xp=
-COALESCE(xp,0)+?,
-updated_at=?
-WHERE user_id=?
-`).bind(
-Number(coins)||0,
-Number(xp)||0,
-now,
-userId
-).run();
 
-const row=
-await env.DB.prepare(`
-SELECT
-coins,
-xp
-FROM user_rewards
-WHERE user_id=?
-LIMIT 1
-`).bind(
-userId
-).first();
+async function addRewards(env,userId,coins,xp){
+ await ensureRewards(env,userId);
 
-return{
-coins:Number(row?.coins||0),
-xp:Number(row?.xp||0)
-};
+ await env.DB.prepare(`
+  UPDATE user_rewards
+  SET coins=COALESCE(coins,0)+?,
+      xp=COALESCE(xp,0)+?,
+      updated_at=?
+  WHERE user_id=?
+ `).bind(
+  Number(coins)||0,
+  Number(xp)||0,
+  new Date().toISOString(),
+  userId
+ ).run();
 
+ return getRewards(env,userId);
 }
 
 
 /* PREMIUM */
 
-async function premium(
-env,
-userId
-){
+async function premium(env,userId){
+ const u=await env.DB.prepare(`
+  SELECT membership_status,membership_expiry
+  FROM users WHERE id=? LIMIT 1
+ `).bind(userId).first();
 
-const user=
-await env.DB.prepare(`
-SELECT
-membership_status,
-membership_expiry
-FROM users
-WHERE id=?
-LIMIT 1
-`).bind(
-userId
-).first();
+ if(!u||String(u.membership_status).toUpperCase()!=="PREMIUM")
+  return false;
 
-if(!user)
-return false;
-
-if(
-String(user.membership_status)
-.toUpperCase()!=="PREMIUM"
-)
-return false;
-
-if(!user.membership_expiry)
-return true;
-
-return new Date(
-user.membership_expiry
-).getTime()>Date.now();
-
+ return !u.membership_expiry||
+  new Date(u.membership_expiry).getTime()>Date.now();
 }
 
 
 /* LESSONS */
 
-async function titles(
-request,
-env
-){
+async function titles(request,env){
+ const r=await env.DB.prepare(`
+  SELECT id,title,access_type
+  FROM lessons
+  WHERE active=1
+  ORDER BY id
+ `).all();
 
-const result=
-await env.DB.prepare(`
-SELECT
-id,
-title,
-access_type
-FROM lessons
-WHERE active=1
-ORDER BY id ASC
-`).all();
-
-return json({
-success:true,
-lessons:
-result.results||[]
-});
-
+ return json({
+  success:true,
+  lessons:r.results||[]
+ });
 }
 
 
 /* QUESTIONS */
 
-async function questions(
-request,
-env
-){
+async function questions(request,env){
+ const id=Number(
+  new URL(request.url).searchParams.get("lesson_id")
+ );
 
-const url=
-new URL(request.url);
+ if(!id)
+  return json({success:false,error:"Invalid lesson_id"},400);
 
-const lessonId=
-Number(
-url.searchParams.get(
-"lesson_id"
-)
-);
+ const lesson=await env.DB.prepare(`
+  SELECT id,title,access_type
+  FROM lessons
+  WHERE id=? AND active=1 LIMIT 1
+ `).bind(id).first();
 
-if(!lessonId)
-return json({
-success:false,
-error:"Invalid lesson_id"
-},400);
+ if(!lesson)
+  return json({success:false,error:"Lesson not found"},404);
 
-const lesson=
-await env.DB.prepare(`
-SELECT
-id,
-title,
-access_type
-FROM lessons
-WHERE id=?
-AND active=1
-LIMIT 1
-`).bind(
-lessonId
-).first();
+ const user=await currentUser(request,env);
+ const isPremium=user?await premium(env,user.id):false;
 
-if(!lesson)
-return json({
-success:false,
-error:"Lesson not found"
-},404);
+ if(!isFreeLesson(id,lesson)&&!isPremium)
+  return json({
+   success:false,
+   error:"Premium required",
+   premium_required:true
+  },403);
 
-const user=
-await currentUser(
-request,
-env
-);
+ const r=await env.DB.prepare(`
+  SELECT id,lesson_id,question,
+         option_a,option_b,option_c,option_d
+  FROM questions
+  WHERE lesson_id=? AND active=1
+  ORDER BY id
+  LIMIT 50
+ `).bind(id).all();
 
-const isPremium=
-user?
-await premium(env,user.id):
-false;
-
-const isFree=
-lessonId===1||
-String(
-lesson.access_type||""
-).toUpperCase()==="FREE";
-
-if(!isFree&&!isPremium)
-return json({
-success:false,
-error:"Premium required",
-premium_required:true
-},403);
-
-const result=
-await env.DB.prepare(`
-SELECT
-id,
-lesson_id,
-question,
-option_a,
-option_b,
-option_c,
-option_d
-FROM questions
-WHERE lesson_id=?
-AND active=1
-ORDER BY id ASC
-LIMIT 50
-`).bind(
-lessonId
-).all();
-
-return json({
-success:true,
-lesson:{
-id:lesson.id,
-title:lesson.title,
-access_type:
-lesson.access_type
-},
-questions:
-result.results||[]
-});
-
+ return json({
+  success:true,
+  lesson,
+  questions:r.results||[]
+ });
 }
 
 
-/* ANSWER NORMALIZATION */
+/* START QUIZ */
 
-function normalizeAnswer(
-value
-){
+async function startQuiz(request,env){
+ if(request.method!=="POST")
+  return json({success:false,error:"POST required"},405);
 
-const v=
-String(value??"")
-.trim()
-.toLowerCase()
-.replace(/[.)]$/,"");
+ const user=await currentUser(request,env);
 
-return{
-"1":"a",
-"2":"b",
-"3":"c",
-"4":"d",
-"a":"a",
-"b":"b",
-"c":"c",
-"d":"d",
-"option_a":"a",
-"option_b":"b",
-"option_c":"c",
-"option_d":"d",
-"answer_a":"a",
-"answer_b":"b",
-"answer_c":"c",
-"answer_d":"d"
-}[v]||null;
+ if(!user)
+  return json({success:false,error:"Login required"},401);
 
+ const body=await bodyJSON(request);
+ if(!body)
+  return json({success:false,error:"Invalid JSON"},400);
+
+ const lessonId=Number(body.lesson_id);
+
+ if(!lessonId)
+  return json({success:false,error:"Invalid lesson_id"},400);
+
+ const lesson=await getLesson(env,lessonId);
+
+ if(!lesson)
+  return json({success:false,error:"Lesson not found"},404);
+
+ if(!isFreeLesson(lessonId,lesson)&&
+    !(await premium(env,user.id)))
+  return json({
+   success:false,
+   error:"Premium required",
+   premium_required:true
+  },403);
+
+ const id=crypto.randomUUID();
+
+ await env.DB.prepare(`
+  INSERT INTO quiz_attempts
+  (id,user_id,lesson_id,created_at)
+  VALUES(?,?,?,?)
+ `).bind(
+  id,user.id,lessonId,new Date().toISOString()
+ ).run();
+
+ return json({
+  success:true,
+  attempt_id:id,
+  lesson_id:lessonId
+ });
 }
 
 
-/* ANSWER CHECK */
+/* CHECK ANSWER */
 
-async function checkAnswer(
-request,
-env
-){
+async function checkAnswer(request,env){
+ if(request.method!=="POST")
+  return json({success:false,error:"POST required"},405);
 
-if(request.method!=="POST")
-return json({
-success:false,
-error:"POST required"
-},405);
+ const user=await currentUser(request,env);
 
-const user=
-await currentUser(
-request,
-env
-);
+ if(!user)
+  return json({success:false,error:"Login required"},401);
 
-if(!user)
-return json({
-success:false,
-error:"Login required"
-},401);
+ const body=await bodyJSON(request);
 
-let body;
+ if(!body)
+  return json({success:false,error:"Invalid JSON"},400);
 
-try{
+ const questionId=Number(body.question_id);
+ const answer=normalizeAnswer(body.answer);
+ const attemptId=clean(body.attempt_id);
 
-body=
-await request.json();
+ if(!questionId||!answer||!attemptId)
+  return json({success:false,error:"Invalid answer"},400);
 
-}catch{
+ const attempt=await env.DB.prepare(`
+  SELECT id,lesson_id
+  FROM quiz_attempts
+  WHERE id=? AND user_id=? LIMIT 1
+ `).bind(attemptId,user.id).first();
 
-return json({
-success:false,
-error:"Invalid JSON"
-},400);
+ if(!attempt)
+  return json({success:false,error:"Invalid quiz attempt"},403);
 
-}
+ const q=await env.DB.prepare(`
+  SELECT id,lesson_id,correct_answer,
+         option_a,option_b,option_c,option_d
+  FROM questions
+  WHERE id=? AND active=1 LIMIT 1
+ `).bind(questionId).first();
 
-const questionId=
-Number(body.question_id);
+ if(!q)
+  return json({success:false,error:"Question not found"},404);
 
-const answer=
-normalizeAnswer(
-body.answer
-);
+ if(Number(q.lesson_id)!==Number(attempt.lesson_id))
+  return json({
+   success:false,
+   error:"Question does not belong to this quiz."
+  },400);
 
-if(!questionId||!answer)
-return json({
-success:false,
-error:"Invalid answer"
-},400);
+ const lesson=await getLesson(env,q.lesson_id);
 
-const question=
-await env.DB.prepare(`
-SELECT
-id,
-lesson_id,
-correct_answer,
-option_a,
-option_b,
-option_c,
-option_d
-FROM questions
-WHERE id=?
-AND active=1
-LIMIT 1
-`).bind(
-questionId
-).first();
+ if(!lesson)
+  return json({success:false,error:"Lesson not found"},404);
 
-if(!question)
-return json({
-success:false,
-error:"Question not found"
-},404);
+ if(!isFreeLesson(q.lesson_id,lesson)&&
+    !(await premium(env,user.id)))
+  return json({
+   success:false,
+   error:"Premium required",
+   premium_required:true
+  },403);
 
-const lesson=
-await env.DB.prepare(`
-SELECT
-id,
-access_type
-FROM lessons
-WHERE id=?
-AND active=1
-LIMIT 1
-`).bind(
-question.lesson_id
-).first();
+ const correctAnswer=normalizeAnswer(q.correct_answer);
+ const correct=answer===correctAnswer;
 
-if(!lesson)
-return json({
-success:false,
-error:"Lesson not found"
-},404);
+ let rewarded=false;
+ let rewardCoins=0;
+ let rewardXP=0;
+ let totals=await getRewards(env,user.id);
 
-const isPremium=
-await premium(
-env,
-user.id
-);
+ if(correct){
 
-const isFree=
-Number(question.lesson_id)===1||
-String(
-lesson.access_type||""
-).toUpperCase()==="FREE";
+  const exists=await env.DB.prepare(`
+   SELECT 1 FROM quiz_question_rewards
+   WHERE attempt_id=? AND question_id=? LIMIT 1
+  `).bind(attemptId,questionId).first();
 
-if(!isFree&&!isPremium)
-return json({
-success:false,
-error:"Premium required",
-premium_required:true
-},403);
+  if(!exists){
+   try{
+    await env.DB.prepare(`
+     INSERT INTO quiz_question_rewards
+     (attempt_id,user_id,question_id,coins,xp,created_at)
+     VALUES(?,?,?,?,?,?)
+    `).bind(
+     attemptId,
+     user.id,
+     questionId,
+     COINS_PER_CORRECT,
+     XP_PER_CORRECT,
+     new Date().toISOString()
+    ).run();
 
-const correctAnswer=
-normalizeAnswer(
-question.correct_answer
-);
+    totals=await addRewards(
+     env,
+     user.id,
+     COINS_PER_CORRECT,
+     XP_PER_CORRECT
+    );
 
-const options={
-a:question.option_a,
-b:question.option_b,
-c:question.option_c,
-d:question.option_d
-};
+    rewarded=true;
+    rewardCoins=COINS_PER_CORRECT;
+    rewardXP=XP_PER_CORRECT;
 
-const isCorrect=
-answer===correctAnswer;
+   }catch(e){
+    console.error("REWARD ERROR",e);
+   }
+  }
+ }
 
-return json({
-success:true,
-correct:isCorrect,
-question_id:questionId,
-answer,
-...(
-isCorrect?
-{}:{
-correct_answer:
-correctAnswer,
-correct_text:
-options[correctAnswer]||""
-}
-)
-});
+ const options={
+  a:q.option_a,
+  b:q.option_b,
+  c:q.option_c,
+  d:q.option_d
+ };
 
-}
-
-
-/* ATTEMPTS */
-
-function monthRange(){
-
-const now=
-new Date();
-
-return{
-start:
-new Date(
-Date.UTC(
-now.getUTCFullYear(),
-now.getUTCMonth(),
-1
-)
-).toISOString(),
-
-end:
-new Date(
-Date.UTC(
-now.getUTCFullYear(),
-now.getUTCMonth()+1,
-1
-)
-).toISOString()
-};
-
-}
-
-
-async function monthlyAttempts(
-env,
-userId,
-lessonId
-){
-
-const{
-start,
-end
-}=monthRange();
-
-const result=
-await env.DB.prepare(`
-SELECT COUNT(*) AS count
-FROM quiz_results
-WHERE user_id=?
-AND lesson_id=?
-AND completed_at>=?
-AND completed_at<?
-`).bind(
-userId,
-lessonId,
-start,
-end
-).first();
-
-return Number(
-result?.count||0
-);
-
-}
-
-
-function rewardForAttempt(
-attempt
-){
-
-if(attempt===1)
-return{
-coinsPerCorrect:5,
-xpPerCorrect:10
-};
-
-if(attempt===2)
-return{
-coinsPerCorrect:3,
-xpPerCorrect:5
-};
-
-if(attempt===3)
-return{
-coinsPerCorrect:1,
-xpPerCorrect:2
-};
-
-return{
-coinsPerCorrect:0,
-xpPerCorrect:0
-};
-
+ return json({
+  success:true,
+  correct,
+  question_id:questionId,
+  answer,
+  rewarded,
+  reward_coins:rewardCoins,
+  reward_xp:rewardXP,
+  total_coins:totals.coins,
+  total_xp:totals.xp,
+  ...(correct?{}:{
+   correct_answer:correctAnswer,
+   correct_text:options[correctAnswer]||""
+  })
+ });
 }
 
 
 /* SUBMIT QUIZ */
 
-async function submitQuiz(
-request,
-env
-){
+async function submitQuiz(request,env){
+ if(request.method!=="POST")
+  return json({success:false,error:"POST required"},405);
 
-if(request.method!=="POST")
-return json({
-success:false,
-error:"POST required"
-},405);
+ const user=await currentUser(request,env);
 
-const user=
-await currentUser(
-request,
-env
-);
+ if(!user)
+  return json({success:false,error:"Login required"},401);
 
-if(!user)
-return json({
-success:false,
-error:"Login required"
-},401);
+ const body=await bodyJSON(request);
 
-let body;
+ if(!body)
+  return json({success:false,error:"Invalid JSON"},400);
 
-try{
+ const lessonId=Number(body.lesson_id);
+ const attemptId=clean(body.attempt_id);
+ const answers=Array.isArray(body.answers)?body.answers:[];
 
-body=
-await request.json();
+ if(!lessonId||!attemptId||!answers.length||answers.length>50)
+  return json({success:false,error:"Invalid quiz data"},400);
 
-}catch{
+ const attempt=await env.DB.prepare(`
+  SELECT id,lesson_id,completed_at
+  FROM quiz_attempts
+  WHERE id=? AND user_id=? LIMIT 1
+ `).bind(attemptId,user.id).first();
 
-return json({
-success:false,
-error:"Invalid JSON"
-},400);
+ if(!attempt)
+  return json({success:false,error:"Quiz attempt not found"},404);
 
-}
+ if(Number(attempt.lesson_id)!==lessonId)
+  return json({success:false,error:"Invalid lesson"},400);
 
-const lessonId=
-Number(body.lesson_id);
+ const lesson=await getLesson(env,lessonId);
 
-const answers=
-Array.isArray(body.answers)?
-body.answers:[];
+ if(!lesson)
+  return json({success:false,error:"Lesson not found"},404);
 
-if(!lessonId)
-return json({
-success:false,
-error:"Invalid lesson_id"
-},400);
+ if(!isFreeLesson(lessonId,lesson)&&
+    !(await premium(env,user.id)))
+  return json({
+   success:false,
+   error:"Premium required",
+   premium_required:true
+  },403);
 
-if(
-!answers.length||
-answers.length>50
-)
-return json({
-success:false,
-error:"Invalid answers"
-},400);
+ const r=await env.DB.prepare(`
+  SELECT id,correct_answer
+  FROM questions
+  WHERE lesson_id=? AND active=1
+  ORDER BY id
+  LIMIT 50
+ `).bind(lessonId).all();
 
-const lesson=
-await env.DB.prepare(`
-SELECT
-id,
-title,
-access_type
-FROM lessons
-WHERE id=?
-AND active=1
-LIMIT 1
-`).bind(
-lessonId
-).first();
+ const rows=r.results||[];
 
-if(!lesson)
-return json({
-success:false,
-error:"Lesson not found"
-},404);
+ if(!rows.length)
+  return json({success:false,error:"No questions found"},404);
 
-const isPremium=
-await premium(
-env,
-user.id
-);
+ const submitted=new Map();
 
-const isFree=
-lessonId===1||
-String(
-lesson.access_type||""
-).toUpperCase()==="FREE";
+ for(const a of answers){
+  const id=Number(a?.question_id);
+  const answer=normalizeAnswer(a?.answer);
+  if(id&&answer)submitted.set(id,answer);
+ }
 
-if(!isFree&&!isPremium)
-return json({
-success:false,
-error:"Premium required",
-premium_required:true
-},403);
+ let score=0;
 
-const result=
-await env.DB.prepare(`
-SELECT
-id,
-correct_answer
-FROM questions
-WHERE lesson_id=?
-AND active=1
-ORDER BY id ASC
-LIMIT 50
-`).bind(
-lessonId
-).all();
+ for(const q of rows){
+  if(submitted.get(Number(q.id))===
+     normalizeAnswer(q.correct_answer))
+   score++;
+ }
 
-const rows=
-result.results||[];
+ const total=rows.length;
+ const percentage=Math.round(score/total*100);
+ const completedAt=new Date().toISOString();
 
-if(!rows.length)
-return json({
-success:false,
-error:"No questions found"
-},404);
+ await env.DB.prepare(`
+  INSERT INTO quiz_results
+  (user_id,lesson_id,score,total,percentage,completed_at)
+  VALUES(?,?,?,?,?,?)
+ `).bind(
+  user.id,
+  lessonId,
+  score,
+  total,
+  percentage,
+  completedAt
+ ).run();
 
-const submitted=
-new Map();
+ await env.DB.prepare(`
+  UPDATE quiz_attempts
+  SET completed_at=?
+  WHERE id=? AND user_id=?
+ `).bind(
+  completedAt,attemptId,user.id
+ ).run();
 
-for(
-const item of answers
-){
+ const totals=await getRewards(env,user.id);
 
-const id=
-Number(item?.question_id);
-
-const answer=
-normalizeAnswer(
-item?.answer
-);
-
-if(id&&answer)
-submitted.set(
-id,
-answer
-);
-
-}
-
-let score=0;
-
-for(
-const q of rows
-){
-
-const answer=
-submitted.get(
-Number(q.id)
-);
-
-const correct=
-normalizeAnswer(
-q.correct_answer
-);
-
-if(answer===correct)
-score++;
-
-}
-
-const total=
-rows.length;
-
-const percentage=
-total?
-Math.round(
-score/total*100
-):0;
-
-const previousAttempts=
-await monthlyAttempts(
-env,
-user.id,
-lessonId
-);
-
-const attempt=
-previousAttempts+1;
-
-const reward=
-rewardForAttempt(
-attempt
-);
-
-const rewardCoins=
-reward.coinsPerCorrect*
-score;
-
-const rewardXP=
-reward.xpPerCorrect*
-score;
-
-const completedAt=
-new Date().toISOString();
-
-
-/* SAVE QUIZ RESULT */
-
-try{
-
-await env.DB.prepare(`
-INSERT INTO quiz_results
-(
-user_id,
-lesson_id,
-score,
-total,
-percentage,
-completed_at
-)
-VALUES(
-?,?,?,?,?,?
-)
-`).bind(
-user.id,
-lessonId,
-score,
-total,
-percentage,
-completedAt
-).run();
-
-}catch(error){
-
-console.error(
-"QUIZ RESULT INSERT ERROR",
-error
-);
-
-return json({
-success:false,
-error:
-"Unable to save quiz result.",
-detail:
-String(error?.message||error)
-},500);
-
-}
-
-
-/* ADD REWARDS */
-
-try{
-
-const totals=
-await addRewards(
-env,
-user.id,
-rewardCoins,
-rewardXP
-);
-
-return json({
-success:true,
-lesson_id:lessonId,
-lesson_title:lesson.title,
-score,
-total,
-percentage,
-attempt,
-previous_attempts:
-previousAttempts,
-reward_coins:
-rewardCoins,
-reward_xp:
-rewardXP,
-total_coins:
-totals.coins,
-total_xp:
-totals.xp,
-rewarded:
-rewardCoins>0||
-rewardXP>0,
-next_attempt_reward:
-rewardForAttempt(
-attempt+1
-),
-completed_at:
-completedAt
-});
-
-}catch(error){
-
-console.error(
-"REWARD UPDATE ERROR",
-error
-);
-
-return json({
-success:false,
-error:
-"Quiz saved, but reward update failed.",
-detail:
-String(error?.message||error),
-score,
-total,
-attempt
-},500);
-
-}
-
+ return json({
+  success:true,
+  lesson_id:lessonId,
+  lesson_title:lesson.title,
+  score,
+  total,
+  percentage,
+  reward_coins:0,
+  reward_xp:0,
+  rewarded:false,
+  coins_per_correct:COINS_PER_CORRECT,
+  xp_per_correct:XP_PER_CORRECT,
+  total_coins:totals.coins,
+  total_xp:totals.xp,
+  completed_at:completedAt
+ });
 }
 
 
 /* LEADERBOARD */
 
-async function leaderboard(
-request,
-env
-){
+async function leaderboard(request,env){
+ const r=await env.DB.prepare(`
+  SELECT u.id,u.name,u.picture,
+         COALESCE(ur.coins,0) coins,
+         COALESCE(ur.xp,0) xp
+  FROM users u
+  LEFT JOIN user_rewards ur ON ur.user_id=u.id
+  WHERE COALESCE(ur.coins,0)>0
+  ORDER BY coins DESC,xp DESC,u.id
+  LIMIT 100
+ `).all();
 
-const{
-start,
-end
-}=monthRange();
-
-const result=
-await env.DB.prepare(`
-SELECT
-u.id,
-u.name,
-u.picture,
-SUM(qr.score) correct,
-SUM(qr.total) answered,
-ROUND(
-CAST(SUM(qr.score) AS REAL)/
-NULLIF(SUM(qr.total),0)*100
-) accuracy,
-COUNT(qr.id) quizzes_completed
-FROM quiz_results qr
-JOIN users u
-ON u.id=qr.user_id
-WHERE qr.completed_at>=?
-AND qr.completed_at<?
-GROUP BY qr.user_id
-HAVING SUM(qr.total)>0
-ORDER BY
-correct DESC,
-accuracy DESC,
-answered DESC,
-quizzes_completed DESC
-LIMIT 10
-`).bind(
-start,
-end
-).all();
-
-return json({
-success:true,
-month:
-new Intl.DateTimeFormat(
-"en-US",
-{
-month:"long",
-year:"numeric",
-timeZone:"UTC"
-}
-).format(
-new Date(start)
-),
-leaderboard:
-result.results||[]
-});
-
+ return json({
+  success:true,
+  leaderboard:(r.results||[]).map((x,i)=>({
+   rank:i+1,
+   id:x.id,
+   name:x.name,
+   picture:x.picture||"",
+   coins:Number(x.coins||0),
+   xp:Number(x.xp||0)
+  }))
+ });
 }
 
 
-/* MY RANK */
+async function leaderboardMe(request,env){
+ const user=await currentUser(request,env);
 
-async function leaderboardMe(
-request,
-env
-){
+ if(!user)
+  return json({success:false,error:"Login required"},401);
 
-const user=
-await currentUser(
-request,
-env
-);
+ const r=await env.DB.prepare(`
+  SELECT u.id,u.name,u.picture,
+         COALESCE(ur.coins,0) coins,
+         COALESCE(ur.xp,0) xp
+  FROM users u
+  LEFT JOIN user_rewards ur ON ur.user_id=u.id
+  ORDER BY coins DESC,xp DESC,u.id
+ `).all();
 
-if(!user)
-return json({
-success:false,
-error:"Login required"
-},401);
+ const rows=r.results||[];
+ const i=rows.findIndex(x=>Number(x.id)===Number(user.id));
 
-const{
-start,
-end
-}=monthRange();
+ if(i<0)
+  return json({success:true,rank:null,user:null});
 
-const result=
-await env.DB.prepare(`
-SELECT
-u.id,
-u.name,
-u.picture,
-SUM(qr.score) correct,
-SUM(qr.total) answered,
-ROUND(
-CAST(SUM(qr.score) AS REAL)/
-NULLIF(SUM(qr.total),0)*100
-) accuracy,
-COUNT(qr.id) quizzes_completed
-FROM quiz_results qr
-JOIN users u
-ON u.id=qr.user_id
-WHERE qr.completed_at>=?
-AND qr.completed_at<?
-GROUP BY qr.user_id
-HAVING SUM(qr.total)>0
-ORDER BY
-correct DESC,
-accuracy DESC,
-answered DESC,
-quizzes_completed DESC
-`).bind(
-start,
-end
-).all();
+ const x=rows[i];
 
-const rows=
-result.results||[];
-
-const index=
-rows.findIndex(
-x=>Number(x.id)===Number(user.id)
-);
-
-return json({
-success:true,
-rank:
-index>=0?
-index+1:
-null,
-user:
-index>=0?
-rows[index]:
-null
-});
-
+ return json({
+  success:true,
+  rank:i+1,
+  user:{
+   id:x.id,
+   name:x.name,
+   picture:x.picture||"",
+   coins:Number(x.coins||0),
+   xp:Number(x.xp||0)
+  }
+ });
 }
 
 
 /* REFERRAL */
 
-async function referral(
-request,
-env
-){
+async function referral(request,env){
+ const user=await currentUser(request,env);
 
-const user=
-await currentUser(
-request,
-env
-);
+ if(!user)
+  return json({success:false,error:"Login required"},401);
 
-if(!user)
-return json({
-success:false,
-error:"Login required"
-},401);
+ const code=`ENG${user.id}`;
 
-const code=
-`ENG${user.id}`;
-
-return json({
-success:true,
-referral_code:code,
-referral_url:
-`${SITE}/Eng/?ref=${encodeURIComponent(code)}`
-});
-
+ return json({
+  success:true,
+  referral_code:code,
+  referral_url:`${SITE}/Eng/?ref=${encodeURIComponent(code)}`
+ });
 }
 
 
-async function createReferral(
-env,
-referredUserId,
-referralCode
-){
+async function createReferral(env,userId,code){
+ code=clean(code).toUpperCase();
 
-const code=
-clean(referralCode)
-.toUpperCase();
+ if(!code.startsWith("ENG"))return;
 
-if(!code.startsWith("ENG"))
-return;
+ const referrerId=Number(code.slice(3));
 
-const referrerId=
-Number(
-code.substring(3)
-);
+ if(!Number.isInteger(referrerId)||
+    referrerId<1||
+    referrerId===userId)return;
 
-if(
-!Number.isInteger(referrerId)||
-referrerId<1||
-referrerId===referredUserId
-)
-return;
+ const referrer=await env.DB.prepare(`
+  SELECT id FROM users WHERE id=? LIMIT 1
+ `).bind(referrerId).first();
 
-const referrer=
-await env.DB.prepare(`
-SELECT id
-FROM users
-WHERE id=?
-LIMIT 1
-`).bind(
-referrerId
-).first();
+ if(!referrer)return;
 
-if(!referrer)
-return;
+ const exists=await env.DB.prepare(`
+  SELECT id FROM referrals
+  WHERE referred_user_id=? LIMIT 1
+ `).bind(userId).first();
 
-const existing=
-await env.DB.prepare(`
-SELECT id
-FROM referrals
-WHERE referred_user_id=?
-LIMIT 1
-`).bind(
-referredUserId
-).first();
+ if(exists)return;
 
-if(existing)
-return;
-
-await env.DB.prepare(`
-INSERT INTO referrals
-(
-referrer_id,
-referred_user_id,
-referral_code
-)
-VALUES(?,?,?)
-`).bind(
-referrerId,
-referredUserId,
-code
-).run();
-
+ await env.DB.prepare(`
+  INSERT INTO referrals
+  (referrer_id,referred_user_id,referral_code)
+  VALUES(?,?,?)
+ `).bind(
+  referrerId,userId,code
+ ).run();
 }
 
 
 /* LOGOUT */
 
-async function logout(
-request,
-env
-){
+async function logout(request,env){
+ const session=parseCookies(request)[SESSION];
 
-const cookies=
-parseCookies(request);
+ if(session){
+  await env.DB.prepare(`
+   DELETE FROM sessions WHERE token_hash=?
+  `).bind(await sha256(session)).run();
+ }
 
-const session=
-cookies[SESSION];
-
-if(session){
-
-const hash=
-await sha256(session);
-
-await env.DB.prepare(`
-DELETE FROM sessions
-WHERE token_hash=?
-`).bind(
-hash
-).run();
-
-}
-
-return new Response(null,{
-status:302,
-headers:{
-Location:`${SITE}/Eng/`,
-"Set-Cookie":
-`${SESSION}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`
-}
-});
-
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${SITE}/Eng/`,
+   "Set-Cookie":
+   `${SESSION}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`
+  }
+ });
 }
 
 
 /* HELPERS */
 
-function token(
-length=32
-){
-
-const bytes=
-new Uint8Array(length);
-
-crypto.getRandomValues(
-bytes
-);
-
-return Array.from(bytes)
-.map(
-b=>b.toString(16)
-.padStart(2,"0")
-)
-.join("");
-
+async function getLesson(env,id){
+ return env.DB.prepare(`
+  SELECT id,title,access_type
+  FROM lessons
+  WHERE id=? AND active=1 LIMIT 1
+ `).bind(id).first();
 }
 
 
-async function sha256(
-value
-){
-
-const data=
-new TextEncoder()
-.encode(value);
-
-const hash=
-await crypto.subtle.digest(
-"SHA-256",
-data
-);
-
-return Array.from(
-new Uint8Array(hash)
-)
-.map(
-b=>b.toString(16)
-.padStart(2,"0")
-)
-.join("");
-
+function isFreeLesson(id,lesson){
+ return id===1||
+  String(lesson.access_type||"").toUpperCase()==="FREE";
 }
 
 
-function parseCookies(
-request
-){
-
-const header=
-request.headers.get("Cookie");
-
-const cookies={};
-
-if(!header)
-return cookies;
-
-for(
-const part of header.split(";")
-){
-
-const i=
-part.indexOf("=");
-
-if(i<0)
-continue;
-
-cookies[
-part.slice(0,i).trim()
-]=decodeURIComponent(
-part.slice(i+1).trim()
-);
-
+async function bodyJSON(request){
+ try{
+  return await request.json();
+ }catch{
+  return null;
+ }
 }
 
-return cookies;
 
+function normalizeAnswer(value){
+ const v=String(value??"")
+  .trim()
+  .toLowerCase()
+  .replace(/[.)]$/,"");
+
+ return({
+  "1":"a","2":"b","3":"c","4":"d",
+  "a":"a","b":"b","c":"c","d":"d",
+  "option_a":"a","option_b":"b",
+  "option_c":"c","option_d":"d",
+  "answer_a":"a","answer_b":"b",
+  "answer_c":"c","answer_d":"d"
+ })[v]||null;
+}
+
+
+function token(length=32){
+ const bytes=new Uint8Array(length);
+ crypto.getRandomValues(bytes);
+
+ return Array.from(bytes)
+  .map(b=>b.toString(16).padStart(2,"0"))
+  .join("");
+}
+
+
+async function sha256(value){
+ const hash=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(value)
+ );
+
+ return Array.from(new Uint8Array(hash))
+  .map(b=>b.toString(16).padStart(2,"0"))
+  .join("");
+}
+
+
+function parseCookies(request){
+ const header=request.headers.get("Cookie");
+ const cookies={};
+
+ if(!header)return cookies;
+
+ for(const part of header.split(";")){
+  const i=part.indexOf("=");
+  if(i<0)continue;
+
+  cookies[part.slice(0,i).trim()]=
+   decodeURIComponent(part.slice(i+1).trim());
+ }
+
+ return cookies;
 }
 
 
 function clean(value){
-
-return String(
-value||""
-).trim();
-
+ return String(value||"").trim();
 }
 
 
-function json(
-data,
-status=200
-){
-
-return cors(
-new Response(
-JSON.stringify(data),
-{
-status,
-headers:{
-"Content-Type":
-"application/json"
-}
-}
-)
-);
-
+function json(data,status=200){
+ return cors(new Response(
+  JSON.stringify(data),
+  {
+   status,
+   headers:{
+    "Content-Type":"application/json; charset=UTF-8"
+   }
+  }
+ ));
 }
 
 
-function cors(
-response
-){
-
-const headers=
-new Headers(
-response.headers
-);
-
-headers.set(
-"Access-Control-Allow-Origin",
-SITE
-);
-
-headers.set(
-"Access-Control-Allow-Credentials",
-"true"
-);
-
-headers.set(
-"Access-Control-Allow-Headers",
-"Content-Type"
-);
-
-headers.set(
-"Access-Control-Allow-Methods",
-"GET,POST,OPTIONS"
-);
-
-return new Response(
-response.body,
-{
-status:response.status,
-statusText:
-response.statusText,
-headers
-}
-);
-
+function cors(response){
+ response.headers.set("Access-Control-Allow-Origin",SITE);
+ response.headers.set("Access-Control-Allow-Credentials","true");
+ response.headers.set(
+  "Access-Control-Allow-Headers",
+  "Content-Type"
+ );
+ response.headers.set(
+  "Access-Control-Allow-Methods",
+  "GET,POST,OPTIONS"
+ );
+ return response;
 }
