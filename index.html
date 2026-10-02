@@ -6,7 +6,6 @@
 <meta name="theme-color" content="#0b1628">
 <title>CreateLK English</title>
 <meta name="description" content="Practice English MCQ questions with CreateLK English.">
-
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial;background:#0b1628;color:#dbe4f0}
@@ -69,7 +68,6 @@ footer a{color:#aab8cc;text-decoration:none;margin:0 5px}
 }
 </style>
 </head>
-
 <body>
 <header><nav>
 <a class="brand" href="/Eng/">
@@ -124,13 +122,11 @@ footer a{color:#aab8cc;text-decoration:none;margin:0 5px}
 <div><div class="quiz-title" id="quizTitle"></div><div class="progress" id="progress"></div></div>
 <button class="btn light" onclick="backLessons()">✕</button>
 </div>
-
 <div class="gamebar">
 <div class="meter"><div id="meter"></div></div>
 <div class="game-stat">🪙 <span id="qCoins">0</span></div>
 <div class="game-stat">⚡ <span id="qXp">0</span></div>
 </div>
-
 <div class="question-card">
 <div class="question" id="question"></div>
 <div id="options"></div>
@@ -154,7 +150,8 @@ footer a{color:#aab8cc;text-decoration:none;margin:0 5px}
 </footer>
 
 <script>
-const API="https://eng.createlk.workers.dev",PAY_URL="https://pay.createlk.workers.dev",$=id=>document.getElementById(id);
+const API="https://eng.createlk.workers.dev";
+const $=id=>document.getElementById(id);
 let user=null,lessons=[],qs=[],answers={},results={},lessonId=0,lessonTitle="",attemptId="",n=0,coins=0,xp=0,submitting=false,audio;
 
 async function api(path,opt={}){
@@ -178,14 +175,25 @@ function premium(l){
 
 async function loadMe(){
  try{
-  const d=await api("/api/me");user=d.user||null;
-  if(!user){$("loginBtn").style.display="block";$("avatar").style.display="none";$("logoutMenu").style.display="none";$("account").style.display="none";return}
-  coins=+user.coins||0;xp=+user.xp||0;
-  $("loginBtn").style.display="none";$("avatar").style.display="block";$("logoutMenu").style.display="block";
+  const d=await api("/api/me");
+  user=d.user||null;
+  if(!user){
+   $("loginBtn").style.display="block";
+   $("avatar").style.display="none";
+   $("logoutMenu").style.display="none";
+   $("account").style.display="none";
+   return;
+  }
+  coins=+user.coins||0;
+  xp=+user.xp||0;
+  $("loginBtn").style.display="none";
+  $("avatar").style.display="block";
+  $("logoutMenu").style.display="block";
   if(user.picture)$("avatar").src=user.picture;
   $("account").style.display="inline-block";
   $("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`;
-  $("coins").textContent=coins;$("xp").textContent=xp;
+  $("coins").textContent=coins;
+  $("xp").textContent=xp;
  }catch{}
 }
 
@@ -206,85 +214,212 @@ async function loadLessons(){
 }
 
 async function openLesson(i){
- const l=lessons[i];if(!l)return;
+ const l=lessons[i];
+ if(!l)return;
+
  lessonId=+(l.id||l.lesson_id||i+1);
  lessonTitle=l.title||l.name||`Lesson ${lessonId}`;
+
  if(!premium(l))return loadQuiz();
- if(!user)return notice("Please sign in to access this premium lesson.");
+
+ if(!user){
+  notice("Please sign in to access this premium lesson.");
+  return;
+ }
+
  try{
   const d=await api("/api/me");
-  if(d.premium===true||d.user?.premium===true)return loadQuiz();
-  location.href=PAY_URL;
- }catch{notice("Please sign in again.")}
+
+  if(d.premium===true||d.user?.premium===true){
+   return loadQuiz();
+  }
+
+  const p=await post("/api/payment/start",{lesson_id:lessonId});
+
+  if(!p.success||!p.payment_url)
+   throw Error(p.error||"Unable to start payment.");
+
+  location.href=p.payment_url;
+ }catch(e){
+  notice(e.message);
+ }
 }
 
 async function loadQuiz(){
  if(!user)return notice("Please sign in to start the quiz.");
+
  $("hero").style.display=$("lessonTitle").style.display=$("lessons").style.display="none";
- $("quiz").style.display="block";$("quizTitle").textContent=lessonTitle;$("question").textContent="Loading...";
+ $("quiz").style.display="block";
+ $("quizTitle").textContent=lessonTitle;
+ $("question").textContent="Loading...";
+
  try{
   const s=await post("/api/quiz/start",{lesson_id:lessonId});
   attemptId=s.attempt_id||s.id||s.attempt?.id;
+
   if(!attemptId)throw Error("Unable to start quiz.");
+
   const d=await api("/api/questions?lesson_id="+encodeURIComponent(lessonId));
-  if(d.premium_required)return location.href=PAY_URL;
+
+  if(d.premium_required){
+   const p=await post("/api/payment/start",{lesson_id:lessonId});
+   if(!p.success||!p.payment_url)
+    throw Error(p.error||"Unable to start payment.");
+   return location.href=p.payment_url;
+  }
+
   qs=Array.isArray(d)?d:(d.questions||[]);
+
   if(!qs.length)throw Error("No questions available.");
-  answers={};results={};n=0;submitting=false;render();
- }catch(e){backLessons();notice(e.message)}
+
+  answers={};
+  results={};
+  n=0;
+  submitting=false;
+  render();
+ }catch(e){
+  backLessons();
+  notice(e.message);
+ }
 }
 
 function norm(v){
  v=String(v??"").trim().toLowerCase().replace(/[.)]$/,"");
  return({1:"a",2:"b",3:"c",4:"d",a:"a",b:"b",c:"c",d:"d",option_a:"a",option_b:"b",option_c:"c",option_d:"d",answer_a:"a",answer_b:"b",answer_c:"c",answer_d:"d"})[v]||null;
 }
-function text(q){return q.question||q.question_text||q.text||q.title||"Question"}
-function opts(q){return{a:q.a||q.option_a||q.answer_a||"",b:q.b||q.option_b||q.answer_b||"",c:q.c||q.option_c||q.answer_c||"",d:q.d||q.option_d||q.answer_d||""}}
+
+function text(q){
+ return q.question||q.question_text||q.text||q.title||"Question";
+}
+
+function opts(q){
+ return{
+  a:q.a||q.option_a||q.answer_a||"",
+  b:q.b||q.option_b||q.answer_b||"",
+  c:q.c||q.option_c||q.answer_c||"",
+  d:q.d||q.option_d||q.answer_d||""
+ };
+}
 
 function render(){
- const q=qs[n];if(!q)return;
- const id=q.id||q.question_id||n,r=results[id],sel=answers[id],o=opts(q),total=qs.length;
+ const q=qs[n];
+ if(!q)return;
+
+ const id=q.id||q.question_id||n;
+ const r=results[id];
+ const sel=answers[id];
+ const o=opts(q);
+ const total=qs.length;
+
  $("progress").textContent=`Question ${n+1} of ${total}`;
  $("meter").style.width=(n+1)/total*100+"%";
  $("question").textContent=text(q);
- $("options").innerHTML=["a","b","c","d"].map(x=>`<button class="option ${sel===x?(r?.correct?"correct":"wrong"):""}" ${r?"disabled":""} onclick="answer('${x}')"><b>${x.toUpperCase()}.</b> ${esc(o[x])}</button>`).join("");
+
+ $("options").innerHTML=["a","b","c","d"].map(x=>
+ `<button class="option ${sel===x?(r?.correct?"correct":"wrong"):""}" ${r?"disabled":""} onclick="answer('${x}')"><b>${x.toUpperCase()}.</b> ${esc(o[x])}</button>`
+ ).join("");
+
  const f=$("feedback");
- if(r){f.className="feedback show "+(r.correct?"correct":"wrong");f.innerHTML=r.correct?"✓ Correct!":`✗ Incorrect. Correct answer: <b>${esc(r.correctAnswer||"")}</b>`}
- else{f.className="feedback";f.innerHTML=""}
- $("prevBtn").disabled=n==0;$("nextBtn").textContent=n==total-1?"Finish":"Next";
- $("qCoins").textContent=coins;$("qXp").textContent=xp;
+
+ if(r){
+  f.className="feedback show "+(r.correct?"correct":"wrong");
+  f.innerHTML=r.correct?"✓ Correct!":`✗ Incorrect. Correct answer: <b>${esc(r.correctAnswer||"")}</b>`;
+ }else{
+  f.className="feedback";
+  f.innerHTML="";
+ }
+
+ $("prevBtn").disabled=n==0;
+ $("nextBtn").textContent=n==total-1?"Finish":"Next";
+ $("qCoins").textContent=coins;
+ $("qXp").textContent=xp;
 }
 
 async function answer(a){
- const q=qs[n],id=q.id||q.question_id||n;if(results[id])return;
- answers[id]=a;render();
+ const q=qs[n];
+ const id=q.id||q.question_id||n;
+
+ if(results[id])return;
+
+ answers[id]=a;
+ render();
+
  try{
-  const d=await post("/api/quiz/check",{attempt_id:attemptId,question_id:q.id||q.question_id,answer:a});
+  const d=await post("/api/quiz/check",{
+   attempt_id:attemptId,
+   question_id:q.id||q.question_id,
+   answer:a
+  });
+
   const correct=d.correct??d.is_correct??d.result?.correct;
   const ca=norm(d.correct_answer??d.correctAnswer??d.result?.correct_answer)||"";
   const o=opts(q);
-  results[id]={correct:correct===true||correct===1||String(correct).toLowerCase()=="true",correctAnswer:o[ca]||ca.toUpperCase()};
+
+  results[id]={
+   correct:correct===true||correct===1||String(correct).toLowerCase()=="true",
+   correctAnswer:o[ca]||ca.toUpperCase()
+  };
+
   if(d.total_coins!==undefined)coins=+d.total_coins;
   if(d.total_xp!==undefined)xp=+d.total_xp;
-  $("coins").textContent=coins;$("xp").textContent=xp;render();sound(results[id].correct);
- }catch(e){delete answers[id];render();notice(e.message)}
+
+  $("coins").textContent=coins;
+  $("xp").textContent=xp;
+
+  render();
+  sound(results[id].correct);
+ }catch(e){
+  delete answers[id];
+  render();
+  notice(e.message);
+ }
 }
 
-function previousQuestion(){if(n>0){n--;render()}}
+function previousQuestion(){
+ if(n>0){
+  n--;
+  render();
+ }
+}
+
 async function nextQuestion(){
  const id=qs[n].id||qs[n].question_id||n;
- if(!results[id])return notice("Please answer the question first.");
- if(n<qs.length-1){n++;render()}else await submitQuiz();
+
+ if(!results[id])
+  return notice("Please answer the question first.");
+
+ if(n<qs.length-1){
+  n++;
+  render();
+ }else{
+  await submitQuiz();
+ }
 }
 
 async function submitQuiz(){
- if(submitting)return;submitting=true;$("nextBtn").disabled=true;
+ if(submitting)return;
+
+ submitting=true;
+ $("nextBtn").disabled=true;
+
  try{
-  const d=await post("/api/quiz/submit",{attempt_id:attemptId});
-  const score=Object.values(results).filter(x=>x.correct).length,total=qs.length;
+  const d=await post("/api/quiz/submit",{
+   attempt_id:attemptId,
+   lesson_id:lessonId,
+   answers:Object.entries(answers).map(([question_id,answer])=>({
+    question_id:Number(question_id),
+    answer
+   }))
+  });
+
+  const score=Object.values(results).filter(x=>x.correct).length;
+  const total=qs.length;
+
   const rc=Number(d.coins_earned??d.reward?.coins??d.coinsEarned??0);
   const rx=Number(d.xp_earned??d.reward?.xp??d.xpEarned??0);
+
   await loadMe();
+
   $("quiz").innerHTML=`<div class="question-card result">
   <div class="gold">QUIZ COMPLETED</div>
   <div class="score">${score}/${total}</div>
@@ -295,15 +430,38 @@ async function submitQuiz(){
   </div>
   <button class="btn" onclick="backLessons()">Back to Lessons</button>
   </div>`;
- }catch(e){submitting=false;$("nextBtn").disabled=false;notice(e.message)}
+ }catch(e){
+  submitting=false;
+  $("nextBtn").disabled=false;
+  notice(e.message);
+ }
 }
 
 function backLessons(){
- $("quiz").style.display="none";$("hero").style.display="block";$("lessonTitle").style.display="block";$("lessons").style.display="grid";
- $("quiz").innerHTML=`<div class="quiz-head"><div><div class="quiz-title" id="quizTitle"></div><div class="progress" id="progress"></div></div><button class="btn light" onclick="backLessons()">✕</button></div>
- <div class="gamebar"><div class="meter"><div id="meter"></div></div><div class="game-stat">🪙 <span id="qCoins">0</span></div><div class="game-stat">⚡ <span id="qXp">0</span></div></div>
- <div class="question-card"><div class="question" id="question"></div><div id="options"></div><div class="feedback" id="feedback"></div>
- <div class="actions"><button class="btn light" id="prevBtn" onclick="previousQuestion()">Previous</button><button class="btn" id="nextBtn" onclick="nextQuestion()">Next</button></div></div>`;
+ $("quiz").style.display="none";
+ $("hero").style.display="block";
+ $("lessonTitle").style.display="block";
+ $("lessons").style.display="grid";
+
+ $("quiz").innerHTML=`<div class="quiz-head">
+ <div><div class="quiz-title" id="quizTitle"></div><div class="progress" id="progress"></div></div>
+ <button class="btn light" onclick="backLessons()">✕</button>
+ </div>
+ <div class="gamebar">
+ <div class="meter"><div id="meter"></div></div>
+ <div class="game-stat">🪙 <span id="qCoins">0</span></div>
+ <div class="game-stat">⚡ <span id="qXp">0</span></div>
+ </div>
+ <div class="question-card">
+ <div class="question" id="question"></div>
+ <div id="options"></div>
+ <div class="feedback" id="feedback"></div>
+ <div class="actions">
+ <button class="btn light" id="prevBtn" onclick="previousQuestion()">Previous</button>
+ <button class="btn" id="nextBtn" onclick="nextQuestion()">Next</button>
+ </div>
+ </div>`;
+
  loadMe();
 }
 
@@ -311,12 +469,21 @@ function sound(win){
  try{
   audio||(audio=new(window.AudioContext||window.webkitAudioContext)());
   const o=audio.createOscillator(),g=audio.createGain();
-  o.frequency.value=win?700:220;g.gain.value=.035;o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+.12);
+  o.frequency.value=win?700:220;
+  g.gain.value=.035;
+  o.connect(g);
+  g.connect(audio.destination);
+  o.start();
+  o.stop(audio.currentTime+.12);
  }catch{}
 }
 
 $("year").textContent=new Date().getFullYear();
-(async()=>{await loadMe();await loadLessons()})();
+
+(async()=>{
+ await loadMe();
+ await loadLessons();
+})();
 </script>
 </body>
 </html>
