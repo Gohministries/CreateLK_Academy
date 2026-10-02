@@ -325,7 +325,7 @@ LIMIT 1
 }
 
 
-/* Create reward account */
+/* CREATE REWARD ACCOUNT */
 
 await env.DB.prepare(`
 INSERT OR IGNORE INTO user_rewards
@@ -443,13 +443,11 @@ premium:false
 
 }
 
-
 const rewards=
 await getRewards(
 env,
 user.id
 );
-
 
 return json({
 success:true,
@@ -464,7 +462,6 @@ membership_status:
 user.membership_status,
 membership_expiry:
 user.membership_expiry,
-
 coins:rewards.coins,
 xp:rewards.xp
 },
@@ -504,17 +501,17 @@ new Date().toISOString()
 )
 .run();
 
-
 const row=
 await env.DB.prepare(`
-SELECT coins,xp
+SELECT
+coins,
+xp
 FROM user_rewards
 WHERE user_id=?
 LIMIT 1
 `)
 .bind(userId)
 .first();
-
 
 return{
 coins:Number(row?.coins||0),
@@ -532,6 +529,9 @@ coins,
 xp
 ){
 
+const now=
+new Date().toISOString();
+
 await env.DB.prepare(`
 INSERT OR IGNORE INTO user_rewards
 (
@@ -547,27 +547,25 @@ VALUES
 userId,
 0,
 0,
-new Date().toISOString()
+now
 )
 .run();
-
 
 await env.DB.prepare(`
 UPDATE user_rewards
 SET
-coins=coins+?,
-xp=xp+?,
+coins=COALESCE(coins,0)+?,
+xp=COALESCE(xp,0)+?,
 updated_at=?
 WHERE user_id=?
 `)
 .bind(
-coins,
-xp,
-new Date().toISOString(),
+Number(coins)||0,
+Number(xp)||0,
+now,
 userId
 )
 .run();
-
 
 return getRewards(
 env,
@@ -633,7 +631,6 @@ ORDER BY id ASC
 `)
 .all();
 
-
 return json({
 success:true,
 lessons:
@@ -680,7 +677,6 @@ LIMIT 1
 .bind(lessonId)
 .first();
 
-
 if(!lesson)
 return json({
 success:false,
@@ -701,13 +697,11 @@ env,
 user.id
 ):false;
 
-
 const isFree=
 lessonId===1||
 String(
 lesson.access_type
 ).toUpperCase()==="FREE";
-
 
 if(
 !isFree&&!isPremium
@@ -719,7 +713,7 @@ premium_required:true
 },403);
 
 
-/* Correct answers never leave this endpoint */
+/* CORRECT ANSWERS NEVER LEAVE THIS ENDPOINT */
 
 const result=
 await env.DB.prepare(`
@@ -739,7 +733,6 @@ LIMIT 50
 `)
 .bind(lessonId)
 .all();
-
 
 return json({
 success:true,
@@ -770,7 +763,6 @@ success:false,
 error:"POST required"
 },405);
 
-
 const user=
 await currentUser(
 request,
@@ -782,7 +774,6 @@ return json({
 success:false,
 error:"Login required"
 },401);
-
 
 let body;
 
@@ -800,7 +791,6 @@ error:"Invalid JSON"
 
 }
 
-
 const questionId=
 Number(body.question_id);
 
@@ -811,7 +801,6 @@ body.answer||""
 .trim()
 .toLowerCase();
 
-
 if(
 !questionId||
 !["a","b","c","d"].includes(answer)
@@ -820,7 +809,6 @@ return json({
 success:false,
 error:"Invalid answer"
 },400);
-
 
 const question=
 await env.DB.prepare(`
@@ -840,13 +828,11 @@ LIMIT 1
 .bind(questionId)
 .first();
 
-
 if(!question)
 return json({
 success:false,
 error:"Question not found"
 },404);
-
 
 const lesson=
 await env.DB.prepare(`
@@ -861,13 +847,11 @@ LIMIT 1
 .bind(question.lesson_id)
 .first();
 
-
 if(!lesson)
 return json({
 success:false,
 error:"Lesson not found"
 },404);
-
 
 const isPremium=
 await premium(
@@ -875,14 +859,12 @@ env,
 user.id
 );
 
-
 const isFree=
 Number(question.lesson_id)===1||
 String(
 lesson.access_type||""
 )
 .toUpperCase()==="FREE";
-
 
 if(
 !isFree&&!isPremium
@@ -893,7 +875,6 @@ error:"Premium required",
 premium_required:true
 },403);
 
-
 const correctAnswer=
 String(
 question.correct_answer
@@ -901,10 +882,8 @@ question.correct_answer
 .trim()
 .toLowerCase();
 
-
 const correct=
 answer===correctAnswer;
-
 
 if(correct){
 
@@ -915,14 +894,12 @@ correct:true
 
 }
 
-
 const options={
 a:question.option_a,
 b:question.option_b,
 c:question.option_c,
 d:question.option_d
 };
-
 
 return json({
 success:true,
@@ -951,7 +928,6 @@ now.getUTCMonth(),
 )
 ).toISOString();
 
-
 const end=
 new Date(
 Date.UTC(
@@ -960,7 +936,6 @@ now.getUTCMonth()+1,
 1
 )
 ).toISOString();
-
 
 return{
 start,
@@ -982,7 +957,6 @@ start,
 end
 }=monthRange();
 
-
 const result=
 await env.DB.prepare(`
 SELECT COUNT(*) AS count
@@ -999,7 +973,6 @@ start,
 end
 )
 .first();
-
 
 return Number(
 result?.count||0
@@ -1116,6 +1089,8 @@ error:"Invalid answers"
 },400);
 
 
+/* LESSON */
+
 const lesson=
 await env.DB.prepare(`
 SELECT
@@ -1138,17 +1113,18 @@ error:"Lesson not found"
 },404);
 
 
+/* ACCESS */
+
 const isPremium=
 await premium(
 env,
 user.id
 );
 
-
 const isFree=
 lessonId===1||
 String(
-lesson.access_type
+lesson.access_type||""
 ).toUpperCase()==="FREE";
 
 
@@ -1162,7 +1138,7 @@ premium_required:true
 },403);
 
 
-/* Get correct answers from D1 */
+/* GET CORRECT ANSWERS FROM D1 */
 
 const result=
 await env.DB.prepare(`
@@ -1190,9 +1166,10 @@ error:"No questions found"
 },404);
 
 
+/* SUBMITTED ANSWERS */
+
 const submitted=
 new Map();
-
 
 for(
 const item of answers
@@ -1210,7 +1187,6 @@ item?.answer||""
 .trim()
 .toLowerCase();
 
-
 if(
 id&&
 ["a","b","c","d"]
@@ -1226,22 +1202,29 @@ answer
 }
 
 
-let score=0;
+/* SCORE */
 
+let score=0;
 
 for(
 const q of rows
 ){
 
-if(
+const submittedAnswer=
 submitted.get(
 Number(q.id)
-)===
+);
+
+const correctAnswer=
 String(
-q.correct_answer
+q.correct_answer||""
 )
 .trim()
-.toLowerCase()
+.toLowerCase();
+
+if(
+submittedAnswer===
+correctAnswer
 ){
 
 score++;
@@ -1262,8 +1245,8 @@ score/total*100
 
 
 /*
-Count this attempt BEFORE
-saving the new result.
+COUNT ATTEMPT
+BEFORE SAVING RESULT
 */
 
 const previousAttempts=
@@ -1273,50 +1256,75 @@ user.id,
 lessonId
 );
 
-
 const attempt=
 previousAttempts+1;
 
 
-/*
-Only first 3 attempts
-receive rewards.
-*/
+/* REWARD */
 
 const reward=
 rewardForAttempt(
 attempt
 );
 
-
 const rewardCoins=
 reward.coinsPerCorrect*
 score;
-
 
 const rewardXP=
 reward.xpPerCorrect*
 score;
 
-
-/*
-Persist coins and XP.
-*/
-
-const totals=
-await addRewards(
-env,
-user.id,
-rewardCoins,
-rewardXP
-);
-
-
 const completedAt=
 new Date().toISOString();
 
 
-await env.DB.prepare(`
+/*
+IMPORTANT:
+
+SAVE QUIZ RESULT AND
+ADD COINS/XP TO D1.
+
+The user_rewards row is created
+automatically if it does not exist.
+*/
+
+await env.DB.batch([
+
+env.DB.prepare(`
+INSERT OR IGNORE INTO user_rewards
+(
+user_id,
+coins,
+xp,
+updated_at
+)
+VALUES
+(?,?,?,?)
+`)
+.bind(
+user.id,
+0,
+0,
+completedAt
+),
+
+env.DB.prepare(`
+UPDATE user_rewards
+SET
+coins=COALESCE(coins,0)+?,
+xp=COALESCE(xp,0)+?,
+updated_at=?
+WHERE user_id=?
+`)
+.bind(
+rewardCoins,
+rewardXP,
+completedAt,
+user.id
+),
+
+env.DB.prepare(`
 INSERT INTO quiz_results
 (
 user_id,
@@ -1337,14 +1345,30 @@ total,
 percentage,
 completedAt
 )
-.run();
 
+]);
+
+
+/* READ NEW BALANCE FROM D1 */
+
+const totals=
+await getRewards(
+env,
+user.id
+);
+
+
+/* RESPONSE */
 
 return json({
+
 success:true,
 
 lesson_id:
 lessonId,
+
+lesson_title:
+lesson.title,
 
 score,
 
@@ -1376,6 +1400,7 @@ attempt+1
 
 completed_at:
 completedAt
+
 });
 }
 
@@ -1391,7 +1416,6 @@ const{
 start,
 end
 }=monthRange();
-
 
 const result=
 await env.DB.prepare(`
@@ -1430,7 +1454,6 @@ end
 )
 .all();
 
-
 return json({
 success:true,
 
@@ -1465,19 +1488,16 @@ request,
 env
 );
 
-
 if(!user)
 return json({
 success:false,
 error:"Login required"
 },401);
 
-
 const{
 start,
 end
 }=monthRange();
-
 
 const result=
 await env.DB.prepare(`
@@ -1515,10 +1535,8 @@ end
 )
 .all();
 
-
 const rows=
 result.results||[];
-
 
 const index=
 rows.findIndex(
@@ -1526,7 +1544,6 @@ x=>
 Number(x.id)===
 Number(user.id)
 );
-
 
 return json({
 success:true,
@@ -1557,17 +1574,14 @@ request,
 env
 );
 
-
 if(!user)
 return json({
 success:false,
 error:"Login required"
 },401);
 
-
 const code=
 `ENG${user.id}`;
-
 
 return json({
 success:true,
@@ -1593,18 +1607,15 @@ const code=
 clean(referralCode)
 .toUpperCase();
 
-
 if(
 !code.startsWith("ENG")
 )
 return;
 
-
 const referrerId=
 Number(
 code.substring(3)
 );
-
 
 if(
 !Number.isInteger(referrerId)||
@@ -1612,7 +1623,6 @@ referrerId<1||
 referrerId===referredUserId
 )
 return;
-
 
 const referrer=
 await env.DB.prepare(`
@@ -1624,10 +1634,8 @@ LIMIT 1
 .bind(referrerId)
 .first();
 
-
 if(!referrer)
 return;
-
 
 const existing=
 await env.DB.prepare(`
@@ -1639,10 +1647,8 @@ LIMIT 1
 .bind(referredUserId)
 .first();
 
-
 if(existing)
 return;
-
 
 await env.DB.prepare(`
 INSERT INTO referrals
@@ -1675,12 +1681,10 @@ parseCookies(request);
 const session=
 cookies[SESSION];
 
-
 if(session){
 
 const hash=
 await sha256(session);
-
 
 await env.DB.prepare(`
 DELETE FROM sessions
@@ -1690,7 +1694,6 @@ WHERE token_hash=?
 .run();
 
 }
-
 
 return new Response(null,{
 status:302,
@@ -1730,13 +1733,11 @@ const data=
 new TextEncoder()
 .encode(value);
 
-
 const hash=
 await crypto.subtle.digest(
 "SHA-256",
 data
 );
-
 
 return Array.from(
 new Uint8Array(hash)
@@ -1761,10 +1762,8 @@ request.headers.get(
 
 const cookies={};
 
-
 if(!header)
 return cookies;
-
 
 for(
 const part of header.split(";")
@@ -1773,10 +1772,8 @@ const part of header.split(";")
 const i=
 part.indexOf("=");
 
-
 if(i<0)
 continue;
-
 
 cookies[
 part.slice(0,i).trim()
@@ -1785,7 +1782,6 @@ part.slice(i+1).trim()
 );
 
 }
-
 
 return cookies;
 }
@@ -1826,7 +1822,6 @@ new Headers(
 response.headers
 );
 
-
 headers.set(
 "Access-Control-Allow-Origin",
 SITE
@@ -1846,7 +1841,6 @@ headers.set(
 "Access-Control-Allow-Methods",
 "GET,POST,OPTIONS"
 );
-
 
 return new Response(
 response.body,
