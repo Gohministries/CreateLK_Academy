@@ -313,7 +313,6 @@ Logout
 </nav>
 </header>
 
-
 <main>
 
 <section class="hero">
@@ -366,9 +365,7 @@ Affiliate Dashboard
 
 </section>
 
-
 <div id="notice" class="notice"></div>
-
 
 <div id="ref" class="ref">
 
@@ -382,13 +379,11 @@ Copy Link
 
 </div>
 
-
 <section id="lessonsSection">
 
 <div id="lessons" class="grid"></div>
 
 </section>
-
 
 <section id="quiz" class="quiz">
 
@@ -408,7 +403,6 @@ Copy Link
 
 </div>
 
-
 <div class="gamebar">
 
 <div class="meter">
@@ -425,18 +419,15 @@ Copy Link
 
 </div>
 
-
 <div id="quizContent"></div>
 
 </section>
 
 </main>
 
-
 <footer>
 CreateLK English · CreateLK © 2026
 </footer>
-
 
 <script>
 
@@ -448,10 +439,9 @@ let lessons=[];
 let qs=[];
 let n=0;
 let answers=[];
-let answered=false;
+let results=[];
 let coins=0;
 let xp=0;
-
 
 function $(id){
 return document.getElementById(id);
@@ -864,8 +854,12 @@ return;
 }
 
 n=0;
-answers=new Array(qs.length).fill(null);
-answered=false;
+
+answers=
+new Array(qs.length).fill(null);
+
+results=
+new Array(qs.length).fill(null);
 
 $("lessonsSection").style.display="none";
 $("quiz").style.display="block";
@@ -909,7 +903,6 @@ $("progress").textContent=
 $("meter").style.width=
 (((n+1)/qs.length)*100)+"%";
 
-
 const options=[
 ["a",q.option_a],
 ["b",q.option_b],
@@ -917,10 +910,7 @@ const options=[
 ["d",q.option_d]
 ];
 
-answered=
-answers[n]!==null&&
-answers[n]!==undefined;
-
+const result=results[n];
 
 let html=`
 
@@ -935,19 +925,43 @@ ${escapeHTML(q.question)}
 
 options.forEach(option=>{
 
-const selected=answers[n]===option[0];
+const value=option[0];
+
+let className="option";
+
+if(
+result&&
+result.selected===value
+){
+
+className+=
+result.correct
+?" correct"
+:" wrong";
+
+}
+
+if(
+result&&
+!result.correct&&
+result.correctAnswer===value
+){
+
+className+=" correct";
+
+}
 
 html+=`
 
 <button
-class="option ${selected?"selected":""}"
-data-value="${option[0]}"
-onclick="answer('${option[0]}')"
-${answered?"disabled":""}
+class="${className}"
+data-value="${value}"
+onclick="answer('${value}')"
+${result?"disabled":""}
 >
 
 <strong>
-${option[0].toUpperCase()}.
+${value.toUpperCase()}.
 </strong>
 
 ${escapeHTML(option[1])}
@@ -977,7 +991,7 @@ ${n===0?"disabled":""}
 id="next"
 class="btn"
 onclick="nextQuestion()"
-disabled
+${result?"":"disabled"}
 >
 ${n===qs.length-1?"Finish":"Next →"}
 </button>
@@ -989,6 +1003,34 @@ ${n===qs.length-1?"Finish":"Next →"}
 
 $("quizContent").innerHTML=html;
 
+
+/* RESTORE PREVIOUS RESULT */
+
+if(result){
+
+const f=$("feedback");
+
+if(result.correct){
+
+f.className="feedback correct";
+f.textContent="🟢 Correct!";
+
+}else{
+
+f.className="feedback wrong";
+
+f.textContent=
+"🔴 Wrong! "+
+(
+result.correctText
+?"Correct answer: "+result.correctText
+:""
+);
+
+}
+
+}
+
 }
 
 
@@ -996,7 +1038,7 @@ $("quizContent").innerHTML=html;
 
 async function answer(selected){
 
-if(answered)return;
+if(results[n])return;
 
 selected=
 String(selected||"")
@@ -1023,25 +1065,22 @@ answer:selected
 }
 );
 
-answered=true;
-answers[n]=selected;
+if(d.success!==true){
 
-document
-.querySelectorAll(".option")
-.forEach(b=>{
-
-b.disabled=true;
-
-if(b.dataset.value===selected){
-
-b.classList.add(
-d.correct?"correct":"wrong"
+throw new Error(
+d.error||
+"Unable to check answer."
 );
 
 }
 
+const correct=
+d.correct===true;
+
+let correctLetter=null;
+
 if(
-!d.correct&&
+!correct&&
 d.correct_answer!==undefined&&
 d.correct_answer!==null
 ){
@@ -1051,7 +1090,7 @@ String(d.correct_answer)
 .trim()
 .toLowerCase();
 
-const correctLetter={
+const map={
 "1":"a",
 "2":"b",
 "3":"c",
@@ -1060,42 +1099,23 @@ const correctLetter={
 "b":"b",
 "c":"c",
 "d":"d"
-}[value]||value;
+};
 
-if(
-b.dataset.value===correctLetter
-){
-
-b.classList.add("correct");
+correctLetter=
+map[value]||value;
 
 }
 
-}
+answers[n]=selected;
 
-});
+results[n]={
+selected:selected,
+correct:correct,
+correctAnswer:correctLetter,
+correctText:d.correct_text||""
+};
 
-const f=$("feedback");
-
-if(d.correct){
-
-f.className="feedback correct";
-f.textContent="🟢 Correct!";
-
-}else{
-
-f.className="feedback wrong";
-
-f.textContent=
-"🔴 Wrong! "+
-(
-d.correct_text
-?"Correct answer: "+d.correct_text
-:""
-);
-
-}
-
-$("next").disabled=false;
+renderQuestion();
 
 }catch(e){
 
@@ -1115,7 +1135,7 @@ e.message||
 
 function nextQuestion(){
 
-if(!answered){
+if(!results[n]){
 
 notice("Please select an answer.");
 return;
@@ -1125,8 +1145,9 @@ return;
 if(n<qs.length-1){
 
 n++;
-answered=false;
+
 renderQuestion();
+
 return;
 
 }
@@ -1143,10 +1164,6 @@ function previousQuestion(){
 if(n<=0)return;
 
 n--;
-
-answered=
-answers[n]!==null&&
-answers[n]!==undefined;
 
 renderQuestion();
 
@@ -1269,8 +1286,12 @@ e.message||"Unable to submit quiz."
 function retry(){
 
 n=0;
-answers=new Array(qs.length).fill(null);
-answered=false;
+
+answers=
+new Array(qs.length).fill(null);
+
+results=
+new Array(qs.length).fill(null);
 
 renderQuestion();
 
@@ -1284,7 +1305,7 @@ function back(){
 qs=[];
 n=0;
 answers=[];
-answered=false;
+results=[];
 
 $("quiz").style.display="none";
 $("lessonsSection").style.display="block";
