@@ -244,49 +244,106 @@ const $=id=>document.getElementById(id);
 
 function esc(x){
 return String(x??"").replace(/[&<>"']/g,c=>({
-"&":"&amp;","<":"&lt;",">":"&gt;",
-'"':"&quot;","'":"&#039;"
+"&":"&amp;",
+"<":"&lt;",
+">":"&gt;",
+'"':"&quot;",
+"'":"&#039;"
 }[c]));
 }
 
 async function api(path){
-const r=await fetch(API+path,{credentials:"include",cache:"no-store"});
+
+const r=await fetch(
+API+path,
+{
+credentials:"include",
+cache:"no-store"
+}
+);
+
 const d=await r.json().catch(()=>({}));
-if(!r.ok)throw Error(d.error||"Request failed");
+
+if(!r.ok)
+throw Error(d.error||"Request failed");
+
 return d;
 }
 
 async function post(path,body){
-const r=await fetch(API+path,{
+
+const r=await fetch(
+API+path,
+{
 method:"POST",
 credentials:"include",
-headers:{"Content-Type":"application/json"},
+headers:{
+"Content-Type":"application/json"
+},
 body:JSON.stringify(body)
-});
+}
+);
+
 const d=await r.json().catch(()=>({}));
-if(!r.ok)throw Error(d.error||"Request failed");
+
+if(!r.ok)
+throw Error(d.error||"Request failed");
+
 return d;
 }
 
 function login(){
-const ref=localStorage.getItem("english_referral");
-location.href=API+"/auth/google"+
-(ref?"?ref="+encodeURIComponent(ref):"");
+
+const ref=
+localStorage.getItem(
+"english_referral"
+);
+
+location.href=
+API+"/auth/google"+
+(
+ref
+?"?ref="+encodeURIComponent(ref)
+:""
+);
+
 }
 
 function toggleMenu(){
+
 $("menu").classList.toggle("show");
+
 }
 
-document.addEventListener("click",e=>{
+document.addEventListener(
+"click",
+e=>{
+
 if(!e.target.closest(".menu-wrap"))
 $("menu").classList.remove("show");
-});
+
+}
+);
 
 function saveReferral(){
-const ref=new URLSearchParams(location.search).get("ref");
-if(ref&&/^[A-Za-z0-9_-]{3,100}$/.test(ref))
-localStorage.setItem("english_referral",ref);
+
+const ref=
+new URLSearchParams(
+location.search
+).get("ref");
+
+if(
+ref &&
+/^[A-Za-z0-9_-]{3,100}$/.test(ref)
+){
+
+localStorage.setItem(
+"english_referral",
+ref
+);
+
+}
+
 }
 
 function setStatus(){
@@ -294,17 +351,29 @@ function setStatus(){
 const s=$("status");
 
 if(!user){
+
 s.className="status guest";
-s.textContent="🔐 Sign in to check Premium status";
+
+s.textContent=
+"🔐 Sign in to check Premium status";
+
 return;
 }
 
 if(premium){
+
 s.className="status premium";
-s.textContent="👑 Premium Member";
+
+s.textContent=
+"👑 Premium Member";
+
 }else{
+
 s.className="status free";
-s.textContent="FREE Member · Lesson 1 is free";
+
+s.textContent=
+"FREE Member · Lesson 1 is free";
+
 }
 
 }
@@ -313,158 +382,305 @@ async function getUser(){
 
 try{
 
-const d=await api("/api/me");
+const d=
+await api("/api/me");
 
 if(d.user){
 
 user=d.user;
 premium=!!d.premium;
 
+/*
+  Coins and XP are persistent values
+  returned by the Worker from D1.
+*/
+
+coins=
+Number(
+d.user.coins||0
+);
+
+xp=
+Number(
+d.user.xp||0
+);
+
 $("login").style.display="none";
+
 $("logout").style.display="block";
 
-$("avatar").src=d.user.picture||LOGO;
+$("avatar").src=
+d.user.picture||LOGO;
+
 $("avatar").style.display="block";
 
 setStatus();
+
+stats();
+
 return d;
+
 }
+
+}catch(e){
+
+console.error(e);
+
+}
+
+user=null;
+premium=false;
+
+coins=0;
+xp=0;
+
+$("login").style.display="block";
+
+$("logout").style.display="none";
+
+$("avatar").style.display="none";
+
+setStatus();
+
+stats();
+
+return{
+user:null,
+premium:false
+};
+
+}
+
+async function logout(){
+
+try{
+
+await api("/auth/logout");
 
 }catch(e){}
 
 user=null;
 premium=false;
 
+coins=0;
+xp=0;
+
 $("login").style.display="block";
+
 $("logout").style.display="none";
+
 $("avatar").style.display="none";
 
 setStatus();
+stats();
 
-return{user:null,premium:false};
-}
-
-async function logout(){
-
-try{await api("/auth/logout")}catch(e){}
-
-user=null;
-premium=false;
-
-$("login").style.display="block";
-$("logout").style.display="none";
-$("avatar").style.display="none";
-
-setStatus();
 }
 
 async function loadLessons(){
 
 try{
 
-const d=await api("/api/titles");
+const d=
+await api("/api/titles");
 
-lessons=d.lessons||d.titles||d.data||[];
+lessons=
+d.lessons||
+d.titles||
+d.data||
+[];
 
-$("list").innerHTML=lessons.length
-?`<div class="grid">${lessons.map(card).join("")}</div>`
-:`<div class="question-card">No lessons found.</div>`;
+$("list").innerHTML=
+lessons.length
+
+?`<div class="grid">
+${lessons.map(card).join("")}
+</div>`
+
+:`<div class="question-card">
+No lessons found.
+</div>`;
 
 }catch(e){
 
+console.error(e);
+
 $("list").innerHTML=
-`<div class="question-card">Unable to load lessons.</div>`;
+`<div class="question-card">
+Unable to load lessons.
+</div>`;
 
 }
+
 }
 
 function premiumLesson(x){
 
-if(String(x.access_type||"").toUpperCase()==="FREE")
+if(
+String(
+x.access_type||""
+).toUpperCase()==="FREE"
+)
 return false;
 
-if(x.is_free===true||x.free===true||x.premium===false)
+if(
+x.is_free===true||
+x.free===true||
+x.premium===false
+)
 return false;
 
-return Number(x.id||x.lesson_id)!==1;
+return Number(
+x.id||x.lesson_id
+)!==1;
+
 }
 
 function card(x){
 
-const id=x.id||x.lesson_id;
-const title=x.title||x.name||"English Lesson";
-const pro=premiumLesson(x);
+const id=
+x.id||x.lesson_id;
+
+const title=
+x.title||
+x.name||
+"English Lesson";
+
+const pro=
+premiumLesson(x);
 
 return`
+
 <article class="card">
+
 <div class="bar"></div>
+
 <div class="card-body">
 
 <div class="label">
 ${pro?"PREMIUM LESSON":"FREE LESSON"}
 </div>
 
-<h3>${esc(title)}</h3>
+<h3>
+${esc(title)}
+</h3>
 
-<p>${esc(x.description||"Practice English with MCQ questions.")}</p>
+<p>
+${esc(
+x.description||
+"Practice English with MCQ questions."
+)}
+</p>
 
-<span class="badge ${pro?"pro":"free-badge"}">
+<span class="badge ${
+pro?"pro":"free-badge"
+}">
 ${pro?"PREMIUM 🔒":"FREE"}
 </span>
 
-<button class="btn"
-onclick='openLesson(${JSON.stringify(id)},${JSON.stringify(title)},${pro})'>
+<button
+class="btn"
+onclick='openLesson(
+${JSON.stringify(id)},
+${JSON.stringify(title)},
+${pro}
+)'>
+
 ${pro?"Open Lesson":"Start Lesson"}
+
 </button>
 
 </div>
-</article>`;
+
+</article>
+
+`;
+
 }
 
-async function openLesson(id,title,pro){
+async function openLesson(
+id,
+title,
+pro
+){
 
-const d=await getUser();
+const d=
+await getUser();
 
 if(!d.user){
+
 login();
+
 return;
 }
 
-if(!pro||d.premium){
-loadQuiz(id,title);
+if(
+!pro ||
+d.premium
+){
+
+loadQuiz(
+id,
+title
+);
+
 }else{
-location.href=PAY_URL;
-}
+
+location.href=
+PAY_URL;
+
 }
 
-async function loadQuiz(id,title){
+}
+
+async function loadQuiz(
+id,
+title
+){
 
 $("lessons").style.display="none";
+
 $("quiz").style.display="block";
-$("quizTitle").textContent=title;
+
+$("quizTitle").textContent=
+title;
 
 n=0;
 answers=[];
 answered=false;
-coins=0;
-xp=0;
+
+/*
+  IMPORTANT:
+  Do not reset coins or XP here.
+  They are the user's persistent totals.
+*/
 
 stats();
 
 $("quizBody").innerHTML=
-`<div class="question-card">Loading questions...</div>`;
+`<div class="question-card">
+Loading questions...
+</div>`;
 
 try{
 
-const d=await api(
-"/api/questions?lesson_id="+encodeURIComponent(id)
+const d=
+await api(
+"/api/questions?lesson_id="+
+encodeURIComponent(id)
 );
 
-qs=d.questions||d.data||[];
+qs=
+d.questions||
+d.data||
+[];
 
 if(!qs.length){
+
 $("quizBody").innerHTML=
-`<div class="question-card">No questions available.</div>`;
+`<div class="question-card">
+No questions available.
+</div>`;
+
 return;
 }
 
@@ -472,20 +688,31 @@ show();
 
 }catch(e){
 
+console.error(e);
+
 $("quizBody").innerHTML=
-`<div class="question-card">Unable to load questions.</div>`;
+`<div class="question-card">
+Unable to load questions.
+</div>`;
 
 }
+
 }
 
 function stats(){
-$("coins").textContent=coins;
-$("xp").textContent=xp;
+
+$("coins").textContent=
+coins;
+
+$("xp").textContent=
+xp;
+
 }
 
 function show(){
 
-const q=qs[n];
+const q=
+qs[n];
 
 $("progress").textContent=
 `Question ${n+1} of ${qs.length}`;
@@ -511,13 +738,18 @@ ${esc(q.question)}
 <div id="options">
 
 ${opts.map(o=>`
+
 <button
 class="option"
 data-value="${o[0]}"
 onclick="answer('${o[0]}')">
+
 <b>${o[0].toUpperCase()}.</b>
+
 ${esc(o[1])}
+
 </button>
+
 `).join("")}
 
 </div>
@@ -538,69 +770,131 @@ id="next"
 class="btn"
 onclick="next()"
 disabled>
-${n===qs.length-1?"Finish":"Next →"}
+
+${n===qs.length-1
+?"Finish"
+:"Next →"}
+
 </button>
 
 </div>
 
-</div>`;
+</div>
+
+`;
+
 }
 
 async function answer(selected){
 
-if(answered)return;
+if(answered)
+return;
 
 try{
 
-const d=await post("/api/quiz/check",{
+const d=
+await post(
+"/api/quiz/check",
+{
 question_id:qs[n].id,
 answer:selected
-});
+}
+);
 
 answered=true;
+
 answers[n]=selected;
 
-const correct=!!d.correct;
-const buttons=document.querySelectorAll(".option");
+const correct=
+!!d.correct;
 
-buttons.forEach(b=>{
+const buttons=
+document.querySelectorAll(
+".option"
+);
+
+buttons.forEach(
+b=>{
+
 b.disabled=true;
 
-if(b.dataset.value===selected)
-b.classList.add(correct?"correct":"wrong");
+if(
+b.dataset.value===
+selected
+){
 
-if(!correct&&d.correct_answer&&
-b.dataset.value===String(d.correct_answer).toLowerCase())
-b.classList.add("correct");
-});
+b.classList.add(
+correct
+?"correct"
+:"wrong"
+);
+
+}
+
+if(
+!correct &&
+d.correct_answer &&
+b.dataset.value===
+String(
+d.correct_answer
+).toLowerCase()
+){
+
+b.classList.add(
+"correct"
+);
+
+}
+
+}
+);
 
 const f=$("feedback");
 
 if(correct){
 
-coins+=5;
-xp+=10;
+/*
+  IMPORTANT:
+  The Worker now controls all
+  coins and XP rewards.
 
-f.className="feedback correct";
-f.textContent="🟢 Correct! +5 🪙 +10 XP";
+  No client-side reward is added here.
+*/
+
+f.className=
+"feedback correct";
+
+f.textContent=
+"🟢 Correct!";
 
 }else{
 
-f.className="feedback wrong";
+f.className=
+"feedback wrong";
 
 f.textContent=
 "🔴 Wrong! "+
-(d.correct_text?
-"Correct answer: "+d.correct_text:"");
+(
+d.correct_text
+?
+"Correct answer: "+
+d.correct_text
+:""
+);
 
 }
 
 stats();
+
 $("next").disabled=false;
 
 }catch(e){
 
-notice("Unable to check answer. Please try again.");
+console.error(e);
+
+notice(
+"Unable to check answer. Please try again."
+);
 
 }
 
@@ -608,12 +902,18 @@ notice("Unable to check answer. Please try again.");
 
 function next(){
 
-if(!answered)return;
+if(!answered)
+return;
 
-if(n<qs.length-1){
+if(
+n<
+qs.length-1
+){
 
 n++;
+
 answered=false;
+
 show();
 
 }else{
@@ -621,6 +921,7 @@ show();
 finish();
 
 }
+
 }
 
 function prev(){
@@ -628,67 +929,202 @@ function prev(){
 if(n>0){
 
 n--;
-answered=answers[n]!=null;
+
+answered=
+answers[n]!=null;
+
 show();
 
 }
+
 }
 
 async function finish(){
 
 $("quizBody").innerHTML=
-`<div class="question-card result">Checking result...</div>`;
+`<div class="question-card result">
+Checking result...
+</div>`;
 
 try{
 
-const d=await post("/api/quiz/submit",{
-lesson_id:qs[0]?.lesson_id,
-answers:qs.map((q,i)=>({
+const d=
+await post(
+"/api/quiz/submit",
+{
+lesson_id:
+qs[0]?.lesson_id,
+
+answers:
+qs.map(
+(q,i)=>({
 question_id:q.id,
 answer:answers[i]||""
-}))
-});
+})
+)
+}
+);
 
-const score=Number(d.score||0);
-const total=Number(d.total||qs.length);
-const pc=Number(d.percentage||0);
+const score=
+Number(
+d.score||0
+);
+
+const total=
+Number(
+d.total||qs.length
+);
+
+const pc=
+Number(
+d.percentage||0
+);
+
+/*
+  IMPORTANT:
+  The Worker calculates the reward
+  according to the monthly attempt:
+
+  1st attempt:
+  5 coins / 10 XP per correct
+
+  2nd attempt:
+  3 coins / 5 XP per correct
+
+  3rd attempt:
+  1 coin / 2 XP per correct
+
+  4th+:
+  0 rewards
+
+  These totals are persistent in D1.
+*/
+
+coins=
+Number(
+d.total_coins||0
+);
+
+xp=
+Number(
+d.total_xp||0
+);
+
+stats();
+
+const rewardCoins=
+Number(
+d.reward_coins||0
+);
+
+const rewardXP=
+Number(
+d.reward_xp||0
+);
+
+const attempt=
+Number(
+d.attempt||1
+);
+
+const rewarded=
+!!d.rewarded;
+
+let rewardMessage="";
+
+if(rewarded){
+
+rewardMessage=
+`Attempt ${attempt}: +${rewardCoins} 🪙 +${rewardXP} XP`;
+
+}else{
+
+rewardMessage=
+"Practice attempt · No additional rewards";
+
+}
 
 $("quizBody").innerHTML=`
 
 <div class="question-card result">
 
-<div class="gold">LESSON COMPLETE</div>
+<div class="gold">
+LESSON COMPLETE
+</div>
 
-<div class="score">${pc}%</div>
+<div class="score">
+${pc}%
+</div>
 
-<h2>${score} / ${total}</h2>
+<h2>
+${score} / ${total}
+</h2>
 
 <p>
-${pc===100?"Perfect! Excellent work!":
-pc>=80?"Great work! Keep practising.":
-pc>=60?"Good effort! Keep improving.":
-"Keep practising and try again."}
+${
+pc===100
+?"Perfect! Excellent work!"
+:
+pc>=80
+?"Great work! Keep practising."
+:
+pc>=60
+?"Good effort! Keep improving."
+:
+"Keep practising and try again."
+}
 </p>
 
 <div class="reward">
 
 <div>
-<strong>🪙 ${coins}</strong>
-<small>Coins</small>
+
+<strong>
+🪙 ${coins}
+</strong>
+
+<small>
+Total Coins
+</small>
+
 </div>
 
 <div>
-<strong>⚡ ${xp}</strong>
-<small>XP</small>
+
+<strong>
+⚡ ${xp}
+</strong>
+
+<small>
+Total XP
+</small>
+
 </div>
 
 </div>
+
+<p
+style="
+color:#9eacc2;
+margin:8px 0 15px;
+font-size:12px;
+">
+
+${rewardMessage}
+
+</p>
 
 <a
 href="/Eng/rank.html"
 class="btn"
-style="display:inline-flex;align-items:center;text-decoration:none">
+style="
+display:inline-flex;
+align-items:center;
+text-decoration:none;
+">
+
 🏆 Leaderboard
+
 </a>
 
 <br>
@@ -696,68 +1132,114 @@ style="display:inline-flex;align-items:center;text-decoration:none">
 <button
 class="btn light"
 style="margin-top:10px"
-onclick="loadQuiz(${JSON.stringify(qs[0]?.lesson_id)},${JSON.stringify($("quizTitle").textContent)})">
+onclick='loadQuiz(
+${JSON.stringify(qs[0]?.lesson_id)},
+${JSON.stringify($("quizTitle").textContent)}
+)'>
+
 Play Again
+
+</button>
+
+</div>
+
+`;
+
+}catch(e){
+
+console.error(e);
+
+$("quizBody").innerHTML=
+`<div class="question-card result">
+
+<p>
+Unable to submit result.
+</p>
+
+<button
+class="btn"
+onclick="show()">
+
+Try Again
+
 </button>
 
 </div>`;
 
-}catch(e){
-
-$("quizBody").innerHTML=
-`<div class="question-card result">
-<p>Unable to submit result.</p>
-<button class="btn" onclick="show()">Try Again</button>
-</div>`;
-
 }
+
 }
 
 function back(){
+
 $("quiz").style.display="none";
+
 $("lessons").style.display="block";
+
 }
 
 async function referral(){
 
 $("menu").classList.remove("show");
+
 $("ref").style.display="block";
 
 try{
 
-const d=await api("/api/referral");
+const d=
+await api("/api/referral");
 
 $("refUrl").value=
-d.referral_url||d.url||location.origin+"/Eng/";
+d.referral_url||
+d.url||
+location.origin+
+"/Eng/";
 
 }catch(e){
 
-$("refUrl").value=location.origin+"/Eng/";
+$("refUrl").value=
+location.origin+
+"/Eng/";
 
 }
+
 }
 
 async function copyRef(){
 
 try{
 
-await navigator.clipboard.writeText($("refUrl").value);
-notice("Referral link copied.");
+await navigator.clipboard.writeText(
+$("refUrl").value
+);
+
+notice(
+"Referral link copied."
+);
 
 }catch(e){
 
-notice("Unable to copy link.");
+notice(
+"Unable to copy link."
+);
 
 }
+
 }
 
 function notice(msg){
 
-$("notice").textContent=msg;
-$("notice").classList.add("show");
+$("notice").textContent=
+msg;
+
+$("notice").classList.add(
+"show"
+);
 
 setTimeout(
-()=>$("notice").classList.remove("show"),
+()=>$("notice").classList.remove(
+"show"
+),
 2500
 );
 
@@ -766,7 +1248,9 @@ setTimeout(
 async function init(){
 
 saveReferral();
+
 await getUser();
+
 await loadLessons();
 
 }
@@ -776,7 +1260,10 @@ init();
 document.addEventListener(
 "visibilitychange",
 ()=>{
-if(document.visibilityState==="visible")
+if(
+document.visibilityState===
+"visible"
+)
 getUser();
 }
 );
