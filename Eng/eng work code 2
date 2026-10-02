@@ -1,6 +1,6 @@
 const SITE="https://createlk.com",PREMIUM="https://premium.createlk.workers.dev",PAY="https://pay.createlk.workers.dev";
 const SESSION="english_session",STATE="google_state",GA="https://accounts.google.com/o/oauth2/v2/auth",GT="https://oauth2.googleapis.com/token",GU="https://openidconnect.googleapis.com/v1/userinfo";
-const DAYS=30,MAX=3,COINS=5,XP=10,API="ENGLISH-2026-10-03-13";
+const DAYS=30,MAX=3,COINS=5,XP=10,API="ENGLISH-2026-10-03-14";
 
 export default{async fetch(r,e){
 try{
@@ -336,13 +336,7 @@ let since=new Date(Date.now()-30*864e5).toISOString();
 let x=await e.DB.prepare(
 "INSERT INTO quiz_attempts(id,user_id,lesson_id,created_at)SELECT ?,?,?,? WHERE(SELECT COUNT(*) FROM quiz_attempts WHERE user_id=? AND lesson_id=? AND created_at>=?)<3"
 ).bind(
-id,
-u.id,
-lid,
-now,
-u.id,
-lid,
-since
+id,u.id,lid,now,u.id,lid,since
 ).run();
 
 if(!x.meta.changes){
@@ -415,18 +409,21 @@ let old=await e.DB.prepare(
 "SELECT answer,correct FROM quiz_answers WHERE attempt_id=? AND question_id=?"
 ).bind(aid,qid).first();
 
-if(old)
+if(old){
+let oldCorrect=+old.correct===1;
+
 return J({
 success:true,
 already_answered:true,
-correct:+old.correct===1,
+correct:oldCorrect,
 question_id:qid,
 answer:n(old.answer),
 selected_answer:n(old.answer),
 correct_answer:n(q.correct_answer),
-reward_coins:+old.correct===1?COINS:0,
-reward_xp:+old.correct===1?XP:0
+reward_coins:oldCorrect?COINS:0,
+reward_xp:oldCorrect?XP:0
 });
+}
 
 let ca=n(q.correct_answer);
 let ok=ans===ca;
@@ -436,12 +433,7 @@ let sql=[
 e.DB.prepare(
 "INSERT INTO quiz_answers(attempt_id,user_id,question_id,answer,correct,created_at)VALUES(?,?,?,?,?,?)"
 ).bind(
-aid,
-u.id,
-qid,
-ans,
-ok?1:0,
-now
+aid,u.id,qid,ans,ok?1:0,now
 )
 ];
 
@@ -450,12 +442,7 @@ sql.push(
 e.DB.prepare(
 "INSERT INTO quiz_question_rewards(attempt_id,user_id,question_id,coins,xp,created_at)VALUES(?,?,?,?,?,?)"
 ).bind(
-aid,
-u.id,
-qid,
-COINS,
-XP,
-now
+aid,u.id,qid,COINS,XP,now
 )
 );
 }
@@ -550,34 +537,19 @@ try{
 await e.DB.batch([
 e.DB.prepare(
 "INSERT INTO quiz_reward_commits(attempt_id,user_id,coins,xp,committed_at)VALUES(?,?,?,?,?)"
-).bind(
-aid,
-u.id,
-p.coins,
-p.xp,
-now
-),
+).bind(aid,u.id,p.coins,p.xp,now),
+
 e.DB.prepare(
 "UPDATE user_rewards SET coins=coins+?,xp=xp+?,updated_at=? WHERE user_id=?"
-).bind(
-p.coins,
-p.xp,
-now,
-u.id
-),
+).bind(p.coins,p.xp,now,u.id),
+
 e.DB.prepare(
 "UPDATE quiz_attempts SET completed_at=? WHERE id=?"
 ).bind(now,aid),
+
 e.DB.prepare(
 "INSERT INTO quiz_results(user_id,lesson_id,score,total,percentage,completed_at)VALUES(?,?,?,?,?,?)"
-).bind(
-u.id,
-lid,
-score,
-total,
-pct,
-now
-)
+).bind(u.id,lid,score,total,pct,now)
 ]);
 }catch(x){
 done=await e.DB.prepare(
@@ -731,11 +703,7 @@ return;
 
 await e.DB.prepare(
 "INSERT INTO referrals(referrer_id,referred_user_id,referral_code)VALUES(?,?,?)"
-).bind(
-rid,
-uid,
-code
-).run();
+).bind(rid,uid,code).run();
 }
 
 /* PAYMENT */
@@ -881,12 +849,11 @@ const o=r.headers.get("Origin");
 
 if(o==="https://createlk.com"||o==="https://www.createlk.com"){
 r.headers.set("Access-Control-Allow-Origin",o);
-r.headers.set("Vary","Origin");
-}
-
 r.headers.set("Access-Control-Allow-Credentials","true");
 r.headers.set("Access-Control-Allow-Headers","Content-Type,Authorization");
 r.headers.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");
+r.headers.set("Vary","Origin");
+}
 
 return r;
 }
