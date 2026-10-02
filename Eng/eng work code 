@@ -13,6 +13,7 @@ const STATE_MINUTES=10;
 export default{
 async fetch(request,env){
 try{
+
 const url=new URL(request.url);
 
 if(request.method==="OPTIONS")
@@ -39,6 +40,9 @@ return titles(request,env);
 if(url.pathname==="/api/questions")
 return questions(request,env);
 
+if(url.pathname==="/api/quiz/check")
+return checkAnswer(request,env);
+
 if(url.pathname==="/api/quiz/submit")
 return submitQuiz(request,env);
 
@@ -60,12 +64,14 @@ error:"Not found"
 },404);
 
 }catch(error){
+
 console.error(error);
 
 return json({
 success:false,
 error:"Server error"
 },500);
+
 }
 }
 };
@@ -76,7 +82,11 @@ error:"Server error"
 async function googleLogin(request,env){
 
 const url=new URL(request.url);
-const referral=clean(url.searchParams.get("ref"));
+
+const referral=clean(
+url.searchParams.get("ref")
+);
+
 const state=token(32);
 
 const stateData={
@@ -111,30 +121,56 @@ Location:`${GOOGLE_AUTH}?${params}`,
 async function googleCallback(request,env){
 
 const url=new URL(request.url);
+
 const code=url.searchParams.get("code");
 const stateParam=url.searchParams.get("state");
 
 if(!code||!stateParam)
-return new Response("Invalid Google login.",{status:400});
+return new Response(
+"Invalid Google login.",
+{status:400}
+);
 
 let stateData;
 
 try{
-stateData=JSON.parse(atob(stateParam));
+
+stateData=JSON.parse(
+atob(stateParam)
+);
+
 }catch{
-return new Response("Invalid state.",{status:400});
+
+return new Response(
+"Invalid state.",
+{status:400}
+);
+
 }
 
-if(!stateData.state||stateData.expires<Date.now())
-return new Response("Login expired.",{status:400});
+if(
+!stateData.state||
+stateData.expires<Date.now()
+)
+return new Response(
+"Login expired.",
+{status:400}
+);
 
 const cookies=parseCookies(request);
 
-if(cookies[STATE]!==stateData.state)
-return new Response("Invalid login state.",{status:400});
+if(
+cookies[STATE]!==stateData.state
+)
+return new Response(
+"Invalid login state.",
+{status:400}
+);
 
 
-const tokenResponse=await fetch(GOOGLE_TOKEN,{
+const tokenResponse=await fetch(
+GOOGLE_TOKEN,
+{
 method:"POST",
 headers:{
 "Content-Type":
@@ -147,9 +183,11 @@ code,
 grant_type:"authorization_code",
 redirect_uri:env.GOOGLE_REDIRECT_URI
 })
-});
+}
+);
 
-const tokenData=await tokenResponse.json();
+const tokenData=
+await tokenResponse.json();
 
 if(!tokenData.access_token)
 return new Response(
@@ -158,39 +196,62 @@ return new Response(
 );
 
 
-const googleResponse=await fetch(GOOGLE_USER,{
+const googleResponse=await fetch(
+GOOGLE_USER,
+{
 headers:{
-Authorization:`Bearer ${tokenData.access_token}`
+Authorization:
+`Bearer ${tokenData.access_token}`
 }
-});
+}
+);
 
-const googleUser=await googleResponse.json();
+const googleUser=
+await googleResponse.json();
 
-if(!googleUser.sub||!googleUser.email)
+if(
+!googleUser.sub||
+!googleUser.email
+)
 return new Response(
 "Unable to get Google account.",
 {status:400}
 );
 
 
-const googleId=clean(googleUser.sub);
-const email=clean(googleUser.email);
-const name=clean(googleUser.name)||email.split("@")[0];
-const picture=clean(googleUser.picture);
+const googleId=
+clean(googleUser.sub);
+
+const email=
+clean(googleUser.email);
+
+const name=
+clean(googleUser.name)||
+email.split("@")[0];
+
+const picture=
+clean(googleUser.picture);
 
 
-let user=await env.DB.prepare(`
+let user=
+await env.DB.prepare(`
 SELECT *
 FROM users
 WHERE google_id=?
 OR email=?
 LIMIT 1
-`).bind(googleId,email).first();
+`)
+.bind(
+googleId,
+email
+)
+.first();
 
 
 if(!user){
 
-const result=await env.DB.prepare(`
+const result=
+await env.DB.prepare(`
 INSERT INTO users
 (
 google_id,
@@ -203,23 +264,31 @@ picture,
 last_active_at
 )
 VALUES
-(?,?,?,'FREE',NULL,'google',?,?)
-`).bind(
+(
+?,?,?,'FREE',NULL,
+'google',?,?
+)
+`)
+.bind(
 googleId,
 name,
 email,
 picture,
 Date.now()
-).run();
+)
+.run();
 
-user=await env.DB.prepare(`
+user=
+await env.DB.prepare(`
 SELECT *
 FROM users
 WHERE id=?
 LIMIT 1
-`).bind(
+`)
+.bind(
 result.meta.last_row_id
-).first();
+)
+.first();
 
 }else{
 
@@ -232,22 +301,50 @@ email=?,
 picture=?,
 last_active_at=?
 WHERE id=?
-`).bind(
+`)
+.bind(
 googleId,
 name,
 email,
 picture,
 Date.now(),
 user.id
-).run();
+)
+.run();
 
-user=await env.DB.prepare(`
+user=
+await env.DB.prepare(`
 SELECT *
 FROM users
 WHERE id=?
 LIMIT 1
-`).bind(user.id).first();
+`)
+.bind(user.id)
+.first();
+
 }
+
+
+/* Create reward account */
+
+await env.DB.prepare(`
+INSERT OR IGNORE INTO user_rewards
+(
+user_id,
+coins,
+xp,
+updated_at
+)
+VALUES
+(?,?,?,?)
+`)
+.bind(
+user.id,
+0,
+0,
+new Date().toISOString()
+)
+.run();
 
 
 if(stateData.referral)
@@ -258,11 +355,16 @@ stateData.referral
 );
 
 
-const sessionToken=token(48);
-const sessionHash=await sha256(sessionToken);
+const sessionToken=
+token(48);
 
-const expiresAt=new Date(
-Date.now()+SESSION_DAYS*86400000
+const sessionHash=
+await sha256(sessionToken);
+
+const expiresAt=
+new Date(
+Date.now()+
+SESSION_DAYS*86400000
 ).toISOString();
 
 
@@ -270,11 +372,13 @@ await env.DB.prepare(`
 INSERT INTO sessions
 (user_id,token_hash,expires_at)
 VALUES(?,?,?)
-`).bind(
+`)
+.bind(
 user.id,
 sessionHash,
 expiresAt
-).run();
+)
+.run();
 
 
 return new Response(null,{
@@ -292,24 +396,32 @@ Location:`${SITE}/Eng/`,
 
 async function currentUser(request,env){
 
-const cookies=parseCookies(request);
-const sessionToken=cookies[SESSION];
+const cookies=
+parseCookies(request);
 
-if(!sessionToken)return null;
+const sessionToken=
+cookies[SESSION];
 
-const hash=await sha256(sessionToken);
+if(!sessionToken)
+return null;
+
+const hash=
+await sha256(sessionToken);
 
 return await env.DB.prepare(`
 SELECT u.*
 FROM sessions s
-JOIN users u ON u.id=s.user_id
+JOIN users u
+ON u.id=s.user_id
 WHERE s.token_hash=?
 AND s.expires_at>?
 LIMIT 1
-`).bind(
+`)
+.bind(
 hash,
 new Date().toISOString()
-).first();
+)
+.first();
 }
 
 
@@ -317,9 +429,11 @@ new Date().toISOString()
 
 async function me(request,env){
 
-const user=await currentUser(request,env);
+const user=
+await currentUser(request,env);
 
-if(!user)
+if(!user){
+
 return json({
 success:true,
 logged_in:false,
@@ -327,41 +441,172 @@ user:null,
 premium:false
 });
 
+}
+
+
+const rewards=
+await getRewards(
+env,
+user.id
+);
+
 
 return json({
 success:true,
 logged_in:true,
+
 user:{
 id:user.id,
 name:user.name,
 email:user.email,
 picture:user.picture||"",
-membership_status:user.membership_status,
-membership_expiry:user.membership_expiry
+membership_status:
+user.membership_status,
+membership_expiry:
+user.membership_expiry,
+
+coins:rewards.coins,
+xp:rewards.xp
 },
-premium:await premium(env,user.id)
+
+premium:
+await premium(
+env,
+user.id
+)
 });
+}
+
+
+/* REWARDS */
+
+async function getRewards(
+env,
+userId
+){
+
+await env.DB.prepare(`
+INSERT OR IGNORE INTO user_rewards
+(
+user_id,
+coins,
+xp,
+updated_at
+)
+VALUES
+(?,?,?,?)
+`)
+.bind(
+userId,
+0,
+0,
+new Date().toISOString()
+)
+.run();
+
+
+const row=
+await env.DB.prepare(`
+SELECT coins,xp
+FROM user_rewards
+WHERE user_id=?
+LIMIT 1
+`)
+.bind(userId)
+.first();
+
+
+return{
+coins:Number(row?.coins||0),
+xp:Number(row?.xp||0)
+};
+}
+
+
+/* ADD REWARDS */
+
+async function addRewards(
+env,
+userId,
+coins,
+xp
+){
+
+await env.DB.prepare(`
+INSERT OR IGNORE INTO user_rewards
+(
+user_id,
+coins,
+xp,
+updated_at
+)
+VALUES
+(?,?,?,?)
+`)
+.bind(
+userId,
+0,
+0,
+new Date().toISOString()
+)
+.run();
+
+
+await env.DB.prepare(`
+UPDATE user_rewards
+SET
+coins=coins+?,
+xp=xp+?,
+updated_at=?
+WHERE user_id=?
+`)
+.bind(
+coins,
+xp,
+new Date().toISOString(),
+userId
+)
+.run();
+
+
+return getRewards(
+env,
+userId
+);
 }
 
 
 /* PREMIUM */
 
-async function premium(env,userId){
+async function premium(
+env,
+userId
+){
 
-const user=await env.DB.prepare(`
-SELECT membership_status,membership_expiry
+const user=
+await env.DB.prepare(`
+SELECT
+membership_status,
+membership_expiry
 FROM users
 WHERE id=?
 LIMIT 1
-`).bind(userId).first();
+`)
+.bind(userId)
+.first();
 
-if(!user)return false;
+if(!user)
+return false;
 
 if(
-String(user.membership_status).toUpperCase()!=="PREMIUM"
-)return false;
+String(
+user.membership_status
+).toUpperCase()!=="PREMIUM"
+)
+return false;
 
-if(!user.membership_expiry)return true;
+if(!user.membership_expiry)
+return true;
 
 return new Date(
 user.membership_expiry
@@ -371,29 +616,47 @@ user.membership_expiry
 
 /* LESSONS */
 
-async function titles(request,env){
+async function titles(
+request,
+env
+){
 
-const result=await env.DB.prepare(`
-SELECT id,title,access_type
+const result=
+await env.DB.prepare(`
+SELECT
+id,
+title,
+access_type
 FROM lessons
 WHERE active=1
 ORDER BY id ASC
-`).all();
+`)
+.all();
+
 
 return json({
 success:true,
-lessons:result.results||[]
+lessons:
+result.results||[]
 });
 }
 
 
 /* QUESTIONS */
 
-async function questions(request,env){
+async function questions(
+request,
+env
+){
 
-const url=new URL(request.url);
-const lessonId=Number(
-url.searchParams.get("lesson_id")
+const url=
+new URL(request.url);
+
+const lessonId=
+Number(
+url.searchParams.get(
+"lesson_id"
+)
 );
 
 if(!lessonId)
@@ -403,13 +666,20 @@ error:"Invalid lesson_id"
 },400);
 
 
-const lesson=await env.DB.prepare(`
-SELECT id,title,access_type
+const lesson=
+await env.DB.prepare(`
+SELECT
+id,
+title,
+access_type
 FROM lessons
 WHERE id=?
 AND active=1
 LIMIT 1
-`).bind(lessonId).first();
+`)
+.bind(lessonId)
+.first();
+
 
 if(!lesson)
 return json({
@@ -418,16 +688,30 @@ error:"Lesson not found"
 },404);
 
 
-const user=await currentUser(request,env);
-const isPremium=user?
-await premium(env,user.id):false;
+const user=
+await currentUser(
+request,
+env
+);
+
+const isPremium=
+user?
+await premium(
+env,
+user.id
+):false;
+
 
 const isFree=
 lessonId===1||
-String(lesson.access_type).toUpperCase()==="FREE";
+String(
+lesson.access_type
+).toUpperCase()==="FREE";
 
 
-if(!isFree&&!isPremium)
+if(
+!isFree&&!isPremium
+)
 return json({
 success:false,
 error:"Premium required",
@@ -435,9 +719,10 @@ premium_required:true
 },403);
 
 
-/* Correct answers stay on server */
+/* Correct answers never leave this endpoint */
 
-const result=await env.DB.prepare(`
+const result=
+await env.DB.prepare(`
 SELECT
 id,
 lesson_id,
@@ -451,24 +736,33 @@ WHERE lesson_id=?
 AND active=1
 ORDER BY id ASC
 LIMIT 50
-`).bind(lessonId).all();
+`)
+.bind(lessonId)
+.all();
 
 
 return json({
 success:true,
+
 lesson:{
 id:lesson.id,
 title:lesson.title,
-access_type:lesson.access_type
+access_type:
+lesson.access_type
 },
-questions:result.results||[]
+
+questions:
+result.results||[]
 });
 }
 
 
-/* SUBMIT QUIZ */
+/* CHECK ANSWER */
 
-async function submitQuiz(request,env){
+async function checkAnswer(
+request,
+env
+){
 
 if(request.method!=="POST")
 return json({
@@ -477,7 +771,11 @@ error:"POST required"
 },405);
 
 
-const user=await currentUser(request,env);
+const user=
+await currentUser(
+request,
+env
+);
 
 if(!user)
 return json({
@@ -489,17 +787,315 @@ error:"Login required"
 let body;
 
 try{
-body=await request.json();
+
+body=
+await request.json();
+
 }catch{
+
 return json({
 success:false,
 error:"Invalid JSON"
 },400);
+
 }
 
 
-const lessonId=Number(body.lesson_id);
-const answers=Array.isArray(body.answers)
+const questionId=
+Number(body.question_id);
+
+const answer=
+String(
+body.answer||""
+)
+.trim()
+.toLowerCase();
+
+
+if(
+!questionId||
+!["a","b","c","d"].includes(answer)
+)
+return json({
+success:false,
+error:"Invalid answer"
+},400);
+
+
+const question=
+await env.DB.prepare(`
+SELECT
+id,
+lesson_id,
+correct_answer,
+option_a,
+option_b,
+option_c,
+option_d
+FROM questions
+WHERE id=?
+AND active=1
+LIMIT 1
+`)
+.bind(questionId)
+.first();
+
+
+if(!question)
+return json({
+success:false,
+error:"Question not found"
+},404);
+
+
+const lesson=
+await env.DB.prepare(`
+SELECT
+id,
+access_type
+FROM lessons
+WHERE id=?
+AND active=1
+LIMIT 1
+`)
+.bind(question.lesson_id)
+.first();
+
+
+if(!lesson)
+return json({
+success:false,
+error:"Lesson not found"
+},404);
+
+
+const isPremium=
+await premium(
+env,
+user.id
+);
+
+
+const isFree=
+Number(question.lesson_id)===1||
+String(
+lesson.access_type||""
+)
+.toUpperCase()==="FREE";
+
+
+if(
+!isFree&&!isPremium
+)
+return json({
+success:false,
+error:"Premium required",
+premium_required:true
+},403);
+
+
+const correctAnswer=
+String(
+question.correct_answer
+)
+.trim()
+.toLowerCase();
+
+
+const correct=
+answer===correctAnswer;
+
+
+if(correct){
+
+return json({
+success:true,
+correct:true
+});
+
+}
+
+
+const options={
+a:question.option_a,
+b:question.option_b,
+c:question.option_c,
+d:question.option_d
+};
+
+
+return json({
+success:true,
+correct:false,
+correct_answer:
+correctAnswer,
+correct_text:
+options[correctAnswer]||""
+});
+}
+
+
+/* MONTH */
+
+function monthRange(){
+
+const now=
+new Date();
+
+const start=
+new Date(
+Date.UTC(
+now.getUTCFullYear(),
+now.getUTCMonth(),
+1
+)
+).toISOString();
+
+
+const end=
+new Date(
+Date.UTC(
+now.getUTCFullYear(),
+now.getUTCMonth()+1,
+1
+)
+).toISOString();
+
+
+return{
+start,
+end
+};
+}
+
+
+/* MONTHLY ATTEMPTS */
+
+async function monthlyAttempts(
+env,
+userId,
+lessonId
+){
+
+const{
+start,
+end
+}=monthRange();
+
+
+const result=
+await env.DB.prepare(`
+SELECT COUNT(*) AS count
+FROM quiz_results
+WHERE user_id=?
+AND lesson_id=?
+AND completed_at>=?
+AND completed_at<?
+`)
+.bind(
+userId,
+lessonId,
+start,
+end
+)
+.first();
+
+
+return Number(
+result?.count||0
+);
+}
+
+
+/* REWARD BY ATTEMPT */
+
+function rewardForAttempt(
+attempt
+){
+
+if(attempt===1){
+
+return{
+coinsPerCorrect:5,
+xpPerCorrect:10
+};
+
+}
+
+if(attempt===2){
+
+return{
+coinsPerCorrect:3,
+xpPerCorrect:5
+};
+
+}
+
+if(attempt===3){
+
+return{
+coinsPerCorrect:1,
+xpPerCorrect:2
+};
+
+}
+
+return{
+coinsPerCorrect:0,
+xpPerCorrect:0
+};
+}
+
+
+/* SUBMIT QUIZ */
+
+async function submitQuiz(
+request,
+env
+){
+
+if(request.method!=="POST")
+return json({
+success:false,
+error:"POST required"
+},405);
+
+
+const user=
+await currentUser(
+request,
+env
+);
+
+if(!user)
+return json({
+success:false,
+error:"Login required"
+},401);
+
+
+let body;
+
+try{
+
+body=
+await request.json();
+
+}catch{
+
+return json({
+success:false,
+error:"Invalid JSON"
+},400);
+
+}
+
+
+const lessonId=
+Number(body.lesson_id);
+
+const answers=
+Array.isArray(body.answers)
 ?body.answers:[];
 
 
@@ -510,20 +1106,30 @@ error:"Invalid lesson_id"
 },400);
 
 
-if(!answers.length||answers.length>50)
+if(
+!answers.length||
+answers.length>50
+)
 return json({
 success:false,
 error:"Invalid answers"
 },400);
 
 
-const lesson=await env.DB.prepare(`
-SELECT id,title,access_type
+const lesson=
+await env.DB.prepare(`
+SELECT
+id,
+title,
+access_type
 FROM lessons
 WHERE id=?
 AND active=1
 LIMIT 1
-`).bind(lessonId).first();
+`)
+.bind(lessonId)
+.first();
+
 
 if(!lesson)
 return json({
@@ -532,17 +1138,23 @@ error:"Lesson not found"
 },404);
 
 
-const isPremium=await premium(
+const isPremium=
+await premium(
 env,
 user.id
 );
 
+
 const isFree=
 lessonId===1||
-String(lesson.access_type).toUpperCase()==="FREE";
+String(
+lesson.access_type
+).toUpperCase()==="FREE";
 
 
-if(!isFree&&!isPremium)
+if(
+!isFree&&!isPremium
+)
 return json({
 success:false,
 error:"Premium required",
@@ -550,17 +1162,26 @@ premium_required:true
 },403);
 
 
-const result=await env.DB.prepare(`
-SELECT id,correct_answer
+/* Get correct answers from D1 */
+
+const result=
+await env.DB.prepare(`
+SELECT
+id,
+correct_answer
 FROM questions
 WHERE lesson_id=?
 AND active=1
 ORDER BY id ASC
 LIMIT 50
-`).bind(lessonId).all();
+`)
+.bind(lessonId)
+.all();
 
 
-const rows=result.results||[];
+const rows=
+result.results||[];
+
 
 if(!rows.length)
 return json({
@@ -569,42 +1190,127 @@ error:"No questions found"
 },404);
 
 
-const submitted=new Map();
+const submitted=
+new Map();
 
-for(const item of answers){
 
-const id=Number(item?.question_id);
-const answer=String(
+for(
+const item of answers
+){
+
+const id=
+Number(
+item?.question_id
+);
+
+const answer=
+String(
 item?.answer||""
-).trim().toLowerCase();
+)
+.trim()
+.toLowerCase();
+
 
 if(
 id&&
-["a","b","c","d"].includes(answer)
-)
-submitted.set(id,answer);
+["a","b","c","d"]
+.includes(answer)
+){
+
+submitted.set(
+id,
+answer
+);
+
+}
 }
 
 
 let score=0;
 
-for(const q of rows){
+
+for(
+const q of rows
+){
 
 if(
-submitted.get(Number(q.id))===
-String(q.correct_answer)
+submitted.get(
+Number(q.id)
+)===
+String(
+q.correct_answer
+)
 .trim()
 .toLowerCase()
-)
+){
+
 score++;
+
+}
 }
 
 
-const total=rows.length;
+const total=
+rows.length;
 
-const percentage=total
-?Math.round(score/total*100)
-:0;
+
+const percentage=
+total?
+Math.round(
+score/total*100
+):0;
+
+
+/*
+Count this attempt BEFORE
+saving the new result.
+*/
+
+const previousAttempts=
+await monthlyAttempts(
+env,
+user.id,
+lessonId
+);
+
+
+const attempt=
+previousAttempts+1;
+
+
+/*
+Only first 3 attempts
+receive rewards.
+*/
+
+const reward=
+rewardForAttempt(
+attempt
+);
+
+
+const rewardCoins=
+reward.coinsPerCorrect*
+score;
+
+
+const rewardXP=
+reward.xpPerCorrect*
+score;
+
+
+/*
+Persist coins and XP.
+*/
+
+const totals=
+await addRewards(
+env,
+user.id,
+rewardCoins,
+rewardXP
+);
+
 
 const completedAt=
 new Date().toISOString();
@@ -620,61 +1326,75 @@ total,
 percentage,
 completed_at
 )
-VALUES(?,?,?,?,?,?)
-`).bind(
+VALUES
+(?,?,?,?,?,?)
+`)
+.bind(
 user.id,
 lessonId,
 score,
 total,
 percentage,
 completedAt
-).run();
+)
+.run();
 
 
 return json({
 success:true,
-lesson_id:lessonId,
+
+lesson_id:
+lessonId,
+
 score,
+
 total,
+
 percentage,
-completed_at:completedAt
+
+attempt,
+
+reward_coins:
+rewardCoins,
+
+reward_xp:
+rewardXP,
+
+total_coins:
+totals.coins,
+
+total_xp:
+totals.xp,
+
+rewarded:
+attempt<=3,
+
+next_attempt_reward:
+rewardForAttempt(
+attempt+1
+),
+
+completed_at:
+completedAt
 });
-}
-
-
-/* MONTH */
-
-function monthRange(){
-
-const now=new Date();
-
-const start=new Date(
-Date.UTC(
-now.getUTCFullYear(),
-now.getUTCMonth(),
-1
-)
-).toISOString();
-
-const end=new Date(
-Date.UTC(
-now.getUTCFullYear(),
-now.getUTCMonth()+1,
-1
-)
-).toISOString();
-
-return{start,end};
 }
 
 
 /* LEADERBOARD */
 
-async function leaderboard(request,env){
+async function leaderboard(
+request,
+env
+){
 
-const{start,end}=monthRange();
+const{
+start,
+end
+}=monthRange();
 
-const result=await env.DB.prepare(`
+
+const result=
+await env.DB.prepare(`
 SELECT
 u.id,
 u.name,
@@ -683,11 +1403,16 @@ SUM(qr.score) correct,
 SUM(qr.total) answered,
 ROUND(
 CAST(SUM(qr.score) AS REAL)/
-NULLIF(SUM(qr.total),0)*100
+NULLIF(
+SUM(qr.total),
+0
+)*100
 ) accuracy,
-COUNT(qr.id) quizzes_completed
+COUNT(qr.id)
+quizzes_completed
 FROM quiz_results qr
-JOIN users u ON u.id=qr.user_id
+JOIN users u
+ON u.id=qr.user_id
 WHERE qr.completed_at>=?
 AND qr.completed_at<?
 GROUP BY qr.user_id
@@ -698,29 +1423,48 @@ accuracy DESC,
 answered DESC,
 quizzes_completed DESC
 LIMIT 10
-`).bind(start,end).all();
+`)
+.bind(
+start,
+end
+)
+.all();
 
 
 return json({
 success:true,
-month:new Intl.DateTimeFormat(
+
+month:
+new Intl.DateTimeFormat(
 "en-US",
 {
 month:"long",
 year:"numeric",
 timeZone:"UTC"
 }
-).format(new Date(start)),
-leaderboard:result.results||[]
+).format(
+new Date(start)
+),
+
+leaderboard:
+result.results||[]
 });
 }
 
 
 /* MY RANK */
 
-async function leaderboardMe(request,env){
+async function leaderboardMe(
+request,
+env
+){
 
-const user=await currentUser(request,env);
+const user=
+await currentUser(
+request,
+env
+);
+
 
 if(!user)
 return json({
@@ -729,9 +1473,14 @@ error:"Login required"
 },401);
 
 
-const{start,end}=monthRange();
+const{
+start,
+end
+}=monthRange();
 
-const result=await env.DB.prepare(`
+
+const result=
+await env.DB.prepare(`
 SELECT
 u.id,
 u.name,
@@ -740,11 +1489,16 @@ SUM(qr.score) correct,
 SUM(qr.total) answered,
 ROUND(
 CAST(SUM(qr.score) AS REAL)/
-NULLIF(SUM(qr.total),0)*100
+NULLIF(
+SUM(qr.total),
+0
+)*100
 ) accuracy,
-COUNT(qr.id) quizzes_completed
+COUNT(qr.id)
+quizzes_completed
 FROM quiz_results qr
-JOIN users u ON u.id=qr.user_id
+JOIN users u
+ON u.id=qr.user_id
 WHERE qr.completed_at>=?
 AND qr.completed_at<?
 GROUP BY qr.user_id
@@ -754,29 +1508,55 @@ correct DESC,
 accuracy DESC,
 answered DESC,
 quizzes_completed DESC
-`).bind(start,end).all();
+`)
+.bind(
+start,
+end
+)
+.all();
 
 
-const rows=result.results||[];
+const rows=
+result.results||[];
 
-const index=rows.findIndex(
-x=>Number(x.id)===Number(user.id)
+
+const index=
+rows.findIndex(
+x=>
+Number(x.id)===
+Number(user.id)
 );
 
 
 return json({
 success:true,
-rank:index>=0?index+1:null,
-user:index>=0?rows[index]:null
+
+rank:
+index>=0?
+index+1:
+null,
+
+user:
+index>=0?
+rows[index]:
+null
 });
 }
 
 
 /* REFERRAL */
 
-async function referral(request,env){
+async function referral(
+request,
+env
+){
 
-const user=await currentUser(request,env);
+const user=
+await currentUser(
+request,
+env
+);
+
 
 if(!user)
 return json({
@@ -785,11 +1565,16 @@ error:"Login required"
 },401);
 
 
-const code=`ENG${user.id}`;
+const code=
+`ENG${user.id}`;
+
 
 return json({
 success:true,
-referral_code:code,
+
+referral_code:
+code,
+
 referral_url:
 `${SITE}/Eng/?ref=${encodeURIComponent(code)}`
 });
@@ -804,70 +1589,106 @@ referredUserId,
 referralCode
 ){
 
-const code=clean(referralCode)
+const code=
+clean(referralCode)
 .toUpperCase();
 
-if(!code.startsWith("ENG"))
+
+if(
+!code.startsWith("ENG")
+)
 return;
 
-const referrerId=Number(
+
+const referrerId=
+Number(
 code.substring(3)
 );
+
 
 if(
 !Number.isInteger(referrerId)||
 referrerId<1||
 referrerId===referredUserId
-)return;
+)
+return;
 
 
-const referrer=await env.DB.prepare(`
+const referrer=
+await env.DB.prepare(`
 SELECT id
 FROM users
 WHERE id=?
 LIMIT 1
-`).bind(referrerId).first();
+`)
+.bind(referrerId)
+.first();
 
-if(!referrer)return;
+
+if(!referrer)
+return;
 
 
-const existing=await env.DB.prepare(`
+const existing=
+await env.DB.prepare(`
 SELECT id
 FROM referrals
 WHERE referred_user_id=?
 LIMIT 1
-`).bind(referredUserId).first();
+`)
+.bind(referredUserId)
+.first();
 
-if(existing)return;
+
+if(existing)
+return;
 
 
 await env.DB.prepare(`
 INSERT INTO referrals
-(referrer_id,referred_user_id,referral_code)
+(
+referrer_id,
+referred_user_id,
+referral_code
+)
 VALUES(?,?,?)
-`).bind(
+`)
+.bind(
 referrerId,
 referredUserId,
 code
-).run();
+)
+.run();
 }
 
 
 /* LOGOUT */
 
-async function logout(request,env){
+async function logout(
+request,
+env
+){
 
-const cookies=parseCookies(request);
-const session=cookies[SESSION];
+const cookies=
+parseCookies(request);
+
+const session=
+cookies[SESSION];
+
 
 if(session){
 
-const hash=await sha256(session);
+const hash=
+await sha256(session);
+
 
 await env.DB.prepare(`
 DELETE FROM sessions
 WHERE token_hash=?
-`).bind(hash).run();
+`)
+.bind(hash)
+.run();
+
 }
 
 
@@ -886,13 +1707,18 @@ Location:`${SITE}/Eng/`,
 
 function token(length=32){
 
-const bytes=new Uint8Array(length);
+const bytes=
+new Uint8Array(length);
 
-crypto.getRandomValues(bytes);
+crypto.getRandomValues(
+bytes
+);
 
 return Array.from(bytes)
 .map(
-b=>b.toString(16).padStart(2,"0")
+b=>
+b.toString(16)
+.padStart(2,"0")
 )
 .join("");
 }
@@ -900,43 +1726,66 @@ b=>b.toString(16).padStart(2,"0")
 
 async function sha256(value){
 
-const data=new TextEncoder()
+const data=
+new TextEncoder()
 .encode(value);
 
-const hash=await crypto.subtle.digest(
+
+const hash=
+await crypto.subtle.digest(
 "SHA-256",
 data
 );
+
 
 return Array.from(
 new Uint8Array(hash)
 )
 .map(
-b=>b.toString(16).padStart(2,"0")
+b=>
+b.toString(16)
+.padStart(2,"0")
 )
 .join("");
 }
 
 
-function parseCookies(request){
+function parseCookies(
+request
+){
 
-const header=request.headers.get("Cookie");
+const header=
+request.headers.get(
+"Cookie"
+);
+
 const cookies={};
 
-if(!header)return cookies;
 
-for(const part of header.split(";")){
+if(!header)
+return cookies;
 
-const i=part.indexOf("=");
 
-if(i<0)continue;
+for(
+const part of header.split(";")
+){
+
+const i=
+part.indexOf("=");
+
+
+if(i<0)
+continue;
+
 
 cookies[
 part.slice(0,i).trim()
 ]=decodeURIComponent(
 part.slice(i+1).trim()
 );
+
 }
+
 
 return cookies;
 }
@@ -944,11 +1793,16 @@ return cookies;
 
 function clean(value){
 
-return String(value||"").trim();
+return String(
+value||""
+).trim();
 }
 
 
-function json(data,status=200){
+function json(
+data,
+status=200
+){
 
 return cors(
 new Response(
@@ -967,9 +1821,11 @@ headers:{
 
 function cors(response){
 
-const headers=new Headers(
+const headers=
+new Headers(
 response.headers
 );
+
 
 headers.set(
 "Access-Control-Allow-Origin",
@@ -991,11 +1847,13 @@ headers.set(
 "GET,POST,OPTIONS"
 );
 
+
 return new Response(
 response.body,
 {
 status:response.status,
-statusText:response.statusText,
+statusText:
+response.statusText,
 headers
 }
 );
