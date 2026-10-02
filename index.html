@@ -234,6 +234,28 @@ border:1px solid #dce2eb
 }
 
 
+/* LEADERBOARD */
+
+.leaderboard-btn{
+display:inline-flex;
+align-items:center;
+justify-content:center;
+margin-top:12px;
+height:38px;
+padding:0 16px;
+border-radius:9px;
+background:#edf1f7;
+color:#102a56;
+font-weight:800;
+text-decoration:none;
+border:1px solid #dce2eb
+}
+
+.leaderboard-btn:hover{
+background:#e3e9f2
+}
+
+
 /* REFERRAL */
 
 .referral{
@@ -547,6 +569,10 @@ English
 Lessons
 </a>
 
+<a href="/Eng/rank.html">
+🏆 Leaderboard
+</a>
+
 <a href="#"
 onclick="referral();return false">
 Referral
@@ -613,8 +639,6 @@ Logout
 
 <main>
 
-<!-- HOME CARD -->
-
 <section class="hero">
 
 <div class="academy-name">
@@ -629,8 +653,6 @@ Learn English <span>with confidence.</span>
 Practice 1,000+ English MCQ questions and improve your English step by step.
 </p>
 
-<!-- PREMIUM STATUS -->
-
 <div
 id="premiumStatus"
 class="premium-status guest">
@@ -638,6 +660,16 @@ class="premium-status guest">
 🔐 Sign in to check Premium status
 
 </div>
+
+<br>
+
+<a
+href="/Eng/rank.html"
+class="leaderboard-btn">
+
+🏆 View Leaderboard
+
+</a>
 
 </section>
 
@@ -755,6 +787,40 @@ API+path,
 {
 credentials:"include",
 cache:"no-store"
+}
+);
+
+const d=
+await r.json().catch(
+()=>({})
+);
+
+if(!r.ok)
+throw Error(
+d.error||
+"Request failed"
+);
+
+return d;
+
+}
+
+
+/* POST API */
+
+async function apiPost(path,body){
+
+const r=
+await fetch(
+API+path,
+{
+method:"POST",
+credentials:"include",
+cache:"no-store",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify(body)
 }
 );
 
@@ -1400,34 +1466,59 @@ show();
 
 /* RESULT */
 
-function finish(){
+async function finish(){
 
-let score=
-qs.reduce(
-(s,q,i)=>
-s+
-(
-String(
-answers[i]
-).toLowerCase()===
-String(
-q.correct_answer
-).toLowerCase()
-?
-1:
-0
-),
-0
+const resultBox=$("quizbody");
+
+resultBox.innerHTML=`
+
+<div class="question-card result">
+
+<div class="score">
+...
+</div>
+
+<p>
+Checking your result...
+</p>
+
+</div>
+
+`;
+
+try{
+
+const lessonId=
+qs[0]?.lesson_id;
+
+const result=
+await apiPost(
+"/api/quiz/submit",
+{
+lesson_id:lessonId,
+
+answers:qs.map((q,i)=>({
+question_id:q.id,
+answer:answers[i]||""
+}))
+}
 );
 
-let pc=
-Math.round(
-score/
-qs.length*
-100
+const score=
+Number(result.score||0);
+
+const total=
+Number(
+result.total||qs.length
 );
 
-$("quizbody").innerHTML=`
+const pc=
+Number(
+result.percentage ??
+Math.round(score/total*100)
+);
+
+resultBox.innerHTML=`
 
 <div class="question-card result">
 
@@ -1436,11 +1527,53 @@ ${pc}%
 </div>
 
 <h2>
-${score} / ${qs.length}
+${score} / ${total}
 </h2>
 
 <p>
 Lesson completed. Keep practising to improve your English.
+</p>
+
+<a
+href="/Eng/rank.html"
+class="btn"
+style="
+display:inline-flex;
+align-items:center;
+justify-content:center;
+text-decoration:none;
+margin-top:8px;
+">
+
+🏆 View Leaderboard
+
+</a>
+
+<br>
+
+<button
+class="btn light"
+style="margin-top:10px"
+onclick="n=0;answers=[];show()">
+
+Try Again
+
+</button>
+
+</div>
+
+`;
+
+}catch(e){
+
+console.error(e);
+
+resultBox.innerHTML=`
+
+<div class="question-card result">
+
+<p>
+Unable to submit the result.
 </p>
 
 <button
@@ -1454,6 +1587,8 @@ Try Again
 </div>
 
 `;
+
+}
 
 }
 
@@ -1534,7 +1669,13 @@ notice(
 "Referral link copied."
 );
 
-}catch(e){}
+}catch(e){
+
+notice(
+"Unable to copy link."
+);
+
+}
 
 }
 
