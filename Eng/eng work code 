@@ -1,0 +1,1168 @@
+const SITE = "https://createlk.com";
+const AUTH = "https://eng-api.createlk.workers.dev";
+const PAY = "https://eng-payment.createlk.workers.dev";
+
+const SESSION = "english_session";
+const STATE = "google_state";
+const REFERRAL = "english_referral";
+
+const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
+const GOOGLE_USER = "https://openidconnect.googleapis.com/v1/userinfo";
+
+const SESSION_DAYS = 30;
+const STATE_MINUTES = 10;
+const PAYMENT_MINUTES = 30;
+
+export default {
+  async fetch(request, env) {
+    try {
+      const url = new URL(request.url);
+      const path = url.pathname;
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: cors(request)
+        });
+      }
+
+      if (path === "/auth/google") {
+        return googleLogin(request, env);
+      }
+
+      if (path === "/auth/callback") {
+        return googleCallback(request, env);
+      }
+
+      if (path === "/auth/logout") {
+        return logout(request, env);
+      }
+
+      if (path === "/api/me") {
+        return me(request, env);
+      }
+
+      if (path === "/api/referral") {
+        return referral(request, env);
+      }
+
+      if (path === "/api/titles") {
+        return titles(request, env);
+      }
+
+      if (path === "/api/questions") {
+        return questions(request, env);
+      }
+
+      if (path === "/api/payment-start") {
+        return paymentStart(request, env);
+      }
+
+      if (path === "/api/payment-session") {
+        return paymentSession(request, env);
+      }
+
+      if (path === "/api/health") {
+        return health(request, env);
+      }
+
+      return json(
+        { success: false, error: "Not found" },
+        404,
+        request
+      );
+
+    } catch (e) {
+      console.error(e);
+
+      return json(
+        { success: false, error: "Server error" },
+        500,
+        request
+      );
+    }
+  }
+};
+
+
+/* =========================
+   GOOGLE LOGIN
+========================= */
+
+async function googleLogin(request, env) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+    return new Response(
+      "Google OAuth is not configured.",
+      { status: 500 }
+    );
+  }
+
+  const url = new URL(request.url);
+  const ref = clean(url.searchParams.get("ref"), 100);
+  const state = token(32);
+
+  const google = new URL(GOOGLE_AUTH);
+
+  google.searchParams.set(
+    "client_id",
+    env.GOOGLE_CLIENT_ID
+  );
+
+  google.searchParams.set(
+    "redirect_uri",
+    `${AUTH}/auth/callback`
+  );
+
+  google.searchParams.set(
+    "response_type",
+    "code"
+  );
+
+  google.searchParams.set(
+    "scope",
+    "openid email profile"
+  );
+
+  google.searchParams.set(
+    "state",
+    state
+  );
+
+  google.searchParams.set(
+    "prompt",
+    "select_account"
+  );
+
+  const headers = new Headers({
+    Location: google.toString()
+  });
+
+  headers.append(
+    "Set-Cookie",
+    makeCookie(
+      STATE,
+      state,
+      STATE_MINUTES * 60
+    )
+  );
+
+  if (ref) {
+    headers.append(
+      "Set-Cookie",
+      makeCookie(
+        REFERRAL,
+        ref,
+        STATE_MINUTES * 60
+      )
+    );
+  }
+
+  return new Response(null, {
+    status: 302,
+    headers
+  });
+}
+
+
+/* =========================
+   GOOGLE CALLBACK
+========================= */
+
+async function googleCallback(request, env) {
+  const url = new URL(request.url);
+
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+
+  if (!code || !state) {
+    return new Response(
+      "Invalid Google response.",
+      { status: 400 }
+    );
+  }
+
+  const cookies = getCookies(
+    request.headers.get("Cookie")
+  );
+
+  if (
+    !cookies[STATE] ||
+    cookies[STATE] !== state
+  ) {
+    return new Response(
+      "Invalid OAuth state.",
+      { status: 403 }
+    );
+  }
+
+  const tokenResponse = await fetch(
+    GOOGLE_TOKEN,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        code,
+        client_id:
+          env.GOOGLE_CLIENT_ID,
+        client_secret:
+          env.GOOGLE_CLIENT_SECRET,
+        redirect_uri:
+          `${AUTH}/auth/callback`,
+        grant_type:
+          "authorization_code"
+      })
+    }
+  );
+
+  if (!tokenResponse.ok) {
+    return new Response(
+      "Google authentication failed.",
+      { status: 401 }
+    );
+  }
+
+  const tokenData =
+    await tokenResponse.json();
+
+  if (!tokenData.access_token) {
+    return new Response(
+      "Google access token missing.",
+      { status: 401 }
+    );
+  }
+
+  const profileResponse = await fetch(
+    GOOGLE_USER,
+    {
+      headers: {
+        Authorization:
+          `Bearer ${tokenData.access_token}`
+      }
+    }
+  );
+
+  if (!profileResponse.ok) {
+    return new Response(
+      "Unable to read Google account.",
+      { status: 401 }
+    );
+  }
+
+  const profile =
+    await profileResponse.json();
+
+  if (
+    !profile.sub ||
+    !profile.email
+  ) {
+    return new Response(
+      "Google account information is incomplete.",
+      { status: 400 }
+    );
+  }
+
+  const googleId = String(profile.sub);
+
+  const email =
+    String(profile.email)
+      .trim()
+      .toLowerCase();
+
+  const name =
+    clean(
+      profile.name ||
+      profile.given_name ||
+      "User",
+      200
+    );
+
+  const picture =
+    clean(
+      profile.picture || "",
+      1000
+    );
+
+  const now = Math.floor(
+    Date.now() / 1000
+  );
+
+  let user = await env.DB
+    .prepare(`
+      SELECT *
+      FROM users
+      WHERE google_id = ?
+      LIMIT 1
+    `)
+    .bind(googleId)
+    .first();
+
+  if (!user) {
+    user = await env.DB
+      .prepare(`
+        SELECT *
+        FROM users
+        WHERE email = ?
+        LIMIT 1
+      `)
+      .bind(email)
+      .first();
+  }
+
+  if (user) {
+
+    await env.DB
+      .prepare(`
+        UPDATE users
+        SET
+          google_id = ?,
+          email = ?,
+          name = ?,
+          picture = ?,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .bind(
+        googleId,
+        email,
+        name,
+        picture,
+        now,
+        user.id
+      )
+      .run();
+
+  } else {
+
+    const userId = token(16);
+    const referralCode =
+      await uniqueReferralCode(env);
+
+    await env.DB
+      .prepare(`
+        INSERT INTO users
+        (
+          id,
+          google_id,
+          email,
+          name,
+          picture,
+          referral_code,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        userId,
+        googleId,
+        email,
+        name,
+        picture,
+        referralCode,
+        now,
+        now
+      )
+      .run();
+
+    user = {
+      id: userId,
+      google_id: googleId,
+      email,
+      name,
+      picture,
+      referral_code: referralCode
+    };
+
+    await createReferral(
+      env,
+      user.id,
+      cookies[REFERRAL],
+      referralCode,
+      now
+    );
+  }
+
+  const sessionToken = token(48);
+  const sessionHash =
+    await sha256(sessionToken);
+
+  const expires =
+    now + SESSION_DAYS * 86400;
+
+  await env.DB
+    .prepare(`
+      INSERT INTO sessions
+      (
+        token_hash,
+        user_id,
+        expires_at,
+        created_at
+      )
+      VALUES (?, ?, ?, ?)
+    `)
+    .bind(
+      sessionHash,
+      user.id,
+      expires,
+      now
+    )
+    .run();
+
+  await env.DB
+    .prepare(`
+      DELETE FROM sessions
+      WHERE expires_at < ?
+    `)
+    .bind(now)
+    .run();
+
+  const headers = new Headers({
+    Location:
+      `${SITE}/Eng/?login=success`
+  });
+
+  headers.append(
+    "Set-Cookie",
+    makeCookie(
+      SESSION,
+      sessionToken,
+      SESSION_DAYS * 86400
+    )
+  );
+
+  headers.append(
+    "Set-Cookie",
+    deleteCookie(STATE)
+  );
+
+  headers.append(
+    "Set-Cookie",
+    deleteCookie(REFERRAL)
+  );
+
+  return new Response(null, {
+    status: 302,
+    headers
+  });
+}
+
+
+/* =========================
+   LOGOUT
+========================= */
+
+async function logout(request, env) {
+  const cookies = getCookies(
+    request.headers.get("Cookie")
+  );
+
+  if (cookies[SESSION]) {
+    const hash =
+      await sha256(cookies[SESSION]);
+
+    await env.DB
+      .prepare(`
+        DELETE FROM sessions
+        WHERE token_hash = ?
+      `)
+      .bind(hash)
+      .run();
+  }
+
+  const headers = new Headers({
+    Location:
+      `${SITE}/Eng/?logout=success`
+  });
+
+  headers.append(
+    "Set-Cookie",
+    deleteCookie(SESSION)
+  );
+
+  return new Response(null, {
+    status: 302,
+    headers
+  });
+}
+
+
+/* =========================
+   ME
+========================= */
+
+async function me(request, env) {
+  const user =
+    await currentUser(request, env);
+
+  if (!user) {
+    return json({
+      success: true,
+      logged_in: false,
+      user: null,
+      premium: false
+    }, 200, request);
+  }
+
+  return json({
+    success: true,
+    logged_in: true,
+    premium:
+      await premium(env, user.id),
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      picture: user.picture,
+      referral_code:
+        user.referral_code
+    }
+  }, 200, request);
+}
+
+
+/* =========================
+   REFERRAL
+========================= */
+
+async function referral(request, env) {
+  const user =
+    await currentUser(request, env);
+
+  if (!user) {
+    return json({
+      success: false,
+      error: "Login required."
+    }, 401, request);
+  }
+
+  const result =
+    await env.DB
+      .prepare(`
+        SELECT COUNT(*) AS total
+        FROM referrals
+        WHERE referrer_user_id = ?
+      `)
+      .bind(user.id)
+      .first();
+
+  return json({
+    success: true,
+    referral_code:
+      user.referral_code,
+    referrals:
+      Number(result?.total || 0),
+    referral_url:
+      `${SITE}/Eng/?ref=${encodeURIComponent(
+        user.referral_code
+      )}`
+  }, 200, request);
+}
+
+
+/* =========================
+   LESSON TITLES
+========================= */
+
+async function titles(request, env) {
+  const user =
+    await currentUser(request, env);
+
+  const isPremium = user
+    ? await premium(env, user.id)
+    : false;
+
+  const result =
+    await env.DB
+      .prepare(`
+        SELECT lesson_no, title
+        FROM lessons
+        ORDER BY lesson_no
+      `)
+      .all();
+
+  return json({
+    success: true,
+    logged_in: !!user,
+    premium: isPremium,
+    lessons:
+      (result.results || []).map(x => ({
+        lesson_no:
+          Number(x.lesson_no),
+        title: x.title,
+        free:
+          Number(x.lesson_no) === 1,
+        locked:
+          Number(x.lesson_no) !== 1 &&
+          !isPremium
+      }))
+  }, 200, request);
+}
+
+
+/* =========================
+   QUESTIONS
+========================= */
+
+async function questions(request, env) {
+  const url = new URL(request.url);
+
+  const lesson =
+    Number(url.searchParams.get("lesson"));
+
+  if (
+    !Number.isInteger(lesson) ||
+    lesson < 1 ||
+    lesson > 20
+  ) {
+    return json({
+      success: false,
+      error:
+        "Lesson must be between 1 and 20."
+    }, 400, request);
+  }
+
+  const user =
+    await currentUser(request, env);
+
+  if (!user) {
+    return json({
+      success: false,
+      code: "LOGIN_REQUIRED",
+      error:
+        "Please login with Google."
+    }, 401, request);
+  }
+
+  if (
+    lesson > 1 &&
+    !(await premium(env, user.id))
+  ) {
+    return json({
+      success: false,
+      code: "PREMIUM_REQUIRED",
+      error:
+        "Premium access is required."
+    }, 403, request);
+  }
+
+  const result =
+    await env.DB
+      .prepare(`
+        SELECT
+          id,
+          lesson_no,
+          question,
+          option_a,
+          option_b,
+          option_c,
+          option_d,
+          explanation
+        FROM questions
+        WHERE lesson_no = ?
+        ORDER BY id
+        LIMIT 50
+      `)
+      .bind(lesson)
+      .all();
+
+  return json({
+    success: true,
+    lesson,
+    total:
+      result.results?.length || 0,
+    questions:
+      result.results || []
+  }, 200, request);
+}
+
+
+/* =========================
+   PAYMENT START
+========================= */
+
+async function paymentStart(request, env) {
+  const user =
+    await currentUser(request, env);
+
+  if (!user) {
+    return json({
+      success: false,
+      error: "Login required."
+    }, 401, request);
+  }
+
+  if (await premium(env, user.id)) {
+    return json({
+      success: true,
+      already_premium: true
+    }, 200, request);
+  }
+
+  const now =
+    Math.floor(Date.now() / 1000);
+
+  const paymentToken =
+    token(32);
+
+  await env.DB
+    .prepare(`
+      INSERT INTO payment_handoffs
+      (
+        token,
+        user_id,
+        expires_at,
+        created_at
+      )
+      VALUES (?, ?, ?, ?)
+    `)
+    .bind(
+      paymentToken,
+      user.id,
+      now + PAYMENT_MINUTES * 60,
+      now
+    )
+    .run();
+
+  return json({
+    success: true,
+    payment_url:
+      `${PAY}/?token=${encodeURIComponent(
+        paymentToken
+      )}`
+  }, 200, request);
+}
+
+
+/* =========================
+   PAYMENT SESSION
+========================= */
+
+async function paymentSession(request, env) {
+  const url = new URL(request.url);
+  const paymentToken =
+    url.searchParams.get("token");
+
+  if (!paymentToken) {
+    return json({
+      success: false,
+      error: "Token required."
+    }, 400, request);
+  }
+
+  const now =
+    Math.floor(Date.now() / 1000);
+
+  const row =
+    await env.DB
+      .prepare(`
+        SELECT
+          h.user_id,
+          u.name,
+          u.email,
+          u.picture
+        FROM payment_handoffs h
+        JOIN users u
+          ON u.id = h.user_id
+        WHERE h.token = ?
+          AND h.expires_at > ?
+        LIMIT 1
+      `)
+      .bind(
+        paymentToken,
+        now
+      )
+      .first();
+
+  if (!row) {
+    return json({
+      success: false,
+      error:
+        "Invalid or expired payment session."
+    }, 401, request);
+  }
+
+  return json({
+    success: true,
+    user: {
+      id: row.user_id,
+      name: row.name,
+      email: row.email,
+      picture: row.picture
+    }
+  }, 200, request);
+}
+
+
+/* =========================
+   HEALTH
+========================= */
+
+async function health(request, env) {
+  try {
+    await env.DB
+      .prepare("SELECT 1")
+      .first();
+
+    return json({
+      success: true,
+      worker: "eng-api",
+      database: "connected"
+    }, 200, request);
+
+  } catch {
+    return json({
+      success: false,
+      worker: "eng-api",
+      database: "error"
+    }, 500, request);
+  }
+}
+
+
+/* =========================
+   USER
+========================= */
+
+async function currentUser(request, env) {
+  const cookies =
+    getCookies(
+      request.headers.get("Cookie")
+    );
+
+  if (!cookies[SESSION]) {
+    return null;
+  }
+
+  const hash =
+    await sha256(cookies[SESSION]);
+
+  const now =
+    Math.floor(Date.now() / 1000);
+
+  return await env.DB
+    .prepare(`
+      SELECT u.*
+      FROM sessions s
+      JOIN users u
+        ON u.id = s.user_id
+      WHERE s.token_hash = ?
+        AND s.expires_at > ?
+      LIMIT 1
+    `)
+    .bind(hash, now)
+    .first();
+}
+
+
+/* =========================
+   PREMIUM
+========================= */
+
+async function premium(env, userId) {
+  const row =
+    await env.DB
+      .prepare(`
+        SELECT status, expires_at
+        FROM subscriptions
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+      `)
+      .bind(userId)
+      .first();
+
+  if (!row || row.status !== "active") {
+    return false;
+  }
+
+  if (
+    row.expires_at === null ||
+    row.expires_at === undefined
+  ) {
+    return true;
+  }
+
+  return Number(row.expires_at) >
+    Math.floor(Date.now() / 1000);
+}
+
+
+/* =========================
+   REFERRAL CREATE
+========================= */
+
+async function createReferral(
+  env,
+  newUserId,
+  code,
+  ownCode,
+  now
+) {
+  if (!code || code === ownCode) {
+    return;
+  }
+
+  const owner =
+    await env.DB
+      .prepare(`
+        SELECT id
+        FROM users
+        WHERE referral_code = ?
+        LIMIT 1
+      `)
+      .bind(code)
+      .first();
+
+  if (!owner || owner.id === newUserId) {
+    return;
+  }
+
+  await env.DB
+    .prepare(`
+      INSERT OR IGNORE INTO referrals
+      (
+        id,
+        referrer_user_id,
+        referred_user_id,
+        code,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    .bind(
+      token(16),
+      owner.id,
+      newUserId,
+      code,
+      now
+    )
+    .run();
+
+  await env.DB
+    .prepare(`
+      UPDATE users
+      SET referred_by = ?
+      WHERE id = ?
+    `)
+    .bind(
+      owner.id,
+      newUserId
+    )
+    .run();
+}
+
+
+/* =========================
+   UNIQUE REFERRAL
+========================= */
+
+async function uniqueReferralCode(env) {
+  for (let i = 0; i < 10; i++) {
+    const code =
+      randomReferralCode();
+
+    const exists =
+      await env.DB
+        .prepare(`
+          SELECT id
+          FROM users
+          WHERE referral_code = ?
+          LIMIT 1
+        `)
+        .bind(code)
+        .first();
+
+    if (!exists) {
+      return code;
+    }
+  }
+
+  throw new Error(
+    "Unable to create referral code."
+  );
+}
+
+
+/* =========================
+   RANDOM TOKEN
+========================= */
+
+function token(bytes = 32) {
+  const data =
+    new Uint8Array(bytes);
+
+  crypto.getRandomValues(data);
+
+  return [...data]
+    .map(x =>
+      x.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+
+/* =========================
+   REFERRAL CODE
+========================= */
+
+function randomReferralCode() {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  const data =
+    new Uint8Array(8);
+
+  crypto.getRandomValues(data);
+
+  return [...data]
+    .map(x =>
+      chars[x % chars.length]
+    )
+    .join("");
+}
+
+
+/* =========================
+   SHA256
+========================= */
+
+async function sha256(value) {
+  const data =
+    new TextEncoder().encode(value);
+
+  const hash =
+    await crypto.subtle.digest(
+      "SHA-256",
+      data
+    );
+
+  return [...new Uint8Array(hash)]
+    .map(x =>
+      x.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+
+/* =========================
+   COOKIES
+========================= */
+
+function getCookies(header) {
+  const result = {};
+
+  if (!header) {
+    return result;
+  }
+
+  for (const item of header.split(";")) {
+    const i = item.indexOf("=");
+
+    if (i < 0) continue;
+
+    const key =
+      item.slice(0, i).trim();
+
+    const value =
+      item.slice(i + 1).trim();
+
+    try {
+      result[key] =
+        decodeURIComponent(value);
+    } catch {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+
+function makeCookie(
+  name,
+  value,
+  maxAge
+) {
+  return [
+    `${name}=${encodeURIComponent(value)}`,
+    `Max-Age=${maxAge}`,
+    "Path=/",
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax"
+  ].join("; ");
+}
+
+
+function deleteCookie(name) {
+  return [
+    `${name}=`,
+    "Max-Age=0",
+    "Path=/",
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax"
+  ].join("; ");
+}
+
+
+/* =========================
+   CLEAN
+========================= */
+
+function clean(value, max) {
+  return value
+    ? String(value)
+        .trim()
+        .slice(0, max)
+    : "";
+}
+
+
+/* =========================
+   JSON
+========================= */
+
+function json(data, status, request) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type":
+          "application/json; charset=UTF-8",
+        "Cache-Control":
+          "no-store",
+        ...cors(request)
+      }
+    }
+  );
+}
+
+
+/* =========================
+   CORS
+========================= */
+
+function cors(request) {
+  const origin =
+    request.headers.get("Origin");
+
+  return {
+    "Access-Control-Allow-Origin":
+      origin === SITE ? SITE : SITE,
+
+    "Access-Control-Allow-Credentials":
+      "true",
+
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization"
+  };
+}
