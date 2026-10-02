@@ -565,8 +565,13 @@ return;
 
 user=d.user||null;
 
-coins=Number(d.coins||0);
-xp=Number(d.xp||0);
+coins=Number(
+d.user?.coins||d.coins||0
+);
+
+xp=Number(
+d.user?.xp||d.xp||0
+);
 
 $("coins").textContent=coins;
 $("xp").textContent=xp;
@@ -889,6 +894,31 @@ e.message||"Unable to load questions."
 }
 
 
+/* NORMALIZE ANSWER VALUE */
+
+function normalizeAnswer(value){
+
+const v=
+String(value??"")
+.trim()
+.toLowerCase();
+
+const map={
+"1":"a",
+"2":"b",
+"3":"c",
+"4":"d",
+"a":"a",
+"b":"b",
+"c":"c",
+"d":"d"
+};
+
+return map[v]||null;
+
+}
+
+
 /* QUESTION */
 
 function renderQuestion(){
@@ -1040,12 +1070,9 @@ async function answer(selected){
 
 if(results[n])return;
 
-selected=
-String(selected||"")
-.trim()
-.toLowerCase();
+selected=normalizeAnswer(selected);
 
-if(!["a","b","c","d"].includes(selected)){
+if(!selected){
 
 notice(
 "Invalid answer. Please select an option."
@@ -1055,12 +1082,21 @@ return;
 
 }
 
+const question=qs[n];
+
+if(!question||!question.id){
+
+notice("Invalid question.");
+return;
+
+}
+
 try{
 
 const d=await post(
 "/api/quiz/check",
 {
-question_id:Number(qs[n].id),
+question_id:Number(question.id),
 answer:selected
 }
 );
@@ -1077,34 +1113,10 @@ d.error||
 const correct=
 d.correct===true;
 
-let correctLetter=null;
-
-if(
-!correct&&
-d.correct_answer!==undefined&&
-d.correct_answer!==null
-){
-
-const value=
-String(d.correct_answer)
-.trim()
-.toLowerCase();
-
-const map={
-"1":"a",
-"2":"b",
-"3":"c",
-"4":"d",
-"a":"a",
-"b":"b",
-"c":"c",
-"d":"d"
-};
-
-correctLetter=
-map[value]||value;
-
-}
+const correctLetter=
+normalizeAnswer(
+d.correct_answer
+);
 
 answers[n]=selected;
 
@@ -1431,3 +1443,4 @@ return String(value??"")
 
 </body>
 </html>
+
