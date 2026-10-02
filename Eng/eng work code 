@@ -1,10 +1,9 @@
 const SITE = "https://createlk.com";
 const AUTH = "https://eng-api.createlk.workers.dev";
-const PAY = "https://eng-payment.createlk.workers.dev";
 
 const SESSION = "english_session";
-const STATE = "google_state";
 const REFERRAL = "english_referral";
+const STATE = "google_state";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
@@ -12,75 +11,63 @@ const GOOGLE_USER = "https://openidconnect.googleapis.com/v1/userinfo";
 
 const SESSION_DAYS = 30;
 const STATE_MINUTES = 10;
-const PAYMENT_MINUTES = 30;
 
 export default {
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
-      const path = url.pathname;
 
       if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: cors(request)
-        });
+        return cors(new Response(null, { status: 204 }));
       }
 
-      if (path === "/auth/google") {
+      if (url.pathname === "/auth/google") {
         return googleLogin(request, env);
       }
 
-      if (path === "/auth/callback") {
+      if (url.pathname === "/auth/callback") {
         return googleCallback(request, env);
       }
 
-      if (path === "/auth/logout") {
+      if (url.pathname === "/auth/logout") {
         return logout(request, env);
       }
 
-      if (path === "/api/me") {
+      if (url.pathname === "/api/me") {
         return me(request, env);
       }
 
-      if (path === "/api/referral") {
+      if (url.pathname === "/api/referral") {
         return referral(request, env);
       }
 
-      if (path === "/api/titles") {
+      if (url.pathname === "/api/titles") {
         return titles(request, env);
       }
 
-      if (path === "/api/questions") {
+      if (url.pathname === "/api/questions") {
         return questions(request, env);
       }
 
-      if (path === "/api/payment-start") {
-        return paymentStart(request, env);
+      if (url.pathname === "/api/health") {
+        return json({
+          success: true,
+          message: "English API is running"
+        }, 200, request);
       }
 
-      if (path === "/api/payment-session") {
-        return paymentSession(request, env);
-      }
+      return json({
+        success: false,
+        error: "Not found"
+      }, 404, request);
 
-      if (path === "/api/health") {
-        return health(request, env);
-      }
+    } catch (error) {
+      console.error(error);
 
-      return json(
-        { success: false, error: "Not found" },
-        404,
-        request
-      );
-
-    } catch (e) {
-      console.error(e);
-
-      return json(
-        { success: false, error: "Server error" },
-        500,
-        request
-      );
+      return json({
+        success: false,
+        error: "Server error"
+      }, 500, request);
     }
   }
 };
@@ -91,76 +78,39 @@ export default {
 ========================= */
 
 async function googleLogin(request, env) {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-    return new Response(
-      "Google OAuth is not configured.",
-      { status: 500 }
-    );
-  }
-
   const url = new URL(request.url);
-  const ref = clean(url.searchParams.get("ref"), 100);
+
+  const referralCode =
+    clean(url.searchParams.get("ref"));
+
   const state = token(32);
 
-  const google = new URL(GOOGLE_AUTH);
+  const stateData = {
+    state,
+    referral: referralCode || "",
+    expires: Date.now() + STATE_MINUTES * 60 * 1000
+  };
 
-  google.searchParams.set(
-    "client_id",
-    env.GOOGLE_CLIENT_ID
-  );
+  const encodedState =
+    btoa(JSON.stringify(stateData));
 
-  google.searchParams.set(
-    "redirect_uri",
-    `${AUTH}/auth/callback`
-  );
-
-  google.searchParams.set(
-    "response_type",
-    "code"
-  );
-
-  google.searchParams.set(
-    "scope",
-    "openid email profile"
-  );
-
-  google.searchParams.set(
-    "state",
-    state
-  );
-
-  google.searchParams.set(
-    "prompt",
-    "select_account"
-  );
-
-  const headers = new Headers({
-    Location: google.toString()
+  const params = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: env.GOOGLE_REDIRECT_URI,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+    state: encodedState
   });
-
-  headers.append(
-    "Set-Cookie",
-    makeCookie(
-      STATE,
-      state,
-      STATE_MINUTES * 60
-    )
-  );
-
-  if (ref) {
-    headers.append(
-      "Set-Cookie",
-      makeCookie(
-        REFERRAL,
-        ref,
-        STATE_MINUTES * 60
-      )
-    );
-  }
 
   return new Response(null, {
     status: 302,
-    headers
+    headers: {
+      Location: `${GOOGLE_AUTH}?${params.toString()}`,
+      "Set-Cookie":
+        `${STATE}=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`
+    }
   });
 }
 
@@ -173,28 +123,47 @@ async function googleCallback(request, env) {
   const url = new URL(request.url);
 
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
+  const stateParam = url.searchParams.get("state");
 
-  if (!code || !state) {
-    return new Response(
-      "Invalid Google response.",
-      { status: 400 }
-    );
+  if (!code || !stateParam) {
+    return new Response("Invalid Google login.", {
+      status: 400
+    });
   }
 
-  const cookies = getCookies(
-    request.headers.get("Cookie")
-  );
+  let stateData;
+
+  try {
+    stateData = JSON.parse(
+      atob(stateParam)
+    );
+  } catch {
+    return new Response("Invalid state.", {
+      status: 400
+    });
+  }
+
+  if (
+    !stateData.state ||
+    stateData.expires < Date.now()
+  ) {
+    return new Response("Login expired.", {
+      status: 400
+    });
+  }
+
+  const cookies = parseCookies(request);
 
   if (
     !cookies[STATE] ||
-    cookies[STATE] !== state
+    cookies[STATE] !== stateData.state
   ) {
-    return new Response(
-      "Invalid OAuth state.",
-      { status: 403 }
-    );
+    return new Response("Invalid login state.", {
+      status: 400
+    });
   }
+
+  /* Exchange Google code */
 
   const tokenResponse = await fetch(
     GOOGLE_TOKEN,
@@ -205,249 +174,596 @@ async function googleCallback(request, env) {
           "application/x-www-form-urlencoded"
       },
       body: new URLSearchParams({
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
         code,
-        client_id:
-          env.GOOGLE_CLIENT_ID,
-        client_secret:
-          env.GOOGLE_CLIENT_SECRET,
-        redirect_uri:
-          `${AUTH}/auth/callback`,
-        grant_type:
-          "authorization_code"
+        grant_type: "authorization_code",
+        redirect_uri: env.GOOGLE_REDIRECT_URI
       })
     }
   );
-
-  if (!tokenResponse.ok) {
-    return new Response(
-      "Google authentication failed.",
-      { status: 401 }
-    );
-  }
 
   const tokenData =
     await tokenResponse.json();
 
   if (!tokenData.access_token) {
+    console.error(tokenData);
+
     return new Response(
-      "Google access token missing.",
-      { status: 401 }
-    );
-  }
-
-  const profileResponse = await fetch(
-    GOOGLE_USER,
-    {
-      headers: {
-        Authorization:
-          `Bearer ${tokenData.access_token}`
-      }
-    }
-  );
-
-  if (!profileResponse.ok) {
-    return new Response(
-      "Unable to read Google account.",
-      { status: 401 }
-    );
-  }
-
-  const profile =
-    await profileResponse.json();
-
-  if (
-    !profile.sub ||
-    !profile.email
-  ) {
-    return new Response(
-      "Google account information is incomplete.",
+      "Google authentication failed.",
       { status: 400 }
     );
   }
 
-  const googleId = String(profile.sub);
+  /* Get Google user */
 
-  const email =
-    String(profile.email)
-      .trim()
-      .toLowerCase();
+  const googleResponse =
+    await fetch(GOOGLE_USER, {
+      headers: {
+        Authorization:
+          `Bearer ${tokenData.access_token}`
+      }
+    });
 
+  const googleUser =
+    await googleResponse.json();
+
+  if (
+    !googleUser.sub ||
+    !googleUser.email
+  ) {
+    return new Response(
+      "Unable to get Google account.",
+      { status: 400 }
+    );
+  }
+
+  const googleId = clean(googleUser.sub);
+  const email = clean(googleUser.email);
   const name =
-    clean(
-      profile.name ||
-      profile.given_name ||
-      "User",
-      200
-    );
+    clean(googleUser.name) ||
+    email.split("@")[0];
 
-  const picture =
-    clean(
-      profile.picture || "",
-      1000
-    );
-
-  const now = Math.floor(
-    Date.now() / 1000
-  );
+  /* Find existing user */
 
   let user = await env.DB
     .prepare(`
       SELECT *
       FROM users
       WHERE google_id = ?
+         OR email = ?
       LIMIT 1
     `)
-    .bind(googleId)
+    .bind(googleId, email)
     .first();
 
   if (!user) {
+
+    const result = await env.DB
+      .prepare(`
+        INSERT INTO users
+        (
+          google_id,
+          name,
+          email,
+          membership_status,
+          membership_expiry,
+          auth_provider
+        )
+        VALUES (?, ?, ?, 'FREE', NULL, 'google')
+      `)
+      .bind(
+        googleId,
+        name,
+        email
+      )
+      .run();
+
     user = await env.DB
       .prepare(`
         SELECT *
         FROM users
-        WHERE email = ?
+        WHERE id = ?
         LIMIT 1
       `)
-      .bind(email)
+      .bind(result.meta.last_row_id)
       .first();
-  }
 
-  if (user) {
+  } else {
 
     await env.DB
       .prepare(`
         UPDATE users
         SET
           google_id = ?,
-          email = ?,
           name = ?,
-          picture = ?,
-          updated_at = ?
+          email = ?,
+          last_active_at = ?
         WHERE id = ?
       `)
       .bind(
         googleId,
-        email,
         name,
-        picture,
-        now,
+        email,
+        Date.now(),
         user.id
       )
       .run();
 
-  } else {
-
-    const userId = token(16);
-    const referralCode =
-      await uniqueReferralCode(env);
-
-    await env.DB
+    user = await env.DB
       .prepare(`
-        INSERT INTO users
-        (
-          id,
-          google_id,
-          email,
-          name,
-          picture,
-          referral_code,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        SELECT *
+        FROM users
+        WHERE id = ?
+        LIMIT 1
       `)
-      .bind(
-        userId,
-        googleId,
-        email,
-        name,
-        picture,
-        referralCode,
-        now,
-        now
-      )
-      .run();
+      .bind(user.id)
+      .first();
+  }
 
-    user = {
-      id: userId,
-      google_id: googleId,
-      email,
-      name,
-      picture,
-      referral_code: referralCode
-    };
 
+  /* =========================
+     REFERRAL
+  ========================= */
+
+  const referralCode =
+    clean(stateData.referral);
+
+  if (
+    referralCode &&
+    !referralCode.includes(" ") &&
+    referralCode.length <= 100
+  ) {
     await createReferral(
       env,
       user.id,
-      cookies[REFERRAL],
-      referralCode,
-      now
+      referralCode
     );
   }
 
-  const sessionToken = token(48);
+
+  /* =========================
+     CREATE SESSION
+  ========================= */
+
+  const sessionToken =
+    token(48);
+
   const sessionHash =
     await sha256(sessionToken);
 
-  const expires =
-    now + SESSION_DAYS * 86400;
+  const expiresAt =
+    new Date(
+      Date.now() +
+      SESSION_DAYS *
+      24 *
+      60 *
+      60 *
+      1000
+    ).toISOString();
 
   await env.DB
     .prepare(`
       INSERT INTO sessions
       (
-        token_hash,
         user_id,
-        expires_at,
-        created_at
+        token_hash,
+        expires_at
       )
-      VALUES (?, ?, ?, ?)
+      VALUES (?, ?, ?)
     `)
     .bind(
-      sessionHash,
       user.id,
-      expires,
-      now
+      sessionHash,
+      expiresAt
     )
     .run();
 
-  await env.DB
-    .prepare(`
-      DELETE FROM sessions
-      WHERE expires_at < ?
-    `)
-    .bind(now)
-    .run();
-
-  const headers = new Headers({
-    Location:
-      `${SITE}/Eng/?login=success`
-  });
-
-  headers.append(
-    "Set-Cookie",
-    makeCookie(
-      SESSION,
-      sessionToken,
-      SESSION_DAYS * 86400
-    )
-  );
-
-  headers.append(
-    "Set-Cookie",
-    deleteCookie(STATE)
-  );
-
-  headers.append(
-    "Set-Cookie",
-    deleteCookie(REFERRAL)
-  );
 
   return new Response(null, {
     status: 302,
-    headers
+
+    headers: {
+      Location: `${SITE}/Eng/`,
+
+      "Set-Cookie":
+        `${SESSION}=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}`
+    }
   });
+}
+
+
+/* =========================
+   CURRENT USER
+========================= */
+
+async function currentUser(request, env) {
+
+  const cookies =
+    parseCookies(request);
+
+  const sessionToken =
+    cookies[SESSION];
+
+  if (!sessionToken) {
+    return null;
+  }
+
+  const sessionHash =
+    await sha256(sessionToken);
+
+  const user =
+    await env.DB
+      .prepare(`
+        SELECT u.*
+        FROM sessions s
+        JOIN users u
+          ON u.id = s.user_id
+        WHERE s.token_hash = ?
+          AND s.expires_at > ?
+        LIMIT 1
+      `)
+      .bind(
+        sessionHash,
+        new Date().toISOString()
+      )
+      .first();
+
+  return user || null;
+}
+
+
+/* =========================
+   /api/me
+========================= */
+
+async function me(request, env) {
+
+  const user =
+    await currentUser(request, env);
+
+  if (!user) {
+    return json({
+      success: true,
+      logged_in: false,
+      user: null
+    }, 200, request);
+  }
+
+  const isPremium =
+    await premium(env, user.id);
+
+  return json({
+    success: true,
+    logged_in: true,
+
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      membership_status:
+        user.membership_status,
+      membership_expiry:
+        user.membership_expiry
+    },
+
+    premium: isPremium
+  }, 200, request);
+}
+
+
+/* =========================
+   PREMIUM CHECK
+========================= */
+
+async function premium(env, userId) {
+
+  const user =
+    await env.DB
+      .prepare(`
+        SELECT
+          membership_status,
+          membership_expiry
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `)
+      .bind(userId)
+      .first();
+
+  if (!user) {
+    return false;
+  }
+
+  if (
+    String(user.membership_status)
+      .toUpperCase() !== "PREMIUM"
+  ) {
+    return false;
+  }
+
+  if (!user.membership_expiry) {
+    return true;
+  }
+
+  return (
+    new Date(
+      user.membership_expiry
+    ).getTime() > Date.now()
+  );
+}
+
+
+/* =========================
+   LESSON TITLES
+========================= */
+
+async function titles(request, env) {
+
+  const result =
+    await env.DB
+      .prepare(`
+        SELECT
+          id,
+          title,
+          access_type
+        FROM lessons
+        WHERE active = 1
+        ORDER BY id ASC
+      `)
+      .all();
+
+  return json({
+    success: true,
+    lessons:
+      result.results || []
+  }, 200, request);
+}
+
+
+/* =========================
+   QUESTIONS
+========================= */
+
+async function questions(request, env) {
+
+  const url =
+    new URL(request.url);
+
+  const lessonId =
+    Number(
+      url.searchParams.get(
+        "lesson_id"
+      )
+    );
+
+  if (!lessonId || lessonId < 1) {
+    return json({
+      success: false,
+      error: "Invalid lesson_id"
+    }, 400, request);
+  }
+
+
+  const lesson =
+    await env.DB
+      .prepare(`
+        SELECT
+          id,
+          title,
+          access_type
+        FROM lessons
+        WHERE id = ?
+          AND active = 1
+        LIMIT 1
+      `)
+      .bind(lessonId)
+      .first();
+
+  if (!lesson) {
+    return json({
+      success: false,
+      error: "Lesson not found"
+    }, 404, request);
+  }
+
+
+  const user =
+    await currentUser(
+      request,
+      env
+    );
+
+  const isPremium =
+    user
+      ? await premium(
+          env,
+          user.id
+        )
+      : false;
+
+
+  const isFree =
+    lessonId === 1 ||
+    String(
+      lesson.access_type
+    ).toUpperCase() === "FREE";
+
+
+  if (!isFree && !isPremium) {
+
+    return json({
+      success: false,
+      error: "Premium required",
+      premium_required: true
+    }, 403, request);
+  }
+
+
+  const result =
+    await env.DB
+      .prepare(`
+        SELECT
+          id,
+          lesson_id,
+          question,
+          option_a,
+          option_b,
+          option_c,
+          option_d,
+          correct_answer
+        FROM questions
+        WHERE lesson_id = ?
+          AND active = 1
+        ORDER BY id ASC
+        LIMIT 5
+      `)
+      .bind(lessonId)
+      .all();
+
+
+  return json({
+    success: true,
+
+    lesson: {
+      id: lesson.id,
+      title: lesson.title,
+      access_type:
+        lesson.access_type
+    },
+
+    questions:
+      result.results || []
+  }, 200, request);
+}
+
+
+/* =========================
+   REFERRAL
+========================= */
+
+async function referral(request, env) {
+
+  const user =
+    await currentUser(
+      request,
+      env
+    );
+
+  if (!user) {
+    return json({
+      success: false,
+      error: "Login required"
+    }, 401, request);
+  }
+
+  const code =
+    `ENG${user.id}`;
+
+  return json({
+    success: true,
+
+    referral_code: code,
+
+    referral_url:
+      `${SITE}/Eng/?ref=${encodeURIComponent(code)}`
+  }, 200, request);
+}
+
+
+/* =========================
+   CREATE REFERRAL
+========================= */
+
+async function createReferral(
+  env,
+  referredUserId,
+  referralCode
+) {
+
+  if (!referralCode) {
+    return;
+  }
+
+  const code =
+    referralCode
+      .trim()
+      .toUpperCase();
+
+  if (!code.startsWith("ENG")) {
+    return;
+  }
+
+  const referrerId =
+    Number(
+      code.substring(3)
+    );
+
+  if (
+    !Number.isInteger(referrerId) ||
+    referrerId < 1
+  ) {
+    return;
+  }
+
+  /* Prevent self referral */
+
+  if (
+    referrerId === referredUserId
+  ) {
+    return;
+  }
+
+  /* Confirm referrer exists */
+
+  const referrer =
+    await env.DB
+      .prepare(`
+        SELECT id
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `)
+      .bind(referrerId)
+      .first();
+
+  if (!referrer) {
+    return;
+  }
+
+  /* Only first referral is stored */
+
+  const existing =
+    await env.DB
+      .prepare(`
+        SELECT id
+        FROM referrals
+        WHERE referred_user_id = ?
+        LIMIT 1
+      `)
+      .bind(referredUserId)
+      .first();
+
+  if (existing) {
+    return;
+  }
+
+  await env.DB
+    .prepare(`
+      INSERT INTO referrals
+      (
+        referrer_id,
+        referred_user_id,
+        referral_code
+      )
+      VALUES (?, ?, ?)
+    `)
+    .bind(
+      referrerId,
+      referredUserId,
+      code
+    )
+    .run();
 }
 
 
@@ -456,13 +772,19 @@ async function googleCallback(request, env) {
 ========================= */
 
 async function logout(request, env) {
-  const cookies = getCookies(
-    request.headers.get("Cookie")
-  );
 
-  if (cookies[SESSION]) {
+  const cookies =
+    parseCookies(request);
+
+  const sessionToken =
+    cookies[SESSION];
+
+  if (sessionToken) {
+
     const hash =
-      await sha256(cookies[SESSION]);
+      await sha256(
+        sessionToken
+      );
 
     await env.DB
       .prepare(`
@@ -473,566 +795,47 @@ async function logout(request, env) {
       .run();
   }
 
-  const headers = new Headers({
-    Location:
-      `${SITE}/Eng/?logout=success`
-  });
-
-  headers.append(
-    "Set-Cookie",
-    deleteCookie(SESSION)
-  );
-
   return new Response(null, {
     status: 302,
-    headers
+
+    headers: {
+      Location: `${SITE}/Eng/`,
+
+      "Set-Cookie":
+        `${SESSION}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+    }
   });
 }
 
 
 /* =========================
-   ME
+   HELPERS
 ========================= */
 
-async function me(request, env) {
-  const user =
-    await currentUser(request, env);
+function token(length = 32) {
 
-  if (!user) {
-    return json({
-      success: true,
-      logged_in: false,
-      user: null,
-      premium: false
-    }, 200, request);
+  const bytes =
+    new Uint8Array(length);
+
+  crypto.getRandomValues(bytes);
+
+  let output = "";
+
+  for (const byte of bytes) {
+    output +=
+      byte.toString(16)
+        .padStart(2, "0");
   }
 
-  return json({
-    success: true,
-    logged_in: true,
-    premium:
-      await premium(env, user.id),
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      picture: user.picture,
-      referral_code:
-        user.referral_code
-    }
-  }, 200, request);
+  return output;
 }
 
-
-/* =========================
-   REFERRAL
-========================= */
-
-async function referral(request, env) {
-  const user =
-    await currentUser(request, env);
-
-  if (!user) {
-    return json({
-      success: false,
-      error: "Login required."
-    }, 401, request);
-  }
-
-  const result =
-    await env.DB
-      .prepare(`
-        SELECT COUNT(*) AS total
-        FROM referrals
-        WHERE referrer_user_id = ?
-      `)
-      .bind(user.id)
-      .first();
-
-  return json({
-    success: true,
-    referral_code:
-      user.referral_code,
-    referrals:
-      Number(result?.total || 0),
-    referral_url:
-      `${SITE}/Eng/?ref=${encodeURIComponent(
-        user.referral_code
-      )}`
-  }, 200, request);
-}
-
-
-/* =========================
-   LESSON TITLES
-========================= */
-
-async function titles(request, env) {
-  const user =
-    await currentUser(request, env);
-
-  const isPremium = user
-    ? await premium(env, user.id)
-    : false;
-
-  const result =
-    await env.DB
-      .prepare(`
-        SELECT lesson_no, title
-        FROM lessons
-        ORDER BY lesson_no
-      `)
-      .all();
-
-  return json({
-    success: true,
-    logged_in: !!user,
-    premium: isPremium,
-    lessons:
-      (result.results || []).map(x => ({
-        lesson_no:
-          Number(x.lesson_no),
-        title: x.title,
-        free:
-          Number(x.lesson_no) === 1,
-        locked:
-          Number(x.lesson_no) !== 1 &&
-          !isPremium
-      }))
-  }, 200, request);
-}
-
-
-/* =========================
-   QUESTIONS
-========================= */
-
-async function questions(request, env) {
-  const url = new URL(request.url);
-
-  const lesson =
-    Number(url.searchParams.get("lesson"));
-
-  if (
-    !Number.isInteger(lesson) ||
-    lesson < 1 ||
-    lesson > 20
-  ) {
-    return json({
-      success: false,
-      error:
-        "Lesson must be between 1 and 20."
-    }, 400, request);
-  }
-
-  const user =
-    await currentUser(request, env);
-
-  if (!user) {
-    return json({
-      success: false,
-      code: "LOGIN_REQUIRED",
-      error:
-        "Please login with Google."
-    }, 401, request);
-  }
-
-  if (
-    lesson > 1 &&
-    !(await premium(env, user.id))
-  ) {
-    return json({
-      success: false,
-      code: "PREMIUM_REQUIRED",
-      error:
-        "Premium access is required."
-    }, 403, request);
-  }
-
-  const result =
-    await env.DB
-      .prepare(`
-        SELECT
-          id,
-          lesson_no,
-          question,
-          option_a,
-          option_b,
-          option_c,
-          option_d,
-          explanation
-        FROM questions
-        WHERE lesson_no = ?
-        ORDER BY id
-        LIMIT 50
-      `)
-      .bind(lesson)
-      .all();
-
-  return json({
-    success: true,
-    lesson,
-    total:
-      result.results?.length || 0,
-    questions:
-      result.results || []
-  }, 200, request);
-}
-
-
-/* =========================
-   PAYMENT START
-========================= */
-
-async function paymentStart(request, env) {
-  const user =
-    await currentUser(request, env);
-
-  if (!user) {
-    return json({
-      success: false,
-      error: "Login required."
-    }, 401, request);
-  }
-
-  if (await premium(env, user.id)) {
-    return json({
-      success: true,
-      already_premium: true
-    }, 200, request);
-  }
-
-  const now =
-    Math.floor(Date.now() / 1000);
-
-  const paymentToken =
-    token(32);
-
-  await env.DB
-    .prepare(`
-      INSERT INTO payment_handoffs
-      (
-        token,
-        user_id,
-        expires_at,
-        created_at
-      )
-      VALUES (?, ?, ?, ?)
-    `)
-    .bind(
-      paymentToken,
-      user.id,
-      now + PAYMENT_MINUTES * 60,
-      now
-    )
-    .run();
-
-  return json({
-    success: true,
-    payment_url:
-      `${PAY}/?token=${encodeURIComponent(
-        paymentToken
-      )}`
-  }, 200, request);
-}
-
-
-/* =========================
-   PAYMENT SESSION
-========================= */
-
-async function paymentSession(request, env) {
-  const url = new URL(request.url);
-  const paymentToken =
-    url.searchParams.get("token");
-
-  if (!paymentToken) {
-    return json({
-      success: false,
-      error: "Token required."
-    }, 400, request);
-  }
-
-  const now =
-    Math.floor(Date.now() / 1000);
-
-  const row =
-    await env.DB
-      .prepare(`
-        SELECT
-          h.user_id,
-          u.name,
-          u.email,
-          u.picture
-        FROM payment_handoffs h
-        JOIN users u
-          ON u.id = h.user_id
-        WHERE h.token = ?
-          AND h.expires_at > ?
-        LIMIT 1
-      `)
-      .bind(
-        paymentToken,
-        now
-      )
-      .first();
-
-  if (!row) {
-    return json({
-      success: false,
-      error:
-        "Invalid or expired payment session."
-    }, 401, request);
-  }
-
-  return json({
-    success: true,
-    user: {
-      id: row.user_id,
-      name: row.name,
-      email: row.email,
-      picture: row.picture
-    }
-  }, 200, request);
-}
-
-
-/* =========================
-   HEALTH
-========================= */
-
-async function health(request, env) {
-  try {
-    await env.DB
-      .prepare("SELECT 1")
-      .first();
-
-    return json({
-      success: true,
-      worker: "eng-api",
-      database: "connected"
-    }, 200, request);
-
-  } catch {
-    return json({
-      success: false,
-      worker: "eng-api",
-      database: "error"
-    }, 500, request);
-  }
-}
-
-
-/* =========================
-   USER
-========================= */
-
-async function currentUser(request, env) {
-  const cookies =
-    getCookies(
-      request.headers.get("Cookie")
-    );
-
-  if (!cookies[SESSION]) {
-    return null;
-  }
-
-  const hash =
-    await sha256(cookies[SESSION]);
-
-  const now =
-    Math.floor(Date.now() / 1000);
-
-  return await env.DB
-    .prepare(`
-      SELECT u.*
-      FROM sessions s
-      JOIN users u
-        ON u.id = s.user_id
-      WHERE s.token_hash = ?
-        AND s.expires_at > ?
-      LIMIT 1
-    `)
-    .bind(hash, now)
-    .first();
-}
-
-
-/* =========================
-   PREMIUM
-========================= */
-
-async function premium(env, userId) {
-  const row =
-    await env.DB
-      .prepare(`
-        SELECT status, expires_at
-        FROM subscriptions
-        WHERE user_id = ?
-        ORDER BY id DESC
-        LIMIT 1
-      `)
-      .bind(userId)
-      .first();
-
-  if (!row || row.status !== "active") {
-    return false;
-  }
-
-  if (
-    row.expires_at === null ||
-    row.expires_at === undefined
-  ) {
-    return true;
-  }
-
-  return Number(row.expires_at) >
-    Math.floor(Date.now() / 1000);
-}
-
-
-/* =========================
-   REFERRAL CREATE
-========================= */
-
-async function createReferral(
-  env,
-  newUserId,
-  code,
-  ownCode,
-  now
-) {
-  if (!code || code === ownCode) {
-    return;
-  }
-
-  const owner =
-    await env.DB
-      .prepare(`
-        SELECT id
-        FROM users
-        WHERE referral_code = ?
-        LIMIT 1
-      `)
-      .bind(code)
-      .first();
-
-  if (!owner || owner.id === newUserId) {
-    return;
-  }
-
-  await env.DB
-    .prepare(`
-      INSERT OR IGNORE INTO referrals
-      (
-        id,
-        referrer_user_id,
-        referred_user_id,
-        code,
-        created_at
-      )
-      VALUES (?, ?, ?, ?, ?)
-    `)
-    .bind(
-      token(16),
-      owner.id,
-      newUserId,
-      code,
-      now
-    )
-    .run();
-
-  await env.DB
-    .prepare(`
-      UPDATE users
-      SET referred_by = ?
-      WHERE id = ?
-    `)
-    .bind(
-      owner.id,
-      newUserId
-    )
-    .run();
-}
-
-
-/* =========================
-   UNIQUE REFERRAL
-========================= */
-
-async function uniqueReferralCode(env) {
-  for (let i = 0; i < 10; i++) {
-    const code =
-      randomReferralCode();
-
-    const exists =
-      await env.DB
-        .prepare(`
-          SELECT id
-          FROM users
-          WHERE referral_code = ?
-          LIMIT 1
-        `)
-        .bind(code)
-        .first();
-
-    if (!exists) {
-      return code;
-    }
-  }
-
-  throw new Error(
-    "Unable to create referral code."
-  );
-}
-
-
-/* =========================
-   RANDOM TOKEN
-========================= */
-
-function token(bytes = 32) {
-  const data =
-    new Uint8Array(bytes);
-
-  crypto.getRandomValues(data);
-
-  return [...data]
-    .map(x =>
-      x.toString(16).padStart(2, "0")
-    )
-    .join("");
-}
-
-
-/* =========================
-   REFERRAL CODE
-========================= */
-
-function randomReferralCode() {
-  const chars =
-    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-  const data =
-    new Uint8Array(8);
-
-  crypto.getRandomValues(data);
-
-  return [...data]
-    .map(x =>
-      chars[x % chars.length]
-    )
-    .join("");
-}
-
-
-/* =========================
-   SHA256
-========================= */
 
 async function sha256(value) {
+
   const data =
-    new TextEncoder().encode(value);
+    new TextEncoder()
+      .encode(value);
 
   const hash =
     await crypto.subtle.digest(
@@ -1040,129 +843,125 @@ async function sha256(value) {
       data
     );
 
-  return [...new Uint8Array(hash)]
-    .map(x =>
-      x.toString(16).padStart(2, "0")
+  return Array.from(
+    new Uint8Array(hash)
+  )
+    .map(
+      b =>
+        b.toString(16)
+          .padStart(2, "0")
     )
     .join("");
 }
 
 
-/* =========================
-   COOKIES
-========================= */
+function parseCookies(request) {
 
-function getCookies(header) {
-  const result = {};
+  const header =
+    request.headers.get(
+      "Cookie"
+    );
+
+  const cookies = {};
 
   if (!header) {
-    return result;
+    return cookies;
   }
 
-  for (const item of header.split(";")) {
-    const i = item.indexOf("=");
+  for (
+    const part of
+    header.split(";")
+  ) {
 
-    if (i < 0) continue;
+    const index =
+      part.indexOf("=");
+
+    if (index === -1) {
+      continue;
+    }
 
     const key =
-      item.slice(0, i).trim();
+      part
+        .slice(0, index)
+        .trim();
 
     const value =
-      item.slice(i + 1).trim();
+      part
+        .slice(index + 1)
+        .trim();
 
-    try {
-      result[key] =
-        decodeURIComponent(value);
-    } catch {
-      result[key] = value;
-    }
+    cookies[key] =
+      decodeURIComponent(value);
   }
 
-  return result;
+  return cookies;
 }
 
 
-function makeCookie(
-  name,
-  value,
-  maxAge
+function clean(value) {
+
+  return String(
+    value || ""
+  ).trim();
+}
+
+
+function json(
+  data,
+  status = 200,
+  request
 ) {
-  return [
-    `${name}=${encodeURIComponent(value)}`,
-    `Max-Age=${maxAge}`,
-    "Path=/",
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax"
-  ].join("; ");
-}
 
+  return cors(
+    new Response(
+      JSON.stringify(data),
+      {
+        status,
 
-function deleteCookie(name) {
-  return [
-    `${name}=`,
-    "Max-Age=0",
-    "Path=/",
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax"
-  ].join("; ");
-}
-
-
-/* =========================
-   CLEAN
-========================= */
-
-function clean(value, max) {
-  return value
-    ? String(value)
-        .trim()
-        .slice(0, max)
-    : "";
-}
-
-
-/* =========================
-   JSON
-========================= */
-
-function json(data, status, request) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type":
-          "application/json; charset=UTF-8",
-        "Cache-Control":
-          "no-store",
-        ...cors(request)
+        headers: {
+          "Content-Type":
+            "application/json"
+        }
       }
-    }
+    )
   );
 }
 
 
-/* =========================
-   CORS
-========================= */
+function cors(response) {
 
-function cors(request) {
-  const origin =
-    request.headers.get("Origin");
+  const headers =
+    new Headers(
+      response.headers
+    );
 
-  return {
-    "Access-Control-Allow-Origin":
-      origin === SITE ? SITE : SITE,
+  headers.set(
+    "Access-Control-Allow-Origin",
+    SITE
+  );
 
-    "Access-Control-Allow-Credentials":
-      "true",
+  headers.set(
+    "Access-Control-Allow-Credentials",
+    "true"
+  );
 
-    "Access-Control-Allow-Methods":
-      "GET, POST, OPTIONS",
+  headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type"
+  );
 
-    "Access-Control-Allow-Headers":
-      "Content-Type, Authorization"
-  };
+  headers.set(
+    "Access-Control-Allow-Methods",
+    "GET,POST,OPTIONS"
+  );
+
+  return new Response(
+    response.body,
+    {
+      status: response.status,
+      statusText:
+        response.statusText,
+      headers
+    }
+  );
 }
