@@ -252,6 +252,51 @@ return String(x??"").replace(/[&<>"']/g,c=>({
 }[c]));
 }
 
+
+/* =========================
+   ANSWER FORMAT HELPERS
+   Worker uses 1 / 2 / 3 / 4
+   Frontend uses a / b / c / d
+========================= */
+
+function answerNumber(letter){
+
+const map={
+a:"1",
+b:"2",
+c:"3",
+d:"4"
+};
+
+return map[
+String(letter??"")
+.toLowerCase()
+]||"";
+
+}
+
+function answerLetter(value){
+
+const map={
+"1":"a",
+"2":"b",
+"3":"c",
+"4":"d",
+a:"a",
+b:"b",
+c:"c",
+d:"d"
+};
+
+return map[
+String(value??"")
+.trim()
+.toLowerCase()
+]||"";
+
+}
+
+
 async function api(path){
 
 const r=await fetch(
@@ -797,7 +842,13 @@ await post(
 "/api/quiz/check",
 {
 question_id:qs[n].id,
-answer:selected
+
+/*
+  Frontend uses a/b/c/d.
+  Existing Worker expects 1/2/3/4.
+*/
+answer:answerNumber(selected)
+
 }
 );
 
@@ -831,18 +882,33 @@ correct
 
 }
 
+/*
+  Worker returns the correct answer
+  as 1/2/3/4.
+  Convert it back to a/b/c/d
+  for the frontend button.
+*/
+
 if(
 !correct &&
-d.correct_answer &&
-b.dataset.value===
-String(
 d.correct_answer
-).toLowerCase()
+){
+
+const correctLetter=
+answerLetter(
+d.correct_answer
+);
+
+if(
+b.dataset.value===
+correctLetter
 ){
 
 b.classList.add(
 "correct"
 );
+
+}
 
 }
 
@@ -855,7 +921,7 @@ if(correct){
 
 /*
   IMPORTANT:
-  The Worker now controls all
+  The Worker controls all
   coins and XP rewards.
 
   No client-side reward is added here.
@@ -958,8 +1024,17 @@ qs[0]?.lesson_id,
 answers:
 qs.map(
 (q,i)=>({
+
 question_id:q.id,
-answer:answers[i]||""
+
+/*
+  Frontend stores a/b/c/d.
+  Existing Worker expects 1/2/3/4.
+*/
+answer:answerNumber(
+answers[i]||""
+)
+
 })
 )
 }
