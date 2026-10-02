@@ -17,7 +17,10 @@ let f={
 if(f)return f(r,e);
 if(p==="/api/health")return J({success:true,message:"English API is running",version:API});
 return J({success:false,error:"Not found"},404);
-}catch(x){console.error(x);return J({success:false,error:"Server error"},500)}
+}catch(x){
+console.error(x);
+return J({success:false,error:"Server error"},500);
+}
 }};
 
 /* AUTH */
@@ -246,27 +249,10 @@ let id=+(new URL(r.url).searchParams.get("lesson_id")||0);
 let l=await lesson(e,id);
 let u=await user(r,e);
 
-if(!id)return J({
-success:false,
-error:"Invalid lesson_id"
-},400);
-
-if(!l)return J({
-success:false,
-error:"Lesson not found"
-},404);
-
-if(!free(l)&&!u)return J({
-success:false,
-error:"Login required",
-login_required:true
-},401);
-
-if(!await access(e,u,l))return J({
-success:false,
-error:"Premium required",
-premium_required:true
-},403);
+if(!id)return J({success:false,error:"Invalid lesson_id"},400);
+if(!l)return J({success:false,error:"Lesson not found"},404);
+if(!free(l)&&!u)return J({success:false,error:"Login required",login_required:true},401);
+if(!await access(e,u,l))return J({success:false,error:"Premium required",premium_required:true},403);
 
 let x=await e.DB.prepare(
 "SELECT id,lesson_id,question,option_a,option_b,option_c,option_d FROM questions WHERE lesson_id=? AND active=1 ORDER BY id LIMIT 50"
@@ -281,9 +267,7 @@ questions:x.results||[]
 
 /* ATTEMPTS */
 async function attempts(e,uid,lid){
-let since=new Date(
-Date.now()-30*864e5
-).toISOString();
+let since=new Date(Date.now()-30*864e5).toISOString();
 
 let x=await e.DB.prepare(
 "SELECT COUNT(*) n FROM quiz_attempts WHERE user_id=? AND lesson_id=? AND created_at>=?"
@@ -297,9 +281,7 @@ let o=await e.DB.prepare(
 ).bind(uid,lid,since).first();
 
 if(o?.d)
-reset=new Date(
-new Date(o.d).getTime()+30*864e5
-).toISOString();
+reset=new Date(new Date(o.d).getTime()+30*864e5).toISOString();
 }
 
 return{
@@ -311,33 +293,24 @@ reset
 
 /* QUIZ START */
 async function quizStart(r,e){
-if(r.method!=="POST")return J({
-success:false,
-error:"POST required"
-},405);
+if(r.method!=="POST")
+return J({success:false,error:"POST required"},405);
 
-let u=await user(r,e);
-let b=await B(r);
-let lid=+(b?.lesson_id||0);
+let u=await user(r,e),b=await B(r),lid=+(b?.lesson_id||0);
 
-if(!u)return J({
-success:false,
-error:"Login required"
-},401);
+if(!u)
+return J({success:false,error:"Login required"},401);
 
 let l=await lesson(e,lid);
 
-if(!lid)return J({
-success:false,
-error:"Invalid lesson_id"
-},400);
+if(!lid)
+return J({success:false,error:"Invalid lesson_id"},400);
 
-if(!l)return J({
-success:false,
-error:"Lesson not found"
-},404);
+if(!l)
+return J({success:false,error:"Lesson not found"},404);
 
-if(!await access(e,u,l))return J({
+if(!await access(e,u,l))
+return J({
 success:false,
 error:"Premium required",
 premium_required:true
@@ -345,7 +318,8 @@ premium_required:true
 
 let a=await attempts(e,u.id,lid);
 
-if(a.used>=MAX)return J({
+if(a.used>=MAX)
+return J({
 success:false,
 error:"Maximum 3 quiz attempts reached.",
 max_attempts:true,
@@ -357,9 +331,7 @@ reset_at:a.reset
 
 let id=crypto.randomUUID();
 let now=new Date().toISOString();
-let since=new Date(
-Date.now()-30*864e5
-).toISOString();
+let since=new Date(Date.now()-30*864e5).toISOString();
 
 let x=await e.DB.prepare(
 "INSERT INTO quiz_attempts(id,user_id,lesson_id,created_at)SELECT ?,?,?,? WHERE(SELECT COUNT(*) FROM quiz_attempts WHERE user_id=? AND lesson_id=? AND created_at>=?)<3"
@@ -398,10 +370,8 @@ attempts_remaining:MAX-a.used-1
 
 /* ANSWERS */
 async function quizCheck(r,e){
-if(r.method!=="POST")return J({
-success:false,
-error:"POST required"
-},405);
+if(r.method!=="POST")
+return J({success:false,error:"POST required"},405);
 
 let u=await user(r,e);
 let b=await B(r);
@@ -409,42 +379,33 @@ let aid=s(b?.attempt_id);
 let qid=+(b?.question_id||0);
 let ans=n(b?.answer);
 
-if(!u)return J({
-success:false,
-error:"Login required"
-},401);
+if(!u)
+return J({success:false,error:"Login required"},401);
 
-if(!aid||!qid||!ans)return J({
-success:false,
-error:"Invalid answer"
-},400);
+if(!aid||!qid||!ans)
+return J({success:false,error:"Invalid answer"},400);
 
 let a=await e.DB.prepare(
 "SELECT * FROM quiz_attempts WHERE id=? AND user_id=?"
 ).bind(aid,u.id).first();
 
-if(!a)return J({
-success:false,
-error:"Invalid quiz attempt"
-},403);
+if(!a)
+return J({success:false,error:"Invalid quiz attempt"},403);
 
-if(a.completed_at)return J({
-success:false,
-error:"Quiz already submitted"
-},400);
+if(a.completed_at)
+return J({success:false,error:"Quiz already submitted"},400);
 
 let q=await e.DB.prepare(
 "SELECT id,lesson_id,correct_answer FROM questions WHERE id=? AND active=1"
 ).bind(qid).first();
 
-if(!q||+q.lesson_id!==+a.lesson_id)return J({
-success:false,
-error:"Invalid question"
-},400);
+if(!q||+q.lesson_id!==+a.lesson_id)
+return J({success:false,error:"Invalid question"},400);
 
 let l=await lesson(e,a.lesson_id);
 
-if(!await access(e,u,l))return J({
+if(!await access(e,u,l))
+return J({
 success:false,
 error:"Premium required",
 premium_required:true
@@ -454,12 +415,17 @@ let old=await e.DB.prepare(
 "SELECT answer,correct FROM quiz_answers WHERE attempt_id=? AND question_id=?"
 ).bind(aid,qid).first();
 
-if(old)return J({
+if(old)
+return J({
 success:true,
 already_answered:true,
 correct:+old.correct===1,
 question_id:qid,
-answer:n(old.answer)
+answer:n(old.answer),
+selected_answer:n(old.answer),
+correct_answer:n(q.correct_answer),
+reward_coins:+old.correct===1?COINS:0,
+reward_xp:+old.correct===1?XP:0
 });
 
 let ca=n(q.correct_answer);
@@ -501,6 +467,8 @@ success:true,
 correct:ok,
 question_id:qid,
 answer:ans,
+selected_answer:ans,
+correct_answer:ca,
 reward_coins:ok?COINS:0,
 reward_xp:ok?XP:0
 });
@@ -508,49 +476,41 @@ reward_xp:ok?XP:0
 
 /* SUBMIT */
 async function quizSubmit(r,e){
-if(r.method!=="POST")return J({
-success:false,
-error:"POST required"
-},405);
+if(r.method!=="POST")
+return J({success:false,error:"POST required"},405);
 
 let u=await user(r,e);
 let b=await B(r);
 let aid=s(b?.attempt_id);
 let lid=+(b?.lesson_id||0);
 
-if(!u)return J({
-success:false,
-error:"Login required"
-},401);
+if(!u)
+return J({success:false,error:"Login required"},401);
 
-if(!aid||!lid)return J({
-success:false,
-error:"Invalid quiz data"
-},400);
+if(!aid||!lid)
+return J({success:false,error:"Invalid quiz data"},400);
 
 let a=await e.DB.prepare(
 "SELECT * FROM quiz_attempts WHERE id=? AND user_id=?"
 ).bind(aid,u.id).first();
 
-if(!a||+a.lesson_id!==lid)return J({
-success:false,
-error:"Quiz attempt not found"
-},404);
+if(!a||+a.lesson_id!==lid)
+return J({success:false,error:"Quiz attempt not found"},404);
 
 let done=await e.DB.prepare(
 "SELECT coins,xp FROM quiz_reward_commits WHERE attempt_id=?"
 ).bind(aid).first();
 
-if(done)return submitted(e,u.id,lid,done);
+if(done)
+return submitted(e,u.id,lid,done);
 
-if(a.completed_at)return J({
-success:false,
-error:"Quiz already submitted"
-},400);
+if(a.completed_at)
+return J({success:false,error:"Quiz already submitted"},400);
 
 let l=await lesson(e,lid);
 
-if(!await access(e,u,l))return J({
+if(!await access(e,u,l))
+return J({
 success:false,
 error:"Premium required",
 premium_required:true
@@ -575,7 +535,8 @@ let score=0;
 let qs=q.results||[];
 
 for(let x of qs){
-if(map.get(+x.id)===n(x.correct_answer))score++;
+if(map.get(+x.id)===n(x.correct_answer))
+score++;
 }
 
 let p=await pending(e,aid);
@@ -596,7 +557,6 @@ p.coins,
 p.xp,
 now
 ),
-
 e.DB.prepare(
 "UPDATE user_rewards SET coins=coins+?,xp=xp+?,updated_at=? WHERE user_id=?"
 ).bind(
@@ -605,11 +565,9 @@ p.xp,
 now,
 u.id
 ),
-
 e.DB.prepare(
 "UPDATE quiz_attempts SET completed_at=? WHERE id=?"
 ).bind(now,aid),
-
 e.DB.prepare(
 "INSERT INTO quiz_results(user_id,lesson_id,score,total,percentage,completed_at)VALUES(?,?,?,?,?,?)"
 ).bind(
@@ -626,12 +584,8 @@ done=await e.DB.prepare(
 "SELECT coins,xp FROM quiz_reward_commits WHERE attempt_id=?"
 ).bind(aid).first();
 
-if(done)return submitted(
-e,
-u.id,
-lid,
-done
-);
+if(done)
+return submitted(e,u.id,lid,done);
 
 throw x;
 }
@@ -706,10 +660,8 @@ xp:+v.xp
 async function leaderMe(r,e){
 let u=await user(r,e);
 
-if(!u)return J({
-success:false,
-error:"Login required"
-},401);
+if(!u)
+return J({success:false,error:"Login required"},401);
 
 let x=await e.DB.prepare(
 "SELECT u.id,u.name,u.picture,COALESCE(r.coins,0) coins,COALESCE(r.xp,0) xp FROM users u LEFT JOIN user_rewards r ON r.user_id=u.id WHERE COALESCE(r.coins,0)>0 ORDER BY coins DESC,xp DESC,u.id"
@@ -718,7 +670,8 @@ let x=await e.DB.prepare(
 let a=x.results||[];
 let i=a.findIndex(v=>+v.id===+u.id);
 
-if(i<0)return J({
+if(i<0)
+return J({
 success:true,
 rank:null,
 user:null
@@ -743,10 +696,8 @@ xp:+v.xp
 async function referral(r,e){
 let u=await user(r,e);
 
-if(!u)return J({
-success:false,
-error:"Login required"
-},401);
+if(!u)
+return J({success:false,error:"Login required"},401);
 
 let code=`ENG${u.id}`;
 
@@ -760,19 +711,23 @@ referral_url:`${SITE}/Eng/?ref=${code}`
 async function makeReferral(e,uid,code){
 code=s(code).toUpperCase();
 
-if(!/^ENG\d+$/.test(code))return;
+if(!/^ENG\d+$/.test(code))
+return;
 
 let rid=+code.slice(3);
 
-if(rid===uid||rid<1)return;
+if(rid===uid||rid<1)
+return;
 
 if(!await e.DB.prepare(
 "SELECT id FROM users WHERE id=?"
-).bind(rid).first())return;
+).bind(rid).first())
+return;
 
 if(await e.DB.prepare(
 "SELECT id FROM referrals WHERE referred_user_id=?"
-).bind(uid).first())return;
+).bind(uid).first())
+return;
 
 await e.DB.prepare(
 "INSERT INTO referrals(referrer_id,referred_user_id,referral_code)VALUES(?,?,?)"
@@ -785,33 +740,26 @@ code
 
 /* PAYMENT */
 async function payment(r,e){
-if(r.method!=="POST")return J({
-success:false,
-error:"POST required"
-},405);
+if(r.method!=="POST")
+return J({success:false,error:"POST required"},405);
 
 let u=await user(r,e);
 let b=await B(r);
 let lid=+(b?.lesson_id||0);
 
-if(!u)return J({
-success:false,
-error:"Login required"
-},401);
+if(!u)
+return J({success:false,error:"Login required"},401);
 
 let l=await lesson(e,lid);
 
-if(!l)return J({
-success:false,
-error:"Lesson not found"
-},404);
+if(!l)
+return J({success:false,error:"Lesson not found"},404);
 
-if(free(l))return J({
-success:false,
-error:"This lesson is free"
-},400);
+if(free(l))
+return J({success:false,error:"This lesson is free"},400);
 
-if((await premium(e,u.id)).premium)return J({
+if((await premium(e,u.id)).premium)
+return J({
 success:false,
 error:"You already have premium access"
 },400);
@@ -834,7 +782,8 @@ source:"english"
 
 let d=await x.json();
 
-if(!x.ok||!d.success)return J({
+if(!x.ok||!d.success)
+return J({
 success:false,
 error:d.error||"Payment failed"
 },x.status||500);
@@ -877,18 +826,18 @@ let b=await crypto.subtle.digest(
 new TextEncoder().encode(x)
 );
 
-return[...new Uint8Array(b)].map(
-x=>x.toString(16).padStart(2,"0")
-).join("");
+return[...new Uint8Array(b)]
+.map(x=>x.toString(16).padStart(2,"0"))
+.join("");
 }
 
 function tok(n=32){
 let a=new Uint8Array(n);
 crypto.getRandomValues(a);
 
-return[...a].map(
-x=>x.toString(16).padStart(2,"0")
-).join("");
+return[...a]
+.map(x=>x.toString(16).padStart(2,"0"))
+.join("");
 }
 
 function cookies(r){
@@ -897,17 +846,15 @@ let o={};
 for(let x of(r.headers.get("Cookie")||"").split(";")){
 let i=x.indexOf("=");
 
-if(i>0)o[
-x.slice(0,i).trim()
-]=x.slice(i+1).trim();
+if(i>0)
+o[x.slice(0,i).trim()]=x.slice(i+1).trim();
 }
 
 return o;
 }
 
 function J(x,status=200){
-return cors(
-new Response(
+return cors(new Response(
 JSON.stringify(x),
 {
 status,
@@ -915,8 +862,7 @@ headers:{
 "Content-Type":"application/json"
 }
 }
-)
-);
+));
 }
 
 function R(url,cookie){
@@ -929,26 +875,18 @@ Location:url,
 });
 }
 
+/* CORS */
 function cors(r){
-r.headers.set(
-"Access-Control-Allow-Origin",
-SITE
-);
+const o=r.headers.get("Origin");
 
-r.headers.set(
-"Access-Control-Allow-Credentials",
-"true"
-);
+if(o==="https://createlk.com"||o==="https://www.createlk.com"){
+r.headers.set("Access-Control-Allow-Origin",o);
+r.headers.set("Vary","Origin");
+}
 
-r.headers.set(
-"Access-Control-Allow-Headers",
-"Content-Type,Authorization"
-);
-
-r.headers.set(
-"Access-Control-Allow-Methods",
-"GET,POST,OPTIONS"
-);
+r.headers.set("Access-Control-Allow-Credentials","true");
+r.headers.set("Access-Control-Allow-Headers","Content-Type,Authorization");
+r.headers.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");
 
 return r;
 }
