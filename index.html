@@ -234,10 +234,20 @@ function premium(l){
 
 /* PAYMENT */
 async function startPayment(){
- const p=await post("/api/payment/start",{lesson_id:lessonId});
- if(!p.success||!p.payment_url)
-  throw Error(p.error||"Unable to start payment.");
- location.href=p.payment_url;
+ try{
+  const p=await post("/api/payment/start",{lesson_id:lessonId});
+
+  console.log("PAYMENT START:",p);
+
+  if(!p.success||!p.payment_url)
+   throw Error(p.error||"Unable to start payment.");
+
+  location.href=p.payment_url;
+
+ }catch(e){
+  console.error("PAYMENT ERROR:",e);
+  notice(e.message||"Unable to start payment.");
+ }
 }
 
 /* USER */
@@ -325,7 +335,7 @@ async function loadQuiz(){
  try{
   const s=await post("/api/quiz/start",{lesson_id:lessonId});
 
-  if(s.premium_required){
+  if(s.premium_required||/premium/i.test(s.error||"")){
    await startPayment();
    return;
   }
@@ -340,15 +350,18 @@ async function loadQuiz(){
 
   const d=await api("/api/questions?lesson_id="+encodeURIComponent(lessonId));
 
-  if(d.premium_required){
+  if(d.premium_required||/premium/i.test(d.error||"")){
    await startPayment();
    return;
   }
 
+  if(!d.success&&d.error)
+   throw Error(d.error);
+
   qs=Array.isArray(d)?d:(d.questions||d.data||[]);
 
   if(!qs.length)
-   throw Error(d.error||"No questions available.");
+   throw Error("No questions available.");
 
   $("hero").style.display="none";
   $("lessonTitle").style.display="none";
@@ -363,7 +376,7 @@ async function loadQuiz(){
 
   render();
  }catch(e){
-  console.error(e);
+  console.error("QUIZ ERROR:",e);
   notice(e.message||"Unable to start quiz.");
  }
 }
@@ -387,7 +400,7 @@ function norm(v){
  })[String(v??"").toLowerCase().trim()]||null;
 }
 
-/* FIXED RENDER */
+/* ANSWER DISPLAY */
 function render(){
  const q=qs[n];
  if(!q)return;
@@ -429,7 +442,7 @@ function render(){
  $("qXp").textContent=xp;
 }
 
-/* FIXED ANSWER CHECK */
+/* ANSWER CHECK */
 async function answer(a){
  const q=qs[n];
  if(!q)return;
@@ -527,12 +540,8 @@ async function submitQuiz(){
    throw Error(d.error||"Unable to submit quiz.");
 
   const score=Object.values(results).filter(x=>x.correct).length;
-  const coinsEarned=Number(
-   d.coins_earned??d.reward?.coins??0
-  );
-  const xpEarned=Number(
-   d.xp_earned??d.reward?.xp??0
-  );
+  const coinsEarned=Number(d.coins_earned??d.reward?.coins??0);
+  const xpEarned=Number(d.xp_earned??d.reward?.xp??0);
 
   $("quiz").innerHTML=`
   <div class="question-card result">
