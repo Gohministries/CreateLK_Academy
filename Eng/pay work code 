@@ -1,1514 +1,283 @@
-const SITE="https://createlk.com";
-const ENGLISH="https://createlk.com/Eng/";
-const ADMIN_EMAIL="gateofheavensl1@gmail.com";
-
-const SESSION="premium_admin_session";
-const STATE="premium_admin_state";
-
-const SESSION_DAYS=7;
-const DEFAULT_DAYS=30;
-const DEFAULT_COMMISSION=10;
-
+const SITE="https://createlk.com",ADMIN="gateofheavensl1@gmail.com";
+const SES="premium_admin_session",STATE="premium_admin_state";
+const DAYS=30,COM=10;
 const GA="https://accounts.google.com/o/oauth2/v2/auth";
 const GT="https://oauth2.googleapis.com/token";
 const GU="https://openidconnect.googleapis.com/v1/userinfo";
 
 export default{async fetch(r,e){
  try{
-  await schema(e);
-
+  await db(e);
+  if(r.method==="OPTIONS")return cors(new Response(null,{status:204}));
   const p=new URL(r.url).pathname;
-
-  if(r.method==="OPTIONS")
-   return cors(new Response(null,{status:204}));
-
   const f={
-   "/api/health":health,
-   "/internal/check":internalCheck,
-
-   "/auth/google":googleLogin,
-   "/auth/callback":googleCallback,
-   "/auth/logout":logout,
-
-   "/api/admin/me":adminMe,
-   "/api/admin/stats":stats,
-   "/api/admin/users":users,
+   "/api/health":health,"/internal/check":check,
+   "/auth/google":login,"/auth/callback":callback,
+   "/auth/logout":logout,"/api/admin/me":me,
+   "/api/admin/stats":stats,"/api/admin/users":users,
    "/api/admin/payments":payments,
    "/api/admin/referrals":referrals,
-
+   "/api/admin/referral/find":find,
+   "/api/admin/referral":save,
    "/api/admin/activate":activate,
-   "/api/admin/payment":addPayment,
+   "/api/admin/payment":payment,
    "/api/admin/settings":settings
   };
-
-  if(f[p])
-   return f[p](r,e);
-
-  return err("Not found",404);
-
- }catch(x){
-  console.error(x);
-  return err(
-   "Server error",
-   500,
-   {detail:String(x?.message||x)}
-  );
-}
+  return f[p]?f[p](r,e):err("Not found",404);
+ }catch(x){return err(x.message||"Server error",500)}
 }};
 
-
-/* =========================
-   DATABASE
-========================= */
-
-async function schema(e){
-
+async function db(e){
  await e.DB.batch([
-
-  e.DB.prepare(`
-   CREATE TABLE IF NOT EXISTS premium_users(
-    user_id INTEGER PRIMARY KEY,
-    email TEXT,
-    name TEXT,
-    status TEXT DEFAULT 'FREE',
-    membership_expiry TEXT,
-    updated_at TEXT
-   )
-  `),
-
-  e.DB.prepare(`
-   CREATE TABLE IF NOT EXISTS payments(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    email TEXT,
-    name TEXT,
-    amount REAL DEFAULT 0,
-    method TEXT,
-    reference TEXT,
-    proof TEXT,
-    status TEXT DEFAULT 'PENDING',
-    created_at TEXT,
-    approved_at TEXT,
-    approved_by TEXT
-   )
-  `),
-
-  e.DB.prepare(`
-   CREATE TABLE IF NOT EXISTS referrals(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    payment_id INTEGER,
-    referrer_id INTEGER,
-    referred_user_id INTEGER,
-    referral_code TEXT,
-    commission_rate REAL DEFAULT 10,
-    commission_amount REAL DEFAULT 0,
-    status TEXT DEFAULT 'PENDING',
-    created_at TEXT,
-    paid_at TEXT
-   )
-  `),
-
-  e.DB.prepare(`
-   CREATE TABLE IF NOT EXISTS settings(
-    key TEXT PRIMARY KEY,
-    value TEXT
-   )
-  `),
-
-  e.DB.prepare(`
-   CREATE TABLE IF NOT EXISTS admin_sessions(
-    token_hash TEXT PRIMARY KEY,
-    email TEXT,
-    expires_at TEXT
-   )
-  `),
-
-  e.DB.prepare(`
-   CREATE TABLE IF NOT EXISTS oauth_states(
-    state TEXT PRIMARY KEY,
-    expires_at INTEGER
-   )
-  `),
-
-  e.DB.prepare(`
-   INSERT OR IGNORE INTO settings(key,value)
-   VALUES('commission_rate',?)
-  `).bind(String(DEFAULT_COMMISSION))
-
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS premium_users(user_id INTEGER PRIMARY KEY,email TEXT,name TEXT,status TEXT DEFAULT 'FREE',membership_expiry TEXT,updated_at TEXT)`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,email TEXT,name TEXT,amount REAL DEFAULT 0,method TEXT,reference TEXT,status TEXT DEFAULT 'PENDING',created_at TEXT,approved_at TEXT,approved_by TEXT)`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS referrals(id INTEGER PRIMARY KEY AUTOINCREMENT,payment_id INTEGER,referrer_id INTEGER,referred_user_id INTEGER,referral_code TEXT,commission_rate REAL DEFAULT 10,commission_amount REAL DEFAULT 0,status TEXT DEFAULT 'PENDING',created_at TEXT,paid_at TEXT)`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS admin_sessions(token_hash TEXT PRIMARY KEY,email TEXT,expires_at TEXT)`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS oauth_states(state TEXT PRIMARY KEY,expires_at INTEGER)`),
+  e.DB.prepare(`INSERT OR IGNORE INTO settings VALUES('commission_rate',?)`).bind(String(COM))
  ]);
-
 }
 
+const clean=x=>String(x||"").trim();
+const now=()=>new Date().toISOString();
 
-/* =========================
-   HEALTH
-========================= */
-
-async function health(r,e){
-
- return json({
-  success:true,
-  message:"Premium API is running",
-  version:"PREMIUM-2026-10-03-02"
+async function json(x,s=200){
+ return cors(new Response(JSON.stringify(x),{status:s,headers:{"Content-Type":"application/json"}}));
+}
+const err=(x,s=400)=>json({success:false,error:x},s);
+const body=async r=>{try{return await r.json()}catch{return null}};
+function cors(r){
+ r.headers.set("Access-Control-Allow-Origin",SITE);
+ r.headers.set("Access-Control-Allow-Credentials","true");
+ r.headers.set("Access-Control-Allow-Headers","Content-Type");
+ r.headers.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");
+ return r;
+}
+function token(n=32){
+ const a=new Uint8Array(n);crypto.getRandomValues(a);
+ return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+async function hash(x){
+ const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(x));
+ return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function cookies(r){
+ const o={},h=r.headers.get("Cookie")||"";
+ h.split(";").forEach(x=>{
+  const i=x.indexOf("=");
+  if(i>0)o[x.slice(0,i).trim()]=decodeURIComponent(x.slice(i+1).trim());
  });
-
+ return o;
+}
+async function admin(r,e){
+ const s=cookies(r)[SES];
+ if(!s)return null;
+ return e.DB.prepare(`SELECT email FROM admin_sessions WHERE token_hash=? AND expires_at>?`)
+  .bind(await hash(s),now()).first();
+}
+async function auth(r,e){
+ const a=await admin(r,e);
+ if(!a)throw Error("Admin login required");
+ return a;
 }
 
+async function health(){return json({success:true,message:"Premium API is running"})}
 
-/* =========================
-   INTERNAL PREMIUM CHECK
-========================= */
-
-async function internalCheck(r,e){
-
- if(r.method!=="POST")
-  return err("POST required",405);
-
- const auth=r.headers.get("Authorization")||"";
-
- if(auth!==`Bearer ${e.INTERNAL_SECRET}`)
-  return err("Unauthorized",401);
-
- const b=await body(r);
-
- const id=Number(b?.user_id);
-
- if(!id)
-  return err("Invalid user_id",400);
-
-
-/*
-   IMPORTANT:
-
-   Use the existing English users table.
-*/
-
- const u=await e.DB.prepare(`
-  SELECT
-   membership_status,
-   membership_expiry
-  FROM users
-  WHERE id=?
-  LIMIT 1
- `).bind(id).first();
-
- if(!u){
-
-  return json({
-   success:true,
-   premium:false,
-   membership_expiry:null
-  });
-
- }
-
- const expiry=u.membership_expiry||null;
-
- const active=
-  u.membership_status==="PREMIUM" &&
-  expiry &&
-  new Date(expiry)>new Date();
-
- return json({
-  success:true,
-  premium:!!active,
-  membership_expiry:active?expiry:null
- });
-
+async function check(r,e){
+ if(r.method!=="POST")return err("POST required",405);
+ if(r.headers.get("Authorization")!==`Bearer ${e.INTERNAL_SECRET}`)return err("Unauthorized",401);
+ const b=await body(r),id=Number(b?.user_id);
+ if(!id)return err("Invalid user_id");
+ const u=await e.DB.prepare(`SELECT membership_status,membership_expiry FROM users WHERE id=?`).bind(id).first();
+ const active=!!u&&u.membership_status==="PREMIUM"&&u.membership_expiry&&new Date(u.membership_expiry)>new Date();
+ return json({success:true,premium:!!active,membership_expiry:active?u.membership_expiry:null});
 }
 
-
-/* =========================
-   GOOGLE LOGIN
-========================= */
-
-async function googleLogin(r,e){
-
- const state=token(32);
-
- await e.DB.prepare(`
-  INSERT INTO oauth_states(state,expires_at)
-  VALUES(?,?)
- `).bind(
-  state,
-  Date.now()+600000
- ).run();
-
+async function login(r,e){
+ const s=token();
+ await e.DB.prepare(`INSERT INTO oauth_states VALUES(?,?)`).bind(s,Date.now()+600000).run();
  const q=new URLSearchParams({
   client_id:e.GOOGLE_CLIENT_ID,
-
-  redirect_uri:
-   `https://pay.createlk.workers.dev/auth/callback`,
-
-  response_type:"code",
-
-  scope:"openid email profile",
-
-  state,
-
-  prompt:"select_account"
+  redirect_uri:"https://pay.createlk.workers.dev/auth/callback",
+  response_type:"code",scope:"openid email profile",state:s
  });
-
- return new Response(null,{
-  status:302,
-
-  headers:{
-   Location:`${GA}?${q}`,
-
-   "Set-Cookie":
-    `${STATE}=${state};Path=/;HttpOnly;Secure;SameSite=None;Max-Age=600`
-  }
- });
-
+ return new Response(null,{status:302,headers:{
+  Location:`${GA}?${q}`,
+  "Set-Cookie":`${STATE}=${s};Path=/;HttpOnly;Secure;SameSite=None;Max-Age=600`
+ }});
 }
 
+async function callback(r,e){
+ const u=new URL(r.url),code=u.searchParams.get("code"),state=u.searchParams.get("state");
+ if(!code||!state)return new Response("Invalid login",{status:400});
+ const st=await e.DB.prepare(`SELECT state FROM oauth_states WHERE state=? AND expires_at>?`).bind(state,Date.now()).first();
+ if(!st)return new Response("Login expired",{status:400});
+ await e.DB.prepare(`DELETE FROM oauth_states WHERE state=?`).bind(state).run();
 
-/* =========================
-   GOOGLE CALLBACK
-========================= */
+ const t=await fetch(GT,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({
+  client_id:e.GOOGLE_CLIENT_ID,client_secret:e.GOOGLE_CLIENT_SECRET,code,
+  grant_type:"authorization_code",
+  redirect_uri:"https://pay.createlk.workers.dev/auth/callback"
+ })}).then(x=>x.json());
 
-async function googleCallback(r,e){
+ if(!t.access_token)return new Response("Google authentication failed",{status:400});
 
- const url=new URL(r.url);
+ const g=await fetch(GU,{headers:{Authorization:`Bearer ${t.access_token}`}}).then(x=>x.json());
+ const email=clean(g.email).toLowerCase();
+ if(email!==ADMIN.toLowerCase())return new Response("Admin access denied",{status:403});
 
- const code=url.searchParams.get("code");
- const state=url.searchParams.get("state");
+ const s=token(48);
+ await e.DB.prepare(`INSERT INTO admin_sessions VALUES(?,?,?)`)
+  .bind(await hash(s),email,new Date(Date.now()+604800000).toISOString()).run();
 
- if(!code||!state)
-  return new Response(
-   "Invalid login.",
-   {status:400}
-  );
-
- const valid=await e.DB.prepare(`
-  SELECT state
-  FROM oauth_states
-  WHERE state=? AND expires_at>?
- `).bind(
-  state,
-  Date.now()
- ).first();
-
- if(!valid)
-  return new Response(
-   "Login expired.",
-   {status:400}
-  );
-
- await e.DB.prepare(`
-  DELETE FROM oauth_states
-  WHERE state=?
- `).bind(state).run();
-
-
- const tr=await fetch(GT,{
-  method:"POST",
-
-  headers:{
-   "Content-Type":
-    "application/x-www-form-urlencoded"
-  },
-
-  body:new URLSearchParams({
-   client_id:e.GOOGLE_CLIENT_ID,
-   client_secret:e.GOOGLE_CLIENT_SECRET,
-   code,
-   grant_type:"authorization_code",
-
-   redirect_uri:
-    `https://pay.createlk.workers.dev/auth/callback`
-  })
- });
-
- const td=await tr.json();
-
- if(!td.access_token)
-  return new Response(
-   "Google authentication failed.",
-   {status:400}
-  );
-
-
- const gr=await fetch(GU,{
-  headers:{
-   Authorization:`Bearer ${td.access_token}`
-  }
- });
-
- const g=await gr.json();
-
- const email=
-  clean(g.email).toLowerCase();
-
-
- if(email!==ADMIN_EMAIL.toLowerCase()){
-
-  return new Response(
-   "Admin access denied.",
-   {status:403}
-  );
-
- }
-
-
- const session=token(48);
-
-
- await e.DB.prepare(`
-  INSERT INTO admin_sessions(
-   token_hash,
-   email,
-   expires_at
-  )
-  VALUES(?,?,?)
- `).bind(
-  await sha256(session),
-  email,
-  new Date(
-   Date.now()+SESSION_DAYS*86400000
-  ).toISOString()
- ).run();
-
-
- return new Response(null,{
-  status:302,
-
-  headers:{
-   Location:`${SITE}/Eng/admin.html`,
-
-   "Set-Cookie":
-    `${SESSION}=${session};Path=/;HttpOnly;Secure;SameSite=None;Max-Age=${SESSION_DAYS*86400}`
-  }
- });
-
+ return new Response(null,{status:302,headers:{
+  Location:`${SITE}/Eng/admin.html`,
+  "Set-Cookie":`${SES}=${s};Path=/;HttpOnly;Secure;SameSite=None;Max-Age=604800`
+ }});
 }
 
-
-/* =========================
-   ADMIN SESSION
-========================= */
-
-async function adminUser(r,e){
-
- const s=cookies(r)[SESSION];
-
- if(!s)
-  return null;
-
- return e.DB.prepare(`
-  SELECT email
-  FROM admin_sessions
-  WHERE token_hash=?
-    AND expires_at>?
-  LIMIT 1
- `).bind(
-  await sha256(s),
-  new Date().toISOString()
- ).first();
-
+async function me(r,e){
+ const a=await admin(r,e);
+ return json({success:true,logged_in:!!a,admin:!!a,email:a?.email||null});
 }
-
-
-async function adminMe(r,e){
-
- const a=await adminUser(r,e);
-
- if(!a){
-
-  return json({
-   success:true,
-   logged_in:false,
-   admin:false
-  });
-
- }
-
- return json({
-  success:true,
-  logged_in:true,
-  admin:true,
-  email:a.email
- });
-
-}
-
-
-async function requireAdmin(r,e){
-
- const a=await adminUser(r,e);
-
- if(!a)
-  throw Object.assign(
-   Error("Admin login required"),
-   {status:401}
-  );
-
- return a;
-
-}
-
-
-/* =========================
-   STATS
-========================= */
 
 async function stats(r,e){
-
- try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
- const u=await e.DB.prepare(`
-  SELECT COUNT(*) count
-  FROM users
- `).first();
-
-
- const premium=await e.DB.prepare(`
-  SELECT COUNT(*) count
-  FROM users
-  WHERE membership_status='PREMIUM'
-    AND membership_expiry>?
- `).bind(
-  new Date().toISOString()
- ).first();
-
-
- const pay=await e.DB.prepare(`
-  SELECT
-   COUNT(*) count,
-   COALESCE(SUM(amount),0) total
-  FROM payments
-  WHERE status='APPROVED'
- `).first();
-
-
- const ref=await e.DB.prepare(`
-  SELECT
-   COUNT(*) count,
-   COALESCE(SUM(commission_amount),0) total
-  FROM referrals
-  WHERE status='APPROVED'
- `).first();
-
-
- const totalUsers=
-  Number(u?.count||0);
-
- const premiumUsers=
-  Number(premium?.count||0);
-
-
- return json({
-
-  success:true,
-
-  users:totalUsers,
-
-  premium:premiumUsers,
-
-  free:Math.max(
-   0,
-   totalUsers-premiumUsers
-  ),
-
-  payments:Number(pay?.count||0),
-
-  payment_total:Number(
-   pay?.total||0
-  ),
-
-  referrals:Number(
-   ref?.count||0
-  ),
-
-  referral_commission:Number(
-   ref?.total||0
-  )
-
- });
-
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
+ const [u,p,a,c]=await Promise.all([
+  e.DB.prepare(`SELECT COUNT(*) n FROM users`).first(),
+  e.DB.prepare(`SELECT COUNT(*) n FROM users WHERE membership_status='PREMIUM' AND membership_expiry>?`).bind(now()).first(),
+  e.DB.prepare(`SELECT COUNT(*) n,COALESCE(SUM(amount),0) total FROM payments WHERE status='APPROVED'`).first(),
+  e.DB.prepare(`SELECT COUNT(*) n,COALESCE(SUM(commission_amount),0) total FROM referrals WHERE status='APPROVED'`).first()
+ ]);
+ return json({success:true,users:+u.n,premium:+p.n,free:+u.n-+p.n,payments:+a.n,payment_total:+a.total,referrals:+c.n,referral_commission:+c.total});
 }
-
-
-/* =========================
-   USERS
-========================= */
 
 async function users(r,e){
-
- try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
- const q=
-  new URL(r.url)
-  .searchParams
-  .get("q")||"";
-
-
- let x;
-
-
- if(q){
-
-  x=await e.DB.prepare(`
-   SELECT
-    u.id AS user_id,
-    u.email,
-    u.name,
-    u.membership_status AS status,
-    u.membership_expiry,
-    u.created_at
-   FROM users u
-   WHERE
-    u.email LIKE ?
-    OR u.name LIKE ?
-    OR CAST(u.id AS TEXT)=?
-   ORDER BY u.id DESC
-   LIMIT 500
-  `).bind(
-   `%${q}%`,
-   `%${q}%`,
-   q
-  ).all();
-
- }else{
-
-  x=await e.DB.prepare(`
-   SELECT
-    u.id AS user_id,
-    u.email,
-    u.name,
-    u.membership_status AS status,
-    u.membership_expiry,
-    u.created_at
-   FROM users u
-   ORDER BY u.id DESC
-   LIMIT 500
-  `).all();
-
- }
-
-
- return json({
-
-  success:true,
-
-  users:(x.results||[]).map(v=>({
-
-   user_id:Number(v.user_id),
-
-   email:v.email||"",
-
-   name:v.name||"",
-
-   status:v.status||"FREE",
-
-   membership_expiry:
-    v.membership_expiry||null,
-
-   updated_at:
-    v.created_at||null
-
-  }))
-
- });
-
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
+ const q=new URL(r.url).searchParams.get("q")||"";
+ const sql=`SELECT u.id user_id,u.email,u.name,u.membership_status status,u.membership_expiry,rl.referrer_id,rl.referrer_email,rl.referral_code,CASE WHEN rl.id IS NULL THEN 'DIRECT' ELSE 'REFERRED' END referral_status FROM users u LEFT JOIN referral_links rl ON rl.referred_user_id=u.id`;
+ const x=q?await e.DB.prepare(sql+` WHERE u.email LIKE ? OR u.name LIKE ? OR CAST(u.id AS TEXT)=? ORDER BY u.id DESC LIMIT 500`).bind(`%${q}%`,`%${q}%`,q).all():await e.DB.prepare(sql+` ORDER BY u.id DESC LIMIT 500`).all();
+ return json({success:true,users:x.results||[]});
 }
 
+async function find(r,e){
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
+ const email=clean(new URL(r.url).searchParams.get("email")).toLowerCase();
+ if(!email)return err("Email required");
+ const u=await e.DB.prepare(`SELECT id,email,name FROM users WHERE lower(email)=?`).bind(email).first();
+ if(!u)return err("User not found",404);
+ const x=await e.DB.prepare(`SELECT * FROM referral_links WHERE referred_user_id=? OR lower(referred_email)=? LIMIT 1`).bind(u.id,email).first();
+ return json({success:true,user:{user_id:+u.id,email:u.email,name:u.name},referral:x||null,referral_status:x?"REFERRED":"DIRECT"});
+}
 
-/* =========================
-   PAYMENTS
-========================= */
+async function save(r,e){
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
+ if(r.method!=="POST")return err("POST required",405);
+ const b=await body(r),re=clean(b?.referred_email).toLowerCase(),rr=clean(b?.referrer_email).toLowerCase();
+ if(!re||!rr)return err("Emails required");
+ if(re===rr)return err("Self referral not allowed");
+ const a=await e.DB.prepare(`SELECT id,email FROM users WHERE lower(email)=?`).bind(re).first();
+ const f=await e.DB.prepare(`SELECT id,email FROM users WHERE lower(email)=?`).bind(rr).first();
+ if(!a)return err("Referred user not found",404);
+ if(!f)return err("Referrer user not found",404);
+ const code=clean(b.referral_code).toUpperCase()||`ENG${f.id}`,t=now();
+ await e.DB.prepare(`INSERT INTO referral_links(referred_user_id,referred_email,referrer_id,referrer_email,referral_code,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(referred_user_id) DO UPDATE SET referred_email=excluded.referred_email,referrer_id=excluded.referrer_id,referrer_email=excluded.referrer_email,referral_code=excluded.referral_code,updated_at=excluded.updated_at`)
+ .bind(a.id,a.email,f.id,f.email,code,t,t).run();
+ return json({success:true,referred_user_id:+a.id,referrer_id:+f.id,referral_code:code});
+}
 
 async function payments(r,e){
-
- try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
- const x=await e.DB.prepare(`
-  SELECT *
-  FROM payments
-  ORDER BY id DESC
-  LIMIT 500
- `).all();
-
-
- return json({
-  success:true,
-  payments:x.results||[]
- });
-
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
+ const x=await e.DB.prepare(`SELECT * FROM payments ORDER BY id DESC LIMIT 500`).all();
+ return json({success:true,payments:x.results||[]});
 }
-
-
-/* =========================
-   REFERRALS
-========================= */
 
 async function referrals(r,e){
-
- try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
- const x=await e.DB.prepare(`
-  SELECT *
-  FROM referrals
-  ORDER BY id DESC
-  LIMIT 500
- `).all();
-
-
- return json({
-  success:true,
-  referrals:x.results||[]
- });
-
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
+ const x=await e.DB.prepare(`SELECT * FROM referrals ORDER BY id DESC LIMIT 500`).all();
+ return json({success:true,referrals:x.results||[]});
 }
-
-
-/* =========================
-   SETTINGS
-========================= */
 
 async function settings(r,e){
-
- try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
  if(r.method==="GET"){
-
-  const x=await e.DB.prepare(`
-   SELECT value
-   FROM settings
-   WHERE key='commission_rate'
-  `).first();
-
-
-  return json({
-   success:true,
-   commission_rate:
-    Number(
-     x?.value||DEFAULT_COMMISSION
-    )
-  });
-
+  const x=await e.DB.prepare(`SELECT value FROM settings WHERE key='commission_rate'`).first();
+  return json({success:true,commission_rate:+(x?.value||COM)});
  }
-
-
- if(r.method!=="POST")
-  return err("POST required",405);
-
-
- const b=await body(r);
-
- const rate=
-  Number(b?.commission_rate);
-
-
- if(
-  !Number.isFinite(rate)||
-  rate<0||
-  rate>100
- ){
-
-  return err(
-   "Commission must be between 0 and 100.",
-   400
-  );
-
- }
-
-
- await e.DB.prepare(`
-  INSERT INTO settings(key,value)
-  VALUES('commission_rate',?)
-  ON CONFLICT(key)
-  DO UPDATE SET value=excluded.value
- `).bind(
-  String(rate)
- ).run();
-
-
- return json({
-  success:true,
-  commission_rate:rate
- });
-
+ const b=await body(r),v=Number(b?.commission_rate);
+ if(!Number.isFinite(v)||v<0||v>100)return err("Invalid commission");
+ await e.DB.prepare(`INSERT INTO settings VALUES('commission_rate',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(v)).run();
+ return json({success:true,commission_rate:v});
 }
 
-
-/* =========================
-   ADD PAYMENT
-========================= */
-
-async function addPayment(r,e){
-
- try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
- if(r.method!=="POST")
-  return err("POST required",405);
-
-
+async function payment(r,e){
+ try{await auth(r,e)}catch(x){return err(x.message,401)}
  const b=await body(r);
-
- if(!b)
-  return err("Invalid JSON",400);
-
-
- const userId=
-  Number(b.user_id);
-
- const email=
-  clean(b.email).toLowerCase();
-
- const name=
-  clean(b.name);
-
- const amount=
-  Number(b.amount||0);
-
- const method=
-  clean(b.method)||"MANUAL";
-
- const reference=
-  clean(b.reference);
-
- const proof=
-  clean(b.proof);
-
-
- if(!userId&&!email)
-  return err(
-   "User ID or email required",
-   400
-  );
-
-
- const now=
-  new Date().toISOString();
-
-
- const x=await e.DB.prepare(`
-  INSERT INTO payments(
-   user_id,
-   email,
-   name,
-   amount,
-   method,
-   reference,
-   proof,
-   status,
-   created_at
-  )
-  VALUES(
-   ?,?,?,?,?,?,?, 'PENDING',?
-  )
- `).bind(
-  userId||0,
-  email,
-  name,
-  amount,
-  method,
-  reference,
-  proof,
-  now
- ).run();
-
-
- return json({
-  success:true,
-  payment_id:x.meta.last_row_id,
-  status:"PENDING"
- });
-
+ const uid=+b?.user_id,email=clean(b?.email).toLowerCase(),amount=+b?.amount||0;
+ if(!uid&&!email)return err("User required");
+ const x=await e.DB.prepare(`INSERT INTO payments(user_id,email,name,amount,method,reference,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+ .bind(uid,email,clean(b.name),amount,clean(b.method)||"MANUAL",clean(b.reference),"PENDING",now()).run();
+ return json({success:true,payment_id:x.meta.last_row_id,status:"PENDING"});
 }
-
-
-/* =========================
-   ACTIVATE PREMIUM
-========================= */
 
 async function activate(r,e){
-
  try{
-  await requireAdmin(r,e);
- }catch(x){
-  return err(
-   x.message,
-   x.status||401
-  );
- }
-
-
- if(r.method!=="POST")
-  return err("POST required",405);
-
-
- const a=
-  await adminUser(r,e);
-
- const b=
-  await body(r);
-
-
- if(!b)
-  return err(
-   "Invalid JSON",
-   400
-  );
-
-
- const paymentId=
-  Number(b.payment_id||0);
-
- const userId=
-  Number(b.user_id||0);
-
- const email=
-  clean(b.email).toLowerCase();
-
- const name=
-  clean(b.name);
-
- const days=
-  Math.max(
-   1,
-   Number(
-    b.days||DEFAULT_DAYS
-   )
-  );
-
- const amount=
-  Number(b.amount||0);
-
- const method=
-  clean(b.method)||"MANUAL";
-
- const reference=
-  clean(b.reference);
-
- const referralCode=
-  clean(b.referral_code)
-   .toUpperCase();
-
-
- /* Find payment if supplied */
-
- let p=null;
-
-
- if(paymentId){
-
-  p=await e.DB.prepare(`
-   SELECT *
-   FROM payments
-   WHERE id=?
-   LIMIT 1
-  `).bind(
-   paymentId
-  ).first();
-
-
-  if(!p)
-   return err(
-    "Payment not found",
-    404
-   );
-
-
-  if(p.status==="APPROVED")
-   return err(
-    "Payment already approved",
-    400
-   );
-
- }
-
-
- /*
-   IMPORTANT:
-
-   Find the real user
-   from the existing users table.
- */
-
- let uid=
-  Number(
-   p?.user_id||
-   userId||
-   0
-  );
-
-
- let user=null;
-
-
- if(uid){
-
-  user=await e.DB.prepare(`
-   SELECT *
-   FROM users
-   WHERE id=?
-   LIMIT 1
-  `).bind(
-   uid
-  ).first();
-
- }
-
-
- if(!user&&email){
-
-  user=await e.DB.prepare(`
-   SELECT *
-   FROM users
-   WHERE lower(email)=?
-   LIMIT 1
-  `).bind(
-   email
-  ).first();
-
-  if(user)
-   uid=Number(user.id);
-
- }
-
-
- if(!user)
-  return err(
-   "User not found",
-   404
-  );
-
-
- const now=
-  new Date().toISOString();
-
-
- /*
-   Calculate expiry from existing
-   membership expiry.
-
-   If current Premium is still active,
-   extend from that expiry.
-
-   Otherwise start from now.
- */
-
- let oldExpiry=null;
-
- if(
-  user.membership_expiry &&
-  new Date(
-   user.membership_expiry
-  )>new Date()
- ){
-
-  oldExpiry=
-   new Date(
-    user.membership_expiry
-   );
-
- }else{
-
-  oldExpiry=
-   new Date();
-
- }
-
-
- const expiry=
-  new Date(
-   oldExpiry.getTime()+
-   days*86400000
-  ).toISOString();
-
-
- /*
-   Update the REAL users table.
- */
-
- await e.DB.prepare(`
-  UPDATE users
-  SET
-   membership_status='PREMIUM',
-   membership_expiry=?
-  WHERE id=?
- `).bind(
-  expiry,
-  uid
- ).run();
-
-
- /*
-   Keep premium_users synchronized too.
- */
-
- await e.DB.prepare(`
-  INSERT INTO premium_users(
-   user_id,
-   email,
-   name,
-   status,
-   membership_expiry,
-   updated_at
-  )
-  VALUES(
-   ?,?,?, 'PREMIUM',?,?
-  )
-  ON CONFLICT(user_id)
-  DO UPDATE SET
-   email=excluded.email,
-   name=excluded.name,
-   status='PREMIUM',
-   membership_expiry=excluded.membership_expiry,
-   updated_at=excluded.updated_at
- `).bind(
-  uid,
-  user.email||email,
-  user.name||name,
-  expiry,
-  now
- ).run();
-
-
- /*
-   Create or approve payment.
- */
-
- let pid=
-  paymentId;
-
-
- if(!pid){
-
-  const z=await e.DB.prepare(`
-   INSERT INTO payments(
-    user_id,
-    email,
-    name,
-    amount,
-    method,
-    reference,
-    status,
-    created_at,
-    approved_at,
-    approved_by
-   )
-   VALUES(
-    ?,?,?,?,?,?,
-    'APPROVED',
-    ?,?,?
-   )
-  `).bind(
-   uid,
-   user.email||email,
-   user.name||name,
-   amount,
-   method,
-   reference,
-   now,
-   now,
-   a.email
-  ).run();
-
-
-  pid=z.meta.last_row_id;
-
- }else{
-
-  await e.DB.prepare(`
-   UPDATE payments
-   SET
-    status='APPROVED',
-    approved_at=?,
-    approved_by=?,
-    amount=
-     CASE
-      WHEN ? > 0
-      THEN ?
-      ELSE amount
-     END
-   WHERE id=?
-  `).bind(
-   now,
-   a.email,
-   amount,
-   amount,
-   pid
-  ).run();
-
- }
-
-
- /*
-   Referral commission
- */
-
- const rateRow=
-  await e.DB.prepare(`
-   SELECT value
-   FROM settings
-   WHERE key='commission_rate'
-  `).first();
-
-
- const rate=
-  Number(
-   rateRow?.value||
-   DEFAULT_COMMISSION
-  );
-
-
- if(
-  referralCode &&
-  amount>0
- ){
-
-  const m=
-   referralCode.match(
-    /^ENG(\d+)$/
-   );
-
-
-  if(m){
-
-   const rid=
-    Number(m[1]);
-
-
-   if(
-    rid &&
-    rid!==uid
-   ){
-
-    /*
-      Make sure referrer exists.
-    */
-
-    const referrer=
-     await e.DB.prepare(`
-      SELECT id
-      FROM users
-      WHERE id=?
-      LIMIT 1
-     `).bind(
-      rid
-     ).first();
-
-
-    if(referrer){
-
-     const exists=
-      await e.DB.prepare(`
-       SELECT id
-       FROM referrals
-       WHERE payment_id=?
-       LIMIT 1
-      `).bind(
-       pid
-      ).first();
-
-
-     if(!exists){
-
-      const commission=
-       Math.round(
-        amount*
-        rate/
-        100*
-        100
-       )/100;
-
-
-      await e.DB.prepare(`
-       INSERT INTO referrals(
-        payment_id,
-        referrer_id,
-        referred_user_id,
-        referral_code,
-        commission_rate,
-        commission_amount,
-        status,
-        created_at
-       )
-       VALUES(
-        ?,?,?,?,?,?,
-        'APPROVED',
-        ?
-       )
-      `).bind(
-       pid,
-       rid,
-       uid,
-       referralCode,
-       rate,
-       commission,
-       now
-      ).run();
-
-     }
-
-    }
-
-   }
-
+  const a=await auth(r,e),b=await body(r);
+  const pid=+b?.payment_id||0,email=clean(b?.email).toLowerCase(),days=Math.max(1,+b?.days||DAYS),inputAmount=+b?.amount||0;
+  let p=pid?await e.DB.prepare(`SELECT * FROM payments WHERE id=?`).bind(pid).first():null;
+  if(pid&&!p)return err("Payment not found",404);
+  if(p?.status==="APPROVED")return err("Payment already approved");
+  let uid=+(p?.user_id||b?.user_id||0),u=uid?await e.DB.prepare(`SELECT * FROM users WHERE id=?`).bind(uid).first():null;
+  if(!u&&email){u=await e.DB.prepare(`SELECT * FROM users WHERE lower(email)=?`).bind(email).first();if(u)uid=+u.id}
+  if(!u)return err("User not found",404);
+
+  const amount=inputAmount||+(p?.amount||0),t=now();
+  const start=u.membership_expiry&&new Date(u.membership_expiry)>new Date()?new Date(u.membership_expiry):new Date();
+  const expiry=new Date(start.getTime()+days*86400000).toISOString();
+
+  await e.DB.prepare(`UPDATE users SET membership_status='PREMIUM',membership_expiry=? WHERE id=?`).bind(expiry,uid).run();
+  await e.DB.prepare(`INSERT INTO premium_users VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,name=excluded.name,status='PREMIUM',membership_expiry=excluded.membership_expiry,updated_at=excluded.updated_at`)
+   .bind(uid,u.email,u.name,"PREMIUM",expiry,t).run();
+
+  let id=pid;
+  if(!id){
+   const x=await e.DB.prepare(`INSERT INTO payments(user_id,email,name,amount,method,reference,status,created_at,approved_at,approved_by) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+    .bind(uid,u.email,u.name,amount,clean(b.method)||"MANUAL",clean(b.reference),"APPROVED",t,t,a.email).run();
+   id=x.meta.last_row_id;
+  }else{
+   await e.DB.prepare(`UPDATE payments SET status='APPROVED',approved_at=?,approved_by=?,amount=? WHERE id=?`).bind(t,a.email,amount,id).run();
   }
 
- }
+  const l=await e.DB.prepare(`SELECT referrer_id,referral_code FROM referral_links WHERE referred_user_id=? LIMIT 1`).bind(uid).first();
+  let rid=+(l?.referrer_id||0),code=clean(l?.referral_code).toUpperCase();
+  if(!rid){
+   const m=clean(b.referral_code).toUpperCase().match(/^ENG(\d+)$/);
+   if(m){rid=+m[1];code=clean(b.referral_code).toUpperCase()}
+  }
 
+  let ref=null;
+  if(rid&&rid!==uid&&amount>0){
+   const old=await e.DB.prepare(`SELECT id FROM referrals WHERE payment_id=?`).bind(id).first();
+   const rr=await e.DB.prepare(`SELECT id,email FROM users WHERE id=?`).bind(rid).first();
+   if(!old&&rr){
+    const s=await e.DB.prepare(`SELECT value FROM settings WHERE key='commission_rate'`).first(),rate=+(s?.value||COM);
+    const commission=Math.round(amount*rate)/100;
+    const x=await e.DB.prepare(`INSERT INTO referrals(payment_id,referrer_id,referred_user_id,referral_code,commission_rate,commission_amount,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+     .bind(id,rid,uid,code||`ENG${rid}`,rate,commission,"APPROVED",t).run();
+    ref={id:x.meta.last_row_id,referrer_id:rid,referrer_email:rr.email,commission_rate:rate,commission_amount:commission};
+   }
+  }
 
- return json({
-
-  success:true,
-
-  payment_id:pid,
-
-  user_id:uid,
-
-  status:"PREMIUM",
-
-  membership_expiry:expiry
-
- });
-
+  return json({success:true,payment_id:id,user_id:uid,email:u.email,status:"PREMIUM",membership_expiry:expiry,referral_status:ref?"REFERRED":"DIRECT",referral:ref});
+ }catch(x){return err(x.message||"Activation failed",500)}
 }
-
-
-/* =========================
-   LOGOUT
-========================= */
 
 async function logout(r,e){
-
- const s=
-  cookies(r)[SESSION];
-
-
- if(s){
-
-  await e.DB.prepare(`
-   DELETE FROM admin_sessions
-   WHERE token_hash=?
-  `).bind(
-   await sha256(s)
-  ).run();
-
- }
-
-
- return new Response(null,{
-
-  status:302,
-
-  headers:{
-   Location:`${SITE}/Eng/admin.html`,
-
-   "Set-Cookie":
-    `${SESSION}=;Path=/;HttpOnly;Secure;SameSite=None;Max-Age=0`
-  }
-
- });
-
-}
-
-
-/* =========================
-   HELPERS
-========================= */
-
-async function body(r){
-
- try{
-  return await r.json();
- }catch{
-  return null;
- }
-
-}
-
-
-function token(n=32){
-
- const a=
-  new Uint8Array(n);
-
- crypto.getRandomValues(a);
-
- return [...a]
-  .map(x=>
-   x.toString(16)
-    .padStart(2,"0")
-  )
-  .join("");
-
-}
-
-
-async function sha256(x){
-
- const h=
-  await crypto.subtle.digest(
-   "SHA-256",
-   new TextEncoder().encode(x)
-  );
-
- return [...new Uint8Array(h)]
-  .map(x=>
-   x.toString(16)
-    .padStart(2,"0")
-  )
-  .join("");
-
-}
-
-
-function cookies(r){
-
- const o={};
-
- const h=
-  r.headers.get("Cookie");
-
- if(!h)
-  return o;
-
-
- for(
-  const p of h.split(";")
- ){
-
-  const i=
-   p.indexOf("=");
-
-  if(i>=0){
-
-   o[
-    p.slice(0,i).trim()
-   ]=
-    decodeURIComponent(
-     p.slice(i+1).trim()
-    );
-
-  }
-
- }
-
- return o;
-
-}
-
-
-function clean(x){
-
- return String(
-  x||""
- ).trim();
-
-}
-
-
-function json(x,status=200){
-
- return cors(
-  new Response(
-   JSON.stringify(x),
-   {
-    status,
-    headers:{
-     "Content-Type":
-      "application/json;charset=UTF-8"
-    }
-   }
-  )
- );
-
-}
-
-
-function err(
- error,
- status=400,
- extra={}
-){
-
- return json(
-  {
-   success:false,
-   error,
-   ...extra
-  },
-  status
- );
-
-}
-
-
-function cors(r){
-
- r.headers.set(
-  "Access-Control-Allow-Origin",
-  SITE
- );
-
- r.headers.set(
-  "Access-Control-Allow-Credentials",
-  "true"
- );
-
- r.headers.set(
-  "Access-Control-Allow-Headers",
-  "Content-Type"
- );
-
- r.headers.set(
-  "Access-Control-Allow-Methods",
-  "GET,POST,OPTIONS"
- );
-
- return r;
-
+ const s=cookies(r)[SES];
+ if(s)await e.DB.prepare(`DELETE FROM admin_sessions WHERE token_hash=?`).bind(await hash(s)).run();
+ return new Response(null,{status:302,headers:{
+  Location:`${SITE}/Eng/admin.html`,
+  "Set-Cookie":`${SES}=;Path=/;HttpOnly;Secure;SameSite=None;Max-Age=0`
+ }});
 }
