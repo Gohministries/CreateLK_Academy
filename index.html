@@ -177,27 +177,41 @@ let coins=0,xp=0,submitting=false,audio=null;
 const $=id=>document.getElementById(id);
 
 async function api(path,opt={}){
- const r=await fetch(API+path,{credentials:"include",...opt});
+ const r=await fetch(API+path,{
+  credentials:"include",
+  cache:"no-store",
+  ...opt
+ });
+
  let d={};
  try{d=await r.json()}catch{}
+
  if(!r.ok){
   const e=Error(d.error||`Request failed (${r.status})`);
   e.status=r.status;
   e.data=d;
   throw e;
  }
+
  return d;
 }
 
 const post=(p,b)=>api(p,{
  method:"POST",
- headers:{"Content-Type":"application/json"},
+ headers:{
+  "Content-Type":"application/json",
+  "Cache-Control":"no-cache"
+ },
  body:JSON.stringify(b)
 });
 
 function esc(v){
  return String(v??"").replace(/[&<>"']/g,x=>({
-  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  "&":"&amp;",
+  "<":"&lt;",
+  ">":"&gt;",
+  '"':"&quot;",
+  "'":"&#39;"
  }[x]));
 }
 
@@ -217,7 +231,8 @@ function toggleMenu(){
 }
 
 document.addEventListener("click",e=>{
- if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
+ if(!e.target.closest(".menu-wrap"))
+  $("menu").classList.remove("show");
 });
 
 function login(){
@@ -255,7 +270,8 @@ async function startPayment(){
 
 async function loadMe(){
  try{
-  const d=await api("/api/me");
+  const d=await api("/api/me?_= "+Date.now());
+
   user=d.user||null;
 
   if(!user){
@@ -263,10 +279,15 @@ async function loadMe(){
    $("avatar").style.display="none";
    $("logoutMenu").style.display="none";
    $("account").style.display="none";
+
    coins=0;
    xp=0;
-   $("coins").textContent=0;
-   $("xp").textContent=0;
+
+   $("coins").textContent="0";
+   $("xp").textContent="0";
+   $("qCoins").textContent="0";
+   $("qXp").textContent="0";
+
    return;
   }
 
@@ -278,11 +299,15 @@ async function loadMe(){
   $("logoutMenu").style.display="block";
   $("account").style.display="inline-block";
 
-  if(user.picture)$("avatar").src=user.picture;
+  if(user.picture)
+   $("avatar").src=user.picture;
 
   $("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`;
   $("coins").textContent=coins;
   $("xp").textContent=xp;
+  $("qCoins").textContent=coins;
+  $("qXp").textContent=xp;
+
  }catch(e){
   console.error("ME ERROR:",e);
  }
@@ -290,8 +315,11 @@ async function loadMe(){
 
 async function loadLessons(){
  try{
-  const d=await api("/api/titles");
-  lessons=Array.isArray(d)?d:(d.lessons||d.titles||d.data||[]);
+  const d=await api("/api/titles?_= "+Date.now());
+
+  lessons=Array.isArray(d)
+   ?d
+   :(d.lessons||d.titles||d.data||[]);
 
   $("lessons").innerHTML=lessons.map((l,i)=>{
    const pro=premium(l);
@@ -300,7 +328,9 @@ async function loadLessons(){
    <article class="card">
    <div class="card-top"></div>
    <div class="card-body">
-   <span class="badge ${pro?"pro":"free"}">${pro?"⭐ PREMIUM":"✓ FREE"}</span>
+   <span class="badge ${pro?"pro":"free"}">
+   ${pro?"⭐ PREMIUM":"✓ FREE"}
+   </span>
    <h3>${esc(l.title||l.name||`Lesson ${i+1}`)}</h3>
    <p>${esc(l.description||"Practice English questions and improve your skills.")}</p>
    <button class="btn" onclick="openLesson(${i})">
@@ -309,6 +339,7 @@ async function loadLessons(){
    </div>
    </article>`;
   }).join("");
+
  }catch(e){
   console.error("LESSONS ERROR:",e);
   notice(e.message||"Unable to load lessons.");
@@ -325,6 +356,11 @@ async function openLesson(i){
  if(premium(l)){
   if(!user){
    notice("Please sign in to purchase Premium access.");
+   return;
+  }
+
+  if(user.is_premium===true){
+   await loadQuiz();
    return;
   }
 
@@ -369,10 +405,11 @@ async function loadQuiz(){
    throw Error(s.error||"Unable to start quiz.");
   }
 
-  if(!attemptId)throw Error("Unable to identify quiz attempt.");
+  if(!attemptId)
+   throw Error("Unable to identify quiz attempt.");
 
   const d=await api(
-   "/api/questions?lesson_id="+encodeURIComponent(lessonId)
+   "/api/questions?lesson_id="+encodeURIComponent(lessonId)+"&_="+Date.now()
   );
 
   if(d.premium_required||/premium/i.test(d.error||"")){
@@ -380,11 +417,15 @@ async function loadQuiz(){
    return;
   }
 
-  if(!d.success&&d.error)throw Error(d.error);
+  if(!d.success&&d.error)
+   throw Error(d.error);
 
-  qs=Array.isArray(d)?d:(d.questions||d.data||[]);
+  qs=Array.isArray(d)
+   ?d
+   :(d.questions||d.data||[]);
 
-  if(!qs.length)throw Error("No questions available.");
+  if(!qs.length)
+   throw Error("No questions available.");
 
   $("hero").style.display="none";
   $("lessonTitle").style.display="none";
@@ -399,6 +440,7 @@ async function loadQuiz(){
   submitting=false;
 
   render();
+
  }catch(e){
   console.error("QUIZ ERROR:",e);
   notice(e.message||"Unable to start quiz.");
@@ -416,10 +458,22 @@ function opts(q){
 
 function norm(v){
  return({
-  "1":"a","2":"b","3":"c","4":"d",
-  "a":"a","b":"b","c":"c","d":"d",
-  "option_a":"a","option_b":"b","option_c":"c","option_d":"d",
-  "answer_a":"a","answer_b":"b","answer_c":"c","answer_d":"d"
+  "1":"a",
+  "2":"b",
+  "3":"c",
+  "4":"d",
+  "a":"a",
+  "b":"b",
+  "c":"c",
+  "d":"d",
+  "option_a":"a",
+  "option_b":"b",
+  "option_c":"c",
+  "option_d":"d",
+  "answer_a":"a",
+  "answer_b":"b",
+  "answer_c":"c",
+  "answer_d":"d"
  })[String(v??"").toLowerCase().trim()]||null;
 }
 
@@ -474,6 +528,7 @@ async function answer(a){
  if(!q)return;
 
  const id=q.id||q.question_id||n;
+
  if(results[id])return;
 
  try{
@@ -542,6 +597,13 @@ async function submitQuiz(){
 
  submitting=true;
 
+ const finishBtn=$("nextBtn");
+
+ if(finishBtn){
+  finishBtn.disabled=true;
+  finishBtn.textContent="Submitting...";
+ }
+
  try{
   const submitAnswers=Object.entries(answers).map(([id,answer])=>({
    question_id:Number(id),
@@ -562,17 +624,15 @@ async function submitQuiz(){
   const coinsEarned=Number(d.reward_coins||0);
   const xpEarned=Number(d.reward_xp||0);
 
-  coins=Number(
-   d.total_coins!=null
-    ?d.total_coins
-    :coins+coinsEarned
-  );
+  coins=Number(d.total_coins??(coins+coinsEarned));
+  xp=Number(d.total_xp??(xp+xpEarned));
 
-  xp=Number(
-   d.total_xp!=null
-    ?d.total_xp
-    :xp+xpEarned
-  );
+  $("coins").textContent=coins;
+  $("xp").textContent=xp;
+  $("qCoins").textContent=coins;
+  $("qXp").textContent=xp;
+
+  await loadMe();
 
   $("quiz").innerHTML=`
   <div class="question-card result">
@@ -581,8 +641,15 @@ async function submitQuiz(){
   <p>You answered ${score} out of ${total} correctly.</p>
 
   <div class="reward">
-  <div><strong>🪙 ${coinsEarned}</strong>Coins Earned</div>
-  <div><strong>⚡ ${xpEarned}</strong>XP Earned</div>
+  <div>
+  <strong>🪙 ${coinsEarned}</strong>
+  Coins Earned
+  </div>
+
+  <div>
+  <strong>⚡ ${xpEarned}</strong>
+  XP Earned
+  </div>
   </div>
 
   <p style="color:#8497af">
@@ -596,19 +663,15 @@ async function submitQuiz(){
   </button>
   </div>`;
 
-  $("coins").textContent=coins;
-  $("xp").textContent=xp;
-  $("qCoins").textContent=coins;
-  $("qXp").textContent=xp;
-
-  if(user){
-   user.coins=coins;
-   user.xp=xp;
-  }
-
  }catch(e){
   console.error("SUBMIT ERROR:",e);
   submitting=false;
+
+  if(finishBtn){
+   finishBtn.disabled=false;
+   finishBtn.textContent="Finish";
+  }
+
   notice(e.message||"Unable to submit quiz.");
  }
 }
@@ -620,6 +683,7 @@ function backLessons(){
 function sound(win){
  try{
   audio||=new(window.AudioContext||window.webkitAudioContext);
+
   const o=audio.createOscillator();
   const g=audio.createGain();
 
