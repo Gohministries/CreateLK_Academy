@@ -1,649 +1,653 @@
 const SITE="https://createlk.com";
-const PREMIUM_PRICE_LKR=1000;
-const PAYHERE_CHECKOUT="https://www.payhere.lk/pay/checkout";
-const CURRENCY="LKR";
-const PREMIUM_DAYS=30;
-const COMMISSION_RATE=20;
+const ENGLISH="https://createlk.com/Eng/";
+const ADMIN_EMAIL="gateofheavensl1@gmail.com";
+const SESSION="premium_admin_session";
+const STATE="premium_admin_state";
+const SESSION_DAYS=7;
+const DEFAULT_DAYS=30;
+const DEFAULT_COMMISSION=10;
+const GA="https://accounts.google.com/o/oauth2/v2/auth";
+const GT="https://oauth2.googleapis.com/token";
+const GU="https://openidconnect.googleapis.com/v1/userinfo";
 
-export default{
- async fetch(request,env){
-  try{
-   const url=new URL(request.url),path=url.pathname;
-
-   if(request.method==="OPTIONS")
-    return new Response(null,{status:204,headers:{
-     "Access-Control-Allow-Origin":"*",
-     "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
-     "Access-Control-Allow-Headers":"Content-Type,Authorization"
-    }});
-
-   if(path==="/health")
-    return json({
-     ok:true,
-     service:"CreateLK PayHere",
-     premium_price:PREMIUM_PRICE_LKR,
-     currency:CURRENCY,
-     premium_days:PREMIUM_DAYS
-    });
-
-   if(path==="/internal/start"&&request.method==="POST")
-    return internalStart(request,env);
-
-   if(path==="/pay"&&request.method==="GET")
-    return pay(request,env);
-
-   if(path==="/notify"&&(request.method==="POST"||request.method==="GET"))
-    return notify(request,env);
-
-   if(path==="/return"||path==="/cancel")
-    return Response.redirect(`${SITE}/Eng/`,302);
-
-   if(path==="/")
-    return new Response("CreateLK Pay Worker");
-
-   return new Response("Not Found",{status:404});
-
-  }catch(e){
-   console.error("WORKER ERROR",e);
-   return new Response(
-    "Payment Worker Error: "+String(e?.message||e),
-    {status:500}
-   );
-  }
- }
-};
-
-async function internalStart(request,env){
+export default{async fetch(r,e){
  try{
-  if(!env.DB)return err("DB binding missing.",500);
+  await schema(e);
+  const p=new URL(r.url).pathname;
 
-  const auth=request.headers.get("Authorization")||"";
-  const secret=auth.startsWith("Bearer ")?auth.slice(7):"";
+  if(r.method==="OPTIONS")return cors(new Response(null,{status:204}));
 
-  if(!env.INTERNAL_SECRET||secret!==String(env.INTERNAL_SECRET))
-   return err("Unauthorized",401);
+  const f={
+   "/api/health":health,
+   "/internal/check":internalCheck,
+   "/auth/google":googleLogin,
+   "/auth/callback":googleCallback,
+   "/auth/logout":logout,
+   "/api/admin/me":adminMe,
+   "/api/admin/stats":stats,
+   "/api/admin/users":users,
+   "/api/admin/payments":payments,
+   "/api/admin/referrals":referrals,
+   "/api/admin/activate":activate,
+   "/api/admin/payment":addPayment,
+   "/api/admin/settings":settings
+  };
 
-  const b=await body(request);
-  if(!b)return err("Invalid JSON",400);
+  if(f[p])return f[p](r,e);
+  return err("Not found",404);
+ }catch(x){
+  console.error(x);
+  return err("Server error",500,{detail:String(x?.message||x)});
+ }
+}};
 
-  const userId=Number(b.user_id);
-  const lessonId=Number(b.lesson_id);
+async function schema(e){
+ await e.DB.batch([
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS premium_users(
+   user_id INTEGER PRIMARY KEY,
+   email TEXT,
+   name TEXT,
+   status TEXT DEFAULT 'FREE',
+   membership_expiry TEXT,
+   updated_at TEXT
+  )`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS payments(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   user_id INTEGER NOT NULL,
+   email TEXT,
+   name TEXT,
+   amount REAL DEFAULT 0,
+   method TEXT,
+   reference TEXT,
+   proof TEXT,
+   status TEXT DEFAULT 'PENDING',
+   created_at TEXT,
+   approved_at TEXT,
+   approved_by TEXT
+  )`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS referrals(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   payment_id INTEGER,
+   referrer_id INTEGER,
+   referred_user_id INTEGER,
+   referral_code TEXT,
+   commission_rate REAL DEFAULT 10,
+   commission_amount REAL DEFAULT 0,
+   status TEXT DEFAULT 'PENDING',
+   created_at TEXT,
+   paid_at TEXT
+  )`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS settings(
+   key TEXT PRIMARY KEY,
+   value TEXT
+  )`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS admin_sessions(
+   token_hash TEXT PRIMARY KEY,
+   email TEXT,
+   expires_at TEXT
+  )`),
+  e.DB.prepare(`CREATE TABLE IF NOT EXISTS oauth_states(
+   state TEXT PRIMARY KEY,
+   expires_at INTEGER
+  )`),
+  e.DB.prepare(`INSERT OR IGNORE INTO settings(key,value) VALUES('commission_rate',?)`).bind(String(DEFAULT_COMMISSION))
+ ]);
+}
 
-  if(!userId)return err("Invalid user_id",400);
-  if(!lessonId)return err("Invalid lesson_id",400);
+async function health(r,e){
+ return json({
+  success:true,
+  message:"Premium API is running",
+  version:"PREMIUM-2026-10-03-01"
+ });
+}
 
-  const user=await env.DB.prepare(`
-   SELECT id,name,email,whatsapp_number,
-          membership_status,membership_expiry
-   FROM users WHERE id=? LIMIT 1
-  `).bind(userId).first();
+async function internalCheck(r,e){
+ if(r.method!=="POST")return err("POST required",405);
 
-  if(!user)return err("User not found",404);
+ const auth=r.headers.get("Authorization")||"";
+ if(auth!==`Bearer ${e.INTERNAL_SECRET}`)return err("Unauthorized",401);
 
-  if(
-   String(user.membership_status||"").toUpperCase()==="PREMIUM"&&
-   user.membership_expiry&&
-   new Date(user.membership_expiry).getTime()>Date.now()
-  )
-   return err("You already have premium access",400);
+ const b=await body(r);
+ const id=Number(b?.user_id);
+ if(!id)return err("Invalid user_id",400);
 
-  const orderId="ENG-"+Date.now()+"-"+
-   crypto.randomUUID().replace(/-/g,"").slice(0,12);
+ const u=await e.DB.prepare(
+  "SELECT status,membership_expiry FROM premium_users WHERE user_id=? LIMIT 1"
+ ).bind(id).first();
 
-  const token=crypto.randomUUID()+crypto.randomUUID();
-  const tokenHash=await sha256(token);
-  const now=new Date();
-  const expires=new Date(now.getTime()+30*60*1000).toISOString();
+ const expiry=u?.membership_expiry||null;
+ const active=u?.status==="PREMIUM"&&expiry&&new Date(expiry)>new Date();
 
-  await env.DB.prepare(`
-   INSERT INTO payments
-   (user_id,order_id,amount,currency,status,duration_days,created_at)
-   VALUES(?,?,?,?, 'PENDING', ?, ?)
-  `).bind(
-   userId,orderId,PREMIUM_PRICE_LKR,CURRENCY,
-   PREMIUM_DAYS,now.toISOString()
-  ).run();
+ return json({
+  success:true,
+  premium:!!active,
+  membership_expiry:active?expiry:null
+ });
+}
 
-  await env.DB.prepare(`
-   INSERT INTO payment_sessions
-   (id,token_hash,user_id,lesson_id,order_id,
-    amount,currency,status,expires_at,created_at)
-   VALUES(?,?,?,?,?,?,?,'PENDING',?,?)
-  `).bind(
-   crypto.randomUUID(),tokenHash,userId,lessonId,orderId,
-   PREMIUM_PRICE_LKR,CURRENCY,expires,now.toISOString()
-  ).run();
+async function googleLogin(r,e){
+ const state=token(32);
+
+ await e.DB.prepare(
+  "INSERT INTO oauth_states(state,expires_at) VALUES(?,?)"
+ ).bind(state,Date.now()+600000).run();
+
+ const q=new URLSearchParams({
+  client_id:e.GOOGLE_CLIENT_ID,
+  redirect_uri:`https://pay.createlk.workers.dev/auth/callback`,
+  response_type:"code",
+  scope:"openid email profile",
+  state,
+  prompt:"select_account"
+ });
+
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${GA}?${q}`,
+   "Set-Cookie":`${STATE}=${state};Path=/;HttpOnly;Secure;SameSite=None;Max-Age=600`
+  }
+ });
+}
+
+async function googleCallback(r,e){
+ const url=new URL(r.url);
+ const code=url.searchParams.get("code");
+ const state=url.searchParams.get("state");
+
+ if(!code||!state)return new Response("Invalid login.",{status:400});
+
+ const valid=await e.DB.prepare(
+  "SELECT state FROM oauth_states WHERE state=? AND expires_at>?"
+ ).bind(state,Date.now()).first();
+
+ if(!valid)return new Response("Login expired.",{status:400});
+
+ await e.DB.prepare("DELETE FROM oauth_states WHERE state=?").bind(state).run();
+
+ const tr=await fetch(GT,{
+  method:"POST",
+  headers:{"Content-Type":"application/x-www-form-urlencoded"},
+  body:new URLSearchParams({
+   client_id:e.GOOGLE_CLIENT_ID,
+   client_secret:e.GOOGLE_CLIENT_SECRET,
+   code,
+   grant_type:"authorization_code",
+   redirect_uri:`https://pay.createlk.workers.dev/auth/callback`
+  })
+ });
+
+ const td=await tr.json();
+ if(!td.access_token)return new Response("Google authentication failed.",{status:400});
+
+ const gr=await fetch(GU,{
+  headers:{Authorization:`Bearer ${td.access_token}`}
+ });
+
+ const g=await gr.json();
+ const email=clean(g.email).toLowerCase();
+
+ if(email!==ADMIN_EMAIL.toLowerCase()){
+  return new Response("Admin access denied.",{status:403});
+ }
+
+ const session=token(48);
+
+ await e.DB.prepare(
+  "INSERT INTO admin_sessions(token_hash,email,expires_at) VALUES(?,?,?)"
+ ).bind(
+  await sha256(session),
+  email,
+  new Date(Date.now()+SESSION_DAYS*86400000).toISOString()
+ ).run();
+
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${SITE}/Eng/admin.html`,
+   "Set-Cookie":`${SESSION}=${session};Path=/;HttpOnly;Secure;SameSite=None;Max-Age=${SESSION_DAYS*86400}`
+  }
+ });
+}
+
+async function adminUser(r,e){
+ const s=cookies(r)[SESSION];
+ if(!s)return null;
+
+ return e.DB.prepare(
+  "SELECT email FROM admin_sessions WHERE token_hash=? AND expires_at>? LIMIT 1"
+ ).bind(
+  await sha256(s),
+  new Date().toISOString()
+ ).first();
+}
+
+async function adminMe(r,e){
+ const a=await adminUser(r,e);
+
+ if(!a)return json({
+  success:true,
+  logged_in:false,
+  admin:false
+ });
+
+ return json({
+  success:true,
+  logged_in:true,
+  admin:true,
+  email:a.email
+ });
+}
+
+async function requireAdmin(r,e){
+ const a=await adminUser(r,e);
+ if(!a)throw Object.assign(Error("Admin login required"),{status:401});
+ return a;
+}
+
+async function stats(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
+
+ const u=await e.DB.prepare(
+  "SELECT COUNT(*) count FROM premium_users"
+ ).first();
+
+ const premium=await e.DB.prepare(
+  "SELECT COUNT(*) count FROM premium_users WHERE status='PREMIUM' AND membership_expiry>?"
+ ).bind(new Date().toISOString()).first();
+
+ const pay=await e.DB.prepare(
+  "SELECT COUNT(*) count,COALESCE(SUM(amount),0) total FROM payments WHERE status='APPROVED'"
+ ).first();
+
+ const ref=await e.DB.prepare(
+  "SELECT COUNT(*) count,COALESCE(SUM(commission_amount),0) total FROM referrals WHERE status='APPROVED'"
+ ).first();
+
+ return json({
+  success:true,
+  users:Number(u?.count||0),
+  premium:Number(premium?.count||0),
+  free:Math.max(0,Number(u?.count||0)-Number(premium?.count||0)),
+  payments:Number(pay?.count||0),
+  payment_total:Number(pay?.total||0),
+  referrals:Number(ref?.count||0),
+  referral_commission:Number(ref?.total||0)
+ });
+}
+
+async function users(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
+
+ const q=new URL(r.url).searchParams.get("q")||"";
+ let x;
+
+ if(q){
+  x=await e.DB.prepare(`
+   SELECT * FROM premium_users
+   WHERE email LIKE ? OR name LIKE ? OR CAST(user_id AS TEXT)=?
+   ORDER BY user_id DESC LIMIT 500
+  `).bind(`%${q}%`,`%${q}%`,q).all();
+ }else{
+  x=await e.DB.prepare(
+   "SELECT * FROM premium_users ORDER BY user_id DESC LIMIT 500"
+  ).all();
+ }
+
+ return json({
+  success:true,
+  users:(x.results||[]).map(v=>({
+   user_id:Number(v.user_id),
+   email:v.email||"",
+   name:v.name||"",
+   status:v.status||"FREE",
+   membership_expiry:v.membership_expiry||null,
+   updated_at:v.updated_at||null
+  }))
+ });
+}
+
+async function payments(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
+
+ const x=await e.DB.prepare(`
+  SELECT * FROM payments
+  ORDER BY id DESC
+  LIMIT 500
+ `).all();
+
+ return json({
+  success:true,
+  payments:x.results||[]
+ });
+}
+
+async function referrals(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
+
+ const x=await e.DB.prepare(`
+  SELECT * FROM referrals
+  ORDER BY id DESC
+  LIMIT 500
+ `).all();
+
+ return json({
+  success:true,
+  referrals:x.results||[]
+ });
+}
+
+async function settings(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
+
+ if(r.method==="GET"){
+  const x=await e.DB.prepare(
+   "SELECT value FROM settings WHERE key='commission_rate'"
+  ).first();
 
   return json({
    success:true,
-   order_id:orderId,
-   amount:PREMIUM_PRICE_LKR,
-   currency:CURRENCY,
-   payment_url:
-    `${new URL(request.url).origin}/pay?token=${encodeURIComponent(token)}`
-  });
-
- }catch(e){
-  console.error("INTERNAL START ERROR",e);
-  return err("Unable to create payment session.",500,{
-   detail:String(e?.message||e)
+   commission_rate:Number(x?.value||DEFAULT_COMMISSION)
   });
  }
+
+ const b=await body(r);
+ const rate=Number(b?.commission_rate);
+
+ if(!Number.isFinite(rate)||rate<0||rate>100)
+  return err("Commission must be between 0 and 100.",400);
+
+ await e.DB.prepare(
+  "INSERT INTO settings(key,value) VALUES('commission_rate',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+ ).bind(String(rate)).run();
+
+ return json({
+  success:true,
+  commission_rate:rate
+ });
 }
 
-async function pay(request,env){
- try{
-  const url=new URL(request.url);
-  const paymentToken=url.searchParams.get("token");
+async function addPayment(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
 
-  if(!paymentToken)
-   return new Response("Missing payment token.",{status:400});
+ if(r.method!=="POST")return err("POST required",405);
 
-  if(!env.DB)
-   return new Response("Payment configuration error: DB binding missing.",{status:500});
+ const a=await adminUser(r,e);
+ const b=await body(r);
 
-  if(!env.PAYHERE_MERCHANT_ID)
-   return new Response("Payment configuration error: merchant ID missing.",{status:500});
+ if(!b)return err("Invalid JSON",400);
 
-  if(!env.PAYHERE_MERCHANT_SECRET)
-   return new Response("Payment configuration error: merchant secret missing.",{status:500});
+ const userId=Number(b.user_id);
+ const email=clean(b.email).toLowerCase();
+ const name=clean(b.name);
+ const amount=Number(b.amount||0);
+ const method=clean(b.method)||"MANUAL";
+ const reference=clean(b.reference);
+ const proof=clean(b.proof);
 
-  const tokenHash=await sha256(paymentToken);
+ if(!userId&&!email)return err("User ID or email required",400);
 
-  const session=await env.DB.prepare(`
-   SELECT ps.id,ps.user_id,ps.lesson_id,ps.order_id,
-          ps.amount,ps.currency,ps.status,ps.expires_at,
-          u.name,u.email,u.whatsapp_number
-   FROM payment_sessions ps
-   JOIN users u ON u.id=ps.user_id
-   WHERE ps.token_hash=? LIMIT 1
-  `).bind(tokenHash).first();
+ const now=new Date().toISOString();
 
-  if(!session)
-   return new Response("Invalid or expired payment session.",{status:400});
+ const x=await e.DB.prepare(`
+  INSERT INTO payments(
+   user_id,email,name,amount,method,reference,proof,status,created_at
+  ) VALUES(?,?,?,?,?,? ,?,'PENDING',?)
+ `).bind(
+  userId||0,
+  email,
+  name,
+  amount,
+  method,
+  reference,
+  proof,
+  now
+ ).run();
 
-  if(String(session.status).toUpperCase()!=="PENDING")
-   return new Response("This payment session is no longer active.",{status:400});
+ return json({
+  success:true,
+  payment_id:x.meta.last_row_id,
+  status:"PENDING"
+ });
+}
 
-  if(!session.expires_at)
-   return new Response("Invalid payment session.",{status:400});
+async function activate(r,e){
+ try{await requireAdmin(r,e)}catch(x){return err(x.message,x.status||401)}
 
-  if(new Date(session.expires_at).getTime()<=Date.now()){
-   await env.DB.prepare(`
-    UPDATE payment_sessions
-    SET status='EXPIRED'
-    WHERE id=? AND status='PENDING'
-   `).bind(session.id).run();
+ if(r.method!=="POST")return err("POST required",405);
 
-   return new Response("Payment session expired. Please start again.",{status:400});
-  }
+ const a=await adminUser(r,e);
+ const b=await body(r);
 
-  const amount=Number(session.amount);
-  if(!Number.isFinite(amount)||amount<=0)
-   return new Response("Invalid payment amount.",{status:400});
+ if(!b)return err("Invalid JSON",400);
 
-  const currency=String(session.currency||CURRENCY).toUpperCase();
-  if(currency!=="LKR")
-   return new Response("Invalid payment currency.",{status:400});
+ const paymentId=Number(b.payment_id);
+ const userId=Number(b.user_id);
+ const email=clean(b.email).toLowerCase();
+ const name=clean(b.name);
+ const days=Math.max(1,Number(b.days||DEFAULT_DAYS));
+ const amount=Number(b.amount||0);
+ const method=clean(b.method)||"MANUAL";
+ const reference=clean(b.reference);
 
-  const merchantId=String(env.PAYHERE_MERCHANT_ID).trim();
-  const merchantSecret=String(env.PAYHERE_MERCHANT_SECRET);
-  const amountText=amount.toFixed(2);
-  const secretHash=(await md5(merchantSecret)).toUpperCase();
+ let p=null;
 
-  const hash=(await md5(
-   merchantId+String(session.order_id)+amountText+
-   currency+secretHash
-  )).toUpperCase();
+ if(paymentId){
+  p=await e.DB.prepare(
+   "SELECT * FROM payments WHERE id=? LIMIT 1"
+  ).bind(paymentId).first();
 
-  const fields={
-   merchant_id:merchantId,
-   return_url:`${SITE}/Eng/`,
-   cancel_url:`${SITE}/Eng/`,
-   notify_url:`${url.origin}/notify`,
-   first_name:cleanName(session.name)||"CreateLK",
-   last_name:"",
-   email:String(session.email||"").trim(),
-   phone:String(session.whatsapp_number||"").trim(),
-   address:"Sri Lanka",
-   city:"",
-   country:"Sri Lanka",
-   order_id:String(session.order_id),
-   items:"CreateLK English Premium - 30 Days",
-   currency,
-   amount:amountText,
-   hash
-  };
+  if(!p)return err("Payment not found",404);
 
-  const hidden=Object.entries(fields).map(
-   ([key,value])=>
-    `<input type="hidden" name="${html(key)}" value="${html(value)}">`
-  ).join("");
-
-  const displayAmount=
-   `${currency} ${amount.toLocaleString("en-LK",{
-    minimumFractionDigits:2,
-    maximumFractionDigits:2
-   })}`;
-
-  return new Response(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0b1628">
-<title>CreateLK English Premium Payment</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;
-justify-content:center;background:#0b1628;color:#fff;font-family:Arial;
-text-align:center;padding:20px}
-.box{width:100%;max-width:390px;padding:30px 24px;background:#13233b;
-border:1px solid #30435e;border-radius:18px;box-shadow:0 15px 45px rgba(0,0,0,.35)}
-.brand{font-size:14px;font-weight:700;letter-spacing:1px;color:#d9b85c;
-margin-bottom:10px;text-transform:uppercase}
-.amount{font-size:34px;font-weight:800;color:#d9b85c;margin-bottom:6px}
-.plan{font-size:16px;font-weight:600;margin-bottom:5px}
-.duration{font-size:14px;color:#b9c6d8;margin-bottom:24px}
-.spinner{width:38px;height:38px;margin:0 auto 16px;border:4px solid #30435e;
-border-top-color:#d9b85c;border-radius:50%;animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-h2{margin:0 0 8px;font-size:20px}
-.message{margin:0;color:#c8d2e2;font-size:14px;line-height:1.5}
-.secure{margin-top:18px;font-size:12px;color:#8291a7}
-</style>
-</head>
-<body>
-<div class="box">
-<div class="brand">CreateLK English</div>
-<div class="amount">${html(displayAmount)}</div>
-<div class="plan">Premium Access</div>
-<div class="duration">${PREMIUM_DAYS} Days</div>
-<div class="spinner"></div>
-<h2>Redirecting to PayHere...</h2>
-<p class="message">Please wait while we securely open the payment page.</p>
-<div class="secure">Secure payment powered by PayHere</div>
-<form id="payhere" method="POST" action="${PAYHERE_CHECKOUT}">
-${hidden}
-</form>
-</div>
-<script>document.getElementById("payhere").submit();</script>
-</body>
-</html>`,{
-   status:200,
-   headers:{
-    "Content-Type":"text/html;charset=UTF-8",
-    "Cache-Control":"no-store"
-   }
-  });
-
- }catch(e){
-  console.error("PAY ERROR",e);
-  return new Response(
-   "Payment error: "+String(e?.message||e),
-   {status:500,headers:{
-    "Content-Type":"text/plain;charset=UTF-8",
-    "Cache-Control":"no-store"
-   }}
-  );
+  if(p.status==="APPROVED")
+   return err("Payment already approved",400);
  }
-}
 
-async function notify(request,env){
- try{
-  if(!env.DB)return new Response("DB binding missing.",{status:500});
+ let uid=Number(p?.user_id||userId);
 
-  if(!env.PAYHERE_MERCHANT_ID||!env.PAYHERE_MERCHANT_SECRET)
-   return new Response("PayHere configuration missing.",{status:500});
+ if(!uid&&email){
+  const old=await e.DB.prepare(
+   "SELECT user_id FROM premium_users WHERE lower(email)=? LIMIT 1"
+  ).bind(email).first();
+  uid=Number(old?.user_id||0);
+ }
 
-  let data={};
+ if(!uid)return err("User not found",404);
 
-  if(request.method==="POST"){
-   const type=request.headers.get("content-type")||"";
+ const old=await e.DB.prepare(
+  "SELECT * FROM premium_users WHERE user_id=? LIMIT 1"
+ ).bind(uid).first();
 
-   if(type.includes("application/x-www-form-urlencoded")){
-    const form=await request.formData();
-    for(const [key,value] of form.entries())
-     data[key]=String(value);
-   }else{
-    const raw=await request.text();
-    try{data=JSON.parse(raw)}catch{data=parseForm(raw)}
-   }
-  }else{
-   const url=new URL(request.url);
-   for(const [key,value] of url.searchParams.entries())
-    data[key]=value;
-  }
+ const oldExpiry=old?.membership_expiry&&new Date(old.membership_expiry)>new Date()
+  ?new Date(old.membership_expiry)
+  :new Date();
 
-  const merchantId=String(data.merchant_id||"").trim();
-  const orderId=String(data.order_id||"").trim();
-  const amount=String(data.payhere_amount||"").trim();
-  const currency=String(data.payhere_currency||"").trim().toUpperCase();
-  const statusCode=String(data.status_code||"").trim();
-  const receivedHash=String(data.md5sig||"").trim().toUpperCase();
+ const expiry=new Date(oldExpiry.getTime()+days*86400000).toISOString();
+ const now=new Date().toISOString();
 
-  if(!merchantId||!orderId||!amount||!currency||!statusCode||!receivedHash)
-   return new Response("Invalid notification.",{status:400});
+ await e.DB.prepare(`
+  INSERT INTO premium_users(user_id,email,name,status,membership_expiry,updated_at)
+  VALUES(?,?,?,'PREMIUM',?,?)
+  ON CONFLICT(user_id) DO UPDATE SET
+   email=excluded.email,
+   name=excluded.name,
+   status='PREMIUM',
+   membership_expiry=excluded.membership_expiry,
+   updated_at=excluded.updated_at
+ `).bind(
+  uid,
+  clean(p?.email||email),
+  clean(p?.name||name),
+  expiry,
+  now
+ ).run();
 
-  if(merchantId!==String(env.PAYHERE_MERCHANT_ID).trim())
-   return new Response("Invalid merchant.",{status:400});
+ let pid=paymentId;
 
-  const secretHash=(await md5(
-   String(env.PAYHERE_MERCHANT_SECRET)
-  )).toUpperCase();
+ if(!pid){
+  const z=await e.DB.prepare(`
+   INSERT INTO payments(
+    user_id,email,name,amount,method,reference,status,created_at
+   ) VALUES(?,?,?,?,? ,?,'APPROVED',?)
+  `).bind(
+   uid,
+   clean(email||old?.email),
+   clean(name||old?.name),
+   amount,
+   method,
+   reference,
+   now
+  ).run();
 
-  const expectedHash=(await md5(
-   merchantId+orderId+amount+currency+statusCode+secretHash
-  )).toUpperCase();
-
-  if(receivedHash!==expectedHash){
-   console.error("INVALID PAYHERE HASH",{
-    orderId,receivedHash,expectedHash
-   });
-   return new Response("Invalid hash.",{status:400});
-  }
-
-  const payment=await env.DB.prepare(
-   "SELECT * FROM payments WHERE order_id=? LIMIT 1"
-  ).bind(orderId).first();
-
-  if(!payment)
-   return new Response("Payment not found.",{status:404});
-
-  if(statusCode!=="2"){
-   const status=paymentStatus(statusCode);
-
-   await env.DB.prepare(`
-    UPDATE payments SET status=?
-    WHERE order_id=? AND status='PENDING'
-   `).bind(status,orderId).run();
-
-   await env.DB.prepare(`
-    UPDATE payment_sessions SET status=?
-    WHERE order_id=? AND status='PENDING'
-   `).bind(status,orderId).run();
-
-   return new Response("OK",{status:200});
-  }
-
-  if(String(payment.status).toUpperCase()==="PAID")
-   return new Response("OK",{status:200});
-
-  const paidAmount=Number(amount);
-  const expectedAmount=Number(payment.amount);
-
-  if(!Number.isFinite(paidAmount)||paidAmount<=0)
-   return new Response("Invalid amount.",{status:400});
-
-  if(
-   !Number.isFinite(expectedAmount)||
-   Math.abs(expectedAmount-paidAmount)>0.01||
-   String(payment.currency||"LKR").toUpperCase()!==currency
-  )
-   return new Response("Payment verification failed.",{status:400});
-
-  const user=await env.DB.prepare(
-   "SELECT * FROM users WHERE id=? LIMIT 1"
-  ).bind(payment.user_id).first();
-
-  if(!user)
-   return new Response("User not found.",{status:404});
-
-  const now=new Date();
-  let start=now;
-
-  if(
-   String(user.membership_status||"").toUpperCase()==="PREMIUM"&&
-   user.membership_expiry
-  ){
-   const oldExpiry=new Date(user.membership_expiry);
-
-   if(
-    !Number.isNaN(oldExpiry.getTime())&&
-    oldExpiry.getTime()>now.getTime()
-   )
-    start=oldExpiry;
-  }
-
-  const durationDays=
-   Number(payment.duration_days)||PREMIUM_DAYS;
-
-  const expiry=new Date(
-   start.getTime()+
-   durationDays*24*60*60*1000
-  ).toISOString();
-
-  const paymentUpdate=await env.DB.prepare(`
+  pid=z.meta.last_row_id;
+ }else{
+  await e.DB.prepare(`
    UPDATE payments
-   SET status='PAID',paid_at=CURRENT_TIMESTAMP
-   WHERE order_id=? AND status='PENDING'
-  `).bind(orderId).run();
-
-  if(Number(paymentUpdate?.meta?.changes||0)===0)
-   return new Response("OK",{status:200});
-
-  await env.DB.prepare(`
-   UPDATE payment_sessions
-   SET status='PAID'
-   WHERE order_id=? AND status='PENDING'
-  `).bind(orderId).run();
-
-  await env.DB.prepare(`
-   UPDATE users
-   SET membership_status='PREMIUM',
-       membership_expiry=?
+   SET status='APPROVED',
+       approved_at=?,
+       approved_by=?,
+       amount=CASE WHEN ? > 0 THEN ? ELSE amount END
    WHERE id=?
-  `).bind(expiry,payment.user_id).run();
+  `).bind(
+   now,
+   a.email,
+   amount,
+   amount,
+   pid
+  ).run();
+ }
 
-  const referral=await env.DB.prepare(`
-   SELECT id,referrer_id,referred_user_id
-   FROM referrals
-   WHERE referred_user_id=? LIMIT 1
-  `).bind(payment.user_id).first();
+ const rateRow=await e.DB.prepare(
+  "SELECT value FROM settings WHERE key='commission_rate'"
+ ).first();
 
-  if(
-   referral&&
-   Number(referral.referrer_id)>0&&
-   Number(referral.referrer_id)!==Number(payment.user_id)
-  ){
-   const commissionAmount=
-    Math.round(paidAmount*COMMISSION_RATE)/100;
+ const rate=Number(rateRow?.value||DEFAULT_COMMISSION);
 
-   try{
-    await env.DB.prepare(`
-     INSERT INTO affiliate_commissions
-     (payment_id,order_id,referrer_id,referred_user_id,
-      payment_amount,commission_rate,commission_amount,status)
-     VALUES(?,?,?,?,?,?,?,'AVAILABLE')
-    `).bind(
-     payment.id,
-     orderId,
-     referral.referrer_id,
-     payment.user_id,
-     paidAmount,
-     COMMISSION_RATE,
-     commissionAmount
-    ).run();
-   }catch(e){
-    console.error("COMMISSION INSERT",e);
+ const referralCode=clean(b.referral_code).toUpperCase();
+
+ if(referralCode&&amount>0){
+  const m=referralCode.match(/^ENG(\d+)$/);
+
+  if(m){
+   const rid=Number(m[1]);
+
+   if(rid&&rid!==uid){
+    const exists=await e.DB.prepare(
+     "SELECT id FROM referrals WHERE payment_id=? LIMIT 1"
+    ).bind(pid).first();
+
+    if(!exists){
+     const commission=Math.round(amount*rate/100*100)/100;
+
+     await e.DB.prepare(`
+      INSERT INTO referrals(
+       payment_id,
+       referrer_id,
+       referred_user_id,
+       referral_code,
+       commission_rate,
+       commission_amount,
+       status,
+       created_at
+      ) VALUES(?,?,?,?,?,?, 'APPROVED',?)
+     `).bind(
+      pid,
+      rid,
+      uid,
+      referralCode,
+      rate,
+      commission,
+      now
+     ).run();
+    }
    }
   }
-
-  console.log("PAYMENT SUCCESS",{
-   orderId,
-   userId:payment.user_id,
-   amount:paidAmount,
-   premiumExpiry:expiry
-  });
-
-  return new Response("OK",{status:200});
-
- }catch(e){
-  console.error("NOTIFY ERROR",e);
-  return new Response(
-   "Notification error: "+String(e?.message||e),
-   {status:500}
-  );
  }
+
+ return json({
+  success:true,
+  payment_id:pid,
+  user_id:uid,
+  status:"PREMIUM",
+  membership_expiry:expiry
+ });
 }
 
-function paymentStatus(code){
- const c=String(code);
- if(c==="2")return"PAID";
- if(c==="0")return"PENDING";
- if(c==="-1")return"CANCELLED";
- if(c==="-2")return"FAILED";
- if(c==="-3")return"CHARGEDBACK";
- return"FAILED";
-}
+async function logout(r,e){
+ const s=cookies(r)[SESSION];
 
-function json(data,status=200){
- return new Response(JSON.stringify(data),{
-  status,
+ if(s){
+  await e.DB.prepare(
+   "DELETE FROM admin_sessions WHERE token_hash=?"
+  ).bind(await sha256(s)).run();
+ }
+
+ return new Response(null,{
+  status:302,
   headers:{
-   "Content-Type":"application/json;charset=UTF-8",
-   "Cache-Control":"no-store",
-   "Access-Control-Allow-Origin":"*"
+   Location:`${SITE}/Eng/admin.html`,
+   "Set-Cookie":`${SESSION}=;Path=/;HttpOnly;Secure;SameSite=None;Max-Age=0`
   }
  });
+}
+
+async function body(r){
+ try{return await r.json()}catch{return null}
+}
+
+function token(n=32){
+ const a=new Uint8Array(n);
+ crypto.getRandomValues(a);
+ return[...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+async function sha256(x){
+ const h=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(x)
+ );
+ return[...new Uint8Array(h)]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
+}
+
+function cookies(r){
+ const o={},h=r.headers.get("Cookie");
+ if(!h)return o;
+
+ for(const p of h.split(";")){
+  const i=p.indexOf("=");
+  if(i>=0)o[p.slice(0,i).trim()]=decodeURIComponent(
+   p.slice(i+1).trim()
+  );
+ }
+
+ return o;
+}
+
+function clean(x){
+ return String(x||"").trim();
+}
+
+function json(x,status=200){
+ return cors(new Response(
+  JSON.stringify(x),
+  {
+   status,
+   headers:{"Content-Type":"application/json;charset=UTF-8"}
+  }
+ ));
 }
 
 function err(error,status=400,extra={}){
  return json({success:false,error,...extra},status);
 }
 
-async function body(request){
- try{return await request.json()}catch{return null}
-}
-
-function html(v){
- return String(v??"")
-  .replace(/&/g,"&amp;")
-  .replace(/"/g,"&quot;")
-  .replace(/</g,"&lt;")
-  .replace(/>/g,"&gt;");
-}
-
-function cleanName(v){
- return String(v??"")
-  .replace(/[<>]/g,"")
-  .trim()
-  .slice(0,80);
-}
-
-function parseForm(text){
- const out={};
- const p=new URLSearchParams(text||"");
- for(const [key,value] of p.entries())
-  out[key]=value;
- return out;
-}
-
-async function sha256(value){
- const data=new TextEncoder().encode(String(value));
- const hash=await crypto.subtle.digest("SHA-256",data);
-
- return[...new Uint8Array(hash)]
-  .map(b=>b.toString(16).padStart(2,"0"))
-  .join("");
-}
-
-async function md5(input){
- const bytes=new TextEncoder().encode(String(input));
- const bitLen=bytes.length*8;
- const newLen=Math.ceil((bytes.length+9)/64)*64;
- const buffer=new Uint8Array(newLen);
-
- buffer.set(bytes);
- buffer[bytes.length]=0x80;
-
- const view=new DataView(buffer.buffer);
-
- view.setUint32(newLen-8,bitLen>>>0,true);
- view.setUint32(
-  newLen-4,
-  Math.floor(bitLen/4294967296)>>>0,
-  true
- );
-
- let a0=0x67452301;
- let b0=0xefcdab89;
- let c0=0x98badcfe;
- let d0=0x10325476;
-
- const K=new Uint32Array(64);
-
- for(let i=0;i<64;i++)
-  K[i]=Math.floor(
-   Math.abs(Math.sin(i+1))*4294967296
-  )>>>0;
-
- const S=[
-  7,12,17,22,7,12,17,22,
-  7,12,17,22,7,12,17,22,
-  5,9,14,20,5,9,14,20,
-  5,9,14,20,5,9,14,20,
-  4,11,16,23,4,11,16,23,
-  4,11,16,23,4,11,16,23,
-  6,10,15,21,6,10,15,21,
-  6,10,15,21,6,10,15,21
- ];
-
- for(let offset=0;offset<buffer.length;offset+=64){
-
-  const M=new Uint32Array(16);
-
-  for(let i=0;i<16;i++)
-   M[i]=view.getUint32(offset+i*4,true);
-
-  let A=a0,B=b0,C=c0,D=d0;
-
-  for(let i=0;i<64;i++){
-
-   let F,g;
-
-   if(i<16){
-    F=(B&C)|((~B)&D);
-    g=i;
-   }else if(i<32){
-    F=(D&B)|((~D)&C);
-    g=(5*i+1)%16;
-   }else if(i<48){
-    F=B^C^D;
-    g=(3*i+5)%16;
-   }else{
-    F=C^(B|(~D));
-    g=(7*i)%16;
-   }
-
-   F=(F+A+K[i]+M[g])>>>0;
-
-   A=D;
-   D=C;
-   C=B;
-   B=(B+leftRotate(F,S[i]))>>>0;
-  }
-
-  a0=(a0+A)>>>0;
-  b0=(b0+B)>>>0;
-  c0=(c0+C)>>>0;
-  d0=(d0+D)>>>0;
- }
-
- return[a0,b0,c0,d0].map(x=>{
-  const bytes=new Uint8Array(4);
-
-  bytes[0]=x&255;
-  bytes[1]=(x>>>8)&255;
-  bytes[2]=(x>>>16)&255;
-  bytes[3]=(x>>>24)&255;
-
-  return[...bytes]
-   .map(b=>b.toString(16).padStart(2,"0"))
-   .join("");
- }).join("");
-}
-
-function leftRotate(x,c){
- return((x<<c)|(x>>>(32-c)))>>>0;
+function cors(r){
+ r.headers.set("Access-Control-Allow-Origin",SITE);
+ r.headers.set("Access-Control-Allow-Credentials","true");
+ r.headers.set("Access-Control-Allow-Headers","Content-Type");
+ r.headers.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");
+ return r;
 }
