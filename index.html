@@ -18,7 +18,6 @@ footer{border-top:1px solid #243753;padding:25px 15px;text-align:center;color:#7
 </style>
 </head>
 <body>
-
 <header><nav>
 <a class="brand" href="/Eng/"><img class="logo-img" src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png"><div class="logo">CreateLK <span>English</span></div></a>
 <button class="btn" id="loginBtn" onclick="login()">Sign in</button><img id="avatar" class="avatar">
@@ -35,7 +34,6 @@ footer{border-top:1px solid #243753;padding:25px 15px;text-align:center;color:#7
 <div class="stats"><div class="stat"><strong>1,000+</strong><small>QUESTIONS</small></div><div class="stat"><strong id="xp">0</strong><small>XP</small></div><div class="stat"><strong id="coins">0</strong><small>COINS</small></div></div>
 <div class="account" id="account"></div><br><a class="rank" href="/Eng/rank.html">🏆 View Leaderboard</a>
 </section>
-
 <div class="notice" id="notice"></div>
 <div class="section-title" id="lessonTitle"><h2>📚 English Lessons</h2><p>Choose a lesson and start practicing.</p></div>
 <section class="grid" id="lessons"></section>
@@ -56,10 +54,12 @@ let user=null,lessons=[],qs=[],results={},answers={},lessonId=0,lessonTitle="",a
 async function api(p,o={}){
  const r=await fetch(API+p,{credentials:"include",cache:"no-store",...o,headers:{...(o.body?{"Content-Type":"application/json"}:{}),...(o.headers||{})}});
  let d={};try{d=await r.json()}catch{}
- if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d;
+ if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);
+ return d;
 }
 const post=(p,b)=>api(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
 const esc=v=>String(v??"").replace(/[&<>"']/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[x]));
+
 function notice(x){$("notice").textContent=x;$("notice").classList.add("show");clearTimeout(window.nt);window.nt=setTimeout(()=>$("notice").classList.remove("show"),5000)}
 function toggleMenu(){$("menu").classList.toggle("show")}
 document.addEventListener("click",e=>{if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show")});
@@ -74,35 +74,59 @@ function saveQuiz(){
 function getSaved(){
  try{const x=JSON.parse(localStorage.getItem(STORE)||"null");return x?.attempt_id&&x?.lesson_id&&(!user||Number(x.user_id)===Number(user.id))?x:null}catch{return null}
 }
-function rebuild(){
- temporaryCoins=temporaryXP=0;
- for(const k in results)if(results[k]?.correct){temporaryCoins+=C;temporaryXP+=X}
+
+/* PERMANENT + TEMPORARY BALANCE */
+function updateBalance(){
  coins=permanentCoins+temporaryCoins;
  xp=permanentXP+temporaryXP;
-}
-function balances(){
- $("coins").textContent=coins;$("xp").textContent=xp;$("qCoins").textContent=coins;$("qXp").textContent=xp;
+ $("coins").textContent=coins;
+ $("xp").textContent=xp;
+ $("qCoins").textContent=coins;
+ $("qXp").textContent=xp;
  if(user)$("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`;
+}
+
+function rebuild(){
+ temporaryCoins=0;
+ temporaryXP=0;
+ for(const k in results){
+  if(results[k]?.correct){
+   temporaryCoins+=C;
+   temporaryXP+=X;
+  }
+ }
+ updateBalance();
 }
 
 async function loadMe(){
  try{
-  const d=await api("/api/me?_="+Date.now());user=d.user||null;
+  const d=await api("/api/me?_="+Date.now());
+  user=d.user||null;
+
   if(!user){
-   $("loginBtn").style.display="block";$("avatar").style.display="none";$("logoutMenu").style.display="none";$("account").style.display="none";
-   permanentCoins=permanentXP=coins=xp=0;
+   $("loginBtn").style.display="block";
+   $("avatar").style.display="none";
+   $("logoutMenu").style.display="none";
+   $("account").style.display="none";
+   permanentCoins=permanentXP=coins=xp=temporaryCoins=temporaryXP=0;
   }else{
-   permanentCoins=Number(user.coins||0);permanentXP=Number(user.xp||0);coins=permanentCoins;xp=permanentXP;
-   $("loginBtn").style.display="none";$("logoutMenu").style.display="block";$("account").style.display="inline-block";
+   permanentCoins=Number(user.coins||0);
+   permanentXP=Number(user.xp||0);
+   coins=permanentCoins;
+   xp=permanentXP;
+   $("loginBtn").style.display="none";
+   $("logoutMenu").style.display="block";
+   $("account").style.display="inline-block";
    if(user.picture){$("avatar").src=user.picture;$("avatar").style.display="block"}
   }
-  balances();
+  updateBalance();
  }catch(e){console.error(e)}
 }
 
 async function loadLessons(){
  try{
-  const d=await api("/api/titles?_="+Date.now());lessons=d.lessons||[];
+  const d=await api("/api/titles?_="+Date.now());
+  lessons=d.lessons||[];
   $("lessons").innerHTML=lessons.map((l,i)=>{
    const p=Number(l.id)!==1&&String(l.access_type||"").toUpperCase()!=="FREE";
    return`<article class="card"><div class="card-top"></div><div class="card-body"><span class="badge ${p?"pro":"free"}">${p?"⭐ PREMIUM":"✓ FREE"}</span><h3>${esc(l.title)}</h3><p>${p?"Premium English lesson with quiz practice.":"Free English lesson with quiz practice."}</p><button class="btn" onclick="openLesson(${i})">${p?"🔒 Start Premium":"▶ Start Lesson"}</button></div></article>`;
@@ -112,7 +136,8 @@ async function loadLessons(){
 
 async function openLesson(i){
  const l=lessons[i];if(!l)return;
- lessonId=Number(l.id);lessonTitle=l.title||`Lesson ${lessonId}`;await loadQuiz();
+ lessonId=Number(l.id);lessonTitle=l.title||`Lesson ${lessonId}`;
+ await loadQuiz();
 }
 
 async function payment(){
@@ -127,26 +152,51 @@ async function payment(){
 async function loadQuiz(){
  if(!user){notice("Please sign in to start the quiz.");return}
  try{
-  const saved=getSaved(),s=await post("/api/quiz/start",{lesson_id:lessonId});
+  const saved=getSaved();
+  const s=await post("/api/quiz/start",{lesson_id:lessonId});
+
   if(s.premium_required)return payment();
-  if(s.max_attempts&&!s.attempt_id){clearSaved();notice(s.error||"You have reached the maximum of 3 quiz submissions.");return}
+
+  if(s.max_attempts&&!s.attempt_id){
+   clearSaved();
+   notice(s.error||"You have reached the maximum of 3 quiz submissions.");
+   return;
+  }
+
   if(!s.success&&!s.attempt_id)throw Error(s.error||"Unable to start quiz.");
+
   attemptId=s.attempt_id;
 
   const d=await api("/api/questions?lesson_id="+encodeURIComponent(lessonId)+"&_="+Date.now());
+
   if(d.premium_required)return payment();
   if(!d.success)throw Error(d.error||"Unable to load questions.");
-  qs=d.questions||[];if(!qs.length)throw Error("No questions available.");
+
+  qs=d.questions||[];
+  if(!qs.length)throw Error("No questions available.");
 
   if(saved&&Number(saved.lesson_id)===lessonId&&saved.attempt_id===attemptId){
-   answers=saved.answers||{};results=saved.results||{};n=Math.max(0,Math.min(Number(saved.question_index||0),qs.length-1));
-  }else answers={},results={},n=0;
+   answers=saved.answers||{};
+   results=saved.results||{};
+   n=Math.max(0,Math.min(Number(saved.question_index||0),qs.length-1));
+  }else{
+   answers={};
+   results={};
+   n=0;
+  }
 
   rebuild();
-  $("hero").style.display=$("lessonTitle").style.display=$("lessons").style.display="none";
-  $("quiz").style.display="block";$("quizTitle").textContent=d.lesson?.title||lessonTitle;
+
+  $("hero").style.display="none";
+  $("lessonTitle").style.display="none";
+  $("lessons").style.display="none";
+  $("quiz").style.display="block";
+  $("quizTitle").textContent=d.lesson?.title||lessonTitle;
   render();
- }catch(e){console.error(e);notice(e.message||"Unable to start quiz.")}
+ }catch(e){
+  console.error(e);
+  notice(e.message||"Unable to start quiz.");
+ }
 }
 
 function normalize(v){
@@ -155,66 +205,213 @@ function normalize(v){
 
 function render(){
  const q=qs[n],id=Number(q.id),r=results[id],o={a:q.option_a||"",b:q.option_b||"",c:q.option_c||"",d:q.option_d||""};
- $("progress").textContent=`Question ${n+1} of ${qs.length}`;$("meter").style.width=`${(n+1)/qs.length*100}%`;$("question").textContent=q.question||"Question";
+
+ $("progress").textContent=`Question ${n+1} of ${qs.length}`;
+ $("meter").style.width=`${(n+1)/qs.length*100}%`;
+ $("question").textContent=q.question||"Question";
+
  $("options").innerHTML=["a","b","c","d"].map(k=>`<button class="option ${r&&k===r.selected?(r.correct?"correct":"wrong"):""}" ${r?"disabled":""} onclick="answer('${k}')"><b>${k.toUpperCase()}.</b> ${esc(o[k])}</button>`).join("");
- if(r){$("feedback").className="feedback show "+(r.correct?"correct":"wrong");$("feedback").textContent=r.correct?"✓ Correct! +5 Coins · +10 XP":`✗ Incorrect. Correct answer: ${String(r.correctAnswer||"").toUpperCase()}.`}
- else{$("feedback").className="feedback";$("feedback").textContent=""}
- $("prevBtn").disabled=n===0;$("nextBtn").textContent=n===qs.length-1?"Finish":"Next";balances();saveQuiz();
+
+ if(r){
+  $("feedback").className="feedback show "+(r.correct?"correct":"wrong");
+  $("feedback").textContent=r.correct?"✓ Correct! +5 Coins · +10 XP":`✗ Incorrect. Correct answer: ${String(r.correctAnswer||"").toUpperCase()}.`;
+ }else{
+  $("feedback").className="feedback";
+  $("feedback").textContent="";
+ }
+
+ $("prevBtn").disabled=n===0;
+ $("nextBtn").textContent=n===qs.length-1?"Finish":"Next";
+
+ /* Keep temporary rewards visible */
+ updateBalance();
+ saveQuiz();
 }
 
 async function answer(choice){
  if(checking||submitting)return;
- const q=qs[n],id=Number(q.id);if(!q||results[id])return;
+
+ const q=qs[n],id=Number(q.id);
+ if(!q||results[id])return;
+
  checking=true;
+
  try{
   const d=await post("/api/quiz/check",{attempt_id:attemptId,question_id:id,answer:choice});
-  if(d.premium_required)return notice("Premium access is required.");
+
+  if(d.premium_required){
+   notice("Premium access is required.");
+   return;
+  }
+
   if(!d.success)throw Error(d.error||"Unable to check answer.");
-  const selected=normalize(d.selected_answer||d.answer||choice)||choice,correct=Boolean(d.correct);
-  results[id]={correct,selected,correctAnswer:normalize(d.correct_answer)};answers[id]=selected;
-  if(correct){const c=Number(d.reward_coins||C),x=Number(d.reward_xp||X);temporaryCoins+=c;temporaryXP+=x;coins=permanentCoins+temporaryCoins;xp=permanentXP+temporaryXP;balances();fly("coin",c);setTimeout(()=>fly("xp",x),120);pop("🎉 Correct!")}
-  render();sound(correct);
- }catch(e){notice(e.message||"Unable to check answer.")}finally{checking=false}
+
+  const selected=normalize(d.selected_answer||d.answer||choice)||choice;
+  const correct=Boolean(d.correct);
+
+  results[id]={correct,selected,correctAnswer:normalize(d.correct_answer)};
+  answers[id]=selected;
+
+  if(correct){
+   const c=Number(d.reward_coins||C);
+   const x=Number(d.reward_xp||X);
+
+   temporaryCoins+=c;
+   temporaryXP+=x;
+
+   /* IMMEDIATE DISPLAY */
+   updateBalance();
+
+   fly("coin",c);
+   setTimeout(()=>fly("xp",x),120);
+   pop("🎉 Correct!");
+  }
+
+  render();
+  sound(correct);
+ }catch(e){
+  notice(e.message||"Unable to check answer.");
+ }finally{
+  checking=false;
+ }
 }
 
-function previousQuestion(){if(!checking&&!submitting&&n>0){n--;render()}}
+function previousQuestion(){
+ if(!checking&&!submitting&&n>0){
+  n--;
+  render();
+ }
+}
+
 async function nextQuestion(){
  if(checking||submitting)return;
- if(!results[Number(qs[n].id)])return notice("Please answer the question first.");
- if(n<qs.length-1){n++;render()}else submitQuiz();
+
+ if(!results[Number(qs[n].id)])
+  return notice("Please answer the question first.");
+
+ if(n<qs.length-1){
+  n++;
+  render();
+ }else{
+  submitQuiz();
+ }
 }
 
 async function submitQuiz(){
  if(submitting)return;
- if(qs.some(q=>!results[Number(q.id)]))return notice("Please answer all questions before submitting.");
- submitting=true;$("nextBtn").disabled=true;$("nextBtn").textContent="Submitting...";
+
+ if(qs.some(q=>!results[Number(q.id)]))
+  return notice("Please answer all questions before submitting.");
+
+ submitting=true;
+ $("nextBtn").disabled=true;
+ $("nextBtn").textContent="Submitting...";
+
  try{
-  const d=await post("/api/quiz/submit",{lesson_id:Number(lessonId),attempt_id:attemptId,answers:qs.map(q=>({question_id:Number(q.id),answer:results[Number(q.id)]?.selected||null}))});
+  const d=await post("/api/quiz/submit",{
+   lesson_id:Number(lessonId),
+   attempt_id:attemptId,
+   answers:qs.map(q=>({
+    question_id:Number(q.id),
+    answer:results[Number(q.id)]?.selected||null
+   }))
+  });
+
   if(!d.success)throw Error(d.error||"Unable to submit quiz.");
 
-  const score=Number(d.score||0),total=Number(d.total||qs.length),pct=Number(d.percentage||0),earnedCoins=Number(d.reward_coins||0),earnedXP=Number(d.reward_xp||0);
+  const score=Number(d.score||0);
+  const total=Number(d.total||qs.length);
+  const pct=Number(d.percentage||0);
+  const earnedCoins=Number(d.reward_coins||0);
+  const earnedXP=Number(d.reward_xp||0);
 
-  permanentCoins=Number(d.total_coins??permanentCoins+earnedCoins);
-  permanentXP=Number(d.total_xp??permanentXP+earnedXP);
-  coins=permanentCoins;xp=permanentXP;temporaryCoins=temporaryXP=0;
-  balances();clearSaved();
+  /* USE SERVER TOTAL — DO NOT ADD AGAIN */
+  permanentCoins=Number(d.total_coins!=null?d.total_coins:permanentCoins+earnedCoins);
+  permanentXP=Number(d.total_xp!=null?d.total_xp:permanentXP+earnedXP);
 
-  $("quiz").innerHTML=`<div class="question-card result"><div class="gold">QUIZ COMPLETED</div><div class="score">${score}/${total}</div><p>${pct}% correct</p><div class="reward"><div><strong>🪙 +${earnedCoins}</strong>Coins Earned</div><div><strong>⚡ +${earnedXP}</strong>XP Earned</div></div><p style="color:#8497af">Total Coins: <b>${coins}</b> · Total XP: <b>${xp}</b></p><button class="btn" onclick="backLessons()">Back to Lessons</button></div>`;
- }catch(e){submitting=false;$("nextBtn").disabled=false;$("nextBtn").textContent="Finish";notice(e.message||"Unable to submit quiz.")}
+  temporaryCoins=0;
+  temporaryXP=0;
+
+  updateBalance();
+  clearSaved();
+
+  $("quiz").innerHTML=`
+  <div class="question-card result">
+   <div class="gold">QUIZ COMPLETED</div>
+   <div class="score">${score}/${total}</div>
+   <p>${pct}% correct</p>
+   <div class="reward">
+    <div><strong>🪙 +${earnedCoins}</strong>Coins Earned</div>
+    <div><strong>⚡ +${earnedXP}</strong>XP Earned</div>
+   </div>
+   <p style="color:#8497af">Total Coins: <b>${permanentCoins}</b> · Total XP: <b>${permanentXP}</b></p>
+   <button class="btn" onclick="backLessons()">Back to Lessons</button>
+  </div>`;
+
+ }catch(e){
+  submitting=false;
+  $("nextBtn").disabled=false;
+  $("nextBtn").textContent="Finish";
+  notice(e.message||"Unable to submit quiz.");
+ }
 }
 
 function fly(type,amount){
- const t=type==="coin"?$("qCoins"):$("qXp"),r=t.getBoundingClientRect(),el=document.createElement("div");
- el.className="reward-fly";el.textContent=type==="coin"?`🪙 +${amount}`:`⚡ +${amount}`;el.style.left=innerWidth/2+"px";el.style.top=innerHeight*.48+"px";
- el.style.setProperty("--dx",(r.left+r.width/2-innerWidth/2)*.55+"px");el.style.setProperty("--dy",(r.top+r.height/2-innerHeight*.48)*.55-70+"px");el.style.setProperty("--tx",r.left+r.width/2-innerWidth/2+"px");el.style.setProperty("--ty",r.top+r.height/2-innerHeight*.48+"px");
- document.body.appendChild(el);setTimeout(()=>el.remove(),950);
+ const t=type==="coin"?$("qCoins"):$("qXp");
+ const r=t.getBoundingClientRect(),el=document.createElement("div");
+
+ el.className="reward-fly";
+ el.textContent=type==="coin"?`🪙 +${amount}`:`⚡ +${amount}`;
+ el.style.left=innerWidth/2+"px";
+ el.style.top=innerHeight*.48+"px";
+ el.style.setProperty("--dx",(r.left+r.width/2-innerWidth/2)*.55+"px");
+ el.style.setProperty("--dy",(r.top+r.height/2-innerHeight*.48)*.55-70+"px");
+ el.style.setProperty("--tx",r.left+r.width/2-innerWidth/2+"px");
+ el.style.setProperty("--ty",r.top+r.height/2-innerHeight*.48+"px");
+
+ document.body.appendChild(el);
+ setTimeout(()=>el.remove(),950);
 }
-function pop(t){const e=document.createElement("div");e.className="reward-pop";e.textContent=t;e.style.left=innerWidth/2-55+"px";e.style.top=innerHeight*.42+"px";document.body.appendChild(e);setTimeout(()=>e.remove(),850)}
-function sound(ok){try{audio||=new(window.AudioContext||window.webkitAudioContext);const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=ok?700:220;g.gain.value=.035;o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+.12)}catch{}}
-function backLessons(){clearSaved();location.reload()}
+
+function pop(t){
+ const e=document.createElement("div");
+ e.className="reward-pop";
+ e.textContent=t;
+ e.style.left=innerWidth/2-55+"px";
+ e.style.top=innerHeight*.42+"px";
+ document.body.appendChild(e);
+ setTimeout(()=>e.remove(),850);
+}
+
+function sound(ok){
+ try{
+  audio||=new(window.AudioContext||window.webkitAudioContext);
+  const o=audio.createOscillator(),g=audio.createGain();
+  o.frequency.value=ok?700:220;
+  g.gain.value=.035;
+  o.connect(g);g.connect(audio.destination);
+  o.start();o.stop(audio.currentTime+.12);
+ }catch{}
+}
+
+function backLessons(){
+ clearSaved();
+ location.reload();
+}
+
 $("year").textContent=new Date().getFullYear();
 
-(async()=>{await loadMe();await loadLessons();const s=getSaved();if(s&&user){lessonId=Number(s.lesson_id);lessonTitle=s.lesson_title||`Lesson ${lessonId}`;await loadQuiz()}})();
+(async()=>{
+ await loadMe();
+ await loadLessons();
+ const s=getSaved();
+
+ if(s&&user){
+  lessonId=Number(s.lesson_id);
+  lessonTitle=s.lesson_title||`Lesson ${lessonId}`;
+  await loadQuiz();
+ }
+})();
 </script>
 </body>
 </html>
