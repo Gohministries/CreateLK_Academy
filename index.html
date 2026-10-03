@@ -75,7 +75,6 @@ function getSaved(){
  try{const x=JSON.parse(localStorage.getItem(STORE)||"null");return x?.attempt_id&&x?.lesson_id&&(!user||Number(x.user_id)===Number(user.id))?x:null}catch{return null}
 }
 
-/* PERMANENT + TEMPORARY BALANCE */
 function updateBalance(){
  coins=permanentCoins+temporaryCoins;
  xp=permanentXP+temporaryXP;
@@ -214,7 +213,9 @@ function render(){
 
  if(r){
   $("feedback").className="feedback show "+(r.correct?"correct":"wrong");
-  $("feedback").textContent=r.correct?"✓ Correct! +5 Coins · +10 XP":`✗ Incorrect. Correct answer: ${String(r.correctAnswer||"").toUpperCase()}.`;
+  $("feedback").textContent=r.correct
+   ?"✓ Correct! +5 Coins · +10 XP"
+   :`✗ Incorrect. Correct answer: ${String(r.correctAnswer||"").toUpperCase()}. ${r.correctText||""}`;
  }else{
   $("feedback").className="feedback";
   $("feedback").textContent="";
@@ -223,7 +224,6 @@ function render(){
  $("prevBtn").disabled=n===0;
  $("nextBtn").textContent=n===qs.length-1?"Finish":"Next";
 
- /* Keep temporary rewards visible */
  updateBalance();
  saveQuiz();
 }
@@ -249,7 +249,13 @@ async function answer(choice){
   const selected=normalize(d.selected_answer||d.answer||choice)||choice;
   const correct=Boolean(d.correct);
 
-  results[id]={correct,selected,correctAnswer:normalize(d.correct_answer)};
+  results[id]={
+   correct,
+   selected,
+   correctAnswer:normalize(d.correct_answer),
+   correctText:d.correct_text||""
+  };
+
   answers[id]=selected;
 
   if(correct){
@@ -258,8 +264,6 @@ async function answer(choice){
 
    temporaryCoins+=c;
    temporaryXP+=x;
-
-   /* IMMEDIATE DISPLAY */
    updateBalance();
 
    fly("coin",c);
@@ -325,7 +329,6 @@ async function submitQuiz(){
   const earnedCoins=Number(d.reward_coins||0);
   const earnedXP=Number(d.reward_xp||0);
 
-  /* USE SERVER TOTAL — DO NOT ADD AGAIN */
   permanentCoins=Number(d.total_coins!=null?d.total_coins:permanentCoins+earnedCoins);
   permanentXP=Number(d.total_xp!=null?d.total_xp:permanentXP+earnedXP);
 
