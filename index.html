@@ -179,7 +179,9 @@ async function api(path,opt={}){
  try{d=await r.json()}catch{}
  if(!r.ok){
   const e=Error(d.error||`Request failed (${r.status})`);
-  e.status=r.status;e.data=d;throw e;
+  e.status=r.status;
+  e.data=d;
+  throw e;
  }
  return d;
 }
@@ -192,7 +194,11 @@ const post=(p,b)=>api(p,{
 
 function esc(v){
  return String(v??"").replace(/[&<>"']/g,x=>({
-  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  "&":"&amp;",
+  "<":"&lt;",
+  ">":"&gt;",
+  '"':"&quot;",
+  "'":"&#39;"
  }[x]));
 }
 
@@ -203,12 +209,17 @@ function notice(x){
  window.noticeTimer=setTimeout(()=>$("notice").classList.remove("show"),5000);
 }
 
-function hideNotice(){$("notice").classList.remove("show")}
+function hideNotice(){
+ $("notice").classList.remove("show");
+}
 
-function toggleMenu(){$("menu").classList.toggle("show")}
+function toggleMenu(){
+ $("menu").classList.toggle("show");
+}
 
 document.addEventListener("click",e=>{
- if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
+ if(!e.target.closest(".menu-wrap"))
+  $("menu").classList.remove("show");
 });
 
 function login(){
@@ -216,7 +227,9 @@ function login(){
  location.href=API+"/auth/google"+(ref?"?ref="+encodeURIComponent(ref):"");
 }
 
-function logout(){location.href=API+"/auth/logout"}
+function logout(){
+ location.href=API+"/auth/logout";
+}
 
 async function loadMe(){
  try{
@@ -228,7 +241,9 @@ async function loadMe(){
    $("avatar").style.display="none";
    $("logoutMenu").style.display="none";
    $("account").style.display="none";
-   coins=0;xp=0;updateBalances();
+   coins=0;
+   xp=0;
+   updateBalances();
    return;
   }
 
@@ -242,10 +257,14 @@ async function loadMe(){
   if(user.picture){
    $("avatar").src=user.picture;
    $("avatar").style.display="block";
-  }else $("avatar").style.display="none";
+  }else{
+   $("avatar").style.display="none";
+  }
 
   updateBalances();
- }catch(e){console.error("ME ERROR",e)}
+ }catch(e){
+  console.error("ME ERROR",e);
+ }
 }
 
 function updateBalances(){
@@ -253,7 +272,9 @@ function updateBalances(){
  $("xp").textContent=String(xp);
  $("qCoins").textContent=String(coins);
  $("qXp").textContent=String(xp);
- if(user)$("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`;
+
+ if(user)
+  $("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`;
 }
 
 async function loadLessons(){
@@ -289,19 +310,27 @@ async function loadLessons(){
 async function openLesson(i){
  const l=lessons[i];
  if(!l)return;
+
  lessonId=Number(l.id);
  lessonTitle=l.title||`Lesson ${lessonId}`;
+
  await loadQuiz();
 }
 
 async function startPayment(){
- if(!user){login();return}
+ if(!user){
+  login();
+  return;
+ }
 
  try{
   const d=await post("/api/payment/start",{lesson_id:lessonId});
 
-  if(!d.success)throw Error(d.error||"Unable to start payment.");
-  if(!d.payment_url)throw Error("Payment link was not returned.");
+  if(!d.success)
+   throw Error(d.error||"Unable to start payment.");
+
+  if(!d.payment_url)
+   throw Error("Payment link was not returned.");
 
   location.href=d.payment_url;
  }catch(e){
@@ -345,11 +374,13 @@ async function loadQuiz(){
    return;
   }
 
-  if(!d.success)throw Error(d.error||"Unable to load questions.");
+  if(!d.success)
+   throw Error(d.error||"Unable to load questions.");
 
   qs=d.questions||[];
 
-  if(!qs.length)throw Error("No questions available.");
+  if(!qs.length)
+   throw Error("No questions available.");
 
   $("hero").style.display="none";
   $("lessonTitle").style.display="none";
@@ -372,11 +403,24 @@ async function loadQuiz(){
 
 function normalize(v){
  const x=String(v??"").trim().toLowerCase().replace(/[.)]$/,"");
+
  return({
-  "1":"a","2":"b","3":"c","4":"d",
-  "a":"a","b":"b","c":"c","d":"d",
-  "option_a":"a","option_b":"b","option_c":"c","option_d":"d",
-  "answer_a":"a","answer_b":"b","answer_c":"c","answer_d":"d"
+  "1":"a",
+  "2":"b",
+  "3":"c",
+  "4":"d",
+  "a":"a",
+  "b":"b",
+  "c":"c",
+  "d":"d",
+  "option_a":"a",
+  "option_b":"b",
+  "option_c":"c",
+  "option_d":"d",
+  "answer_a":"a",
+  "answer_b":"b",
+  "answer_c":"c",
+  "answer_d":"d"
  })[x]||null;
 }
 
@@ -388,8 +432,10 @@ function render(){
  const result=results[id];
 
  const options={
-  a:q.option_a||"",b:q.option_b||"",
-  c:q.option_c||"",d:q.option_d||""
+  a:q.option_a||"",
+  b:q.option_b||"",
+  c:q.option_c||"",
+  d:q.option_d||""
  };
 
  $("progress").textContent=`Question ${n+1} of ${qs.length}`;
@@ -398,6 +444,7 @@ function render(){
 
  $("options").innerHTML=["a","b","c","d"].map(x=>{
   let cls="";
+
   if(result&&x===result.selected)
    cls=result.correct?"correct":"wrong";
 
@@ -409,6 +456,7 @@ function render(){
 
  if(result){
   $("feedback").className="feedback show "+(result.correct?"correct":"wrong");
+
   $("feedback").textContent=result.correct
    ?"✓ Correct!"
    :`✗ Incorrect. Correct answer: ${String(result.correctAnswer||"").toUpperCase()}.`;
@@ -419,6 +467,7 @@ function render(){
 
  $("prevBtn").disabled=n===0;
  $("nextBtn").textContent=n===qs.length-1?"Finish":"Next";
+
  updateBalances();
 }
 
@@ -429,6 +478,7 @@ async function answer(choice){
  if(!q)return;
 
  const id=Number(q.id);
+
  if(results[id])return;
 
  checking=true;
@@ -469,7 +519,10 @@ async function answer(choice){
 }
 
 function previousQuestion(){
- if(n>0){n--;render()}
+ if(n>0){
+  n--;
+  render();
+ }
 }
 
 async function nextQuestion(){
@@ -524,10 +577,16 @@ async function submitQuiz(){
   const earnedCoins=Number(d.reward_coins||0);
   const earnedXP=Number(d.reward_xp||0);
 
-  coins=Number(d.total_coins??coins);
-  xp=Number(d.total_xp??xp);
+  /*
+   * Update immediately from the submit response.
+   * Then load the actual balance from the database.
+   */
+  coins=Number(d.total_coins??(coins+earnedCoins));
+  xp=Number(d.total_xp??(xp+earnedXP));
 
   updateBalances();
+
+  await loadMe();
 
   $("quiz").innerHTML=`
   <div class="question-card result">
@@ -557,16 +616,25 @@ async function submitQuiz(){
  }
 }
 
-function backLessons(){location.reload()}
+function backLessons(){
+ location.reload();
+}
 
 function sound(correct){
  try{
   audio||=new(window.AudioContext||window.webkitAudioContext);
-  const o=audio.createOscillator(),g=audio.createGain();
+
+  const o=audio.createOscillator();
+  const g=audio.createGain();
+
   o.frequency.value=correct?700:220;
   g.gain.value=.035;
-  o.connect(g);g.connect(audio.destination);
-  o.start();o.stop(audio.currentTime+.12);
+
+  o.connect(g);
+  g.connect(audio.destination);
+
+  o.start();
+  o.stop(audio.currentTime+.12);
  }catch{}
 }
 
