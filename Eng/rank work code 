@@ -1,0 +1,179 @@
+const RESET_TABLE="leaderboard_monthly_resets";
+
+export default{
+ async fetch(r,e){
+  try{
+   if(r.method==="OPTIONS")
+    return new Response(null,{
+     status:204,
+     headers:corsHeaders()
+    });
+
+   const p=new URL(r.url).pathname;
+
+   if(p==="/api/health")
+    return json({
+     success:true,
+     message:"Leaderboard Reset API is running"
+    });
+
+   if(p==="/api/leaderboard"&&r.method==="GET")
+    return leaderboard(e);
+
+   if(p==="/api/reset"&&r.method==="POST"){
+    const secret=r.headers.get("Authorization");
+
+    if(secret!==`Bearer ${e.RESET_SECRET}`)
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
+
+    return reset(e);
+   }
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
+
+  }catch(x){
+   return json({
+    success:false,
+    error:x.message||"Server error"
+   },500);
+  }
+ },
+
+ async scheduled(event,e,ctx){
+  ctx.waitUntil(reset(e));
+ }
+};
+
+function corsHeaders(){
+ return{
+  "Access-Control-Allow-Origin":"https://createlk.com",
+  "Access-Control-Allow-Headers":"Content-Type,Authorization",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
+ };
+}
+
+function json(x,s=200){
+ return new Response(JSON.stringify(x),{
+  status:s,
+  headers:{
+   "Content-Type":"application/json",
+   ...corsHeaders()
+  }
+ });
+}
+
+async function leaderboard(e){
+ if(!e.DB)
+  throw Error("D1 binding DB is missing");
+
+ const x=await e.DB.prepare(`
+  SELECT
+   u.id user_id,
+   u.name,
+   u.email,
+   COALESCE(s.points,0) points
+  FROM users u
+  INNER JOIN user_scores s
+   ON CAST(s.user_id AS TEXT)=CAST(u.id AS TEXT)
+  WHERE u.membership_status='PREMIUM'
+    AND u.membership_expiry IS NOT NULL
+    AND datetime(u.membership_expiry)>datetime('now')
+  ORDER BY s.points DESC,u.name ASC
+  LIMIT 100
+ `).all();
+
+ return json({
+  success:true,
+  leaderboard:x.results||[]
+ });
+}
+
+async function reset(e){
+ if(!e.DB)
+  throw Error("D1 binding DB is missing");
+
+ await e.DB.prepare(`
+  CREATE TABLE IF NOT EXISTS ${RESET_TABLE}(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   month TEXT UNIQUE,
+   reset_at TEXT
+  )
+ `).run();
+
+ const now=new Date();
+
+ const year=now.getUTCFullYear();
+ const month=String(
+  now.getUTCMonth()+1
+ ).padStart(2,"0");
+
+ const key=`${year}-${month}`;
+
+ const old=await e.DB.prepare(`
+  SELECT id
+  FROM ${RESET_TABLE}
+  WHERE month=?
+ `).bind(key).first();
+
+ if(old)
+  return json({
+   success:true,
+   reset:false,
+   month:key,
+   message:"Leaderboard already reset for this month"
+  });
+
+ await e.DB.prepare(`
+  CREATE TABLE IF NOT EXISTS user_scores_archive AS
+  SELECT *,
+   '' AS archived_month,
+   '' AS archived_at
+  FROM user_scores
+  WHERE 0
+ `).run();
+
+ const archivedAt=now.toISOString();
+
+ await e.DB.prepare(`
+  INSERT INTO user_scores_archive
+  SELECT *,?,?
+  FROM user_scores
+ `).bind(
+  key,
+  archivedAt
+ ).run();
+
+ const count=await e.DB.prepare(`
+  SELECT COUNT(*) n
+  FROM user_scores
+ `).first();
+
+ await e.DB.prepare(`
+  DELETE FROM user_scores
+ `).run();
+
+ await e.DB.prepare(`
+  INSERT INTO ${RESET_TABLE}(
+   month,
+   reset_at
+  )
+  VALUES(?,?)
+ `).bind(
+  key,
+  archivedAt
+ ).run();
+
+ return json({
+  success:true,
+  reset:true,
+  month:key,
+  archived_users:+(count?.n||0),
+  reset_at:archivedAt
+ });
+}
