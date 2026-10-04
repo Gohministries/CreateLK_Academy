@@ -68,7 +68,11 @@ async function me(r,e){
 
 async function premium(e,id){
  try{
-  const r=await fetch(`${PREMIUM}/internal/check`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${e.INTERNAL_SECRET}`},body:JSON.stringify({user_id:Number(id)})});
+  const r=await e.PAY.fetch("https://pay/internal/check",{
+   method:"POST",
+   headers:{"Content-Type":"application/json",Authorization:`Bearer ${e.INTERNAL_SECRET}`},
+   body:JSON.stringify({user_id:Number(id)})
+  });
   const d=await r.json();
   return{premium:r.ok&&d.premium===true,expiry:d.membership_expiry||null};
  }catch{return{premium:false,expiry:null}}
@@ -248,7 +252,11 @@ async function paymentStart(r,e){
  if((await premium(e,u.id)).premium)return err("You already have premium access",400);
 
  try{
-  const x=await fetch(`${PAY}/internal/start`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${e.INTERNAL_SECRET}`},body:JSON.stringify({user_id:Number(u.id),email:u.email||"",name:u.name||"",lesson_id:lid,source:"english"})});
+  const x=await e.PAY.fetch("https://pay/internal/start",{
+   method:"POST",
+   headers:{"Content-Type":"application/json",Authorization:`Bearer ${e.INTERNAL_SECRET}`},
+   body:JSON.stringify({user_id:Number(u.id),email:u.email||"",name:u.name||"",lesson_id:lid,source:"english"})
+  });
   const d=await x.json();
   if(!x.ok||!d.success)return err(d.error||"Payment failed",x.status||500);
   return json({success:true,order_id:d.order_id||null,amount:d.amount||null,currency:d.currency||"LKR",payment_url:d.payment_url||null});
