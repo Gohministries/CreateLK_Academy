@@ -1,4 +1,5 @@
 const RESET_TABLE="leaderboard_monthly_resets";
+const COINS=5,XP=10;
 
 export default{
  async fetch(r,e){
@@ -68,29 +69,77 @@ function json(x,s=200){
  });
 }
 
+function period(){
+ const d=new Date();
+ const y=d.getUTCFullYear();
+ const m=d.getUTCMonth();
+
+ const start=new Date(
+  Date.UTC(y,m,1)
+ ).toISOString();
+
+ const end=new Date(
+  Date.UTC(y,m+1,1)
+ ).toISOString();
+
+ const name=new Date(
+  Date.UTC(y,m,1)
+ ).toLocaleString(
+  "en-US",
+  {
+   month:"long",
+   year:"numeric",
+   timeZone:"UTC"
+  }
+ );
+
+ return{start,end,name};
+}
+
 async function leaderboard(e){
  if(!e.DB)
   throw Error("D1 binding DB is missing");
+
+ const p=period();
 
  const x=await e.DB.prepare(`
   SELECT
    u.id user_id,
    u.name,
-   u.email,
-   COALESCE(s.points,0) points
+   u.picture,
+   COALESCE(SUM(q.score*?),0) points
   FROM users u
-  INNER JOIN user_scores s
-   ON CAST(s.user_id AS TEXT)=CAST(u.id AS TEXT)
+  JOIN quiz_results q
+   ON q.user_id=u.id
   WHERE u.membership_status='PREMIUM'
     AND u.membership_expiry IS NOT NULL
     AND datetime(u.membership_expiry)>datetime('now')
-  ORDER BY s.points DESC,u.name ASC
+    AND q.completed_at>=?
+    AND q.completed_at<?
+  GROUP BY
+   u.id,
+   u.name,
+   u.picture
+  ORDER BY
+   points DESC,
+   u.name ASC
   LIMIT 100
- `).all();
+ `).bind(
+  COINS,
+  p.start,
+  p.end
+ ).all();
 
  return json({
   success:true,
-  leaderboard:x.results||[]
+  month:p.name,
+  leaderboard:(x.results||[]).map((v,i)=>({
+   rank:i+1,
+   user_id:v.user_id,
+   name:v.name,
+   picture:v.picture||"",
+   points:Number(v.points||0)
+  }))
  });
 }
 
@@ -126,37 +175,10 @@ async function reset(e){
    success:true,
    reset:false,
    month:key,
-   message:"Leaderboard already reset for this month"
+   message:"Monthly leaderboard already initialized"
   });
 
- await e.DB.prepare(`
-  CREATE TABLE IF NOT EXISTS user_scores_archive AS
-  SELECT *,
-   '' AS archived_month,
-   '' AS archived_at
-  FROM user_scores
-  WHERE 0
- `).run();
-
  const archivedAt=now.toISOString();
-
- await e.DB.prepare(`
-  INSERT INTO user_scores_archive
-  SELECT *,?,?
-  FROM user_scores
- `).bind(
-  key,
-  archivedAt
- ).run();
-
- const count=await e.DB.prepare(`
-  SELECT COUNT(*) n
-  FROM user_scores
- `).first();
-
- await e.DB.prepare(`
-  DELETE FROM user_scores
- `).run();
 
  await e.DB.prepare(`
   INSERT INTO ${RESET_TABLE}(
@@ -173,7 +195,6 @@ async function reset(e){
   success:true,
   reset:true,
   month:key,
-  archived_users:+(count?.n||0),
   reset_at:archivedAt
  });
 }
