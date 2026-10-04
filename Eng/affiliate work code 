@@ -1,7 +1,6 @@
 const SITE="https://createlk.com";
 const MIN_WITHDRAW=2000;
 const COMMISSION=10;
-const SESSION="english_session";
 
 export default{
  async fetch(r,e){
@@ -96,51 +95,39 @@ async function db(e){
  ]);
 }
 
-function cookies(r){
- const o={};
- const h=r.headers.get("Cookie")||"";
-
- h.split(";").forEach(x=>{
-  const i=x.indexOf("=");
-
-  if(i>0)
-   o[x.slice(0,i).trim()]=
-    decodeURIComponent(
-     x.slice(i+1).trim()
-    );
- });
-
- return o;
-}
-
 async function currentUser(r,e){
- const s=cookies(r)[SESSION];
+ if(!e.ENG)
+  throw Error("ENG service binding is missing");
 
- if(!s)
-  return null;
-
- const h=await crypto.subtle.digest(
-  "SHA-256",
-  new TextEncoder().encode(s)
+ const x=await e.ENG.fetch(
+  new Request(
+   "https://eng.createlk.workers.dev/api/me",
+   {
+    method:"GET",
+    headers:new Headers(r.headers)
+   }
+  )
  );
 
- const token=[...new Uint8Array(h)]
-  .map(x=>x.toString(16).padStart(2,"0"))
-  .join("");
+ if(!x.ok)
+  return null;
+
+ const a=await x.json();
+
+ if(!a?.success||!a?.logged_in)
+  return null;
+
+ const email=String(a.email||"").trim().toLowerCase();
+
+ if(!email)
+  return null;
 
  return e.DB.prepare(`
   SELECT id,email,name
   FROM users
-  WHERE id=(
-   SELECT user_id
-   FROM sessions
-   WHERE token_hash=?
-   AND expires_at>?
-  )
- `).bind(
-  token,
-  new Date().toISOString()
- ).first();
+  WHERE lower(email)=?
+  LIMIT 1
+ `).bind(email).first();
 }
 
 async function affiliate(r,e){
