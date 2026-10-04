@@ -1,67 +1,88 @@
-const SITE="https://createlk.com",ADMIN="gateofheavensl1@gmail.com";
-const SES="premium_admin_session",STATE="premium_admin_state";
+const SITE="https://createlk.com";
+const ADMIN="gateofheavensl1@gmail.com";
+const REDIRECT="https://paylk.createlk.workers.dev/auth/callback";
+
+const SES="premium_admin_session";
+const STATE="premium_admin_state";
 const DAYS=30;
+
 const GA="https://accounts.google.com/o/oauth2/v2/auth";
 const GT="https://oauth2.googleapis.com/token";
 const GU="https://openidconnect.googleapis.com/v1/userinfo";
 
-export default{async fetch(r,e){
- try{
-  await db(e);
-  if(r.method==="OPTIONS")return cors(new Response(null,{status:204}));
-  const p=new URL(r.url).pathname;
-  const f={
-   "/api/health":health,
-   "/internal/check":check,
-   "/internal/start":start,
-   "/auth/google":login,
-   "/auth/callback":callback,
-   "/auth/logout":logout,
-   "/api/admin/me":me,
-   "/api/admin/stats":stats,
-   "/api/admin/users":users,
-   "/api/admin/payments":payments,
-   "/api/admin/activate":activate,
-   "/api/admin/payment":payment
-  };
-  return f[p]?f[p](r,e):err("Not found",404);
- }catch(x){
-  return err(x.message||"Server error",500);
+export default{
+ async fetch(r,e){
+  try{
+   await db(e);
+
+   if(r.method==="OPTIONS")
+    return cors(new Response(null,{status:204}));
+
+   const p=new URL(r.url).pathname;
+
+   const f={
+    "/api/health":health,
+    "/internal/check":check,
+    "/internal/start":start,
+    "/auth/google":login,
+    "/auth/callback":callback,
+    "/auth/logout":logout,
+    "/api/admin/me":me,
+    "/api/admin/stats":stats,
+    "/api/admin/users":users,
+    "/api/admin/payments":payments,
+    "/api/admin/activate":activate,
+    "/api/admin/payment":payment
+   };
+
+   return f[p]?f[p](r,e):err("Not found",404);
+
+  }catch(x){
+   return err(x.message||"Server error",500);
+  }
  }
-}};
+};
 
 async function db(e){
  await e.DB.batch([
-  e.DB.prepare(`CREATE TABLE IF NOT EXISTS premium_users(
-   user_id INTEGER PRIMARY KEY,
-   email TEXT,
-   name TEXT,
-   status TEXT DEFAULT 'FREE',
-   membership_expiry TEXT,
-   updated_at TEXT
-  )`),
-  e.DB.prepare(`CREATE TABLE IF NOT EXISTS payments(
-   id INTEGER PRIMARY KEY AUTOINCREMENT,
-   user_id INTEGER,
-   email TEXT,
-   name TEXT,
-   amount REAL DEFAULT 0,
-   method TEXT,
-   reference TEXT,
-   status TEXT DEFAULT 'PENDING',
-   created_at TEXT,
-   approved_at TEXT,
-   approved_by TEXT
-  )`),
-  e.DB.prepare(`CREATE TABLE IF NOT EXISTS admin_sessions(
-   token_hash TEXT PRIMARY KEY,
-   email TEXT,
-   expires_at TEXT
-  )`),
-  e.DB.prepare(`CREATE TABLE IF NOT EXISTS oauth_states(
-   state TEXT PRIMARY KEY,
-   expires_at INTEGER
-  )`)
+  e.DB.prepare(`
+   CREATE TABLE IF NOT EXISTS premium_users(
+    user_id INTEGER PRIMARY KEY,
+    email TEXT,
+    name TEXT,
+    status TEXT DEFAULT 'FREE',
+    membership_expiry TEXT,
+    updated_at TEXT
+   )
+  `),
+  e.DB.prepare(`
+   CREATE TABLE IF NOT EXISTS payments(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    email TEXT,
+    name TEXT,
+    amount REAL DEFAULT 0,
+    method TEXT,
+    reference TEXT,
+    status TEXT DEFAULT 'PENDING',
+    created_at TEXT,
+    approved_at TEXT,
+    approved_by TEXT
+   )
+  `),
+  e.DB.prepare(`
+   CREATE TABLE IF NOT EXISTS admin_sessions(
+    token_hash TEXT PRIMARY KEY,
+    email TEXT,
+    expires_at TEXT
+   )
+  `),
+  e.DB.prepare(`
+   CREATE TABLE IF NOT EXISTS oauth_states(
+    state TEXT PRIMARY KEY,
+    expires_at INTEGER
+   )
+  `)
  ]);
 }
 
@@ -78,7 +99,8 @@ async function json(x,s=200){
 const err=(x,s=400)=>json({success:false,error:x},s);
 
 const body=async r=>{
- try{return await r.json()}catch{return null}
+ try{return await r.json()}
+ catch{return null}
 };
 
 function cors(r){
@@ -92,7 +114,9 @@ function cors(r){
 function token(n=32){
  const a=new Uint8Array(n);
  crypto.getRandomValues(a);
- return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+ return [...a]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
 }
 
 async function hash(x){
@@ -100,36 +124,61 @@ async function hash(x){
   "SHA-256",
   new TextEncoder().encode(x)
  );
+
  return [...new Uint8Array(h)]
   .map(x=>x.toString(16).padStart(2,"0"))
   .join("");
 }
 
 function cookies(r){
- const o={},h=r.headers.get("Cookie")||"";
+ const o={};
+ const h=r.headers.get("Cookie")||"";
+
  h.split(";").forEach(x=>{
   const i=x.indexOf("=");
-  if(i>0)o[x.slice(0,i).trim()]=decodeURIComponent(x.slice(i+1).trim());
+
+  if(i>0){
+   o[x.slice(0,i).trim()]=
+    decodeURIComponent(
+     x.slice(i+1).trim()
+    );
+  }
  });
+
  return o;
 }
 
+/* =========================
+   ADMIN AUTH
+========================= */
+
 async function admin(r,e){
  const s=cookies(r)[SES];
+
  if(!s)return null;
 
  return e.DB.prepare(`
   SELECT email
   FROM admin_sessions
-  WHERE token_hash=? AND expires_at>?
- `).bind(await hash(s),now()).first();
+  WHERE token_hash=?
+    AND expires_at>?
+ `)
+ .bind(await hash(s),now())
+ .first();
 }
 
 async function auth(r,e){
  const a=await admin(r,e);
- if(!a)throw Error("Admin login required");
+
+ if(!a)
+  throw Error("Admin login required");
+
  return a;
 }
+
+/* =========================
+   HEALTH
+========================= */
 
 async function health(){
  return json({
@@ -139,32 +188,47 @@ async function health(){
  });
 }
 
-async function check(r,e){
- if(r.method!=="POST")return err("POST required",405);
+/* =========================
+   INTERNAL PREMIUM CHECK
+========================= */
 
- if(r.headers.get("Authorization")!==`Bearer ${e.INTERNAL_SECRET}`)
+async function check(r,e){
+
+ if(r.method!=="POST")
+  return err("POST required",405);
+
+ if(
+  r.headers.get("Authorization") !==
+  `Bearer ${e.INTERNAL_SECRET}`
+ )
   return err("Unauthorized",401);
 
  const b=await body(r);
  const id=Number(b?.user_id);
 
- if(!id)return err("Invalid user_id");
+ if(!id)
+  return err("Invalid user_id");
 
  const u=await e.DB.prepare(`
   SELECT membership_status,membership_expiry
   FROM users
   WHERE id=?
- `).bind(id).first();
+ `)
+ .bind(id)
+ .first();
 
  let status=u?.membership_status||"FREE";
  let expiry=u?.membership_expiry||null;
 
  if(status!=="PREMIUM"||!expiry){
+
   const p=await e.DB.prepare(`
    SELECT status,membership_expiry
    FROM premium_users
    WHERE user_id=?
-  `).bind(id).first();
+  `)
+  .bind(id)
+  .first();
 
   if(p){
    status=p.status||status;
@@ -184,10 +248,19 @@ async function check(r,e){
  });
 }
 
-async function start(r,e){
- if(r.method!=="POST")return err("POST required",405);
+/* =========================
+   INTERNAL PAYMENT START
+========================= */
 
- if(r.headers.get("Authorization")!==`Bearer ${e.INTERNAL_SECRET}`)
+async function start(r,e){
+
+ if(r.method!=="POST")
+  return err("POST required",405);
+
+ if(
+  r.headers.get("Authorization") !==
+  `Bearer ${e.INTERNAL_SECRET}`
+ )
   return err("Unauthorized",401);
 
  const b=await body(r);
@@ -204,10 +277,15 @@ async function start(r,e){
   return err("Invalid lesson_id");
 
  const u=await e.DB.prepare(`
-  SELECT id,email,name,membership_status,membership_expiry
+  SELECT
+   id,email,name,
+   membership_status,
+   membership_expiry
   FROM users
   WHERE id=?
- `).bind(uid).first();
+ `)
+ .bind(uid)
+ .first();
 
  if(!u)
   return err("User not found",404);
@@ -224,7 +302,8 @@ async function start(r,e){
  const currency=clean(b?.currency)||"LKR";
 
  const order_id=
-  "EN"+Date.now().toString(36).toUpperCase()+
+  "EN"+
+  Date.now().toString(36).toUpperCase()+
   token(4).toUpperCase();
 
  const payment_url=
@@ -234,16 +313,12 @@ async function start(r,e){
 
  await e.DB.prepare(`
   INSERT INTO payments(
-   user_id,
-   email,
-   name,
-   amount,
-   method,
-   reference,
-   status,
-   created_at
-  ) VALUES(?,?,?,?,?,?,?,?)
- `).bind(
+   user_id,email,name,amount,
+   method,reference,status,created_at
+  )
+  VALUES(?,?,?,?,?,?,?,?)
+ `)
+ .bind(
   uid,
   email,
   name,
@@ -252,7 +327,8 @@ async function start(r,e){
   order_id,
   "PENDING",
   now()
- ).run();
+ )
+ .run();
 
  return json({
   success:true,
@@ -263,20 +339,27 @@ async function start(r,e){
  });
 }
 
+/* =========================
+   GOOGLE LOGIN
+========================= */
+
 async function login(r,e){
+
  const s=token();
 
  await e.DB.prepare(`
   INSERT INTO oauth_states(state,expires_at)
   VALUES(?,?)
- `).bind(
+ `)
+ .bind(
   s,
   Date.now()+600000
- ).run();
+ )
+ .run();
 
  const q=new URLSearchParams({
   client_id:e.GOOGLE_CLIENT_ID,
-  redirect_uri:"https://paylk.createlk.workers.dev/auth/callback",
+  redirect_uri:REDIRECT,
   response_type:"code",
   scope:"openid email profile",
   state:s,
@@ -294,40 +377,56 @@ async function login(r,e){
  });
 }
 
+/* =========================
+   GOOGLE CALLBACK
+========================= */
+
 async function callback(r,e){
+
  const u=new URL(r.url);
+
  const code=u.searchParams.get("code");
  const state=u.searchParams.get("state");
 
  if(!code||!state)
-  return new Response("Invalid login",{status:400});
+  return new Response(
+   "Invalid login",
+   {status:400}
+  );
 
  const st=await e.DB.prepare(`
   SELECT state
   FROM oauth_states
   WHERE state=? AND expires_at>?
- `).bind(
-  state,
-  Date.now()
- ).first();
+ `)
+ .bind(state,Date.now())
+ .first();
 
  if(!st)
-  return new Response("Login expired",{status:400});
+  return new Response(
+   "Login expired",
+   {status:400}
+  );
 
  await e.DB.prepare(`
   DELETE FROM oauth_states
   WHERE state=?
- `).bind(state).run();
+ `)
+ .bind(state)
+ .run();
 
  const t=await fetch(GT,{
   method:"POST",
-  headers:{"Content-Type":"application/x-www-form-urlencoded"},
+  headers:{
+   "Content-Type":
+    "application/x-www-form-urlencoded"
+  },
   body:new URLSearchParams({
    client_id:e.GOOGLE_CLIENT_ID,
    client_secret:e.GOOGLE_CLIENT_SECRET,
    code,
    grant_type:"authorization_code",
-   redirect_uri:"https://paylk.createlk.workers.dev/auth/callback"
+   redirect_uri:REDIRECT
   })
  }).then(x=>x.json());
 
@@ -356,12 +455,17 @@ async function callback(r,e){
  await e.DB.prepare(`
   INSERT INTO admin_sessions(
    token_hash,email,expires_at
-  ) VALUES(?,?,?)
- `).bind(
+  )
+  VALUES(?,?,?)
+ `)
+ .bind(
   await hash(s),
   email,
-  new Date(Date.now()+604800000).toISOString()
- ).run();
+  new Date(
+   Date.now()+604800000
+  ).toISOString()
+ )
+ .run();
 
  return new Response(null,{
   status:302,
@@ -373,7 +477,12 @@ async function callback(r,e){
  });
 }
 
+/* =========================
+   ADMIN ME
+========================= */
+
 async function me(r,e){
+
  const a=await admin(r,e);
 
  return json({
@@ -384,7 +493,12 @@ async function me(r,e){
  });
 }
 
+/* =========================
+   ADMIN STATS
+========================= */
+
 async function stats(r,e){
+
  try{
   await auth(r,e);
  }catch(x){
@@ -392,6 +506,7 @@ async function stats(r,e){
  }
 
  const [u,p,a]=await Promise.all([
+
   e.DB.prepare(`
    SELECT COUNT(*) n
    FROM users
@@ -402,7 +517,9 @@ async function stats(r,e){
    FROM users
    WHERE membership_status='PREMIUM'
    AND membership_expiry>?
-  `).bind(now()).first(),
+  `)
+  .bind(now())
+  .first(),
 
   e.DB.prepare(`
    SELECT
@@ -411,6 +528,7 @@ async function stats(r,e){
    FROM payments
    WHERE status='APPROVED'
   `).first()
+
  ]);
 
  return json({
@@ -423,14 +541,22 @@ async function stats(r,e){
  });
 }
 
+/* =========================
+   ADMIN USERS
+========================= */
+
 async function users(r,e){
+
  try{
   await auth(r,e);
  }catch(x){
   return err(x.message,401);
  }
 
- const q=new URL(r.url).searchParams.get("q")||"";
+ const q=
+  new URL(r.url)
+   .searchParams
+   .get("q")||"";
 
  const sql=`
   SELECT
@@ -443,21 +569,30 @@ async function users(r,e){
  `;
 
  const x=q
-  ?await e.DB.prepare(sql+`
-    WHERE email LIKE ?
-       OR name LIKE ?
-       OR CAST(id AS TEXT)=?
-    ORDER BY id DESC
-    LIMIT 500
-   `).bind(
+
+  ?await e.DB.prepare(
+    sql+`
+     WHERE email LIKE ?
+        OR name LIKE ?
+        OR CAST(id AS TEXT)=?
+     ORDER BY id DESC
+     LIMIT 500
+    `
+   )
+   .bind(
     `%${q}%`,
     `%${q}%`,
     q
-   ).all()
-  :await e.DB.prepare(sql+`
-    ORDER BY id DESC
-    LIMIT 500
-   `).all();
+   )
+   .all()
+
+  :await e.DB.prepare(
+    sql+`
+     ORDER BY id DESC
+     LIMIT 500
+    `
+   )
+   .all();
 
  return json({
   success:true,
@@ -465,7 +600,12 @@ async function users(r,e){
  });
 }
 
+/* =========================
+   ADMIN PAYMENTS
+========================= */
+
 async function payments(r,e){
+
  try{
   await auth(r,e);
  }catch(x){
@@ -477,7 +617,8 @@ async function payments(r,e){
   FROM payments
   ORDER BY id DESC
   LIMIT 500
- `).all();
+ `)
+ .all();
 
  return json({
   success:true,
@@ -485,7 +626,12 @@ async function payments(r,e){
  });
 }
 
+/* =========================
+   CREATE MANUAL PAYMENT
+========================= */
+
 async function payment(r,e){
+
  try{
   await auth(r,e);
  }catch(x){
@@ -506,16 +652,12 @@ async function payment(r,e){
 
  const x=await e.DB.prepare(`
   INSERT INTO payments(
-   user_id,
-   email,
-   name,
-   amount,
-   method,
-   reference,
-   status,
-   created_at
-  ) VALUES(?,?,?,?,?,?,?,?)
- `).bind(
+   user_id,email,name,amount,
+   method,reference,status,created_at
+  )
+  VALUES(?,?,?,?,?,?,?,?)
+ `)
+ .bind(
   uid,
   email,
   clean(b?.name),
@@ -524,7 +666,8 @@ async function payment(r,e){
   clean(b?.reference),
   "PENDING",
   now()
- ).run();
+ )
+ .run();
 
  return json({
   success:true,
@@ -533,8 +676,14 @@ async function payment(r,e){
  });
 }
 
+/* =========================
+   PREMIUM ACTIVATION
+========================= */
+
 async function activate(r,e){
+
  try{
+
   const a=await auth(r,e);
   const b=await body(r);
 
@@ -548,7 +697,9 @@ async function activate(r,e){
      SELECT *
      FROM payments
      WHERE id=?
-    `).bind(pid).first()
+    `)
+    .bind(pid)
+    .first()
    :null;
 
   if(pid&&!p)
@@ -564,15 +715,20 @@ async function activate(r,e){
      SELECT *
      FROM users
      WHERE id=?
-    `).bind(uid).first()
+    `)
+    .bind(uid)
+    .first()
    :null;
 
   if(!u&&email){
+
    u=await e.DB.prepare(`
     SELECT *
     FROM users
     WHERE lower(email)=?
-   `).bind(email).first();
+   `)
+   .bind(email)
+   .first();
 
    if(u)uid=+u.id;
   }
@@ -580,7 +736,9 @@ async function activate(r,e){
   if(!u)
    return err("User not found",404);
 
-  const amount=inputAmount||+(p?.amount||0);
+  const amount=
+   inputAmount||+(p?.amount||0);
+
   const t=now();
 
   const start=
@@ -590,7 +748,8 @@ async function activate(r,e){
    :new Date();
 
   const expiry=new Date(
-   start.getTime()+days*86400000
+   start.getTime()+
+   days*86400000
   ).toISOString();
 
   await e.DB.prepare(`
@@ -598,52 +757,47 @@ async function activate(r,e){
    SET membership_status='PREMIUM',
        membership_expiry=?
    WHERE id=?
-  `).bind(
-   expiry,
-   uid
-  ).run();
+  `)
+  .bind(expiry,uid)
+  .run();
 
   await e.DB.prepare(`
    INSERT INTO premium_users(
-    user_id,
-    email,
-    name,
-    status,
-    membership_expiry,
-    updated_at
-   ) VALUES(?,?,?,?,?,?)
-   ON CONFLICT(user_id) DO UPDATE SET
+    user_id,email,name,status,
+    membership_expiry,updated_at
+   )
+   VALUES(?,?,?,?,?,?)
+   ON CONFLICT(user_id)
+   DO UPDATE SET
     email=excluded.email,
     name=excluded.name,
     status='PREMIUM',
     membership_expiry=excluded.membership_expiry,
     updated_at=excluded.updated_at
-  `).bind(
+  `)
+  .bind(
    uid,
    u.email,
    u.name,
    "PREMIUM",
    expiry,
    t
-  ).run();
+  )
+  .run();
 
   let id=pid;
 
   if(!id){
+
    const x=await e.DB.prepare(`
     INSERT INTO payments(
-     user_id,
-     email,
-     name,
-     amount,
-     method,
-     reference,
-     status,
-     created_at,
-     approved_at,
-     approved_by
-    ) VALUES(?,?,?,?,?,?,?,?,?,?)
-   `).bind(
+     user_id,email,name,amount,
+     method,reference,status,
+     created_at,approved_at,approved_by
+    )
+    VALUES(?,?,?,?,?,?,?,?,?,?)
+   `)
+   .bind(
     uid,
     u.email,
     u.name,
@@ -654,10 +808,13 @@ async function activate(r,e){
     t,
     t,
     a.email
-   ).run();
+   )
+   .run();
 
    id=x.meta.last_row_id;
+
   }else{
+
    await e.DB.prepare(`
     UPDATE payments
     SET status='APPROVED',
@@ -665,12 +822,15 @@ async function activate(r,e){
         approved_by=?,
         amount=?
     WHERE id=?
-   `).bind(
+   `)
+   .bind(
     t,
     a.email,
     amount,
     id
-   ).run();
+   )
+   .run();
+
   }
 
   return json({
@@ -683,21 +843,32 @@ async function activate(r,e){
   });
 
  }catch(x){
+
   return err(
    x.message||"Activation failed",
    500
   );
+
  }
 }
 
+/* =========================
+   ADMIN LOGOUT
+========================= */
+
 async function logout(r,e){
+
  const s=cookies(r)[SES];
 
  if(s){
+
   await e.DB.prepare(`
    DELETE FROM admin_sessions
    WHERE token_hash=?
-  `).bind(await hash(s)).run();
+  `)
+  .bind(await hash(s))
+  .run();
+
  }
 
  return new Response(null,{
