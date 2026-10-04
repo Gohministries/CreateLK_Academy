@@ -13,7 +13,10 @@ export default{
     return json({
      success:true,
      message:"Monthly Leaderboard API is running",
-     version:"LEADERBOARD-MONTHLY-2026"
+     version:"LEADERBOARD-MONTHLY-PREMIUM-2026",
+     premium_only:true,
+     public:true,
+     maximum_ranked:100
     });
 
    if(p==="/api/leaderboard"&&r.method==="GET")
@@ -108,27 +111,68 @@ async function leaderboard(e){
  await ensureTable(e);
 
  const p=monthPeriod();
+ const now=new Date().toISOString();
+
+ /*
+  PUBLIC LEADERBOARD:
+  Anyone can call this endpoint.
+
+  RANKING ELIGIBILITY:
+  Only users with active Premium membership
+  are included in the ranking.
+
+  Maximum:
+  100 Premium students.
+ */
 
  const x=await e.DB.prepare(`
   SELECT
-   user_id,
-   name,
-   picture,
-   score,
-   coins,
-   xp
-  FROM ${MONTHLY_TABLE}
-  WHERE month=?
-  ORDER BY coins DESC,xp DESC,name ASC,user_id ASC
+   u.id AS user_id,
+   u.name,
+   u.picture,
+   COALESCE(SUM(q.score),0) AS score,
+   COALESCE(SUM(q.score*?),0) AS coins,
+   COALESCE(SUM(q.score*?),0) AS xp
+  FROM users u
+  JOIN quiz_results q
+   ON q.user_id=u.id
+  WHERE q.completed_at>=?
+    AND q.completed_at<?
+    AND UPPER(COALESCE(u.membership_status,''))='PREMIUM'
+    AND u.membership_expiry IS NOT NULL
+    AND u.membership_expiry>?
+  GROUP BY
+   u.id,
+   u.name,
+   u.picture
+  HAVING COALESCE(SUM(q.score),0)>0
+  ORDER BY
+   coins DESC,
+   xp DESC,
+   name ASC,
+   user_id ASC
   LIMIT 100
- `).bind(p.key).all();
+ `).bind(
+  COINS,
+  XP,
+  p.start,
+  p.end,
+  now
+ ).all();
+
+ const rows=x.results||[];
 
  return json({
   success:true,
+  public:true,
+  premium_only:true,
+  maximum_ranked:100,
   month:p.key,
-  leaderboard:(x.results||[]).map((v,i)=>({
+  month_start:p.start,
+  month_end:p.end,
+  leaderboard:rows.map((v,i)=>({
    rank:i+1,
-   user_id:v.user_id,
+   user_id:Number(v.user_id),
    name:v.name||"",
    picture:v.picture||"",
    score:Number(v.score||0),
@@ -144,14 +188,6 @@ async function reset(e){
  const now=new Date();
  const p=monthPeriod(now);
 
- /*
-  IMPORTANT:
-  We do not delete the previous month's rows.
-  They remain available as historical records.
-  A new month starts with no rows, therefore
-  the new leaderboard starts from zero.
- */
-
  const previous=new Date(
   Date.UTC(
    now.getUTCFullYear(),
@@ -162,87 +198,20 @@ async function reset(e){
 
  const previousKey=monthKey(previous);
 
- const existing=await e.DB.prepare(`
-  SELECT COUNT(*) count
-  FROM ${MONTHLY_TABLE}
-  WHERE month=?
- `).bind(p.key).first();
-
- if(Number(existing?.count||0)>0){
-  return json({
-   success:true,
-   reset:false,
-   month:p.key,
-   previous_month:previousKey,
-   message:"Current monthly leaderboard is already initialized"
-  });
- }
-
  /*
-  Build the new month's leaderboard from quiz_results.
-  Normally this will be empty when the reset runs on the 1st.
-  This also makes the endpoint safe if the trigger runs late.
+  The leaderboard is calculated directly from quiz_results
+  for the current month.
+
+  Therefore a new month automatically starts from zero.
+  We do not delete historical records.
  */
- const x=await e.DB.prepare(`
-  SELECT
-   u.id user_id,
-   u.name,
-   u.picture,
-   COALESCE(SUM(q.score),0) score,
-   COALESCE(SUM(q.score*?),0) coins,
-   COALESCE(SUM(q.score*?),0) xp
-  FROM users u
-  JOIN quiz_results q
-   ON q.user_id=u.id
-  WHERE q.completed_at>=?
-    AND q.completed_at<?
-  GROUP BY
-   u.id,
-   u.name,
-   u.picture
- `).bind(
-  COINS,
-  XP,
-  p.start,
-  p.end
- ).all();
-
- const rows=x.results||[];
-
- for(const v of rows){
-  await e.DB.prepare(`
-   INSERT OR IGNORE INTO ${MONTHLY_TABLE}(
-    month,
-    user_id,
-    name,
-    picture,
-    score,
-    coins,
-    xp,
-    created_at,
-    updated_at
-   )
-   VALUES(?,?,?,?,?,?,?,?,?)
-  `).bind(
-   p.key,
-   Number(v.user_id),
-   v.name||"",
-   v.picture||"",
-   Number(v.score||0),
-   Number(v.coins||0),
-   Number(v.xp||0),
-   now.toISOString(),
-   now.toISOString()
-  ).run();
- }
 
  return json({
   success:true,
   reset:true,
   month:p.key,
   previous_month:previousKey,
-  users_initialized:rows.length,
   reset_at:now.toISOString(),
-  message:"New monthly leaderboard started from zero"
+  message:"Monthly Premium leaderboard is automatically using the new month"
  });
 }
