@@ -7,12 +7,42 @@ export default{async fetch(r,e){
  try{
   const p=new URL(r.url).pathname;
   if(r.method==="OPTIONS")return cors(new Response(null,{status:204}));
+
+  if(
+   (p==="/api/affiliate"&&r.method==="GET")||
+   (p==="/api/affiliate/withdrawal"&&r.method==="POST")||
+   (p==="/api/affiliate/click"&&r.method==="POST")
+  )return affiliateProxy(r,e);
+
   const f={"/auth/google":googleLogin,"/auth/callback":googleCallback,"/auth/logout":logout,"/api/me":me,"/api/referral":referral,"/api/titles":titles,"/api/questions":questions,"/api/quiz/start":startQuiz,"/api/quiz/check":checkAnswer,"/api/quiz/submit":submitQuiz,"/api/leaderboard":leaderboard,"/api/leaderboard/me":leaderboardMe,"/api/payment/start":paymentStart};
   if(f[p])return f[p](r,e);
   if(p==="/api/health")return json({success:true,message:"English API is running",version:"ENGLISH-2026-10-03-10",payment_worker:PAY,max_attempts:MAX});
   return err("Not found",404);
  }catch(x){console.error(x);return json({success:false,error:"Server error",detail:String(x?.message||x)},500)}
 }};
+
+async function affiliateProxy(r,e){
+ if(!e.AFFILIATE)return err("Affiliate service binding is missing",500);
+
+ const u=new URL(r.url);
+ const target=
+  "https://affiliate.createlk.workers.dev"+
+  u.pathname.replace("/api/affiliate","/api");
+
+ const x=await e.AFFILIATE.fetch(
+  new Request(target+u.search,r)
+ );
+
+ const h=new Headers(x.headers);
+ h.set("Access-Control-Allow-Origin",SITE);
+ h.set("Access-Control-Allow-Credentials","true");
+
+ return new Response(x.body,{
+  status:x.status,
+  statusText:x.statusText,
+  headers:h
+ });
+}
 
 async function googleLogin(r,e){
  const url=new URL(r.url),st=token(32),ref=clean(url.searchParams.get("ref"));
