@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1628">
+<title>CreateLK English — Global Leaderboard</title>
+
+<style>
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+ margin:0;
+ font-family:Arial,sans-serif;
+ background:#0b1628;
+ color:#dbe4f0;
+}
+.wrap{
+ max-width:720px;
+ margin:auto;
+ padding:20px 14px 80px;
+}
+.top{
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ margin-bottom:18px;
+}
+.logo{
+ font-size:20px;
+ font-weight:900;
+ color:#fff;
+}
+.home{
+ text-decoration:none;
+ color:#fff;
+ background:#162944;
+ border:1px solid #2b4261;
+ padding:9px 13px;
+ border-radius:9px;
+ font-size:13px;
+ font-weight:800;
+}
+.hero{
+ text-align:center;
+ padding:24px 15px;
+ background:linear-gradient(145deg,#132846,#0e1d33);
+ border:1px solid #29415f;
+ border-radius:18px;
+ box-shadow:0 12px 35px #0005;
+}
+.trophy{
+ font-size:42px;
+}
+h1{
+ margin:8px 0 5px;
+ color:#fff;
+ font-size:26px;
+}
+.sub{
+ color:#9fb0c7;
+ font-size:13px;
+}
+.month{
+ margin-top:13px;
+ display:inline-block;
+ padding:7px 13px;
+ border-radius:20px;
+ background:#d69b16;
+ color:#111;
+ font-weight:900;
+ font-size:12px;
+}
+.list{
+ margin-top:16px;
+ display:grid;
+ gap:9px;
+}
+.row{
+ display:grid;
+ grid-template-columns:48px 1fr auto;
+ align-items:center;
+ gap:10px;
+ padding:13px;
+ background:#111f34;
+ border:1px solid #263e5d;
+ border-radius:13px;
+}
+.rank{
+ width:38px;
+ height:38px;
+ display:grid;
+ place-items:center;
+ border-radius:50%;
+ background:#1b304c;
+ color:#fff;
+ font-weight:900;
+}
+.name{
+ color:#fff;
+ font-weight:800;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+}
+.points{
+ color:#d69b16;
+ font-weight:900;
+ font-size:14px;
+}
+.empty,.error{
+ text-align:center;
+ padding:30px 15px;
+ color:#9fb0c7;
+}
+.loading{
+ text-align:center;
+ padding:25px;
+ color:#9fb0c7;
+}
+.me{
+ margin-top:15px;
+ padding:13px;
+ background:#132944;
+ border:1px solid #d69b16;
+ border-radius:13px;
+ text-align:center;
+}
+.me b{
+ color:#fff;
+}
+.refresh{
+ margin-top:15px;
+ width:100%;
+ height:45px;
+ border:0;
+ border-radius:11px;
+ background:#d69b16;
+ color:#111;
+ font-weight:900;
+ cursor:pointer;
+}
+.refresh:active{
+ transform:scale(.98);
+}
+.footer{
+ margin-top:22px;
+ text-align:center;
+ color:#71849d;
+ font-size:11px;
+}
+@media(max-width:430px){
+ .row{grid-template-columns:42px 1fr auto}
+ .rank{width:34px;height:34px}
+ h1{font-size:23px}
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+ <div class="top">
+  <div class="logo">CreateLK English</div>
+  <a class="home" href="/Eng/">Home</a>
+ </div>
+
+ <section class="hero">
+  <div class="trophy">🏆</div>
+  <h1>Global Leaderboard</h1>
+  <div class="sub">Compete with English learners around the world</div>
+  <div class="month" id="month">Loading...</div>
+ </section>
+
+ <div id="loading" class="loading">Loading leaderboard...</div>
+ <div id="list" class="list"></div>
+
+ <div id="me" class="me" style="display:none"></div>
+
+ <button class="refresh" onclick="loadLeaderboard()">
+  Refresh Leaderboard
+ </button>
+
+ <div class="footer">
+  Rankings reset automatically at the beginning of each month.
+ </div>
+
+</div>
+
+<script>
+const API="https://eng.createlk.workers.dev";
+
+const $=id=>document.getElementById(id);
+
+function monthName(){
+ const d=new Date();
+ return d.toLocaleDateString("en-US",{
+  month:"long",
+  year:"numeric"
+ });
+}
+
+async function loadLeaderboard(){
+ $("loading").style.display="block";
+ $("loading").textContent="Loading leaderboard...";
+ $("list").innerHTML="";
+ $("me").style.display="none";
+
+ $("month").textContent=monthName();
+
+ try{
+  const r=await fetch(API+"/api/leaderboard",{
+   credentials:"include"
+  });
+
+  const x=await r.json();
+
+  if(!r.ok||x.success===false)
+   throw Error(x.error||"Unable to load leaderboard");
+
+  const data=x.leaderboard||x.results||x.users||[];
+
+  $("loading").style.display="none";
+
+  if(!data.length){
+   $("list").innerHTML=
+    '<div class="empty">No leaderboard scores yet.</div>';
+   return;
+  }
+
+  $("list").innerHTML=data.map((u,i)=>{
+
+   const rank=i+1;
+
+   let icon=rank;
+   if(rank===1)icon="🥇";
+   if(rank===2)icon="🥈";
+   if(rank===3)icon="🥉";
+
+   const name=
+    escapeHtml(
+     u.name||
+     u.email||
+     u.user_name||
+     "User"
+    );
+
+   const points=
+    Number(
+     u.score||
+     u.points||
+     u.total_score||
+     u.total||
+     0
+    );
+
+   return `
+    <div class="row">
+     <div class="rank">${icon}</div>
+     <div class="name">${name}</div>
+     <div class="points">${points} pts</div>
+    </div>
+   `;
+  }).join("");
+
+ }catch(e){
+  $("loading").style.display="none";
+  $("list").innerHTML=
+   `<div class="error">${escapeHtml(e.message||"Unable to load leaderboard")}</div>`;
+ }
+}
+
+function escapeHtml(x){
+ return String(x)
+  .replace(/&/g,"&amp;")
+  .replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;")
+  .replace(/'/g,"&#039;");
+}
+
+loadLeaderboard();
+</script>
+
+</body>
+</html>
