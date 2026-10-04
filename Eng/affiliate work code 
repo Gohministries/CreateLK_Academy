@@ -1,0 +1,398 @@
+const SITE="https://createlk.com";
+const MIN_WITHDRAW=2000;
+const COMMISSION=10;
+const SESSION="english_session";
+
+export default{
+ async fetch(r,e){
+  try{
+   if(r.method==="OPTIONS")
+    return new Response(null,{
+     status:204,
+     headers:cors()
+    });
+
+   const p=new URL(r.url).pathname;
+
+   await db(e);
+
+   if(p==="/api/health")
+    return json({
+     success:true,
+     message:"Affiliate API is running"
+    });
+
+   if(p==="/api/affiliate"&&r.method==="GET")
+    return affiliate(r,e);
+
+   if(p==="/api/withdrawal"&&r.method==="POST")
+    return withdrawal(r,e);
+
+   if(p==="/api/click"&&r.method==="POST")
+    return click(r,e);
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
+
+  }catch(x){
+   return json({
+    success:false,
+    error:x.message||"Server error"
+   },500);
+  }
+ }
+};
+
+function cors(){
+ return{
+  "Access-Control-Allow-Origin":SITE,
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Headers":"Content-Type",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
+ };
+}
+
+function json(x,s=200){
+ return new Response(JSON.stringify(x),{
+  status:s,
+  headers:{
+   "Content-Type":"application/json",
+   ...cors()
+  }
+ });
+}
+
+async function db(e){
+ if(!e.DB)
+  throw Error("D1 binding DB is missing");
+
+ await e.DB.batch([
+  e.DB.prepare(`
+   CREATE TABLE IF NOT EXISTS affiliate_clicks(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    affiliate_id INTEGER,
+    referral_code TEXT,
+    created_at TEXT
+   )
+  `),
+
+  e.DB.prepare(`
+   CREATE TABLE IF NOT EXISTS affiliate_withdrawals(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    email TEXT,
+    customer_name TEXT,
+    bank TEXT,
+    branch TEXT,
+    account_number TEXT,
+    amount REAL,
+    status TEXT DEFAULT 'PENDING',
+    created_at TEXT,
+    processed_at TEXT
+   )
+  `)
+ ]);
+}
+
+function cookies(r){
+ const o={};
+ const h=r.headers.get("Cookie")||"";
+
+ h.split(";").forEach(x=>{
+  const i=x.indexOf("=");
+
+  if(i>0)
+   o[x.slice(0,i).trim()]=
+    decodeURIComponent(
+     x.slice(i+1).trim()
+    );
+ });
+
+ return o;
+}
+
+async function currentUser(r,e){
+ const s=cookies(r)[SESSION];
+
+ if(!s)
+  return null;
+
+ const h=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(s)
+ );
+
+ const token=[...new Uint8Array(h)]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
+
+ return e.DB.prepare(`
+  SELECT id,email,name
+  FROM users
+  WHERE id=(
+   SELECT user_id
+   FROM sessions
+   WHERE token_hash=?
+   AND expires_at>?
+  )
+ `).bind(
+  token,
+  new Date().toISOString()
+ ).first();
+}
+
+async function affiliate(r,e){
+ const u=await currentUser(r,e);
+
+ if(!u)
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+
+ const clicks=await e.DB.prepare(`
+  SELECT COUNT(*) n
+  FROM affiliate_clicks
+  WHERE affiliate_id=?
+ `).bind(u.id).first();
+
+ const referred=await e.DB.prepare(`
+  SELECT COUNT(*) n
+  FROM referrals
+  WHERE referrer_id=?
+ `).bind(u.id).first();
+
+ const commissions=await e.DB.prepare(`
+  SELECT
+   COALESCE(SUM(
+    CASE
+     WHEN status='APPROVED'
+     THEN commission_amount
+     ELSE 0
+    END
+   ),0) total
+  FROM referrals
+  WHERE referrer_id=?
+ `).bind(u.id).first();
+
+ const paid=await e.DB.prepare(`
+  SELECT
+   COALESCE(SUM(amount),0) total
+  FROM affiliate_withdrawals
+  WHERE user_id=?
+  AND status IN ('APPROVED','PAID')
+ `).bind(u.id).first();
+
+ const pending=await e.DB.prepare(`
+  SELECT
+   COALESCE(SUM(amount),0) total
+  FROM affiliate_withdrawals
+  WHERE user_id=?
+  AND status='PENDING'
+ `).bind(u.id).first();
+
+ const rows=await e.DB.prepare(`
+  SELECT
+   r.created_at,
+   u.email,
+   r.status,
+   r.commission_amount
+  FROM referrals r
+  LEFT JOIN users u
+   ON u.id=r.referred_user_id
+  WHERE r.referrer_id=?
+  ORDER BY r.id DESC
+  LIMIT 100
+ `).bind(u.id).all();
+
+ const total=Number(commissions?.total||0);
+ const paidAmount=Number(paid?.total||0);
+ const pendingAmount=Number(pending?.total||0);
+
+ const balance=Math.max(
+  0,
+  total-paidAmount-pendingAmount
+ );
+
+ return json({
+  success:true,
+  user_id:u.id,
+  name:u.name||"",
+  email:u.email,
+  clicks:Number(clicks?.n||0),
+  referred_users:Number(referred?.n||0),
+  total_commission:total,
+  paid:paidAmount,
+  pending_withdrawal:pendingAmount,
+  available_balance:balance,
+  affiliate_link:
+   `${SITE}/Eng/?ref=ENG${u.id}`,
+  referrals:rows.results||[],
+  commission_rate:COMMISSION,
+  minimum_withdrawal:MIN_WITHDRAW
+ });
+}
+
+async function click(r,e){
+ const b=await body(r);
+
+ const code=String(
+  b?.referral_code||""
+ ).trim().toUpperCase();
+
+ if(!code)
+  return json({
+   success:false,
+   error:"Referral code required"
+  },400);
+
+ const m=code.match(/^ENG(\d+)$/);
+
+ if(!m)
+  return json({
+   success:false,
+   error:"Invalid referral code"
+  },400);
+
+ const id=Number(m[1]);
+
+ const u=await e.DB.prepare(`
+  SELECT id
+  FROM users
+  WHERE id=?
+ `).bind(id).first();
+
+ if(!u)
+  return json({
+   success:false,
+   error:"Affiliate not found"
+  },404);
+
+ await e.DB.prepare(`
+  INSERT INTO affiliate_clicks(
+   affiliate_id,
+   referral_code,
+   created_at
+  )
+  VALUES(?,?,?)
+ `).bind(
+  id,
+  code,
+  new Date().toISOString()
+ ).run();
+
+ return json({
+  success:true
+ });
+}
+
+async function withdrawal(r,e){
+ const u=await currentUser(r,e);
+
+ if(!u)
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+
+ const b=await body(r);
+
+ const bank=String(b?.bank||"").trim();
+ const branch=String(b?.branch||"").trim();
+ const account=String(b?.account||"").trim();
+ const amount=Number(b?.amount||0);
+
+ if(!bank||!branch||!account)
+  return json({
+   success:false,
+   error:"Bank details required"
+  },400);
+
+ if(!Number.isFinite(amount)||amount<MIN_WITHDRAW)
+  return json({
+   success:false,
+   error:`Minimum withdrawal is Rs. ${MIN_WITHDRAW}`
+  },400);
+
+ const commissions=await e.DB.prepare(`
+  SELECT
+   COALESCE(SUM(
+    CASE
+     WHEN status='APPROVED'
+     THEN commission_amount
+     ELSE 0
+    END
+   ),0) total
+  FROM referrals
+  WHERE referrer_id=?
+ `).bind(u.id).first();
+
+ const paid=await e.DB.prepare(`
+  SELECT COALESCE(SUM(amount),0) total
+  FROM affiliate_withdrawals
+  WHERE user_id=?
+  AND status IN ('APPROVED','PAID')
+ `).bind(u.id).first();
+
+ const pending=await e.DB.prepare(`
+  SELECT COALESCE(SUM(amount),0) total
+  FROM affiliate_withdrawals
+  WHERE user_id=?
+  AND status='PENDING'
+ `).bind(u.id).first();
+
+ const available=Math.max(
+  0,
+  Number(commissions?.total||0)-
+  Number(paid?.total||0)-
+  Number(pending?.total||0)
+ );
+
+ if(amount>available)
+  return json({
+   success:false,
+   error:"Insufficient available balance"
+  },400);
+
+ const x=await e.DB.prepare(`
+  INSERT INTO affiliate_withdrawals(
+   user_id,
+   email,
+   customer_name,
+   bank,
+   branch,
+   account_number,
+   amount,
+   status,
+   created_at
+  )
+  VALUES(?,?,?,?,?,?,?,?,?)
+ `).bind(
+  u.id,
+  u.email,
+  u.name||"",
+  bank,
+  branch,
+  account,
+  amount,
+  "PENDING",
+  new Date().toISOString()
+ ).run();
+
+ return json({
+  success:true,
+  withdrawal_id:x.meta.last_row_id,
+  status:"PENDING",
+  amount
+ });
+}
+
+async function body(r){
+ try{
+  return await r.json();
+ }catch{
+  return null;
+ }
+}
