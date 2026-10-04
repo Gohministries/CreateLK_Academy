@@ -1,13 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b1628">
 <title>CreateLK English - Global Leaderboard</title>
-<meta name="description" content="Global English learning leaderboard for CreateLK English.">
-
-<style>
+<meta name="description" content="Global English learning leaderboard for CreateLK English."><style>
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{
@@ -230,101 +227,48 @@ h1{
  .name{font-size:14px}
  .points{font-size:15px}
 }
-</style>
-</head>
-
-<body>
-
-<header>
+</style></head><body><header>
  <div class="nav">
   <a class="logo" href="/index.html">CreateLK English</a>
   <a class="home" href="/index.html">Home</a>
  </div>
-</header>
-
-<main>
-
-<section class="hero">
- <div class="trophy">🏆</div>
-
- <h1>Global Leaderboard</h1>
-
- <p class="desc">
+</header><main><section class="hero"> <div class="trophy">🏆</div> <h1>Global Leaderboard</h1> <p class="desc">
   Compete with English learners around the world
- </p>
-
- <div class="premium-note">
+ </p> <div class="premium-note">
   The leaderboard is publicly visible.
   Only active Premium students are included in the rankings.
   Rankings are based on Coins earned during the current month.
- </div>
-</section>
-
-<div class="month" id="month">
+ </div></section><div class="month" id="month">
  Loading...
-</div>
-
-<div class="my-rank" id="myRank">
-
- <div class="my-rank-title">
+</div><div class="my-rank" id="myRank"> <div class="my-rank-title">
   Your Rank
- </div>
-
- <div class="my-rank-number" id="myRankNumber">
+ </div> <div class="my-rank-number" id="myRankNumber">
   #-
- </div>
-
- <div class="my-rank-points" id="myRankPoints">
+ </div> <div class="my-rank-points" id="myRankPoints">
   0 Coins
- </div>
-
-</div>
-
-<div class="login-rank" id="loginRank">
+ </div></div><div class="login-rank" id="loginRank">
  Sign in to see your personal rank.
-</div>
-
-<section class="card">
-
- <div class="top">
-
-  <div class="top-title">
+</div><section class="card"> <div class="top">  <div class="top-title">
    Top Students
-  </div>
-
-  <button class="refresh" onclick="load()">
+  </div>  <button class="refresh" onclick="load()">
    Refresh
-  </button>
-
- </div>
-
- <div class="table-head">
-  <div>Rank</div>
-  <div>Student</div>
-  <div style="text-align:right">
+  </button> </div> <div class="table-head">
+  <div>Rank</div>  <div>Student</div>  <div style="text-align:right">
    Coins
   </div>
- </div>
-
- <div id="list">
+ </div> <div id="list">
   <div class="loading">
    Loading leaderboard...
   </div>
- </div>
-
-</section>
-
-<div class="footer">
+ </div></section><div class="footer">
  Rankings reset automatically at the beginning of each month.
  <br>
  Only current-month Coins are counted.
  <br>
+ Only active Premium students can receive a rank.
+ <br>
  CreateLK English
-</div>
-
-</main>
-
-<script>
+</div></main><script>
 
 const API="https://ranklk.createlk.workers.dev";
 const ENG="https://englk.createlk.workers.dev";
@@ -343,6 +287,8 @@ const monthNames=[
  "November",
  "December"
 ];
+
+let currentLeaderboard=[];
 
 function setMonth(){
 
@@ -366,9 +312,11 @@ function esc(x){
 
 function render(users){
 
+ currentLeaderboard=Array.isArray(users)?users:[];
+
  const box=document.getElementById("list");
 
- if(!users.length){
+ if(!currentLeaderboard.length){
 
   box.innerHTML=
    '<div class="empty">No Premium students have scores yet.</div>';
@@ -377,14 +325,9 @@ function render(users){
 
  }
 
- box.innerHTML=users.map((u,i)=>{
+ box.innerHTML=currentLeaderboard.map((u,i)=>{
 
   const rank=i+1;
-
-  /*
-   The monthly Worker returns coins.
-   Use coins as the public leaderboard points.
-  */
   const coins=Number(u.coins||0);
 
   let rankClass="";
@@ -418,12 +361,31 @@ function render(users){
 
 }
 
+function showLoginMessage(message){
+
+ document.getElementById("myRank").style.display="none";
+
+ const box=document.getElementById("loginRank");
+
+ box.textContent=message;
+ box.style.display="block";
+
+}
+
 async function getMyRank(){
 
  try{
 
+  /*
+   Get the logged-in user's identity from the
+   English Worker.
+
+   We do NOT use /api/leaderboard/me because
+   the public ranking is controlled by ranklk.
+  */
+
   const r=await fetch(
-   ENG+"/api/leaderboard/me",
+   ENG+"/api/me",
    {
     credentials:"include",
     cache:"no-store"
@@ -432,39 +394,82 @@ async function getMyRank(){
 
   const x=await r.json();
 
-  if(x.success&&x.rank!==null){
+  if(!x.success||!x.logged_in){
 
-   document.getElementById("myRankNumber").textContent=
-    "#"+x.rank;
-
-   document.getElementById("myRankPoints").textContent=
-    Number(x.user?.coins||0).toLocaleString()+" Coins";
-
-   document.getElementById("myRank").style.display=
-    "block";
-
-   document.getElementById("loginRank").style.display=
-    "none";
+   showLoginMessage(
+    "Sign in to see your personal rank."
+   );
 
    return;
 
   }
 
-  document.getElementById("loginRank").textContent=
-   r.status===401
-    ?"Sign in to see your personal rank."
-    :"Complete a quiz to appear in the leaderboard.";
+  /*
+   Only Premium users are eligible for ranking.
+  */
+
+  if(!x.premium){
+
+   showLoginMessage(
+    "Active Premium access is required to receive a leaderboard rank."
+   );
+
+   return;
+
+  }
+
+  const myId=Number(x.user?.id||0);
+
+  if(!myId){
+
+   showLoginMessage(
+    "Unable to identify your account."
+   );
+
+   return;
+
+  }
+
+  /*
+   Find the user inside the same public Premium
+   leaderboard returned by ranklk.
+  */
+
+  const index=currentLeaderboard.findIndex(
+   u=>Number(u.user_id)===myId
+  );
+
+  if(index<0){
+
+   showLoginMessage(
+    "Complete a quiz to receive a leaderboard rank."
+   );
+
+   return;
+
+  }
+
+  const user=currentLeaderboard[index];
+
+  document.getElementById("myRankNumber").textContent=
+   "#"+(index+1);
+
+  document.getElementById("myRankPoints").textContent=
+   Number(user.coins||0).toLocaleString()+" Coins";
+
+  document.getElementById("myRank").style.display=
+   "block";
 
   document.getElementById("loginRank").style.display=
-   "block";
+   "none";
 
  }catch(e){
 
-  document.getElementById("loginRank").textContent=
-   "Unable to load your personal rank.";
+  console.error("MY RANK ERROR",e);
 
-  document.getElementById("loginRank").style.display=
-   "block";
+  showLoginMessage(
+   "Unable to load your personal rank."
+  );
 
  }
 
@@ -476,6 +481,9 @@ async function load(){
 
  box.innerHTML=
   '<div class="loading">Loading leaderboard...</div>';
+
+ document.getElementById("myRank").style.display="none";
+ document.getElementById("loginRank").style.display="none";
 
  try{
 
@@ -500,7 +508,7 @@ async function load(){
 
  }catch(e){
 
-  console.error(e);
+  console.error("LEADERBOARD ERROR",e);
 
   box.innerHTML=`
    <div class="error">
@@ -516,7 +524,5 @@ async function load(){
 setMonth();
 load();
 
-</script>
-
-</body>
+</script></body>
 </html>
