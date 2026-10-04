@@ -60,6 +60,7 @@ h1{
 .sub{
  color:#9fb0c7;
  font-size:13px;
+ line-height:1.5;
 }
 .month{
  margin-top:13px;
@@ -70,6 +71,36 @@ h1{
  color:#111;
  font-weight:900;
  font-size:12px;
+}
+.premium{
+ margin-top:15px;
+ padding:15px;
+ background:#132944;
+ border:1px solid #d69b16;
+ border-radius:13px;
+ text-align:center;
+}
+.premium b{
+ display:block;
+ color:#fff;
+ font-size:15px;
+ margin-bottom:5px;
+}
+.premium span{
+ color:#9fb0c7;
+ font-size:12px;
+ line-height:1.5;
+}
+.premium-btn{
+ display:inline-block;
+ margin-top:11px;
+ padding:10px 16px;
+ border-radius:9px;
+ background:#d69b16;
+ color:#111;
+ text-decoration:none;
+ font-size:12px;
+ font-weight:900;
 }
 .list{
  margin-top:16px;
@@ -118,17 +149,6 @@ h1{
  padding:25px;
  color:#9fb0c7;
 }
-.me{
- margin-top:15px;
- padding:13px;
- background:#132944;
- border:1px solid #d69b16;
- border-radius:13px;
- text-align:center;
-}
-.me b{
- color:#fff;
-}
 .refresh{
  margin-top:15px;
  width:100%;
@@ -148,6 +168,9 @@ h1{
  text-align:center;
  color:#71849d;
  font-size:11px;
+}
+.hidden{
+ display:none!important;
 }
 @media(max-width:430px){
  .row{grid-template-columns:42px 1fr auto}
@@ -169,16 +192,31 @@ h1{
  <section class="hero">
   <div class="trophy">🏆</div>
   <h1>Global Leaderboard</h1>
-  <div class="sub">Compete with English learners around the world</div>
+  <div class="sub">
+   Compete with English learners around the world
+  </div>
   <div class="month" id="month">Loading...</div>
  </section>
 
- <div id="loading" class="loading">Loading leaderboard...</div>
+ <div id="premiumNotice" class="premium hidden">
+  <b>🔒 Premium Student Leaderboard</b>
+  <span>
+   The Global Leaderboard is available exclusively
+   for CreateLK English Premium students.
+  </span>
+  <br>
+  <a class="premium-btn" href="/Eng/pay.html">
+   Get Premium
+  </a>
+ </div>
+
+ <div id="loading" class="loading">
+  Checking Premium access...
+ </div>
+
  <div id="list" class="list"></div>
 
- <div id="me" class="me" style="display:none"></div>
-
- <button class="refresh" onclick="loadLeaderboard()">
+ <button id="refresh" class="refresh hidden" onclick="loadLeaderboard()">
   Refresh Leaderboard
  </button>
 
@@ -189,7 +227,8 @@ h1{
 </div>
 
 <script>
-const API="https://eng.createlk.workers.dev";
+const API="https://rank.createlk.workers.dev";
+const AUTH="https://eng.createlk.workers.dev";
 
 const $=id=>document.getElementById(id);
 
@@ -201,13 +240,54 @@ function monthName(){
  });
 }
 
-async function loadLeaderboard(){
- $("loading").style.display="block";
- $("loading").textContent="Loading leaderboard...";
+async function checkPremium(){
+ try{
+  const r=await fetch(AUTH+"/api/me",{
+   credentials:"include"
+  });
+
+  const x=await r.json();
+
+  if(!x.success||!x.logged_in){
+   showPremiumNotice();
+   return false;
+  }
+
+  if(!x.premium){
+   showPremiumNotice();
+   return false;
+  }
+
+  return true;
+
+ }catch(e){
+  showPremiumNotice();
+  return false;
+ }
+}
+
+function showPremiumNotice(){
+ $("loading").style.display="none";
+ $("premiumNotice").classList.remove("hidden");
+ $("refresh").classList.add("hidden");
  $("list").innerHTML="";
- $("me").style.display="none";
+}
+
+async function loadLeaderboard(){
 
  $("month").textContent=monthName();
+
+ $("loading").style.display="block";
+ $("loading").textContent="Checking Premium access...";
+ $("list").innerHTML="";
+ $("premiumNotice").classList.add("hidden");
+ $("refresh").classList.add("hidden");
+
+ const premium=await checkPremium();
+
+ if(!premium)return;
+
+ $("loading").textContent="Loading leaderboard...";
 
  try{
   const r=await fetch(API+"/api/leaderboard",{
@@ -219,9 +299,10 @@ async function loadLeaderboard(){
   if(!r.ok||x.success===false)
    throw Error(x.error||"Unable to load leaderboard");
 
-  const data=x.leaderboard||x.results||x.users||[];
+  const data=x.leaderboard||[];
 
   $("loading").style.display="none";
+  $("refresh").classList.remove("hidden");
 
   if(!data.length){
    $("list").innerHTML=
@@ -238,22 +319,13 @@ async function loadLeaderboard(){
    if(rank===2)icon="🥈";
    if(rank===3)icon="🥉";
 
-   const name=
-    escapeHtml(
-     u.name||
-     u.email||
-     u.user_name||
-     "User"
-    );
+   const name=escapeHtml(
+    u.name||
+    u.email||
+    "User"
+   );
 
-   const points=
-    Number(
-     u.score||
-     u.points||
-     u.total_score||
-     u.total||
-     0
-    );
+   const points=Number(u.points||0);
 
    return `
     <div class="row">
@@ -265,9 +337,15 @@ async function loadLeaderboard(){
   }).join("");
 
  }catch(e){
+
   $("loading").style.display="none";
+
   $("list").innerHTML=
-   `<div class="error">${escapeHtml(e.message||"Unable to load leaderboard")}</div>`;
+   `<div class="error">
+    ${escapeHtml(e.message||"Unable to load leaderboard")}
+   </div>`;
+
+  $("refresh").classList.remove("hidden");
  }
 }
 
