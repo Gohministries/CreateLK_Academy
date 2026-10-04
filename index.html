@@ -20,7 +20,6 @@
 <div class="menu" id="menu">
 <a href="/Eng/">📚 Lessons</a>
 <a href="/Eng/rank.html">🏆 Leaderboard</a>
-<a href="/Eng/aff.html">💰 Affiliate Dashboard</a>
 <a href="/Eng/about.html">ℹ️ About Us</a>
 <a href="/Eng/contact.html">📩 Contact Us</a>
 <div class="mt">POLICIES</div>
@@ -84,61 +83,35 @@ let user,lessons=[],qs=[],ans={},res={},lid=0,title="",attempt="",i=0,coins=0,xp
 const titles=["Basic Grammar","Nouns & Pronouns","Verbs & Tenses","Adjectives & Adverbs","Prepositions","Conjunctions","Articles","Subject-Verb Agreement","Active & Passive Voice","Direct & Indirect Speech","Question Forms","Conditionals","Modal Verbs","Phrases & Clauses","Gerunds & Infinitives","Relative Clauses","Sentence Correction","Common Grammar Errors","Advanced Grammar","Mixed Grammar Challenge"];
 const em=["📚","🔤","📝","💬","🎯","🌟","🧠","✍️","🗣️","👂","📖","🏆","🌍","💡","🚀","🎓","🧩","🔎","🕊️","👑"];
 
-async function api(p,o={}){
-let r=await fetch(API+p,{credentials:"include",cache:"no-store",...o,headers:{...(o.body&&{"Content-Type":"application/json"}),...(o.headers||{})}});
-let d={};try{d=await r.json()}catch{}
-if(!r.ok){let e=Error(d.error||`Request failed (${r.status})`);e.data=d;throw e}return d
-}
+async function api(p,o={}){let r=await fetch(API+p,{credentials:"include",cache:"no-store",...o,headers:{...(o.body&&{"Content-Type":"application/json"}),...(o.headers||{})}}),d={};try{d=await r.json()}catch{}if(!r.ok){let e=Error(d.error||`Request failed (${r.status})`);e.data=d;throw e}return d}
 const post=(p,b)=>api(p,{method:"POST",body:JSON.stringify(b)});
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const msg=x=>{$("notice").textContent=x;$("notice").className="notice show";clearTimeout(window.nt);window.nt=setTimeout(()=>$("notice").className="notice",4500)};
 const isPremium=l=>!!(l.premium||l.is_premium||l.premium_required||+l.premium===1||+l.is_premium===1||/premium/i.test(l.type||l.access||""));
 
-function login(){
-let r=new URLSearchParams(location.search).get("ref");
-location.href=API+"/auth/google"+(r?"?ref="+encodeURIComponent(r):"")
-}
+function login(){let r=new URLSearchParams(location.search).get("ref");location.href=API+"/auth/google"+(r?"?ref="+encodeURIComponent(r):"")}
 function signout(){localStorage.removeItem(KEY);location.href=API+"/auth/logout"}
-
 document.addEventListener("click",e=>{if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show")});
-
 function openLoginModal(){$("loginModal").classList.add("show")}
 function closeLoginModal(){$("loginModal").classList.remove("show")}
 $("loginModal").addEventListener("click",e=>{if(e.target===$("loginModal"))closeLoginModal()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeLoginModal()});
 
-function save(){
-if(user&&attempt)try{localStorage.setItem(KEY,JSON.stringify({uid:user.id,lid,title,attempt,i,ans,res}))}catch{}
-}
-function loadSave(){
-try{let s=JSON.parse(localStorage.getItem(KEY));return s?.attempt&&+s.uid===+user?.id?s:null}catch{return null}
-}
-function balance(){
-$("coins").textContent=coins;$("xp").textContent=xp;$("qc").textContent=coins;$("qx").textContent=xp;
-if(user)$("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`
-}
-function premiumTime(){
-if(!expiry)return;
-let s=Math.max(0,Math.floor((new Date(expiry)-Date.now())/1000));
-if(!s){$("member").textContent="✓ FREE";clearInterval(timer);return}
-let d=Math.floor(s/86400);s%=86400;
-let h=Math.floor(s/3600);s%=3600;
-let m=Math.floor(s/60);s%=60;
-$("member").textContent=`⭐ ${d?d+"d ":h?h+"h ":m?m+"m ":""}${s}s`
-}
+function save(){if(user&&attempt)try{localStorage.setItem(KEY,JSON.stringify({uid:user.id,lid,title,attempt,i,ans,res}))}catch{}}
+function loadSave(){try{let s=JSON.parse(localStorage.getItem(KEY));return s?.attempt&&+s.uid===+user?.id?s:null}catch{return null}}
+function balance(){$("coins").textContent=coins;$("xp").textContent=xp;$("qc").textContent=coins;$("qx").textContent=xp;if(user)$("account").textContent=`🪙 ${coins} Coins · ⚡ ${xp} XP`}
+function premiumTime(){if(!expiry)return;let s=Math.max(0,Math.floor((new Date(expiry)-Date.now())/1000));if(!s){$("member").textContent="✓ FREE";clearInterval(timer);return}let d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;$("member").textContent=`⭐ ${d?d+"d ":h?h+"h ":m?m+"m ":""}${s}s`}
 
 async function me(){
 try{
 let d=await api("/api/me?_="+Date.now());user=d.user||null;clearInterval(timer);
-if(!user){
-coins=0;xp=0;$("member").textContent="—";$("login").style.display="block";$("avatar").style.display="none";$("logout").style.display="none";$("account").style.display="none"
-}else{
+if(!user){coins=0;xp=0;$("member").textContent="—";$("login").style.display="block";$("avatar").style.display="none";$("logout").style.display="none";$("account").style.display="none"}
+else{
 coins=+(user.coins??user.total_coins??0);xp=+(user.xp??user.total_xp??0);expiry=d.premium_expires_at||user.premium_expires_at;
 let prem=d.premium===true||user.premium===true||(expiry&&new Date(expiry)>Date.now());
 $("login").style.display="none";$("logout").style.display="block";$("account").style.display="block";
 if(user.picture){$("avatar").src=user.picture;$("avatar").style.display="block"}else $("avatar").style.display="none";
-$("member").textContent=prem?"⭐ PREMIUM":"✓ FREE";
-if(prem&&expiry){premiumTime();timer=setInterval(premiumTime,1000)}
+$("member").textContent=prem?"⭐ PREMIUM":"✓ FREE";if(prem&&expiry){premiumTime();timer=setInterval(premiumTime,1000)}
 }
 balance()
 }catch(e){console.error(e)}
@@ -153,15 +126,11 @@ lessonsEl()
 }
 
 function lessonsEl(){
-$("lessons").innerHTML=lessons.map((l,n)=>{
-let p=isPremium(l);
-return `<article class="card"><div class="top"></div><div class="body"><div class="em">${em[n]||"📖"}</div><div class="gold">${p?"⭐ PREMIUM":"✓ FREE"}</div><h3>${esc(l.title||titles[n])}</h3><p>${p?"Premium":"Free"} English lesson with quiz practice.</p><button class="btn" onclick="openLesson(${n})">▶ Start Lesson</button></div></article>`
-}).join("")
+$("lessons").innerHTML=lessons.map((l,n)=>`<article class="card"><div class="top"></div><div class="body"><div class="em">${em[n]||"📖"}</div><h3>${esc(l.title||titles[n])}</h3><p>English lesson with quiz practice.</p><button class="btn" onclick="openLesson(${n})">▶ Start Lesson</button></div></article>`).join("")
 }
 
 async function openLesson(n){
-let l=lessons[n];if(!l)return;
-if(!user){openLoginModal();return}
+let l=lessons[n];if(!l)return;if(!user){openLoginModal();return}
 lid=+l.id;title=l.title||titles[n]||`Lesson ${lid}`;
 if(isPremium(l)&&!(user&&await premiumOK()))return location.href="/Eng/pay.html";
 quizLoad()
@@ -194,28 +163,21 @@ const yes=v=>v===true||v===1||v==="1"||String(v).toLowerCase()==="true";
 function render(){
 let q=qs[i],r=res[q.id],o=["a","b","c","d"];
 $("pg").textContent=`Question ${i+1} of ${qs.length}`;$("meter").style.width=(i+1)/qs.length*100+"%";$("question").textContent=q.question||"Question";
-$("options").innerHTML=o.map(k=>{
-let c="op";if(r){if(k===r.selected)c+=" "+(r.correct?"correct":"wrong");if(!r.correct&&k===r.correctAnswer)c+=" correct"}
-return `<button class="${c}" ${r?"disabled":""} onclick="answer('${k}')"><b>${k.toUpperCase()}.</b> ${esc(q["option_"+k])}</button>`
-}).join("");
+$("options").innerHTML=o.map(k=>{let c="op";if(r){if(k===r.selected)c+=" "+(r.correct?"correct":"wrong");if(!r.correct&&k===r.correctAnswer)c+=" correct"}return `<button class="${c}" ${r?"disabled":""} onclick="answer('${k}')"><b>${k.toUpperCase()}.</b> ${esc(q["option_"+k])}</button>`}).join("");
 if(r){$("fb").className=`fb show ${r.correct?"correct":"wrong"}`;$("fb").textContent=r.correct?`✓ Correct! +${r.rc} Coins · +${r.rx} XP`:`✗ Incorrect. Correct answer: ${String(r.correctAnswer||"").toUpperCase()}. ${r.text||""}`}else $("fb").className="fb";
 $("prev").disabled=i===0;$("next").textContent=i===qs.length-1?"Finish":"Next";balance();save()
 }
 
 async function answer(choice){
-if(busy||submit)return;
-let q=qs[i];if(!q||res[q.id])return;busy=1;
+if(busy||submit)return;let q=qs[i];if(!q||res[q.id])return;busy=1;
 try{
 let d=await post("/api/quiz/check",{attempt_id:attempt,question_id:+q.id,answer:choice});
 if(d.premium_required)return location.href="/Eng/pay.html";
 if(!d.success)throw Error(d.error||"Unable to check answer.");
 let ok=yes(d.correct),rc=+(d.reward_coins??(ok?C:0)),rx=+(d.reward_xp??(ok?X:0));
 res[q.id]={correct:ok,selected:norm(d.selected_answer||d.answer||choice)||choice,correctAnswer:norm(d.correct_answer),text:d.correct_text||"",rc,rx};
-ans[q.id]=res[q.id].selected;
-if(d.total_coins!=null)coins=+d.total_coins;
-if(d.total_xp!=null)xp=+d.total_xp;
-balance();render();sound(ok);
-if(ok){fly("coin",rc);setTimeout(()=>fly("xp",rx),120);pop("🎉 Correct!")}
+ans[q.id]=res[q.id].selected;if(d.total_coins!=null)coins=+d.total_coins;if(d.total_xp!=null)xp=+d.total_xp;
+balance();render();sound(ok);if(ok){fly("coin",rc);setTimeout(()=>fly("xp",rx),120);pop("🎉 Correct!")}
 }catch(e){msg(e.message||"Unable to check answer.")}finally{busy=0}
 }
 
@@ -223,8 +185,7 @@ function prev(){if(!busy&&!submit&&i){i--;render()}}
 function next(){if(busy||submit)return;if(!res[qs[i].id])return msg("Please answer the question first.");i<qs.length-1?(i++,render()):finish()}
 
 async function finish(){
-if(submit)return;
-if(qs.some(q=>!res[q.id]))return msg("Please answer all questions before submitting.");
+if(submit)return;if(qs.some(q=>!res[q.id]))return msg("Please answer all questions before submitting.");
 submit=1;$("next").disabled=1;$("next").textContent="Submitting...";
 try{
 let d=await post("/api/quiz/submit",{lesson_id:lid,attempt_id:attempt,answers:qs.map(q=>({question_id:+q.id,answer:res[q.id]?.selected}))});
@@ -240,16 +201,13 @@ e.className="fly";e.textContent=type==="coin"?`🪙 +${n}`:`⚡ +${n}`;e.style.c
 e.style.setProperty("--dx",(r.left+r.width/2-innerWidth/2)*.55+"px");e.style.setProperty("--dy",(r.top+r.height/2-innerHeight*.48)*.55-70+"px");e.style.setProperty("--tx",r.left+r.width/2-innerWidth/2+"px");e.style.setProperty("--ty",r.top+r.height/2-innerHeight*.48+"px");
 document.body.appendChild(e);setTimeout(()=>e.remove(),950)
 }
+
 function pop(t){let e=document.createElement("div");e.className="pop";e.textContent=t;e.style.cssText=`left:${innerWidth/2-55}px;top:${innerHeight*.42}px`;document.body.appendChild(e);setTimeout(()=>e.remove(),850)}
 function sound(ok){try{audio||=new(window.AudioContext||window.webkitAudioContext);let o=audio.createOscillator(),g=audio.createGain();o.frequency.value=ok?700:220;g.gain.value=.035;o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+.12)}catch{}}
 function back(){localStorage.removeItem(KEY);location.reload()}
 $("year").textContent=new Date().getFullYear();
-(async()=>{
-await me();
-await lessonsLoad();
-let s=loadSave();
-if(s&&user){lid=+s.lid;title=s.title||`Lesson ${lid}`;await quizLoad()}
-})();
+
+(async()=>{await me();await lessonsLoad();let s=loadSave();if(s&&user){lid=+s.lid;title=s.title||`Lesson ${lid}`;await quizLoad()}})();
 </script>
 </body>
 </html>
