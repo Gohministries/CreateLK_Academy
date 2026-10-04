@@ -1,0 +1,248 @@
+const MONTHLY_TABLE="leaderboard_monthly_scores";
+const COINS=5,XP=10;
+
+export default{
+ async fetch(r,e){
+  try{
+   if(r.method==="OPTIONS")
+    return new Response(null,{status:204,headers:corsHeaders()});
+
+   const p=new URL(r.url).pathname;
+
+   if(p==="/api/health")
+    return json({
+     success:true,
+     message:"Monthly Leaderboard API is running",
+     version:"LEADERBOARD-MONTHLY-2026"
+    });
+
+   if(p==="/api/leaderboard"&&r.method==="GET")
+    return leaderboard(e);
+
+   if(p==="/api/reset"&&r.method==="POST"){
+    const secret=r.headers.get("Authorization");
+    if(secret!==`Bearer ${e.RESET_SECRET}`)
+     return json({success:false,error:"Unauthorized"},401);
+
+    return reset(e);
+   }
+
+   return json({success:false,error:"Not found"},404);
+
+  }catch(x){
+   console.error(x);
+   return json({
+    success:false,
+    error:x?.message||"Server error"
+   },500);
+  }
+ },
+
+ async scheduled(event,e,ctx){
+  ctx.waitUntil(
+   reset(e).catch(x=>console.error("MONTHLY RESET ERROR",x))
+  );
+ }
+};
+
+function corsHeaders(){
+ return{
+  "Access-Control-Allow-Origin":"https://createlk.com",
+  "Access-Control-Allow-Headers":"Content-Type,Authorization",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
+ };
+}
+
+function json(x,s=200){
+ return new Response(JSON.stringify(x),{
+  status:s,
+  headers:{
+   "Content-Type":"application/json;charset=UTF-8",
+   ...corsHeaders()
+  }
+ });
+}
+
+function monthKey(d=new Date()){
+ return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;
+}
+
+function monthPeriod(d=new Date()){
+ const y=d.getUTCFullYear();
+ const m=d.getUTCMonth();
+
+ return{
+  key:monthKey(d),
+  start:new Date(Date.UTC(y,m,1)).toISOString(),
+  end:new Date(Date.UTC(y,m+1,1)).toISOString()
+ };
+}
+
+async function ensureTable(e){
+ if(!e.DB)
+  throw Error("D1 binding DB is missing");
+
+ await e.DB.prepare(`
+  CREATE TABLE IF NOT EXISTS ${MONTHLY_TABLE}(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   month TEXT NOT NULL,
+   user_id INTEGER NOT NULL,
+   name TEXT,
+   picture TEXT,
+   score INTEGER DEFAULT 0,
+   coins INTEGER DEFAULT 0,
+   xp INTEGER DEFAULT 0,
+   created_at TEXT,
+   updated_at TEXT,
+   UNIQUE(month,user_id)
+  )
+ `).run();
+
+ await e.DB.prepare(`
+  CREATE INDEX IF NOT EXISTS idx_monthly_leaderboard
+  ON ${MONTHLY_TABLE}(month,coins DESC,xp DESC)
+ `).run();
+}
+
+async function leaderboard(e){
+ await ensureTable(e);
+
+ const p=monthPeriod();
+
+ const x=await e.DB.prepare(`
+  SELECT
+   user_id,
+   name,
+   picture,
+   score,
+   coins,
+   xp
+  FROM ${MONTHLY_TABLE}
+  WHERE month=?
+  ORDER BY coins DESC,xp DESC,name ASC,user_id ASC
+  LIMIT 100
+ `).bind(p.key).all();
+
+ return json({
+  success:true,
+  month:p.key,
+  leaderboard:(x.results||[]).map((v,i)=>({
+   rank:i+1,
+   user_id:v.user_id,
+   name:v.name||"",
+   picture:v.picture||"",
+   score:Number(v.score||0),
+   coins:Number(v.coins||0),
+   xp:Number(v.xp||0)
+  }))
+ });
+}
+
+async function reset(e){
+ await ensureTable(e);
+
+ const now=new Date();
+ const p=monthPeriod(now);
+
+ /*
+  IMPORTANT:
+  We do not delete the previous month's rows.
+  They remain available as historical records.
+  A new month starts with no rows, therefore
+  the new leaderboard starts from zero.
+ */
+
+ const previous=new Date(
+  Date.UTC(
+   now.getUTCFullYear(),
+   now.getUTCMonth()-1,
+   1
+  )
+ );
+
+ const previousKey=monthKey(previous);
+
+ const existing=await e.DB.prepare(`
+  SELECT COUNT(*) count
+  FROM ${MONTHLY_TABLE}
+  WHERE month=?
+ `).bind(p.key).first();
+
+ if(Number(existing?.count||0)>0){
+  return json({
+   success:true,
+   reset:false,
+   month:p.key,
+   previous_month:previousKey,
+   message:"Current monthly leaderboard is already initialized"
+  });
+ }
+
+ /*
+  Build the new month's leaderboard from quiz_results.
+  Normally this will be empty when the reset runs on the 1st.
+  This also makes the endpoint safe if the trigger runs late.
+ */
+ const x=await e.DB.prepare(`
+  SELECT
+   u.id user_id,
+   u.name,
+   u.picture,
+   COALESCE(SUM(q.score),0) score,
+   COALESCE(SUM(q.score*?),0) coins,
+   COALESCE(SUM(q.score*?),0) xp
+  FROM users u
+  JOIN quiz_results q
+   ON q.user_id=u.id
+  WHERE q.completed_at>=?
+    AND q.completed_at<?
+  GROUP BY
+   u.id,
+   u.name,
+   u.picture
+ `).bind(
+  COINS,
+  XP,
+  p.start,
+  p.end
+ ).all();
+
+ const rows=x.results||[];
+
+ for(const v of rows){
+  await e.DB.prepare(`
+   INSERT OR IGNORE INTO ${MONTHLY_TABLE}(
+    month,
+    user_id,
+    name,
+    picture,
+    score,
+    coins,
+    xp,
+    created_at,
+    updated_at
+   )
+   VALUES(?,?,?,?,?,?,?,?,?)
+  `).bind(
+   p.key,
+   Number(v.user_id),
+   v.name||"",
+   v.picture||"",
+   Number(v.score||0),
+   Number(v.coins||0),
+   Number(v.xp||0),
+   now.toISOString(),
+   now.toISOString()
+  ).run();
+ }
+
+ return json({
+  success:true,
+  reset:true,
+  month:p.key,
+  previous_month:previousKey,
+  users_initialized:rows.length,
+  reset_at:now.toISOString(),
+  message:"New monthly leaderboard started from zero"
+ });
+}
