@@ -343,52 +343,37 @@ function render(users){
  }).join("");
 }
 
-async function getMe(){
+async function getMyRank(){
  try{
-  const r=await fetch(ENG+"/api/me",{
+  const r=await fetch(ENG+"/api/leaderboard/me",{
    credentials:"include",
    cache:"no-store"
   });
 
   const x=await r.json();
 
-  if(x.success&&x.logged_in&&x.email)
-   return String(x.email).toLowerCase();
+  if(x.success&&x.rank!==null){
+   document.getElementById("myRankNumber").textContent="#"+x.rank;
+   document.getElementById("myRankPoints").textContent=
+    Number(x.user?.coins||0).toLocaleString()+" points";
 
- }catch(e){}
+   document.getElementById("myRank").style.display="block";
+   document.getElementById("loginRank").style.display="none";
+   return;
+  }
 
- return null;
-}
+  document.getElementById("loginRank").textContent=
+   r.status===401
+    ?"Sign in to see your personal rank."
+    :"Complete a quiz to appear in the leaderboard.";
 
-function showMyRank(users,email){
- const rankBox=document.getElementById("myRank");
- const loginBox=document.getElementById("loginRank");
+  document.getElementById("loginRank").style.display="block";
 
- if(!email){
-  loginBox.style.display="block";
-  return;
+ }catch(e){
+  document.getElementById("loginRank").textContent=
+   "Unable to load your personal rank.";
+  document.getElementById("loginRank").style.display="block";
  }
-
- const index=users.findIndex(
-  u=>String(u.email||"").toLowerCase()===email
- );
-
- if(index<0){
-  loginBox.textContent=
-   "Your account is not currently included in the active Premium leaderboard.";
-  loginBox.style.display="block";
-  return;
- }
-
- const user=users[index];
- const rank=index+1;
- const points=Number(user.points||0);
-
- document.getElementById("myRankNumber").textContent="#"+rank;
- document.getElementById("myRankPoints").textContent=
-  points.toLocaleString()+" points";
-
- rankBox.style.display="block";
 }
 
 async function load(){
@@ -397,23 +382,18 @@ async function load(){
  box.innerHTML='<div class="loading">Loading leaderboard...</div>';
 
  try{
-  const [rankResponse,email]=await Promise.all([
-   fetch(API+"/api/leaderboard",{
-    method:"GET",
-    cache:"no-store"
-   }),
-   getMe()
-  ]);
+  const r=await fetch(API+"/api/leaderboard",{
+   method:"GET",
+   cache:"no-store"
+  });
 
-  const x=await rankResponse.json();
+  const x=await r.json();
 
-  if(!rankResponse.ok||!x.success)
+  if(!r.ok||!x.success)
    throw Error(x.error||"Unable to load leaderboard");
 
-  const users=x.leaderboard||[];
-
-  render(users);
-  showMyRank(users,email);
+  render(x.leaderboard||[]);
+  getMyRank();
 
  }catch(e){
   box.innerHTML=`
