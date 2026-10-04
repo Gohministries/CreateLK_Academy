@@ -24,16 +24,24 @@ export default{
 
    if(p==="/api/reset"&&r.method==="POST"){
     const secret=r.headers.get("Authorization");
+
     if(secret!==`Bearer ${e.RESET_SECRET}`)
-     return json({success:false,error:"Unauthorized"},401);
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401);
 
     return reset(e);
    }
 
-   return json({success:false,error:"Not found"},404);
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
 
   }catch(x){
    console.error(x);
+
    return json({
     success:false,
     error:x?.message||"Server error"
@@ -43,7 +51,9 @@ export default{
 
  async scheduled(event,e,ctx){
   ctx.waitUntil(
-   reset(e).catch(x=>console.error("MONTHLY RESET ERROR",x))
+   reset(e).catch(x=>
+    console.error("MONTHLY RESET ERROR",x)
+   )
   );
  }
 };
@@ -57,17 +67,16 @@ function corsHeaders(){
 }
 
 function json(x,s=200){
- return new Response(JSON.stringify(x),{
-  status:s,
-  headers:{
-   "Content-Type":"application/json;charset=UTF-8",
-   ...corsHeaders()
+ return new Response(
+  JSON.stringify(x),
+  {
+   status:s,
+   headers:{
+    "Content-Type":"application/json;charset=UTF-8",
+    ...corsHeaders()
+   }
   }
- });
-}
-
-function monthKey(d=new Date()){
- return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;
+ );
 }
 
 function monthPeriod(d=new Date()){
@@ -75,7 +84,7 @@ function monthPeriod(d=new Date()){
  const m=d.getUTCMonth();
 
  return{
-  key:monthKey(d),
+  key:`${y}-${String(m+1).padStart(2,"0")}`,
   start:new Date(Date.UTC(y,m,1)).toISOString(),
   end:new Date(Date.UTC(y,m+1,1)).toISOString()
  };
@@ -108,21 +117,24 @@ async function ensureTable(e){
 }
 
 async function leaderboard(e){
- await ensureTable(e);
-
  const p=monthPeriod();
  const now=new Date().toISOString();
 
  /*
-  PUBLIC LEADERBOARD:
-  Anyone can call this endpoint.
+  PUBLIC LEADERBOARD
 
-  RANKING ELIGIBILITY:
-  Only users with active Premium membership
-  are included in the ranking.
+  Anyone can view it.
 
-  Maximum:
-  100 Premium students.
+  ONLY ACTIVE PREMIUM STUDENTS
+  are eligible for ranking.
+
+  Maximum 100 students.
+
+  Coins:
+  5 per correct answer.
+
+  XP:
+  10 per correct answer.
  */
 
  const x=await e.DB.prepare(`
@@ -131,33 +143,46 @@ async function leaderboard(e){
    u.name,
    u.picture,
    COALESCE(SUM(q.score),0) AS score,
-   COALESCE(SUM(q.score*?),0) AS coins,
-   COALESCE(SUM(q.score*?),0) AS xp
+   COALESCE(SUM(q.score * ?),0) AS coins,
+   COALESCE(SUM(q.score * ?),0) AS xp
+
   FROM users u
-  JOIN quiz_results q
+
+  INNER JOIN quiz_results q
    ON q.user_id=u.id
-  WHERE q.completed_at>=?
-    AND q.completed_at<?
-    AND UPPER(COALESCE(u.membership_status,''))='PREMIUM'
-    AND u.membership_expiry IS NOT NULL
-    AND u.membership_expiry>?
+
+  WHERE
+   UPPER(COALESCE(u.membership_status,''))='PREMIUM'
+
+   AND u.membership_expiry IS NOT NULL
+
+   AND u.membership_expiry>?
+
+   AND q.completed_at>=?
+
+   AND q.completed_at<?
+
   GROUP BY
    u.id,
    u.name,
    u.picture
-  HAVING COALESCE(SUM(q.score),0)>0
+
+  HAVING
+   COALESCE(SUM(q.score),0)>0
+
   ORDER BY
    coins DESC,
    xp DESC,
    name ASC,
    user_id ASC
+
   LIMIT 100
  `).bind(
   COINS,
   XP,
+  now,
   p.start,
-  p.end,
-  now
+  p.end
  ).all();
 
  const rows=x.results||[];
@@ -196,15 +221,10 @@ async function reset(e){
   )
  );
 
- const previousKey=monthKey(previous);
-
- /*
-  The leaderboard is calculated directly from quiz_results
-  for the current month.
-
-  Therefore a new month automatically starts from zero.
-  We do not delete historical records.
- */
+ const previousKey=
+  `${previous.getUTCFullYear()}-${String(
+   previous.getUTCMonth()+1
+  ).padStart(2,"0")}`;
 
  return json({
   success:true,
@@ -212,6 +232,7 @@ async function reset(e){
   month:p.key,
   previous_month:previousKey,
   reset_at:now.toISOString(),
-  message:"Monthly Premium leaderboard is automatically using the new month"
+  message:
+   "Monthly Premium leaderboard automatically uses the current month"
  });
 }
