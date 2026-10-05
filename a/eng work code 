@@ -10,14 +10,19 @@ const token=r=>cookie(r,SESSION),now=()=>Date.now();
 async function user(r,e){
   const s=token(r);
   if(!s)return null;
-  const x=await e.DB.prepare("SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.expires_at>?").bind(s,now()).first();
+  const x=await e.DB.prepare(
+    "SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires_at>?"
+  ).bind(s,new Date().toISOString()).first();
   return x||null;
 }
 
 async function google(r,e){
   const u=new URL(r.url),ref=u.searchParams.get("ref")||"";
   const state=btoa(JSON.stringify({t:now(),ref}));
-  await e.DB.prepare("INSERT INTO oauth_states(state,expires_at) VALUES(?,?)").bind(state,now()+600000).run();
+  await e.DB.prepare(
+    "INSERT INTO oauth_states(state,expires_at) VALUES(?,?)"
+  ).bind(state,now()+600000).run();
+
   const q=new URLSearchParams({
     client_id:e.GOOGLE_CLIENT_ID,
     redirect_uri:"https://eng-a.createlk.workers.dev/auth/callback",
@@ -25,16 +30,25 @@ async function google(r,e){
     scope:"openid email profile",
     state
   });
-  return Response.redirect("https://accounts.google.com/o/oauth2/v2/auth?"+q,302);
+
+  return Response.redirect(
+    "https://accounts.google.com/o/oauth2/v2/auth?"+q,302
+  );
 }
 
 async function callback(r,e){
   const u=new URL(r.url),code=u.searchParams.get("code"),state=u.searchParams.get("state");
   if(!code||!state)return err("Invalid login",400);
 
-  const st=await e.DB.prepare("SELECT * FROM oauth_states WHERE state=? AND expires_at>?").bind(state,now()).first();
+  const st=await e.DB.prepare(
+    "SELECT * FROM oauth_states WHERE state=? AND expires_at>?"
+  ).bind(state,now()).first();
+
   if(!st)return err("Invalid or expired state",400);
-  await e.DB.prepare("DELETE FROM oauth_states WHERE state=?").bind(state).run();
+
+  await e.DB.prepare(
+    "DELETE FROM oauth_states WHERE state=?"
+  ).bind(state).run();
 
   const t=await fetch("https://oauth2.googleapis.com/token",{
     method:"POST",
@@ -47,28 +61,42 @@ async function callback(r,e){
       grant_type:"authorization_code"
     })
   });
+
   const tk=await t.json();
   if(!tk.access_token)return err("Google login failed",400);
 
   const g=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
     headers:{Authorization:`Bearer ${tk.access_token}`}
   });
+
   const p=await g.json();
   if(!p.email)return err("Email unavailable",400);
 
-  let uo=await e.DB.prepare("SELECT * FROM users WHERE email=?").bind(p.email.toLowerCase()).first();
+  let uo=await e.DB.prepare(
+    "SELECT * FROM users WHERE email=?"
+  ).bind(p.email.toLowerCase()).first();
 
   if(!uo){
     uo=await e.DB.prepare(
       "INSERT INTO users(email,name,created_at,membership_status) VALUES(?,?,?,?) RETURNING *"
-    ).bind(p.email.toLowerCase(),p.name||p.email,now(),"FREE").first();
+    ).bind(
+      p.email.toLowerCase(),
+      p.name||p.email,
+      new Date().toISOString(),
+      "FREE"
+    ).first();
   }
 
   const s=crypto.randomUUID(),exp=now()+SESSION_DAYS*86400000;
 
   await e.DB.prepare(
-    "INSERT INTO sessions(token,user_id,expires_at,created_at) VALUES(?,?,?,?)"
-  ).bind(s,uo.id,exp,now()).run();
+    "INSERT INTO sessions(user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)"
+  ).bind(
+    uo.id,
+    s,
+    new Date(exp).toISOString(),
+    new Date().toISOString()
+  ).run();
 
   let ref="";
   try{ref=JSON.parse(atob(state)).ref||""}catch{}
