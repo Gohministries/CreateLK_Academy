@@ -1,5 +1,13 @@
-const SITE="https://createlk.com",PAY="https://pay-a.createlk.workers.dev",AFF="https://affiliate-a.createlk.workers.dev";
-const SESSION="english_session",COINS=5,XP=10,MAX=3,DAYS=30,SESSION_DAYS=30;
+const SITE="https://createlk.com";
+const PAY="https://pay-a.createlk.workers.dev";
+const AFF="https://affiliate-a.createlk.workers.dev";
+
+const SESSION="english_session";
+const COINS=5;
+const XP=10;
+const MAX=3;
+const DAYS=30;
+const SESSION_DAYS=30;
 
 const origin=r=>{
   const o=r.headers.get("Origin")||"";
@@ -15,10 +23,26 @@ const H=r=>({
   "Vary":"Origin"
 });
 
-const json=(o,s=200,r)=>new Response(JSON.stringify(o),{status:s,headers:H(r)});
-const err=(x,s=400,e={},r)=>json({success:false,error:x,...e},s,r);
-const body=async r=>{try{return await r.json()}catch{return{}}};
-const cookie=(r,n)=>r.headers.get("Cookie")?.match(new RegExp(`${n}=([^;]+)`))?.[1]||"";
+const json=(o,s=200,r)=>new Response(JSON.stringify(o),{
+  status:s,
+  headers:H(r)
+});
+
+const err=(x,s=400,e={},r)=>json({
+  success:false,
+  error:x,
+  ...e
+},s,r);
+
+const body=async r=>{
+  try{return await r.json()}catch{return{}}
+};
+
+const cookie=(r,n)=>
+  r.headers.get("Cookie")?.match(
+    new RegExp(`${n}=([^;]+)`)
+  )?.[1]||"";
+
 const token=r=>cookie(r,SESSION);
 const now=()=>Date.now();
 
@@ -28,7 +52,10 @@ async function user(r,e){
 
   const x=await e.DB.prepare(
     "SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires_at>?"
-  ).bind(s,new Date().toISOString()).first();
+  ).bind(
+    s,
+    new Date().toISOString()
+  ).first();
 
   return x||null;
 }
@@ -41,7 +68,12 @@ async function rewards(id,e){
   if(!x){
     await e.DB.prepare(
       "INSERT INTO user_rewards(user_id,coins,xp,updated_at) VALUES(?,?,?,?)"
-    ).bind(id,0,0,new Date().toISOString()).run();
+    ).bind(
+      id,
+      0,
+      0,
+      new Date().toISOString()
+    ).run();
 
     x={coins:0,xp:0};
   }
@@ -49,133 +81,28 @@ async function rewards(id,e){
   return x;
 }
 
-async function google(r,e){
-  const u=new URL(r.url);
-  const ref=u.searchParams.get("ref")||"";
-  const state=btoa(JSON.stringify({t:now(),ref}));
-
-  await e.DB.prepare(
-    "INSERT INTO oauth_states(state,expires_at) VALUES(?,?)"
-  ).bind(state,now()+600000).run();
-
-  const q=new URLSearchParams({
-    client_id:e.GOOGLE_CLIENT_ID,
-    redirect_uri:"https://eng-a.createlk.workers.dev/auth/callback",
-    response_type:"code",
-    scope:"openid email profile",
-    state
-  });
-
-  return Response.redirect(
-    "https://accounts.google.com/o/oauth2/v2/auth?"+q,
-    302
-  );
-}
-
-async function callback(r,e){
-  const u=new URL(r.url);
-  const code=u.searchParams.get("code");
-  const state=u.searchParams.get("state");
-
-  if(!code||!state)return err("Invalid login",400,{},r);
-
-  const st=await e.DB.prepare(
-    "SELECT * FROM oauth_states WHERE state=? AND expires_at>?"
-  ).bind(state,now()).first();
-
-  if(!st)return err("Invalid or expired state",400,{},r);
-
-  await e.DB.prepare(
-    "DELETE FROM oauth_states WHERE state=?"
-  ).bind(state).run();
-
-  const t=await fetch("https://oauth2.googleapis.com/token",{
-    method:"POST",
-    headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({
-      code,
-      client_id:e.GOOGLE_CLIENT_ID,
-      client_secret:e.GOOGLE_CLIENT_SECRET,
-      redirect_uri:"https://eng-a.createlk.workers.dev/auth/callback",
-      grant_type:"authorization_code"
-    })
-  });
-
-  const tk=await t.json();
-
-  if(!tk.access_token)
-    return err("Google login failed",400,{},r);
-
-  const g=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
-    headers:{Authorization:`Bearer ${tk.access_token}`}
-  });
-
-  const p=await g.json();
-
-  if(!p.email)return err("Email unavailable",400,{},r);
-
-  let uo=await e.DB.prepare(
-    "SELECT * FROM users WHERE email=?"
-  ).bind(p.email.toLowerCase()).first();
-
-  if(!uo){
-    uo=await e.DB.prepare(
-      "INSERT INTO users(email,name,created_at,membership_status) VALUES(?,?,?,?) RETURNING *"
-    ).bind(
-      p.email.toLowerCase(),
-      p.name||p.email,
-      new Date().toISOString(),
-      "FREE"
-    ).first();
-  }else{
-    await e.DB.prepare(
-      "UPDATE users SET name=?,picture=?,google_id=?,auth_provider='google',last_active_at=? WHERE id=?"
-    ).bind(
-      p.name||uo.name,
-      p.picture||null,
-      p.sub||null,
-      now(),
-      uo.id
-    ).run();
-  }
-
-  const s=crypto.randomUUID();
-  const exp=now()+SESSION_DAYS*86400000;
-
-  await e.DB.prepare(
-    "INSERT INTO sessions(user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)"
-  ).bind(
-    uo.id,
-    s,
-    new Date(exp).toISOString(),
-    new Date().toISOString()
-  ).run();
-
-  let ref="";
-
-  try{
-    ref=JSON.parse(atob(state)).ref||"";
-  }catch{}
-
-  if(ref)await createReferral(ref,uo.id,e);
-
-  return new Response(null,{
-    status:302,
-    headers:{
-      Location:`${SITE}/a/`,
-      "Set-Cookie":`${SESSION}=${s}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_DAYS*86400}`
-    }
-  });
-}
-
 async function me(r,e){
   const u=await user(r,e);
 
-  if(!u)
-    return json({success:false,user:null,premium:false},200,r);
+  if(!u){
+    return json({
+      success:true,
+      user:null,
+      premium:false,
+      coins:0,
+      xp:0
+    },200,r);
+  }
 
-  const p=await premium(u,e);
+  const p=await e.DB.prepare(
+    "SELECT membership_expiry FROM premium_users WHERE user_id=? AND membership_expiry>?"
+  ).bind(
+    u.id,
+    new Date().toISOString()
+  ).first();
+
   const rw=await rewards(u.id,e);
+  const premium=!!p;
 
   return json({
     success:true,
@@ -184,132 +111,142 @@ async function me(r,e){
       name:u.name,
       email:u.email,
       picture:u.picture||null,
-      membership_status:p.premium?"PREMIUM":"FREE",
-      membership_expiry:p.membership_expiry,
-      is_premium:p.premium,
+      membership_status:premium?"PREMIUM":"FREE",
+      membership_expiry:p?.membership_expiry||null,
+      is_premium:premium,
       coins:Number(rw.coins||0),
       xp:Number(rw.xp||0)
     },
-    premium:p.premium,
-    membership_expiry:p.membership_expiry,
+    premium,
+    membership_expiry:p?.membership_expiry||null,
     coins:Number(rw.coins||0),
     xp:Number(rw.xp||0)
   },200,r);
 }
 
-async function premium(u,e){
-  try{
-    const x=await e.PAY.fetch("https://pay/internal/check",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({email:u.email})
-    });
-
-    const d=await x.json();
-
-    return{
-      premium:d.premium===true,
-      membership_expiry:d.membership_expiry||null
-    };
-  }catch{
-    const p=
-      String(u.membership_status||"").toUpperCase()==="PREMIUM"&&
-      u.membership_expiry&&
-      new Date(u.membership_expiry)>new Date();
-
-    return{
-      premium:!!p,
-      membership_expiry:u.membership_expiry||null
-    };
-  }
-}
-
 async function titles(r,e){
-  const q=await e.DB.prepare(
-    "SELECT id,title,access_type FROM lessons WHERE active=1 ORDER BY id"
+  const x=await e.DB.prepare(
+    "SELECT id,title,access_type,active FROM lessons WHERE active=1 ORDER BY id"
   ).all();
 
   return json({
     success:true,
-    titles:q.results||[]
+    titles:(x.results||[]).map(x=>({
+      id:x.id,
+      title:x.title,
+      access_type:x.access_type,
+      premium:String(x.access_type||"").toUpperCase()==="PREMIUM"
+    }))
   },200,r);
 }
 
 async function questions(r,e){
-  const id=Number(new URL(r.url).searchParams.get("lesson_id"));
+  const u=await user(r,e);
+  if(!u)return err("Login required",401,{},r);
 
-  if(!id)return err("lesson_id required",400,{},r);
+  const url=new URL(r.url);
+  const lid=Number(url.searchParams.get("lesson_id"));
 
-  const t=await e.DB.prepare(
-    "SELECT * FROM lessons WHERE id=? AND active=1"
-  ).bind(id).first();
+  if(!lid)return err("Lesson required",400,{},r);
 
-  if(!t)return err("Lesson not found",404,{},r);
+  const l=await e.DB.prepare(
+    "SELECT id,title,access_type,active FROM lessons WHERE id=? AND active=1"
+  ).bind(lid).first();
 
-  if(id!==1&&String(t.access_type).toUpperCase()!=="FREE"){
-    const u=await user(r,e);
+  if(!l)return err("Lesson not found",404,{},r);
 
-    if(!u)
-      return err("Login required",401,{login_required:true},r);
+  const p=await e.DB.prepare(
+    "SELECT membership_expiry FROM premium_users WHERE user_id=? AND membership_expiry>?"
+  ).bind(
+    u.id,
+    new Date().toISOString()
+  ).first();
 
-    const p=await premium(u,e);
+  const premium=!!p;
 
-    if(!p.premium)
-      return err("Premium required",403,{premium_required:true},r);
+  if(
+    String(l.access_type||"").toUpperCase()==="PREMIUM" &&
+    lid!==1 &&
+    !premium
+  ){
+    return json({
+      success:false,
+      premium_required:true,
+      error:"Premium membership required."
+    },403,r);
   }
 
   const q=await e.DB.prepare(
-    "SELECT id,lesson_id,question,option_a,option_b,option_c,option_d FROM questions WHERE lesson_id=? AND active=1 ORDER BY id"
-  ).bind(id).all();
+    `SELECT id,lesson_id,question,option_a,option_b,option_c,option_d
+     FROM questions
+     WHERE lesson_id=? AND active=1
+     ORDER BY id`
+  ).bind(lid).all();
 
   return json({
     success:true,
     lesson:{
-      id:t.id,
-      title:t.title,
-      access_type:t.access_type
+      id:l.id,
+      title:l.title
     },
     questions:q.results||[]
   },200,r);
 }
 
-async function startQuiz(r,e){
+async function start(r,e){
   const u=await user(r,e);
-
-  if(!u)
-    return err("Login required",401,{login_required:true},r);
+  if(!u)return err("Login required",401,{},r);
 
   const b=await body(r);
-  const lesson=Number(b.lesson_id);
+  const lid=Number(b.lesson_id);
 
-  if(!lesson)return err("lesson_id required",400,{},r);
+  if(!lid)return err("Lesson required",400,{},r);
 
-  const t=await e.DB.prepare(
-    "SELECT * FROM lessons WHERE id=? AND active=1"
-  ).bind(lesson).first();
+  const l=await e.DB.prepare(
+    "SELECT id,title,access_type,active FROM lessons WHERE id=? AND active=1"
+  ).bind(lid).first();
 
-  if(!t)return err("Lesson not found",404,{},r);
+  if(!l)return err("Lesson not found",404,{},r);
 
-  if(lesson!==1&&String(t.access_type).toUpperCase()!=="FREE"){
-    const p=await premium(u,e);
+  const p=await e.DB.prepare(
+    "SELECT membership_expiry FROM premium_users WHERE user_id=? AND membership_expiry>?"
+  ).bind(
+    u.id,
+    new Date().toISOString()
+  ).first();
 
-    if(!p.premium)
-      return err("Premium required",403,{premium_required:true},r);
+  const premium=!!p;
+
+  if(
+    String(l.access_type||"").toUpperCase()==="PREMIUM" &&
+    lid!==1 &&
+    !premium
+  ){
+    return json({
+      success:false,
+      premium_required:true,
+      error:"Premium membership required."
+    },403,r);
   }
 
-  const since=new Date(now()-DAYS*86400000).toISOString();
+  const since=new Date(
+    now()-DAYS*86400000
+  ).toISOString();
 
-  const a=await e.DB.prepare(
-    "SELECT COUNT(*) n FROM quiz_results WHERE user_id=? AND completed_at>?"
-  ).bind(u.id,since).first();
+  const c=await e.DB.prepare(
+    "SELECT COUNT(*) AS n FROM quiz_results WHERE user_id=? AND completed_at>=?"
+  ).bind(
+    u.id,
+    since
+  ).first();
 
-  if(Number(a?.n||0)>=MAX)
-    return err(
-      "Maximum 3 quiz attempts reached",
-      429,
-      {limit:MAX,max_attempts:true},
-      r
-    );
+  if(Number(c?.n||0)>=MAX){
+    return json({
+      success:false,
+      max_attempts:true,
+      error:"You can submit a maximum of 3 quizzes in 30 days."
+    },429,r);
+  }
 
   const id=crypto.randomUUID();
 
@@ -318,120 +255,174 @@ async function startQuiz(r,e){
   ).bind(
     id,
     u.id,
-    lesson,
+    lid,
     new Date().toISOString()
   ).run();
 
   return json({
     success:true,
     attempt_id:id,
-    lesson_id:lesson
+    lesson_id:lid
   },200,r);
 }
 
 async function check(r,e){
   const u=await user(r,e);
-
   if(!u)return err("Login required",401,{},r);
 
   const b=await body(r);
 
   const q=await e.DB.prepare(
-    "SELECT correct_answer FROM questions WHERE id=? AND active=1"
-  ).bind(Number(b.question_id)).first();
+    "SELECT id,correct_answer FROM questions WHERE id=? AND active=1"
+  ).bind(
+    Number(b.question_id)
+  ).first();
 
   if(!q)return err("Question not found",404,{},r);
 
-  const correct=Number(b.answer)===Number(q.correct_answer);
+  const n=v=>{
+    v=String(v??"")
+      .trim()
+      .toLowerCase()
+      .replace(/[.)]$/,"");
+
+    return {
+      1:"a",
+      2:"b",
+      3:"c",
+      4:"d",
+      a:"a",
+      b:"b",
+      c:"c",
+      d:"d"
+    }[v]||null;
+  };
+
+  const selected=n(b.answer);
+  const correctAnswer=n(q.correct_answer);
+  const correct=
+    selected!==null &&
+    correctAnswer!==null &&
+    selected===correctAnswer;
 
   return json({
     success:true,
     correct,
+    selected_answer:selected,
+    correct_answer:correctAnswer,
     reward_coins:correct?COINS:0,
-    reward_xp:correct?XP:0,
-    reward:{
-      coins:correct?COINS:0,
-      xp:correct?XP:0
-    }
+    reward_xp:correct?XP:0
   },200,r);
 }
 
 async function submit(r,e){
   const u=await user(r,e);
-
   if(!u)return err("Login required",401,{},r);
 
   const b=await body(r);
-  const attempt=b.attempt_id;
+  const lid=Number(b.lesson_id);
+  const aid=String(b.attempt_id||"");
 
-  if(!attempt)return err("attempt_id required",400,{},r);
+  if(!lid||!aid)return err("Invalid quiz.",400,{},r);
 
   const a=await e.DB.prepare(
-    "SELECT * FROM quiz_attempts WHERE id=? AND user_id=?"
-  ).bind(attempt,u.id).first();
+    "SELECT id,user_id,lesson_id,completed_at FROM quiz_attempts WHERE id=? AND user_id=? AND lesson_id=?"
+  ).bind(
+    aid,
+    u.id,
+    lid
+  ).first();
 
-  if(!a)
-    return err("Invalid attempt",400,{},r);
+  if(!a)return err("Quiz attempt not found.",404,{},r);
+  if(a.completed_at)return err("Quiz already submitted.",400,{},r);
 
-  if(a.completed_at)
-    return err("Quiz already submitted",400,{},r);
+  const q=await e.DB.prepare(
+    `SELECT id,correct_answer
+     FROM questions
+     WHERE lesson_id=? AND active=1
+     ORDER BY id`
+  ).bind(lid).all();
 
+  const questions=q.results||[];
   const answers=Array.isArray(b.answers)?b.answers:[];
+
+  const n=v=>{
+    v=String(v??"")
+      .trim()
+      .toLowerCase()
+      .replace(/[.)]$/,"");
+
+    return {
+      1:"a",
+      2:"b",
+      3:"c",
+      4:"d",
+      a:"a",
+      b:"b",
+      c:"c",
+      d:"d"
+    }[v]||null;
+  };
+
   let score=0;
 
-  for(const x of answers){
-    const q=await e.DB.prepare(
-      "SELECT correct_answer FROM questions WHERE id=? AND active=1"
-    ).bind(Number(x.question_id)).first();
+  for(const qx of questions){
+    const ax=answers.find(
+      x=>Number(x.question_id)===Number(qx.id)
+    );
 
-    if(q&&Number(x.answer)===Number(q.correct_answer))
+    if(
+      ax &&
+      n(ax.answer) &&
+      n(ax.answer)===n(qx.correct_answer)
+    ){
       score++;
+    }
   }
 
-  const total=answers.length||0;
+  const total=questions.length;
+  const percentage=total
+    ?Math.round(score/total*100)
+    :0;
 
-  const allq=await e.DB.prepare(
-    "SELECT COUNT(*) n FROM questions WHERE lesson_id=? AND active=1"
-  ).bind(a.lesson_id).first();
-
-  const questionTotal=Number(allq?.n||total||1);
-  const percentage=Math.round(score/questionTotal*100);
-
-  const earnedCoins=score*COINS;
-  const earnedXp=score*XP;
-  const completedAt=new Date().toISOString();
+  const completed=new Date().toISOString();
 
   await e.DB.prepare(
-    "INSERT INTO quiz_results(user_id,lesson_id,score,total,percentage,completed_at) VALUES(?,?,?,?,?,?)"
+    `INSERT INTO quiz_results
+     (user_id,lesson_id,score,total,percentage,completed_at)
+     VALUES(?,?,?,?,?,?)`
   ).bind(
     u.id,
-    a.lesson_id,
+    lid,
     score,
-    questionTotal,
+    total,
     percentage,
-    completedAt
+    completed
   ).run();
 
   await e.DB.prepare(
     "UPDATE quiz_attempts SET completed_at=? WHERE id=?"
   ).bind(
-    completedAt,
-    attempt
+    completed,
+    aid
   ).run();
+
+  const rewardCoins=score*COINS;
+  const rewardXp=score*XP;
 
   await e.DB.prepare(
     `INSERT INTO user_rewards(user_id,coins,xp,updated_at)
      VALUES(?,?,?,?)
      ON CONFLICT(user_id)
      DO UPDATE SET
-       coins=user_rewards.coins+excluded.coins,
-       xp=user_rewards.xp+excluded.xp,
-       updated_at=excluded.updated_at`
+     coins=user_rewards.coins+excluded.coins,
+     xp=user_rewards.xp+excluded.xp,
+     updated_at=excluded.updated_at`
   ).bind(
     u.id,
-    earnedCoins,
-    earnedXp,
-    completedAt
+    rewardCoins,
+    rewardXp,
+    completed
   ).run();
 
   const rw=await rewards(u.id,e);
@@ -439,144 +430,210 @@ async function submit(r,e){
   return json({
     success:true,
     score,
-    total:questionTotal,
+    total,
     percentage,
-    coins:earnedCoins,
-    xp:earnedXp,
-    reward_coins:earnedCoins,
-    reward_xp:earnedXp,
+    coins:rewardCoins,
+    xp:rewardXp,
+    reward_coins:rewardCoins,
+    reward_xp:rewardXp,
     total_coins:Number(rw.coins||0),
     total_xp:Number(rw.xp||0)
   },200,r);
 }
 
-async function referral(r,e){
-  const u=await user(r,e);
+async function logout(r,e){
+  const s=token(r);
 
-  if(!u)return err("Login required",401,{},r);
-
-  const code="ENG"+u.id;
-
-  return json({
-    success:true,
-    referral_code:code,
-    referral_url:`${SITE}/a/?ref=${encodeURIComponent(code)}`
-  },200,r);
-}
-
-async function createReferral(code,userId,e){
-  if(!/^ENG\d+$/i.test(code))return;
-
-  const owner=Number(code.slice(3));
-
-  if(owner===userId)return;
-
-  try{
+  if(s){
     await e.DB.prepare(
-      "INSERT OR IGNORE INTO referrals(referrer_id,referred_id,referral_code,created_at) VALUES(?,?,?,?)"
-    ).bind(
-      owner,
-      userId,
-      code.toUpperCase(),
-      new Date().toISOString()
-    ).run();
-  }catch{}
-}
+      "DELETE FROM sessions WHERE token_hash=?"
+    ).bind(s).run();
+  }
 
-async function payment(r,e){
-  const u=await user(r,e);
-
-  if(!u)return err("Login required",401,{},r);
-
-  return e.PAY.fetch("https://pay/internal/start",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      email:u.email,
-      user_id:u.id
-    })
-  });
-}
-
-async function affiliate(r,e){
-  const u=new URL(r.url);
-
-  return e.AFF.fetch(
-    new Request("https://affiliate"+u.pathname+u.search,r)
-  );
-}
-
-async function logout(r){
   return new Response(null,{
     status:302,
     headers:{
-      Location:`${SITE}/a/`,
-      "Set-Cookie":`${SESSION}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`,
-      "Access-Control-Allow-Origin":origin(r),
-      "Access-Control-Allow-Credentials":"true"
+      "Location":SITE+"/a/",
+      "Set-Cookie":`${SESSION}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`
+    }
+  });
+}
+
+async function google(r,e){
+  const state=crypto.randomUUID();
+
+  await e.DB.prepare(
+    "INSERT INTO oauth_states(state,expires_at) VALUES(?,?)"
+  ).bind(
+    state,
+    now()+10*60*1000
+  ).run();
+
+  const u=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+
+  u.searchParams.set("client_id",e.GOOGLE_CLIENT_ID);
+  u.searchParams.set(
+    "redirect_uri",
+    "https://eng-a.createlk.workers.dev/auth/callback"
+  );
+  u.searchParams.set("response_type","code");
+  u.searchParams.set("scope","openid email profile");
+  u.searchParams.set("state",state);
+  u.searchParams.set("access_type","offline");
+  u.searchParams.set("prompt","select_account");
+
+  return Response.redirect(u.toString(),302);
+}
+
+async function callback(r,e){
+  const url=new URL(r.url);
+  const code=url.searchParams.get("code");
+  const state=url.searchParams.get("state");
+
+  if(!code||!state)return err("Invalid Google login.",400,{},r);
+
+  const st=await e.DB.prepare(
+    "SELECT state FROM oauth_states WHERE state=? AND expires_at>?"
+  ).bind(
+    state,
+    now()
+  ).first();
+
+  if(!st)return err("Login session expired.",400,{},r);
+
+  await e.DB.prepare(
+    "DELETE FROM oauth_states WHERE state=?"
+  ).bind(state).run();
+
+  const tr=await fetch(
+    "https://oauth2.googleapis.com/token",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/x-www-form-urlencoded"
+      },
+      body:new URLSearchParams({
+        code,
+        client_id:e.GOOGLE_CLIENT_ID,
+        client_secret:e.GOOGLE_CLIENT_SECRET,
+        redirect_uri:"https://eng-a.createlk.workers.dev/auth/callback",
+        grant_type:"authorization_code"
+      })
+    }
+  );
+
+  const td=await tr.json();
+
+  if(!td.access_token){
+    return err("Google login failed.",400,{},r);
+  }
+
+  const gr=await fetch(
+    "https://openidconnect.googleapis.com/v1/userinfo",
+    {
+      headers:{
+        Authorization:`Bearer ${td.access_token}`
+      }
+    }
+  );
+
+  const g=await gr.json();
+
+  if(!g.sub||!g.email){
+    return err("Unable to read Google account.",400,{},r);
+  }
+
+  let u=await e.DB.prepare(
+    "SELECT * FROM users WHERE google_id=? OR email=? LIMIT 1"
+  ).bind(
+    g.sub,
+    g.email
+  ).first();
+
+  if(!u){
+    await e.DB.prepare(
+      `INSERT INTO users
+       (google_id,name,email,membership_status,auth_provider,picture)
+       VALUES(?,?,?,?,?,?)`
+    ).bind(
+      g.sub,
+      g.name||g.email.split("@")[0],
+      g.email,
+      "FREE",
+      "google",
+      g.picture||null
+    ).run();
+
+    u=await e.DB.prepare(
+      "SELECT * FROM users WHERE google_id=?"
+    ).bind(g.sub).first();
+  }else{
+    await e.DB.prepare(
+      `UPDATE users
+       SET google_id=?,name=?,picture=?,auth_provider='google'
+       WHERE id=?`
+    ).bind(
+      g.sub,
+      g.name||u.name,
+      g.picture||u.picture||null,
+      u.id
+    ).run();
+  }
+
+  await rewards(u.id,e);
+
+  const s=crypto.randomUUID();
+  const exp=now()+SESSION_DAYS*86400000;
+
+  await e.DB.prepare(
+    `INSERT INTO sessions
+     (user_id,token_hash,expires_at,created_at)
+     VALUES(?,?,?,?)`
+  ).bind(
+    u.id,
+    s,
+    new Date(exp).toISOString(),
+    new Date().toISOString()
+  ).run();
+
+  return new Response(null,{
+    status:302,
+    headers:{
+      "Location":SITE+"/a/",
+      "Set-Cookie":
+        `${SESSION}=${s}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_DAYS*86400}`
     }
   });
 }
 
 export default{
   async fetch(r,e){
-    if(r.method==="OPTIONS")
-      return new Response(null,{headers:H(r)});
+    if(r.method==="OPTIONS"){
+      return new Response(null,{
+        status:204,
+        headers:H(r)
+      });
+    }
+
+    const p=new URL(r.url).pathname;
 
     try{
-      const p=new URL(r.url).pathname;
+      if(p==="/api/me")return me(r,e);
+      if(p==="/api/titles")return titles(r,e);
+      if(p==="/api/questions")return questions(r,e);
+      if(p==="/api/quiz/start")return start(r,e);
+      if(p==="/api/quiz/check")return check(r,e);
+      if(p==="/api/quiz/submit")return submit(r,e);
+      if(p==="/auth/google")return google(r,e);
+      if(p==="/auth/callback")return callback(r,e);
+      if(p==="/auth/logout")return logout(r,e);
 
-      if(p==="/auth/google")
-        return google(r,e);
-
-      if(p==="/auth/callback")
-        return callback(r,e);
-
-      if(p==="/auth/logout")
-        return logout(r);
-
-      if(p==="/api/me")
-        return me(r,e);
-
-      if(p==="/api/titles")
-        return titles(r,e);
-
-      if(p==="/api/questions")
-        return questions(r,e);
-
-      if(p==="/api/quiz/start"&&r.method==="POST")
-        return startQuiz(r,e);
-
-      if(p==="/api/quiz/check"&&r.method==="POST")
-        return check(r,e);
-
-      if(p==="/api/quiz/submit"&&r.method==="POST")
-        return submit(r,e);
-
-      if(p==="/api/referral")
-        return referral(r,e);
-
-      if(p==="/api/payment/start"&&r.method==="POST")
-        return payment(r,e);
-
-      if(
-        p==="/api/affiliate"||
-        p==="/api/affiliate/withdrawal"||
-        p==="/api/affiliate/click"
-      )
-        return affiliate(r,e);
-
-      if(p==="/api/health")
-        return json({success:true},200,r);
-
-      return err("Not found",404,{},r);
-
-    }catch(ex){
-      console.error(ex);
+      return new Response("CreateLK English",{status:200});
+    }catch(x){
       return err(
-        "Server error",
+        x?.message||"Server error",
         500,
-        {detail:String(ex?.message||ex)},
+        {},
         r
       );
     }
