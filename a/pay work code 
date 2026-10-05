@@ -537,13 +537,16 @@ async function payment(r,e){
  if(!uid&&!email)
   return err("User required");
 
+ const orderId=`ENG-${Date.now()}-${uid||"USER"}`;
+
  const x=await e.DB.prepare(`
   INSERT INTO payments(
-   user_id,email,name,amount,
+   user_id,order_id,email,name,amount,
    method,reference,status,created_at
-  ) VALUES(?,?,?,?,?,?,?,?)
+  ) VALUES(?,?,?,?,?,?,?,?,?)
  `).bind(
   uid||null,
+  orderId,
   email,
   clean(b?.name),
   amount,
@@ -556,6 +559,7 @@ async function payment(r,e){
  return json({
   success:true,
   payment_id:x.meta.last_row_id,
+  order_id:orderId,
   status:"PENDING"
  });
 }
@@ -602,6 +606,9 @@ async function activate(r,e){
    return err("User not found",404);
 
   const amount=inputAmount||+(p?.amount||0);
+  const orderId=
+   clean(p?.order_id)||
+   `ENG-${Date.now()}-${uid}`;
   const t=now();
 
   const pu=await e.DB.prepare(`
@@ -620,9 +627,6 @@ async function activate(r,e){
 
   const start=dates[0]||new Date();
 
-  /*
-   Existing active membership + 30 days.
-  */
   const expiry=new Date(
    start.getTime()+days*86400000
   ).toISOString();
@@ -637,11 +641,12 @@ async function activate(r,e){
      status='APPROVED',
      approved_at=?,
      approved_by=?,
-     amount=?
+     amount=?,
+     paid_at=?
     WHERE id=?
     AND status!='APPROVED'
    `).bind(
-    t,a.email,amount,pid
+    t,a.email,amount,t,pid
    ).run();
 
    if(x.meta.changes!==1)
@@ -651,19 +656,23 @@ async function activate(r,e){
 
    const x=await e.DB.prepare(`
     INSERT INTO payments(
-     user_id,email,name,amount,
+     user_id,order_id,email,name,amount,
      method,reference,status,
-     created_at,approved_at,approved_by
-    ) VALUES(?,?,?,?,?,?,?,?,?,?)
+     created_at,approved_at,approved_by,paid_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
    `).bind(
     uid,
+    orderId,
     u.email,
     u.name,
     amount,
     clean(b?.method)||"MANUAL",
     clean(b?.reference),
     "APPROVED",
-    t,t,a.email
+    t,
+    t,
+    a.email,
+    t
    ).run();
 
    id=x.meta.last_row_id;
@@ -762,6 +771,7 @@ async function activate(r,e){
   return json({
    success:true,
    payment_id:id,
+   order_id:orderId,
    user_id:uid,
    email:u.email,
    status:"PREMIUM",
@@ -797,3 +807,4 @@ async function logout(r,e){
   }
  });
 }
+
