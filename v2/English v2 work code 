@@ -1,50 +1,124 @@
 const COOKIE_NAME = "english_v2_session";
 const SESSION_DAYS = 7;
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-      "Cache-Control": "no-store"
-    }
-  });
+/* =========================
+   CORS
+========================= */
+
+function corsHeaders(request) {
+  const origin = request.headers.get("Origin");
+
+  const headers = {
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
+  };
+
+  /*
+    Allow the V2 frontend and normal browser requests.
+    If an Origin exists, return it.
+  */
+
+  if (origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  } else {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+
+  return headers;
 }
 
-function redirect(url) {
+function json(data, status = 200, request = null) {
+
+  const headers = {
+    "Content-Type": "application/json; charset=UTF-8",
+    "Cache-Control": "no-store"
+  };
+
+  if (request) {
+    Object.assign(
+      headers,
+      corsHeaders(request)
+    );
+  }
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers
+    }
+  );
+}
+
+function redirect(url, extraHeaders = {}) {
+
   return new Response(null, {
     status: 302,
     headers: {
       Location: url,
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
+      ...extraHeaders
     }
   });
 }
 
+
+/* =========================
+   RANDOM STRING
+========================= */
+
 function randomString(length = 32) {
-  const bytes = new Uint8Array(length);
+
+  const bytes =
+    new Uint8Array(length);
+
   crypto.getRandomValues(bytes);
 
   return Array.from(bytes)
-    .map(b => b.toString(16).padStart(2, "0"))
+    .map(
+      b =>
+        b.toString(16)
+          .padStart(2, "0")
+    )
     .join("");
 }
 
+
+/* =========================
+   COOKIE
+========================= */
+
 function getCookie(request, name) {
-  const cookie = request.headers.get("Cookie") || "";
 
-  const match = cookie.match(
-    new RegExp(
-      "(?:^|;\\s*)" +
-      name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-      "=([^;]*)"
-    )
-  );
+  const cookie =
+    request.headers.get("Cookie") || "";
 
-  return match ? decodeURIComponent(match[1]) : null;
+  const match =
+    cookie.match(
+      new RegExp(
+        "(?:^|;\\s*)" +
+        name.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        ) +
+        "=([^;]*)"
+      )
+    );
+
+  return match
+    ? decodeURIComponent(match[1])
+    : null;
 }
 
-function sessionCookie(token, maxAge = SESSION_DAYS * 86400) {
+
+function sessionCookie(
+  token,
+  maxAge = SESSION_DAYS * 86400
+) {
+
   return [
     `${COOKIE_NAME}=${encodeURIComponent(token)}`,
     "Path=/",
@@ -55,7 +129,9 @@ function sessionCookie(token, maxAge = SESSION_DAYS * 86400) {
   ].join("; ");
 }
 
+
 function clearSessionCookie() {
+
   return [
     `${COOKIE_NAME}=`,
     "Path=/",
@@ -66,13 +142,18 @@ function clearSessionCookie() {
   ].join("; ");
 }
 
-async function createSession(env, userId) {
-  const token = randomString(32);
 
-  /*
-    _cf_KV is NOT used for sessions.
-    We store sessions in a dedicated table.
-  */
+/* =========================
+   CREATE SESSION
+========================= */
+
+async function createSession(
+  env,
+  userId
+) {
+
+  const token =
+    randomString(32);
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -80,28 +161,55 @@ async function createSession(env, userId) {
       user_id TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
     )
   `).run();
 
-  const expires = new Date(
-    Date.now() + SESSION_DAYS * 86400000
-  ).toISOString();
+  const expires =
+    new Date(
+      Date.now() +
+      SESSION_DAYS * 86400000
+    ).toISOString();
 
   await env.DB.prepare(`
-    INSERT INTO sessions (token, user_id, expires_at)
+    INSERT INTO sessions (
+      token,
+      user_id,
+      expires_at
+    )
     VALUES (?, ?, ?)
   `)
-    .bind(token, userId, expires)
+    .bind(
+      token,
+      userId,
+      expires
+    )
     .run();
 
   return token;
 }
 
-async function getCurrentUser(request, env) {
-  const token = getCookie(request, COOKIE_NAME);
 
-  if (!token) return null;
+/* =========================
+   CURRENT USER
+========================= */
+
+async function getCurrentUser(
+  request,
+  env
+) {
+
+  const token =
+    getCookie(
+      request,
+      COOKIE_NAME
+    );
+
+  if (!token) {
+    return null;
+  }
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -109,162 +217,298 @@ async function getCurrentUser(request, env) {
       user_id TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
     )
   `).run();
 
-  const row = await env.DB.prepare(`
-    SELECT
-      u.id,
-      u.google_id,
-      u.email,
-      u.name,
-      u.avatar_url,
-      u.membership,
-      u.xp,
-      u.correct_answers,
-      u.questions_answered,
-      u.lessons_completed,
-      u.affiliate_code,
-      u.referred_by,
-      s.expires_at AS session_expires_at
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token = ?
-      AND s.expires_at > ?
-    LIMIT 1
-  `)
-    .bind(token, new Date().toISOString())
-    .first();
+  const row =
+    await env.DB.prepare(`
+      SELECT
+        u.id,
+        u.google_id,
+        u.email,
+        u.name,
+        u.avatar_url,
+        u.membership,
+        u.xp,
+        u.correct_answers,
+        u.questions_answered,
+        u.lessons_completed,
+        u.affiliate_code,
+        u.referred_by,
+        s.expires_at AS session_expires_at
+      FROM sessions s
+      JOIN users u
+        ON u.id = s.user_id
+      WHERE s.token = ?
+        AND s.expires_at > ?
+      LIMIT 1
+    `)
+      .bind(
+        token,
+        new Date().toISOString()
+      )
+      .first();
 
   return row || null;
 }
 
-async function googleUser(accessToken) {
-  const response = await fetch(
-    "https://www.googleapis.com/oauth2/v3/userinfo",
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
+
+/* =========================
+   GOOGLE USER
+========================= */
+
+async function googleUser(
+  accessToken
+) {
+
+  const response =
+    await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      {
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`
+        }
       }
-    }
-  );
+    );
 
   if (!response.ok) {
-    throw new Error("Unable to retrieve Google account information");
+
+    throw new Error(
+      "Unable to retrieve Google account information"
+    );
+
   }
 
   return await response.json();
 }
 
-async function exchangeGoogleCode(env, code, redirectUri) {
-  const body = new URLSearchParams();
 
-  body.set("client_id", env.GOOGLE_CLIENT_ID);
-  body.set("client_secret", env.GOOGLE_CLIENT_SECRET);
-  body.set("code", code);
-  body.set("grant_type", "authorization_code");
-  body.set("redirect_uri", redirectUri);
+/* =========================
+   GOOGLE TOKEN EXCHANGE
+========================= */
 
-  const response = await fetch(
-    "https://oauth2.googleapis.com/token",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body
-    }
+async function exchangeGoogleCode(
+  env,
+  code,
+  redirectUri
+) {
+
+  const body =
+    new URLSearchParams();
+
+  body.set(
+    "client_id",
+    env.GOOGLE_CLIENT_ID
   );
 
+  body.set(
+    "client_secret",
+    env.GOOGLE_CLIENT_SECRET
+  );
+
+  body.set(
+    "code",
+    code
+  );
+
+  body.set(
+    "grant_type",
+    "authorization_code"
+  );
+
+  body.set(
+    "redirect_uri",
+    redirectUri
+  );
+
+  const response =
+    await fetch(
+      "https://oauth2.googleapis.com/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded"
+        },
+        body
+      }
+    );
+
   if (!response.ok) {
-    const errorText = await response.text();
+
+    const errorText =
+      await response.text();
+
     throw new Error(
       `Google token exchange failed: ${errorText}`
     );
+
   }
 
   return await response.json();
 }
 
+
+/* =========================
+   WORKER
+========================= */
+
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
+
+  async fetch(
+    request,
+    env
+  ) {
+
+    const url =
+      new URL(request.url);
+
+
+    /* =========================
+       CORS PREFLIGHT
+    ========================= */
+
+    if (request.method === "OPTIONS") {
+
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers:
+            corsHeaders(request)
+        }
+      );
+
+    }
+
 
     try {
+
 
       /* =========================
          HOME
       ========================= */
 
-      if (url.pathname === "/") {
+      if (
+        url.pathname === "/"
+      ) {
+
         return new Response(
           "CreateLK English V2 API is running ✅",
           {
             headers: {
-              "Content-Type": "text/plain; charset=UTF-8"
+              "Content-Type":
+                "text/plain; charset=UTF-8",
+              ...corsHeaders(request)
             }
           }
         );
+
       }
+
 
       /* =========================
          HEALTH
       ========================= */
 
-      if (url.pathname === "/api/health") {
-        const result = await env.DB
-          .prepare("SELECT 1 AS ok")
-          .first();
+      if (
+        url.pathname === "/api/health"
+      ) {
 
-        return json({
-          success: true,
-          database: result?.ok === 1,
-          database_name: "createlk-english-v2"
-        });
+        const result =
+          await env.DB
+            .prepare(
+              "SELECT 1 AS ok"
+            )
+            .first();
+
+        return json(
+          {
+            success: true,
+            database:
+              result?.ok === 1,
+            database_name:
+              "createlk-english-v2"
+          },
+          200,
+          request
+        );
+
       }
+
 
       /* =========================
          TABLES
       ========================= */
 
-      if (url.pathname === "/api/tables") {
-        const result = await env.DB
-          .prepare(`
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table'
-            ORDER BY name
-          `)
-          .all();
+      if (
+        url.pathname === "/api/tables"
+      ) {
 
-        return json({
-          success: true,
-          tables: result.results || []
-        });
+        const result =
+          await env.DB
+            .prepare(`
+              SELECT name
+              FROM sqlite_master
+              WHERE type = 'table'
+              ORDER BY name
+            `)
+            .all();
+
+        return json(
+          {
+            success: true,
+            tables:
+              result.results || []
+          },
+          200,
+          request
+        );
+
       }
+
 
       /* =========================
          GOOGLE LOGIN
       ========================= */
 
-      if (url.pathname === "/auth/google") {
+      if (
+        url.pathname === "/auth/google"
+      ) {
 
-        if (!env.GOOGLE_CLIENT_ID) {
-          return json({
-            success: false,
-            error: "GOOGLE_CLIENT_ID secret is missing"
-          }, 500);
+        if (
+          !env.GOOGLE_CLIENT_ID
+        ) {
+
+          return json(
+            {
+              success: false,
+              error:
+                "GOOGLE_CLIENT_ID secret is missing"
+            },
+            500,
+            request
+          );
+
         }
+
 
         const redirectUri =
           `${url.origin}/auth/google/callback`;
 
-        const state = randomString(32);
+        const state =
+          randomString(32);
 
-        const google = new URL(
-          "https://accounts.google.com/o/oauth2/v2/auth"
-        );
+
+        const google =
+          new URL(
+            "https://accounts.google.com/o/oauth2/v2/auth"
+          );
+
 
         google.searchParams.set(
           "client_id",
@@ -301,71 +545,111 @@ export default {
           state
         );
 
-        /*
-          Temporary state cookie.
-          It protects the OAuth callback from CSRF.
-        */
 
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: google.toString(),
-            "Set-Cookie": [
-              `oauth_state=${state}`,
-              "Path=/auth/google",
-              "Max-Age=600",
-              "HttpOnly",
-              "Secure",
-              "SameSite=Lax"
-            ].join("; ")
+        return new Response(
+          null,
+          {
+            status: 302,
+
+            headers: {
+
+              Location:
+                google.toString(),
+
+              "Set-Cookie": [
+                `oauth_state=${state}`,
+                "Path=/auth/google",
+                "Max-Age=600",
+                "HttpOnly",
+                "Secure",
+                "SameSite=Lax"
+              ].join("; ")
+
+            }
+
           }
-        });
+        );
+
       }
+
 
       /* =========================
          GOOGLE CALLBACK
       ========================= */
 
       if (
-        url.pathname === "/auth/google/callback"
+        url.pathname ===
+        "/auth/google/callback"
       ) {
 
-        const code = url.searchParams.get("code");
-        const state = url.searchParams.get("state");
+        const code =
+          url.searchParams.get(
+            "code"
+          );
+
+        const state =
+          url.searchParams.get(
+            "state"
+          );
+
 
         const cookieHeader =
-          request.headers.get("Cookie") || "";
+          request.headers.get(
+            "Cookie"
+          ) || "";
+
 
         const stateMatch =
           cookieHeader.match(
             /(?:^|;\s*)oauth_state=([^;]+)/
           );
 
+
         const savedState =
           stateMatch
-            ? decodeURIComponent(stateMatch[1])
+            ? decodeURIComponent(
+                stateMatch[1]
+              )
             : null;
 
+
         if (!code) {
-          return json({
-            success: false,
-            error: "Google authorization code missing"
-          }, 400);
+
+          return json(
+            {
+              success: false,
+              error:
+                "Google authorization code missing"
+            },
+            400,
+            request
+          );
+
         }
+
 
         if (
           !state ||
           !savedState ||
           state !== savedState
         ) {
-          return json({
-            success: false,
-            error: "Invalid OAuth state"
-          }, 400);
+
+          return json(
+            {
+              success: false,
+              error:
+                "Invalid OAuth state"
+            },
+            400,
+            request
+          );
+
         }
+
 
         const redirectUri =
           `${url.origin}/auth/google/callback`;
+
 
         const tokens =
           await exchangeGoogleCode(
@@ -374,234 +658,416 @@ export default {
             redirectUri
           );
 
-        if (!tokens.access_token) {
+
+        if (
+          !tokens.access_token
+        ) {
+
           throw new Error(
             "Google did not return an access token"
           );
+
         }
 
-        const google =
-          await googleUser(tokens.access_token);
 
-        if (!google.sub || !google.email) {
+        const google =
+          await googleUser(
+            tokens.access_token
+          );
+
+
+        if (
+          !google.sub ||
+          !google.email
+        ) {
+
           throw new Error(
             "Google account information is incomplete"
           );
+
         }
 
-        let user = await env.DB.prepare(`
-          SELECT *
-          FROM users
-          WHERE google_id = ?
-          LIMIT 1
-        `)
-          .bind(google.sub)
-          .first();
+
+        let user =
+          await env.DB
+            .prepare(`
+              SELECT *
+              FROM users
+              WHERE google_id = ?
+              LIMIT 1
+            `)
+            .bind(
+              google.sub
+            )
+            .first();
+
 
         if (!user) {
-          user = await env.DB.prepare(`
-            SELECT *
-            FROM users
-            WHERE email = ?
-            LIMIT 1
-          `)
-            .bind(google.email)
-            .first();
+
+          user =
+            await env.DB
+              .prepare(`
+                SELECT *
+                FROM users
+                WHERE email = ?
+                LIMIT 1
+              `)
+              .bind(
+                google.email
+              )
+              .first();
+
         }
+
 
         let userId;
 
+
         if (user) {
 
-          userId = user.id;
+          userId =
+            user.id;
 
-          await env.DB.prepare(`
-            UPDATE users
-            SET
-              google_id = ?,
-              name = ?,
-              avatar_url = ?,
-              updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-          `)
+
+          await env.DB
+            .prepare(`
+              UPDATE users
+              SET
+                google_id = ?,
+                name = ?,
+                avatar_url = ?,
+                updated_at =
+                  CURRENT_TIMESTAMP
+              WHERE id = ?
+            `)
             .bind(
               google.sub,
-              google.name || google.email.split("@")[0],
+              google.name ||
+                google.email.split("@")[0],
               google.picture || null,
               userId
             )
             .run();
 
+
         } else {
 
-          userId = crypto.randomUUID();
+          userId =
+            crypto.randomUUID();
+
 
           const affiliateCode =
-            randomString(6).toUpperCase();
+            randomString(6)
+              .toUpperCase();
 
-          await env.DB.prepare(`
-            INSERT INTO users (
-              id,
-              google_id,
-              email,
-              name,
-              avatar_url,
-              membership,
-              xp,
-              correct_answers,
-              questions_answered,
-              lessons_completed,
-              affiliate_code
-            )
-            VALUES (?, ?, ?, ?, ?, 'free', 0, 0, 0, 0, ?)
-          `)
+
+          await env.DB
+            .prepare(`
+              INSERT INTO users (
+                id,
+                google_id,
+                email,
+                name,
+                avatar_url,
+                membership,
+                xp,
+                correct_answers,
+                questions_answered,
+                lessons_completed,
+                affiliate_code
+              )
+              VALUES (
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                'free',
+                0,
+                0,
+                0,
+                0,
+                ?
+              )
+            `)
             .bind(
               userId,
               google.sub,
               google.email,
-              google.name || google.email.split("@")[0],
+              google.name ||
+                google.email.split("@")[0],
               google.picture || null,
               affiliateCode
             )
             .run();
 
+
           /*
-            Automatically create affiliate profile.
+            Create affiliate profile.
+            No commission percentage is
+            assigned here.
           */
 
-          await env.DB.prepare(`
-            INSERT OR IGNORE INTO affiliates (
-              user_id,
-              affiliate_code
+          await env.DB
+            .prepare(`
+              INSERT OR IGNORE INTO affiliates (
+                user_id,
+                affiliate_code
+              )
+              VALUES (?, ?)
+            `)
+            .bind(
+              userId,
+              affiliateCode
             )
-            VALUES (?, ?)
-          `)
-            .bind(userId, affiliateCode)
             .run();
+
         }
 
-        const session =
-          await createSession(env, userId);
 
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: `${url.origin}/account`,
-            "Set-Cookie": [
-              sessionCookie(session),
-              "oauth_state=",
-              "Path=/auth/google",
-              "Max-Age=0",
-              "HttpOnly",
-              "Secure",
-              "SameSite=Lax"
-            ].join(", ")
+        const session =
+          await createSession(
+            env,
+            userId
+          );
+
+
+        return new Response(
+          null,
+          {
+            status: 302,
+
+            headers: {
+
+              /*
+                Keep current login behavior.
+              */
+
+              Location:
+                `${url.origin}/account`,
+
+              "Set-Cookie": [
+                sessionCookie(session),
+                "oauth_state=",
+                "Path=/auth/google",
+                "Max-Age=0",
+                "HttpOnly",
+                "Secure",
+                "SameSite=Lax"
+              ].join(", ")
+
+            }
+
           }
-        });
+        );
+
       }
+
 
       /* =========================
          CURRENT USER
       ========================= */
 
-      if (url.pathname === "/api/me") {
+      if (
+        url.pathname === "/api/me"
+      ) {
 
         const user =
-          await getCurrentUser(request, env);
+          await getCurrentUser(
+            request,
+            env
+          );
+
 
         if (!user) {
-          return json({
-            success: true,
-            logged_in: false,
-            user: null
-          });
+
+          return json(
+            {
+              success: true,
+              logged_in: false,
+              user: null
+            },
+            200,
+            request
+          );
+
         }
 
-        return json({
-          success: true,
-          logged_in: true,
-          user
-        });
+
+        return json(
+          {
+            success: true,
+            logged_in: true,
+            user
+          },
+          200,
+          request
+        );
+
       }
+
 
       /* =========================
          LOGOUT
       ========================= */
 
-      if (url.pathname === "/auth/logout") {
+      if (
+        url.pathname === "/auth/logout"
+      ) {
 
         const token =
-          getCookie(request, COOKIE_NAME);
+          getCookie(
+            request,
+            COOKIE_NAME
+          );
+
 
         if (token) {
-          await env.DB.prepare(`
-            DELETE FROM sessions
-            WHERE token = ?
-          `)
+
+          await env.DB
+            .prepare(`
+              DELETE FROM sessions
+              WHERE token = ?
+            `)
             .bind(token)
             .run();
+
         }
 
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: "/",
-            "Set-Cookie": clearSessionCookie()
+
+        return new Response(
+          null,
+          {
+            status: 302,
+
+            headers: {
+
+              Location: "/",
+
+              "Set-Cookie":
+                clearSessionCookie()
+
+            }
+
           }
-        });
+        );
+
       }
+
 
       /* =========================
          LESSON LIST
       ========================= */
 
-      if (url.pathname === "/api/lessons") {
+      if (
+        url.pathname === "/api/lessons"
+      ) {
 
         const user =
-          await getCurrentUser(request, env);
+          await getCurrentUser(
+            request,
+            env
+          );
+
 
         const lessons =
-          await env.DB.prepare(`
-            SELECT
-              id,
-              title,
-              description,
-              sort_order,
-              is_free
-            FROM lessons
-            ORDER BY sort_order ASC
-          `)
+          await env.DB
+            .prepare(`
+              SELECT
+                id,
+                title,
+                description,
+                sort_order,
+                is_free
+              FROM lessons
+              ORDER BY sort_order ASC
+            `)
             .all();
 
+
         const membership =
-          user?.membership || "guest";
+          user?.membership ||
+          "guest";
+
 
         const result =
-          (lessons.results || []).map(lesson => ({
-            ...lesson,
-            accessible:
-              lesson.is_free === 1 ||
-              membership === "premium"
-          }));
+          (lessons.results || [])
+            .map(
+              lesson => {
 
-        return json({
-          success: true,
-          membership,
-          lessons: result
-        });
+                const isFree =
+                  Number(
+                    lesson.is_free
+                  ) === 1;
+
+
+                const accessible =
+                  isFree ||
+                  membership ===
+                    "premium";
+
+
+                return {
+                  id: lesson.id,
+                  title: lesson.title,
+                  description:
+                    lesson.description,
+                  sort_order:
+                    lesson.sort_order,
+                  is_free:
+                    isFree ? 1 : 0,
+                  accessible
+                };
+
+              }
+            );
+
+
+        return json(
+          {
+            success: true,
+            membership,
+            lessons: result
+          },
+          200,
+          request
+        );
+
       }
+
+
+      /* =========================
+         NOT FOUND
+      ========================= */
 
       return new Response(
         "Not Found",
-        { status: 404 }
+        {
+          status: 404,
+          headers:
+            corsHeaders(request)
+        }
       );
+
 
     } catch (error) {
 
-      return json({
-        success: false,
-        error: error.message || "Server error"
-      }, 500);
+      console.error(error);
+
+
+      return json(
+        {
+          success: false,
+          error:
+            error.message ||
+            "Server error"
+        },
+        500,
+        request
+      );
+
     }
+
   }
+
 };
