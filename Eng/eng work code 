@@ -1,498 +1,123 @@
 const SITE="https://createlk.com";
 const SESSION="english_session";
-const PAY_URL="https://pay/internal/check";
 
 const GA="https://accounts.google.com/o/oauth2/v2/auth";
 const GT="https://oauth2.googleapis.com/token";
 const GU="https://openidconnect.googleapis.com/v1/userinfo";
 
-const COINS=5,XP=10,DAYS=30;
+const COINS=5;
+const XP=10;
+const DAYS=30;
 
-export default{async fetch(r,e){
- try{
-  const p=new URL(r.url).pathname;
-  if(r.method==="OPTIONS")return cors(new Response(null,{status:204}),r);
-
-  const f={
-   "/auth/google":google,
-   "/auth/callback":callback,
-   "/auth/logout":logout,
-   "/api/me":me,
-   "/api/titles":titles,
-   "/api/questions":questions,
-   "/api/quiz/start":start,
-   "/api/quiz/check":check,
-   "/api/quiz/submit":submit,
-   "/api/leaderboard":leaderboard,
-   "/api/leaderboard/me":leaderboardMe,
-   "/api/payment/start":paymentStart
-  };
-
-  if(f[p])return f[p](r,e);
-
-  if(p==="/api/health")
-   return json({
-    success:true,
-    message:"English API is running",
-    version:"ENGLISH-2026-10-05"
-   },r);
-
-  return json({success:false,error:"Not found"},r,404);
- }catch(x){
-  console.error(x);
-  return json({
-   success:false,
-   error:"Server error",
-   detail:String(x?.message||x)
-  },r,500);
- }  
-}};
-
-
-/* AUTH */
-
-async function google(r,e){
- const state=crypto.randomUUID();
- const q=new URLSearchParams({
-  client_id:e.GOOGLE_CLIENT_ID,
-  redirect_uri:`${SITE}/auth/callback`,
-  response_type:"code",
-  scope:"openid email profile",
-  state
+function json(data,status=200){
+ return new Response(JSON.stringify(data),{
+  status,
+  headers:{
+   "Content-Type":"application/json",
+   "Access-Control-Allow-Origin":SITE,
+   "Access-Control-Allow-Credentials":"true"
+  }
  });
- return new Response(null,{status:302,headers:{
-  Location:`${GA}?${q}`,
-  "Set-Cookie":cookie("google_state",state,600,false)
- }});
 }
 
-async function callback(r,e){
- const u=new URL(r.url),c=cookies(r.headers.get("Cookie")||"");
- const code=u.searchParams.get("code");
- const state=u.searchParams.get("state");
-
- if(!code||state!==c.google_state)
-  return new Response("Invalid OAuth state",{status:403});
-
- const tr=await fetch(GT,{
-  method:"POST",
-  headers:{"Content-Type":"application/x-www-form-urlencoded"},
-  body:new URLSearchParams({
-   code,
-   client_id:e.GOOGLE_CLIENT_ID,
-   client_secret:e.GOOGLE_CLIENT_SECRET,
-   redirect_uri:`${SITE}/auth/callback`,
-   grant_type:"authorization_code"
-  })
+function cors(){
+ return new Response(null,{
+  status:204,
+  headers:{
+   "Access-Control-Allow-Origin":SITE,
+   "Access-Control-Allow-Credentials":"true",
+   "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+   "Access-Control-Allow-Headers":"Content-Type,Authorization"
+  }
  });
-
- if(!tr.ok)return new Response("Google authentication failed",{status:500});
-
- const t=await tr.json();
- const ur=await fetch(GU,{
-  headers:{Authorization:`Bearer ${t.access_token}`}
- });
- const g=await ur.json();
-
- const gid=String(g.sub||"");
- const email=String(g.email||"").trim().toLowerCase();
- const name=String(g.name||email.split("@")[0]);
- const picture=String(g.picture||"");
-
- if(!gid||!email)
-  return new Response("Google account information missing",{status:400});
-
- let user=await e.DB.prepare(
-  "SELECT * FROM users WHERE google_id=? OR email=? LIMIT 1"
- ).bind(gid,email).first();
-
- if(!user){
-  await e.DB.prepare(`
-   INSERT INTO users
-   (google_id,name,email,membership_status,auth_provider,picture)
-   VALUES (?,? ,?,'FREE','google',?)
-  `).bind(gid,name,email,picture).run();
-
-  user=await e.DB.prepare(
-   "SELECT * FROM users WHERE email=?"
-  ).bind(email).first();
- }else{
-  await e.DB.prepare(`
-   UPDATE users
-   SET google_id=?,name=?,picture=?,last_active_at=?
-   WHERE id=?
-  `).bind(gid,name,picture,Date.now(),user.id).run();
- }
-
- const raw=crypto.randomUUID()+crypto.randomUUID();
-
- await e.DB.prepare(
-  "DELETE FROM sessions WHERE user_id=?"
- ).bind(user.id).run();
-
- await e.DB.prepare(`
-  INSERT INTO sessions(user_id,token_hash,expires_at)
-  VALUES (?,?,?)
- `).bind(
-  user.id,
-  await sha(raw),
-  new Date(Date.now()+DAYS*86400000).toISOString()
- ).run();
-
- return new Response(null,{status:302,headers:{
-  Location:`${SITE}/Eng/`,
-  "Set-Cookie":cookie(SESSION,raw,DAYS*86400,true)
- }});
 }
 
-async function logout(r,e){
- const c=cookies(r.headers.get("Cookie")||"");
- if(c[SESSION])
-  await e.DB.prepare(
-   "DELETE FROM sessions WHERE token_hash=?"
-  ).bind(await sha(c[SESSION])).run();
-
- const x=json({success:true,logged_out:true},r);
- x.headers.append("Set-Cookie",cookie(SESSION,"",0,true));
- return x;
+function cookie(name,value,maxAge=86400){
+ return `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
+async function hash(v){
+ const b=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(v)
+ );
+ return [...new Uint8Array(b)]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
+}
 
-/* USER */
+function randomToken(){
+ const a=new Uint8Array(32);
+ crypto.getRandomValues(a);
+ return [...a]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
+}
 
-async function user(r,e){
- const c=cookies(r.headers.get("Cookie")||"");
- if(!c[SESSION])return null;
+function getCookie(req,name){
+ const c=req.headers.get("Cookie")||"";
+ const m=c.match(
+  new RegExp("(?:^|;\\s*)"+name+"=([^;]+)")
+ );
+ return m?decodeURIComponent(m[1]):null;
+}
 
- return e.DB.prepare(`
+async function user(req,env){
+ const token=getCookie(req,SESSION);
+ if(!token)return null;
+
+ const h=await hash(token);
+
+ return await env.DB.prepare(`
   SELECT u.*
   FROM sessions s
   JOIN users u ON u.id=s.user_id
-  WHERE s.token_hash=? AND s.expires_at>?
+  WHERE s.token_hash=?
+  AND datetime(s.expires_at)>datetime('now')
   LIMIT 1
- `).bind(
-  await sha(c[SESSION]),
-  new Date().toISOString()
- ).first();
+ `).bind(h).first();
 }
 
-async function me(r,e){
- const u=await user(r,e);
+/* =========================
+   PAY SERVICE BINDING
+========================= */
 
- if(!u)return json({
-  success:true,
-  logged_in:false,
-  premium:false,
-  membership_expiry:null,
-  user:null
- },r);
-
- const z=await rewards(e,u.id);
- const p=await premium(e,u.id);
-
- return json({
-  success:true,
-  logged_in:true,
-  premium:p.premium,
-  membership_expiry:p.expiry,
-  user:{
-   id:u.id,
-   name:u.name,
-   email:u.email,
-   picture:u.picture||"",
-   membership_status:p.premium?"PREMIUM":"FREE",
-   membership_expiry:p.expiry,
-   coins:z.coins,
-   xp:z.xp,
-   is_premium:p.premium
-  }
- },r);
-}
-
-
-/* LESSONS */
-
-async function titles(r,e){
- const x=await e.DB.prepare(`
-  SELECT id,title,access_type,active
-  FROM lessons
-  WHERE active=1
-  ORDER BY id
- `).all();
-
- return json({
-  success:true,
-  lessons:x.results||[]
- },r);
-}
-
-async function questions(r,e){
- const id=Number(new URL(r.url).searchParams.get("lesson_id"));
-
- if(!id)return json({
-  success:false,
-  error:"lesson_id required"
- },r,400);
-
- const l=await e.DB.prepare(`
-  SELECT * FROM lessons
-  WHERE id=? AND active=1
- `).bind(id).first();
-
- if(!l)return json({
-  success:false,
-  error:"Lesson not found"
- },r,404);
-
- const u=await user(r,e);
- const p=u?await premium(e,u.id):{premium:false};
-
- if(String(l.access_type).toUpperCase()==="PREMIUM"&&!p.premium)
-  return json({
-   success:false,
-   error:"Premium lesson",
-   premium_required:true
-  },r,403);
-
- const x=await e.DB.prepare(`
-  SELECT id,lesson_id,question,
-  option_a,option_b,option_c,option_d
-  FROM questions
-  WHERE lesson_id=? AND active=1
-  ORDER BY id
- `).bind(id).all();
-
- return json({
-  success:true,
-  lesson:l,
-  questions:x.results||[]
- },r);
-}
-
-
-/* QUIZ */
-
-async function start(r,e){
- const u=await user(r,e);
- if(!u)return json({
-  success:false,error:"Login required"
- },r,401);
-
- const b=await r.json().catch(()=>({}));
- const id=Number(b.lesson_id);
-
- const l=await e.DB.prepare(`
-  SELECT * FROM lessons
-  WHERE id=? AND active=1
- `).bind(id).first();
-
- if(!l)return json({
-  success:false,error:"Lesson not found"
- },r,404);
-
- const p=await premium(e,u.id);
-
- if(String(l.access_type).toUpperCase()==="PREMIUM"&&!p.premium)
-  return json({
-   success:false,
-   error:"Premium lesson",
-   premium_required:true
-  },r,403);
-
- const attempt=crypto.randomUUID();
-
- await e.DB.prepare(`
-  INSERT INTO quiz_attempts
-  (id,user_id,lesson_id,created_at)
-  VALUES (?,?,?,?)
- `).bind(
-  attempt,u.id,id,new Date().toISOString()
- ).run();
-
- return json({
-  success:true,
-  attempt_id:attempt,
-  lesson_id:id
- },r);
-}
-
-async function check(r,e){
- const u=await user(r,e);
- if(!u)return json({
-  success:false,error:"Login required"
- },r,401);
-
- const b=await r.json().catch(()=>({}));
- const aid=String(b.attempt_id||"");
- const qid=Number(b.question_id);
- const ans=Number(b.answer);
-
- const a=await e.DB.prepare(`
-  SELECT * FROM quiz_attempts
-  WHERE id=? AND user_id=? AND completed_at IS NULL
- `).bind(aid,u.id).first();
-
- if(!a)return json({
-  success:false,error:"Invalid quiz attempt"
- },r,404);
-
- const q=await e.DB.prepare(`
-  SELECT * FROM questions
-  WHERE id=? AND lesson_id=? AND active=1
- `).bind(qid,a.lesson_id).first();
-
- if(!q)return json({
-  success:false,error:"Question not found"
- },r,404);
-
- const old=await e.DB.prepare(`
-  SELECT * FROM quiz_question_rewards
-  WHERE attempt_id=? AND question_id=?
- `).bind(aid,qid).first();
-
- if(old)return json({
-  success:true,
-  already_answered:true,
-  correct:Number(old.xp)>0,
-  coins:Number(old.coins),
-  xp:Number(old.xp)
- },r);
-
- const correct=ans===Number(q.correct_answer);
- const coins=correct?COINS:0;
- const xp=correct?XP:0;
-
- await e.DB.prepare(`
-  INSERT INTO quiz_question_rewards
-  (attempt_id,user_id,question_id,coins,xp,created_at)
-  VALUES (?,?,?,?,?,?)
- `).bind(
-  aid,u.id,qid,coins,xp,new Date().toISOString()
- ).run();
-
- await addRewards(e,u.id,coins,xp);
-
- return json({
-  success:true,
-  correct,
-  coins,
-  xp
- },r);
-}
-
-async function submit(r,e){
- const u=await user(r,e);
- if(!u)return json({
-  success:false,error:"Login required"
- },r,401);
-
- const b=await r.json().catch(()=>({}));
- const aid=String(b.attempt_id||"");
-
- const a=await e.DB.prepare(`
-  SELECT * FROM quiz_attempts
-  WHERE id=? AND user_id=?
- `).bind(aid,u.id).first();
-
- if(!a)return json({
-  success:false,error:"Quiz attempt not found"
- },r,404);
-
- const x=await e.DB.prepare(`
-  SELECT
-   COUNT(*) total,
-   COALESCE(SUM(CASE WHEN xp>0 THEN 1 ELSE 0 END),0) score,
-   COALESCE(SUM(coins),0) coins,
-   COALESCE(SUM(xp),0) xp
-  FROM quiz_question_rewards
-  WHERE attempt_id=?
- `).bind(aid).first();
-
- const total=Number(x.total||0);
- const score=Number(x.score||0);
- const percentage=total?Math.round(score*100/total):0;
- const now=new Date().toISOString();
-
- await e.DB.prepare(`
-  UPDATE quiz_attempts
-  SET completed_at=?
-  WHERE id=? AND user_id=?
- `).bind(now,aid,u.id).run();
-
- await e.DB.prepare(`
-  INSERT INTO quiz_results
-  (user_id,lesson_id,score,total,percentage,completed_at)
-  VALUES (?,?,?,?,?,?)
- `).bind(
-  u.id,a.lesson_id,score,total,percentage,now
- ).run();
-
- await scoreUpdate(e,u.id,score);
-
- return json({
-  success:true,
-  score,
-  total,
-  percentage,
-  coins:Number(x.coins||0),
-  xp:Number(x.xp||0)
- },r);
-}
-
-
-/* REWARDS */
-
-async function rewards(e,id){
- let x=await e.DB.prepare(
-  "SELECT coins,xp FROM user_rewards WHERE user_id=?"
- ).bind(id).first();
-
- if(!x){
-  await e.DB.prepare(`
-   INSERT INTO user_rewards(user_id,coins,xp,updated_at)
-   VALUES (?,0,0,?)
-  `).bind(id,new Date().toISOString()).run();
-
-  return{coins:0,xp:0};
+async function payFetch(env,path,options={}){
+ if(!env.PAY){
+  throw new Error("PAY Service Binding is missing");
  }
 
- return{
-  coins:Number(x.coins||0),
-  xp:Number(x.xp||0)
- };
+ const headers=new Headers(options.headers||{});
+
+ headers.set(
+  "Authorization",
+  `Bearer ${env.INTERNAL_SECRET}`
+ );
+
+ if(options.body){
+  headers.set("Content-Type","application/json");
+ }
+
+ return env.PAY.fetch(
+  new Request(`https://pay${path}`,{
+   ...options,
+   headers
+  })
+ );
 }
 
-async function addRewards(e,id,coins,xp){
- await e.DB.prepare(`
-  INSERT INTO user_rewards(user_id,coins,xp,updated_at)
-  VALUES (?,?,?,?)
-  ON CONFLICT(user_id)
-  DO UPDATE SET
-   coins=user_rewards.coins+excluded.coins,
-   xp=user_rewards.xp+excluded.xp,
-   updated_at=excluded.updated_at
- `).bind(
-  id,coins,xp,new Date().toISOString()
- ).run();
-}
+/* =========================
+   PREMIUM
+========================= */
 
-
-/* PREMIUM */
-
-async function premium(e,id){
+async function premium(env,id){
  try{
-  if(!e.PAY)return{premium:false,expiry:null};
-
-  const r=await e.PAY.fetch(
-   new Request(PAY_URL,{
-    method:"POST",
-    headers:{
-     "Content-Type":"application/json",
-     "Authorization":`Bearer ${e.INTERNAL_SECRET}`
-    },
-    body:JSON.stringify({user_id:Number(id)})
+  const r=await payFetch(env,"/internal/check",{
+   method:"POST",
+   body:JSON.stringify({
+    user_id:Number(id)
    })
-  );
+  });
 
   const d=await r.json();
   const expiry=d.membership_expiry||null;
@@ -504,180 +129,1071 @@ async function premium(e,id){
    new Date(expiry).getTime()>Date.now();
 
   return{
-   premium:!!active,
+   premium:active,
    expiry:active?expiry:null
   };
- }catch(x){
-  console.error(x);
-  return{premium:false,expiry:null};
+
+ }catch(e){
+  console.error("PAY PREMIUM ERROR",e);
+
+  return{
+   premium:false,
+   expiry:null
+  };
  }
 }
 
+/* =========================
+   REWARDS
+========================= */
 
-/* LEADERBOARD */
-
-async function leaderboard(r,e){
- const x=await e.DB.prepare(`
+async function rewards(env,id){
+ const r=await env.DB.prepare(`
   SELECT
-   u.id,u.name,u.picture,
-   COALESCE(s.points,0) points,
-   COALESCE(s.questions_answered,0) questions_answered,
-   COALESCE(s.correct_answers,0) correct_answers
-  FROM users u
-  LEFT JOIN user_scores s
-   ON s.user_id=CAST(u.id AS TEXT)
-  ORDER BY points DESC
+   COALESCE(SUM(coins),0) coins,
+   COALESCE(SUM(xp),0) xp
+  FROM user_rewards
+  WHERE user_id=?
+ `).bind(id).first();
+
+ return{
+  coins:Number(r?.coins||0),
+  xp:Number(r?.xp||0)
+ };
+}
+
+/* =========================
+   GOOGLE LOGIN
+========================= */
+
+async function googleStart(env){
+ const state=randomToken();
+
+ await env.DB.prepare(`
+  INSERT INTO oauth_states(state,created_at)
+  VALUES(?,?)
+ `).bind(
+  state,
+  new Date().toISOString()
+ ).run();
+
+ const u=new URL(GA);
+
+ u.searchParams.set(
+  "client_id",
+  env.GOOGLE_CLIENT_ID
+ );
+
+ u.searchParams.set(
+  "redirect_uri",
+  "https://eng.createlk.workers.dev/auth/callback"
+ );
+
+ u.searchParams.set(
+  "response_type",
+  "code"
+ );
+
+ u.searchParams.set(
+  "scope",
+  "openid email profile"
+ );
+
+ u.searchParams.set(
+  "state",
+  state
+ );
+
+ return Response.redirect(
+  u.toString(),
+  302
+ );
+}
+
+async function googleCallback(req,env){
+ const u=new URL(req.url);
+
+ const code=u.searchParams.get("code");
+ const state=u.searchParams.get("state");
+
+ if(!code||!state){
+  return new Response(
+   "Google login failed",
+   {status:400}
+  );
+ }
+
+ const st=await env.DB.prepare(`
+  SELECT state
+  FROM oauth_states
+  WHERE state=?
+  LIMIT 1
+ `).bind(state).first();
+
+ if(!st){
+  return new Response(
+   "Invalid login state",
+   {status:400}
+  );
+ }
+
+ await env.DB.prepare(`
+  DELETE FROM oauth_states
+  WHERE state=?
+ `).bind(state).run();
+
+ const tokenRes=await fetch(GT,{
+  method:"POST",
+  headers:{
+   "Content-Type":
+    "application/x-www-form-urlencoded"
+  },
+  body:new URLSearchParams({
+   code,
+   client_id:env.GOOGLE_CLIENT_ID,
+   client_secret:env.GOOGLE_CLIENT_SECRET,
+   redirect_uri:
+    "https://eng.createlk.workers.dev/auth/callback",
+   grant_type:"authorization_code"
+  })
+ });
+
+ if(!tokenRes.ok){
+  return new Response(
+   "Google token exchange failed",
+   {status:400}
+  );
+ }
+
+ const td=await tokenRes.json();
+
+ const infoRes=await fetch(GU,{
+  headers:{
+   Authorization:`Bearer ${td.access_token}`
+  }
+ });
+
+ if(!infoRes.ok){
+  return new Response(
+   "Google profile failed",
+   {status:400}
+  );
+ }
+
+ const g=await infoRes.json();
+
+ const googleId=g.sub;
+ const email=g.email;
+ const name=g.name||email;
+ const picture=g.picture||"";
+
+ let urow=await env.DB.prepare(`
+  SELECT *
+  FROM users
+  WHERE google_id=?
+  LIMIT 1
+ `).bind(googleId).first();
+
+ if(!urow){
+  urow=await env.DB.prepare(`
+   SELECT *
+   FROM users
+   WHERE email=?
+   LIMIT 1
+  `).bind(email).first();
+ }
+
+ if(urow){
+
+  await env.DB.prepare(`
+   UPDATE users
+   SET
+    google_id=?,
+    name=?,
+    picture=?,
+    last_active_at=?
+   WHERE id=?
+  `).bind(
+   googleId,
+   name,
+   picture,
+   Date.now(),
+   urow.id
+  ).run();
+
+ }else{
+
+  const ins=await env.DB.prepare(`
+   INSERT INTO users(
+    google_id,
+    name,
+    email,
+    membership_status,
+    created_at,
+    auth_provider,
+    picture,
+    last_active_at
+   )
+   VALUES(?,?,?,'FREE',?,?,?,?)
+ `).bind(
+   googleId,
+   name,
+   email,
+   new Date().toISOString(),
+   "google",
+   picture,
+   Date.now()
+  ).run();
+
+  urow=await env.DB.prepare(`
+   SELECT *
+   FROM users
+   WHERE id=?
+  `).bind(ins.meta.last_row_id).first();
+ }
+
+ const token=randomToken();
+ const tokenHash=await hash(token);
+
+ const expiry=new Date(
+  Date.now()+7*86400000
+ ).toISOString();
+
+ await env.DB.prepare(`
+  INSERT INTO sessions(
+   user_id,
+   token_hash,
+   expires_at
+  )
+  VALUES(?,?,?)
+ `).bind(
+  urow.id,
+  tokenHash,
+  expiry
+ ).run();
+
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${SITE}/Eng/`,
+   "Set-Cookie":cookie(
+    SESSION,
+    token,
+    7*86400
+   )
+  }
+ });
+}
+
+/* =========================
+   LOGOUT
+========================= */
+
+async function logout(req,env){
+ const token=getCookie(req,SESSION);
+
+ if(token){
+  await env.DB.prepare(`
+   DELETE FROM sessions
+   WHERE token_hash=?
+  `).bind(
+   await hash(token)
+  ).run();
+ }
+
+ return new Response(null,{
+  status:302,
+  headers:{
+   Location:`${SITE}/Eng/`,
+   "Set-Cookie":cookie(
+    SESSION,
+    "",
+    0
+   )
+  }
+ });
+}
+
+/* =========================
+   ME
+========================= */
+
+async function me(req,env){
+ const u=await user(req,env);
+
+ if(!u){
+  return json({
+   success:true,
+   logged_in:false
+  });
+ }
+
+ const z=await rewards(env,u.id);
+ const p=await premium(env,u.id);
+
+ return json({
+  success:true,
+  logged_in:true,
+  premium:p.premium,
+  membership_expiry:p.expiry,
+
+  user:{
+   id:u.id,
+   name:u.name,
+   email:u.email,
+   picture:u.picture||"",
+   membership_status:
+    p.premium?"PREMIUM":"FREE",
+   membership_expiry:p.expiry,
+   coins:z.coins,
+   xp:z.xp,
+   is_premium:p.premium
+  }
+ });
+}
+
+/* =========================
+   TITLES
+========================= */
+
+async function titles(req,env){
+ const u=await user(req,env);
+
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+ }
+
+ const p=await premium(env,u.id);
+
+ const rows=await env.DB.prepare(`
+  SELECT
+   id,
+   title,
+   description,
+   lesson_number,
+   is_premium
+  FROM lessons
+  ORDER BY lesson_number ASC,id ASC
+ `).all();
+
+ return json({
+  success:true,
+  premium:p.premium,
+  membership_expiry:p.expiry,
+  titles:rows.results||[]
+ });
+}
+
+/* =========================
+   QUESTIONS
+========================= */
+
+async function questions(req,env){
+ const u=await user(req,env);
+
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+ }
+
+ const url=new URL(req.url);
+ const lessonId=Number(
+  url.searchParams.get("lesson_id")
+ );
+
+ if(!lessonId){
+  return json({
+   success:false,
+   error:"Invalid lesson"
+  },400);
+ }
+
+ const lesson=await env.DB.prepare(`
+  SELECT *
+  FROM lessons
+  WHERE id=?
+  LIMIT 1
+ `).bind(lessonId).first();
+
+ if(!lesson){
+  return json({
+   success:false,
+   error:"Lesson not found"
+  },404);
+ }
+
+ const p=await premium(env,u.id);
+
+ if(
+  Number(lesson.is_premium)===1 &&
+  !p.premium
+ ){
+  return json({
+   success:false,
+   error:"Premium membership required"
+  },403);
+ }
+
+ const rows=await env.DB.prepare(`
+  SELECT
+   id,
+   lesson_id,
+   question,
+   option_a,
+   option_b,
+   option_c,
+   option_d,
+   correct_answer,
+   explanation
+  FROM questions
+  WHERE lesson_id=?
+  AND COALESCE(active,1)=1
+  ORDER BY id ASC
+ `).bind(lessonId).all();
+
+ return json({
+  success:true,
+  questions:rows.results||[]
+ });
+}
+
+/* =========================
+   QUIZ START
+========================= */
+
+async function startQuiz(req,env){
+ const u=await user(req,env);
+
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+ }
+
+ const b=await req.json().catch(()=>({}));
+ const lessonId=Number(b.lesson_id);
+
+ if(!lessonId){
+  return json({
+   success:false,
+   error:"Invalid lesson"
+  },400);
+ }
+
+ const lesson=await env.DB.prepare(`
+  SELECT *
+  FROM lessons
+  WHERE id=?
+  LIMIT 1
+ `).bind(lessonId).first();
+
+ if(!lesson){
+  return json({
+   success:false,
+   error:"Lesson not found"
+  },404);
+ }
+
+ const p=await premium(env,u.id);
+
+ if(
+  Number(lesson.is_premium)===1 &&
+  !p.premium
+ ){
+  return json({
+   success:false,
+   error:"Premium membership required"
+  },403);
+ }
+
+ const existing=await env.DB.prepare(`
+  SELECT id
+  FROM quiz_attempts
+  WHERE user_id=?
+  AND lesson_id=?
+  AND completed_at IS NULL
+  ORDER BY created_at DESC
+  LIMIT 1
+ `).bind(
+  u.id,
+  lessonId
+ ).first();
+
+ if(existing){
+  return json({
+   success:true,
+   attempt_id:existing.id,
+   resumed:true
+  });
+ }
+
+ const r=await env.DB.prepare(`
+  INSERT INTO quiz_attempts(
+   user_id,
+   lesson_id,
+   created_at
+  )
+  VALUES(?,?,?)
+ `).bind(
+  u.id,
+  lessonId,
+  new Date().toISOString()
+ ).run();
+
+ return json({
+  success:true,
+  attempt_id:r.meta.last_row_id,
+  resumed:false
+ });
+}
+
+/* =========================
+   QUIZ CHECK
+========================= */
+
+async function checkQuiz(req,env){
+ const u=await user(req,env);
+
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+ }
+
+ const b=await req.json().catch(()=>({}));
+
+ const attemptId=Number(b.attempt_id);
+ const questionId=Number(b.question_id);
+
+ let answer=String(
+  b.answer??""
+ ).trim().toLowerCase();
+
+ const map={
+  a:1,
+  b:2,
+  c:3,
+  d:4
+ };
+
+ if(map[answer]){
+  answer=map[answer];
+ }
+
+ const selected=Number(answer);
+
+ if(
+  !attemptId||
+  !questionId||
+  ![1,2,3,4].includes(selected)
+ ){
+  return json({
+   success:false,
+   error:"Invalid answer"
+  },400);
+ }
+
+ const attempt=await env.DB.prepare(`
+  SELECT *
+  FROM quiz_attempts
+  WHERE id=?
+  AND user_id=?
+  LIMIT 1
+ `).bind(
+  attemptId,
+  u.id
+ ).first();
+
+ if(!attempt){
+  return json({
+   success:false,
+   error:"Quiz attempt not found"
+  },404);
+ }
+
+ if(attempt.completed_at){
+  return json({
+   success:false,
+   error:"Quiz already completed"
+  },400);
+ }
+
+ const q=await env.DB.prepare(`
+  SELECT *
+  FROM questions
+  WHERE id=?
+  AND lesson_id=?
+  AND COALESCE(active,1)=1
+  LIMIT 1
+ `).bind(
+  questionId,
+  attempt.lesson_id
+ ).first();
+
+ if(!q){
+  return json({
+   success:false,
+   error:"Question not found"
+  },404);
+ }
+
+ const old=await env.DB.prepare(`
+  SELECT *
+  FROM quiz_question_rewards
+  WHERE attempt_id=?
+  AND question_id=?
+  LIMIT 1
+ `).bind(
+  attemptId,
+  questionId
+ ).first();
+
+ if(old){
+  const z=await rewards(env,u.id);
+
+  return json({
+   success:true,
+   already_answered:true,
+   selected_answer:
+    old.selected_answer||selected,
+   correct:
+    Number(old.reward_coins||0)>0,
+   correct_answer:
+    Number(q.correct_answer),
+   correct_text:q.explanation||"",
+   reward_coins:0,
+   reward_xp:0,
+   total_coins:z.coins,
+   total_xp:z.xp
+  });
+ }
+
+ const correct=
+  selected===Number(q.correct_answer);
+
+ const rewardCoins=
+  correct?COINS:0;
+
+ const rewardXp=
+  correct?XP:0;
+
+ try{
+
+  await env.DB.prepare(`
+   INSERT INTO quiz_question_rewards(
+    user_id,
+    attempt_id,
+    question_id,
+    reward_coins,
+    reward_xp,
+    selected_answer,
+    created_at
+   )
+   VALUES(?,?,?,?,?,?,?)
+  `).bind(
+   u.id,
+   attemptId,
+   questionId,
+   rewardCoins,
+   rewardXp,
+   selected,
+   new Date().toISOString()
+  ).run();
+
+ }catch{
+
+  await env.DB.prepare(`
+   INSERT INTO quiz_question_rewards(
+    user_id,
+    attempt_id,
+    question_id,
+    reward_coins,
+    reward_xp,
+    created_at
+   )
+   VALUES(?,?,?,?,?,?)
+  `).bind(
+   u.id,
+   attemptId,
+   questionId,
+   rewardCoins,
+   rewardXp,
+   new Date().toISOString()
+  ).run();
+ }
+
+ if(rewardCoins||rewardXp){
+  await env.DB.prepare(`
+   INSERT INTO user_rewards(
+    user_id,
+    coins,
+    xp,
+    created_at
+   )
+   VALUES(?,?,?,?)
+  `).bind(
+   u.id,
+   rewardCoins,
+   rewardXp,
+   new Date().toISOString()
+  ).run();
+ }
+
+ const z=await rewards(env,u.id);
+
+ return json({
+  success:true,
+  already_answered:false,
+  selected_answer:selected,
+  correct,
+  correct_answer:Number(q.correct_answer),
+  correct_text:q.explanation||"",
+  reward_coins:rewardCoins,
+  reward_xp:rewardXp,
+  total_coins:z.coins,
+  total_xp:z.xp
+ });
+}
+
+/* =========================
+   QUIZ SUBMIT
+========================= */
+
+async function submitQuiz(req,env){
+ const u=await user(req,env);
+
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+ }
+
+ const b=await req.json().catch(()=>({}));
+ const attemptId=Number(b.attempt_id);
+
+ if(!attemptId){
+  return json({
+   success:false,
+   error:"Invalid attempt"
+  },400);
+ }
+
+ const attempt=await env.DB.prepare(`
+  SELECT *
+  FROM quiz_attempts
+  WHERE id=?
+  AND user_id=?
+  LIMIT 1
+ `).bind(
+  attemptId,
+  u.id
+ ).first();
+
+ if(!attempt){
+  return json({
+   success:false,
+   error:"Attempt not found"
+  },404);
+ }
+
+ if(attempt.completed_at){
+  return json({
+   success:false,
+   error:"Quiz already completed"
+  },400);
+ }
+
+ const totalRow=await env.DB.prepare(`
+  SELECT COUNT(*) total
+  FROM questions
+  WHERE lesson_id=?
+  AND COALESCE(active,1)=1
+ `).bind(
+  attempt.lesson_id
+ ).first();
+
+ const answeredRow=await env.DB.prepare(`
+  SELECT COUNT(*) total
+  FROM quiz_question_rewards
+  WHERE attempt_id=?
+ `).bind(attemptId).first();
+
+ const total=Number(totalRow?.total||0);
+ const answered=Number(answeredRow?.total||0);
+
+ if(!total){
+  return json({
+   success:false,
+   error:"No questions found"
+  },400);
+ }
+
+ if(answered<total){
+  return json({
+   success:false,
+   error:`Answer all questions first (${answered}/${total})`
+  },400);
+ }
+
+ const r=await env.DB.prepare(`
+  SELECT
+   COALESCE(
+    SUM(
+     CASE
+      WHEN reward_coins>0 THEN 1
+      ELSE 0
+     END
+    ),0
+   ) score,
+   COALESCE(SUM(reward_coins),0) coins,
+   COALESCE(SUM(reward_xp),0) xp
+  FROM quiz_question_rewards
+  WHERE attempt_id=?
+ `).bind(attemptId).first();
+
+ const score=Number(r?.score||0);
+ const coins=Number(r?.coins||0);
+ const xp=Number(r?.xp||0);
+
+ const percentage=
+  Math.round(score/total*100);
+
+ const completedAt=
+  new Date().toISOString();
+
+ await env.DB.prepare(`
+  UPDATE quiz_attempts
+  SET completed_at=?,score=?,total=?
+  WHERE id=?
+ `).bind(
+  completedAt,
+  score,
+  total,
+  attemptId
+ ).run();
+
+ await env.DB.prepare(`
+  INSERT INTO quiz_results(
+   user_id,
+   lesson_id,
+   score,
+   total,
+   percentage,
+   created_at
+  )
+  VALUES(?,?,?,?,?,?)
+ `).bind(
+  u.id,
+  attempt.lesson_id,
+  score,
+  total,
+  percentage,
+  completedAt
+ ).run();
+
+ const z=await rewards(env,u.id);
+
+ return json({
+  success:true,
+  score,
+  total,
+  percentage,
+  reward_coins:coins,
+  reward_xp:xp,
+  total_coins:z.coins,
+  total_xp:z.xp
+ });
+}
+
+/* =========================
+   LEADERBOARD
+========================= */
+
+async function leaderboard(req,env){
+ const rows=await env.DB.prepare(`
+  SELECT
+   u.id,
+   u.name,
+   u.picture,
+   COALESCE(SUM(s.score),0) score
+  FROM user_scores s
+  JOIN users u ON u.id=s.user_id
+  GROUP BY u.id
+  ORDER BY score DESC
   LIMIT 100
  `).all();
 
  return json({
   success:true,
-  leaderboard:x.results||[]
- },r);
+  leaderboard:rows.results||[]
+ });
 }
 
-async function leaderboardMe(r,e){
- const u=await user(r,e);
- if(!u)return json({
-  success:false,error:"Login required"
- },r,401);
+async function leaderboardMe(req,env){
+ const u=await user(req,env);
 
- const x=await e.DB.prepare(`
-  SELECT * FROM user_scores
-  WHERE user_id=?
- `).bind(String(u.id)).first();
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
+ }
 
- if(!x)return json({
-  success:true,
-  rank:null,
-  points:0,
-  questions_answered:0,
-  correct_answers:0
- },r);
-
- const rank=await e.DB.prepare(`
-  SELECT COUNT(*) rank
+ const r=await env.DB.prepare(`
+  SELECT COALESCE(SUM(score),0) score
   FROM user_scores
-  WHERE points>?
- `).bind(x.points).first();
+  WHERE user_id=?
+ `).bind(u.id).first();
 
  return json({
   success:true,
-  rank:Number(rank?.rank||0)+1,
-  points:Number(x.points||0),
-  questions_answered:Number(x.questions_answered||0),
-  correct_answers:Number(x.correct_answers||0)
- },r);
+  score:Number(r?.score||0)
+ });
 }
 
-async function scoreUpdate(e,id,correct){
- await e.DB.prepare(`
-  INSERT INTO user_scores
-  (user_id,points,questions_answered,correct_answers,updated_at)
-  VALUES (?,?,?,?,?)
-  ON CONFLICT(user_id)
-  DO UPDATE SET
-   points=user_scores.points+excluded.points,
-   questions_answered=user_scores.questions_answered+1,
-   correct_answers=user_scores.correct_answers+excluded.correct_answers,
-   updated_at=excluded.updated_at
- `).bind(
-  String(id),
-  correct,
-  1,
-  correct,
-  Date.now()
- ).run();
-}
+/* =========================
+   PAYMENT
+========================= */
 
+async function paymentStart(req,env){
+ const u=await user(req,env);
 
-/* PAYMENT */
-
-async function paymentStart(r,e){
- const u=await user(r,e);
-
- if(!u)return json({
-  success:false,error:"Login required"
- },r,401);
-
- if(!e.PAY)return json({
-  success:false,error:"Payment service unavailable"
- },r,503);
-
- const b=await r.json().catch(()=>({}));
-
- const x=await e.PAY.fetch(
-  new Request("https://pay/api/payment/start",{
-   method:"POST",
-   headers:{
-    "Content-Type":"application/json",
-    "Authorization":`Bearer ${e.INTERNAL_SECRET}`
-   },
-   body:JSON.stringify({
-    user_id:Number(u.id),
-    lesson_id:Number(b.lesson_id||0)
-   })
-  })
- );
-
- return json(
-  await x.json(),
-  r,
-  x.status
- );
-}
-
-
-/* HELPERS */
-
-async function sha(v){
- const h=await crypto.subtle.digest(
-  "SHA-256",
-  new TextEncoder().encode(v)
- );
- return [...new Uint8Array(h)]
-  .map(x=>x.toString(16).padStart(2,"0"))
-  .join("");
-}
-
-function cookies(h){
- const o={};
- for(const x of h.split(";")){
-  const i=x.indexOf("=");
-  if(i>0)o[x.slice(0,i).trim()]=
-   decodeURIComponent(x.slice(i+1).trim());
- }
- return o;
-}
-
-function cookie(n,v,max,http=false){
- return[
-  `${n}=${encodeURIComponent(v)}`,
-  "Path=/",
-  "Secure",
-  "SameSite=Lax",
-  `Max-Age=${max}`,
-  http?"HttpOnly":""
- ].filter(Boolean).join("; ");
-}
-
-function json(d,r,s=200){
- return cors(new Response(JSON.stringify(d),{
-  status:s,
-  headers:{"Content-Type":"application/json"}
- }),r);
-}
-
-function cors(x,r){
- const o=r.headers.get("Origin");
-
- if(o==="https://createlk.com"||
-    o==="https://www.createlk.com"){
-  x.headers.set("Access-Control-Allow-Origin",o);
-  x.headers.set("Access-Control-Allow-Credentials","true");
-  x.headers.set("Access-Control-Allow-Headers","Content-Type, Authorization");
-  x.headers.set("Access-Control-Allow-Methods","GET, POST, OPTIONS");
+ if(!u){
+  return json({
+   success:false,
+   error:"Login required"
+  },401);
  }
 
- return x;
+ const b=await req.json().catch(()=>({}));
+
+ try{
+
+  const r=await payFetch(
+   env,
+   "/api/payment/start",
+   {
+    method:"POST",
+    body:JSON.stringify({
+     user_id:Number(u.id),
+     email:u.email,
+     name:u.name,
+     amount:Number(b.amount||1000),
+     duration_days:Number(
+      b.duration_days||DAYS
+     )
+    })
+   }
+  );
+
+  return json(
+   await r.json(),
+   r.status
+  );
+
+ }catch(e){
+
+  console.error(
+   "PAYMENT ERROR",
+   e
+  );
+
+  return json({
+   success:false,
+   error:"Payment service unavailable"
+  },500);
+ }
 }
+
+/* =========================
+   HEALTH
+========================= */
+
+async function health(){
+ return json({
+  success:true,
+  message:"English API is running",
+  version:"ENGLISH-2026-10-05-SERVICE-BINDING"
+ });
+}
+
+/* =========================
+   ROUTER
+========================= */
+
+export default{
+
+ async fetch(req,env){
+
+  if(req.method==="OPTIONS"){
+   return cors();
+  }
+
+  const url=new URL(req.url);
+  const path=url.pathname;
+
+  try{
+
+   if(req.method==="GET"&&path==="/auth/google")
+    return googleStart(env);
+
+   if(req.method==="GET"&&path==="/auth/callback")
+    return googleCallback(req,env);
+
+   if(req.method==="GET"&&path==="/auth/logout")
+    return logout(req,env);
+
+   if(req.method==="GET"&&path==="/api/me")
+    return me(req,env);
+
+   if(req.method==="GET"&&path==="/api/titles")
+    return titles(req,env);
+
+   if(req.method==="GET"&&path==="/api/questions")
+    return questions(req,env);
+
+   if(req.method==="POST"&&path==="/api/quiz/start")
+    return startQuiz(req,env);
+
+   if(req.method==="POST"&&path==="/api/quiz/check")
+    return checkQuiz(req,env);
+
+   if(req.method==="POST"&&path==="/api/quiz/submit")
+    return submitQuiz(req,env);
+
+   if(req.method==="GET"&&path==="/api/leaderboard")
+    return leaderboard(req,env);
+
+   if(req.method==="GET"&&path==="/api/leaderboard/me")
+    return leaderboardMe(req,env);
+
+   if(req.method==="POST"&&path==="/api/payment/start")
+    return paymentStart(req,env);
+
+   if(req.method==="GET"&&path==="/api/health")
+    return health();
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
+
+  }catch(e){
+
+   console.error("WORKER ERROR",e);
+
+   return json({
+    success:false,
+    error:"Server error"
+   },500);
+  }
+ }
+};
