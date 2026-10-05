@@ -75,6 +75,7 @@ function getSaved(){
  try{const x=JSON.parse(localStorage.getItem(STORE)||"null");return x?.attempt_id&&x?.lesson_id&&(!user||Number(x.user_id)===Number(user.id))?x:null}catch{return null}
 }
 
+/* PERMANENT + TEMPORARY BALANCE */
 function updateBalance(){
  coins=permanentCoins+temporaryCoins;
  xp=permanentXP+temporaryXP;
@@ -126,23 +127,16 @@ async function loadLessons(){
  try{
   const d=await api("/api/titles?_="+Date.now());
   lessons=d.lessons||[];
-  const emojis=["👋","🗣️","📖","✍️","🎯","💬","🧠","🔤","📝","🎧","📚","💡","🏆","🌟","🚀","🤝","⏰","🌍","🎓","💎"];
   $("lessons").innerHTML=lessons.map((l,i)=>{
    const p=Number(l.id)!==1&&String(l.access_type||"").toUpperCase()!=="FREE";
-   return`<article class="card"><div class="card-top"></div><div class="card-body"><span class="badge ${p?"pro":"free"}">${p?"⭐ PREMIUM":"✓ FREE"}</span><h3>${emojis[i%20]} ${esc(l.title)}</h3><p>English lesson with quiz practice.</p><button class="btn" onclick="openLesson(${i})">${p?"⭐ Start Lesson":"▶️ Start Lesson"}</button></div></article>`;
+   return`<article class="card"><div class="card-top"></div><div class="card-body"><span class="badge ${p?"pro":"free"}">${p?"⭐ PREMIUM":"✓ FREE"}</span><h3>${esc(l.title)}</h3><p>${p?"Premium English lesson with quiz practice.":"Free English lesson with quiz practice."}</p><button class="btn" onclick="openLesson(${i})">${p?"🔒 Start Premium":"▶ Start Lesson"}</button></div></article>`;
   }).join("");
  }catch(e){notice(e.message||"Unable to load lessons.")}
 }
 
 async function openLesson(i){
- const l=lessons[i];
- if(!l)return;
- if(!user){
-  login();
-  return;
- }
- lessonId=Number(l.id);
- lessonTitle=l.title||`Lesson ${lessonId}`;
+ const l=lessons[i];if(!l)return;
+ lessonId=Number(l.id);lessonTitle=l.title||`Lesson ${lessonId}`;
  await loadQuiz();
 }
 
@@ -228,6 +222,8 @@ function render(){
 
  $("prevBtn").disabled=n===0;
  $("nextBtn").textContent=n===qs.length-1?"Finish":"Next";
+
+ /* Keep temporary rewards visible */
  updateBalance();
  saveQuiz();
 }
@@ -263,6 +259,7 @@ async function answer(choice){
    temporaryCoins+=c;
    temporaryXP+=x;
 
+   /* IMMEDIATE DISPLAY */
    updateBalance();
 
    fly("coin",c);
@@ -328,6 +325,7 @@ async function submitQuiz(){
   const earnedCoins=Number(d.reward_coins||0);
   const earnedXP=Number(d.reward_xp||0);
 
+  /* USE SERVER TOTAL — DO NOT ADD AGAIN */
   permanentCoins=Number(d.total_coins!=null?d.total_coins:permanentCoins+earnedCoins);
   permanentXP=Number(d.total_xp!=null?d.total_xp:permanentXP+earnedXP);
 
