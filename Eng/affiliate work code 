@@ -1,415 +1,989 @@
-const SITE="https://createlk.com";
-const URL="https://affiliate.createlk.workers.dev";
-const ADMIN="gateofheavensl1@gmail.com";
+const SITE = "https://createlk.com";
+const AFFILIATE_URL = "https://affiliate.createlk.workers.dev";
+const ADMIN = "gateofheavensl1@gmail.com";
 
-export default{
- async fetch(r,e){
-  const p=new URL(r.url).pathname;
+export default {
+  async fetch(r, e) {
+    const p = new URL(r.url).pathname;
 
-  if(p==="/api/health")
-   return j({success:true,message:"Affiliate API is running"});
+    try {
+      if (r.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: cors()
+        });
+      }
 
-  if(p==="/auth/google")return login(e);
-  if(p==="/auth/callback")return callback(r,e);
-  if(p==="/auth/logout")return logout(r,e);
+      if (p === "/api/health") {
+        return json({
+          success: true,
+          message: "Affiliate API is running"
+        }, r);
+      }
 
-  const a=await auth(r,e);
+      if (p === "/auth/google") {
+        return googleLogin(e);
+      }
 
-  if(p==="/api/me")
-   return j({success:true,logged_in:!!a,affiliate:a||null});
+      if (p === "/auth/callback") {
+        return googleCallback(r, e);
+      }
 
-  if(p==="/api/dashboard"){
-   if(!a)return j({error:"Login required"},401);
-   return dashboard(a,e);
+      if (p === "/auth/logout") {
+        return logout(r, e);
+      }
+
+      if (p === "/api/me") {
+        const a = await affiliate(r, e);
+
+        if (!a) {
+          return json({
+            success: true,
+            logged_in: false
+          }, r);
+        }
+
+        return json({
+          success: true,
+          logged_in: true,
+          affiliate: a
+        }, r);
+      }
+
+      if (p === "/api/dashboard") {
+        return dashboard(r, e);
+      }
+
+      if (p === "/api/click") {
+        return click(r, e);
+      }
+
+      if (p === "/api/withdraw") {
+        return withdraw(r, e);
+      }
+
+      if (p === "/api/withdrawals") {
+        return withdrawals(r, e);
+      }
+
+      if (p === "/internal/referral") {
+        return internalReferral(r, e);
+      }
+
+      if (p === "/internal/commission") {
+        return internalCommission(r, e);
+      }
+
+      return json({
+        success: false,
+        error: "Not found"
+      }, r, 404);
+
+    } catch (err) {
+      console.error("AFFILIATE ERROR:", err);
+
+      return json({
+        success: false,
+        error: "Server error",
+        message: String(err?.message || err)
+      }, r, 500);
+    }
   }
-
-  if(p==="/api/click")
-   return click(r,e);
-
-  if(p==="/api/withdraw"){
-   if(!a)return j({error:"Login required"},401);
-   return withdraw(r,e,a);
-  }
-
-  if(p==="/api/withdrawals"){
-   if(!a)return j({error:"Login required"},401);
-   return withdrawals(e,a);
-  }
-
-  if(p==="/internal/referral")
-   return referral(r,e);
-
-  if(p==="/internal/commission")
-   return commission(r,e);
-
-  return j({error:"Not found"},404);
- }
 };
 
 
-/* LOGIN */
+/* =========================
+   CORS
+========================= */
 
-async function login(e){
- const state=crypto.randomUUID();
-
- return new Response(null,{
-  status:302,
-  headers:{
-   Location:"https://accounts.google.com/o/oauth2/v2/auth?"+
-   new URLSearchParams({
-    client_id:e.GOOGLE_CLIENT_ID,
-    redirect_uri:URL+"/auth/callback",
-    response_type:"code",
-    scope:"openid email profile",
-    state
-   }),
-   "Set-Cookie":`oauth_state=${state}; Path=/; HttpOnly; Secure; Max-Age=600`
-  }
- });
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": SITE,
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization",
+    "Access-Control-Allow-Methods":
+      "GET,POST,OPTIONS",
+    "Access-Control-Allow-Credentials": "true"
+  };
 }
 
 
-/* CALLBACK */
+/* =========================
+   JSON
+========================= */
 
-async function callback(r,e){
- const u=new URL(r.url);
- const code=u.searchParams.get("code");
- const state=u.searchParams.get("state");
+function json(data, r, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+        ...cors()
+      }
+    }
+  );
+}
 
- if(!code||!state)return j({error:"Invalid login"},400);
 
- const c=r.headers.get("Cookie")||"";
- if(cookie(c,"oauth_state")!==state)
-  return j({error:"Invalid state"},400);
+/* =========================
+   GOOGLE LOGIN
+========================= */
 
- const t=await fetch("https://oauth2.googleapis.com/token",{
-  method:"POST",
-  headers:{"Content-Type":"application/x-www-form-urlencoded"},
-  body:new URLSearchParams({
-   client_id:e.GOOGLE_CLIENT_ID,
-   client_secret:e.GOOGLE_CLIENT_SECRET,
-   code,
-   grant_type:"authorization_code",
-   redirect_uri:URL+"/auth/callback"
-  })
- });
+function googleLogin(e) {
+  const u = new URL(
+    "https://accounts.google.com/o/oauth2/v2/auth"
+  );
 
- const token=await t.json();
+  u.searchParams.set(
+    "client_id",
+    e.GOOGLE_CLIENT_ID
+  );
 
- const g=await fetch(
-  "https://openidconnect.googleapis.com/v1/userinfo",
-  {headers:{Authorization:`Bearer ${token.access_token}`}}
- );
+  u.searchParams.set(
+    "redirect_uri",
+    AFFILIATE_URL + "/auth/callback"
+  );
 
- const x=await g.json();
+  u.searchParams.set(
+    "response_type",
+    "code"
+  );
 
- let a=await e.DB.prepare(
-  "SELECT * FROM affiliates WHERE email=?"
- ).bind(x.email.toLowerCase()).first();
+  u.searchParams.set(
+    "scope",
+    "openid email profile"
+  );
 
- if(!a){
-  const code=await newCode(e);
+  u.searchParams.set(
+    "access_type",
+    "online"
+  );
+
+  return Response.redirect(u.toString(), 302);
+}
+
+
+/* =========================
+   GOOGLE CALLBACK
+========================= */
+
+async function googleCallback(r, e) {
+  const u = new URL(r.url);
+  const code = u.searchParams.get("code");
+
+  if (!code) {
+    return new Response(
+      "Google login failed: missing code",
+      { status: 400 }
+    );
+  }
+
+  const tokenRes = await fetch(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        code,
+        client_id: e.GOOGLE_CLIENT_ID,
+        client_secret: e.GOOGLE_CLIENT_SECRET,
+        redirect_uri:
+          AFFILIATE_URL + "/auth/callback",
+        grant_type: "authorization_code"
+      })
+    }
+  );
+
+  const token = await tokenRes.json();
+
+  if (!token.access_token) {
+    console.error("GOOGLE TOKEN ERROR", token);
+
+    return new Response(
+      "Google authentication failed",
+      { status: 401 }
+    );
+  }
+
+  const userRes = await fetch(
+    "https://openidconnect.googleapis.com/v1/userinfo",
+    {
+      headers: {
+        Authorization:
+          `Bearer ${token.access_token}`
+      }
+    }
+  );
+
+  const g = await userRes.json();
+
+  if (!g.email) {
+    return new Response(
+      "Google account email unavailable",
+      { status: 400 }
+    );
+  }
+
+  let a = await e.DB.prepare(`
+    SELECT *
+    FROM affiliates
+    WHERE google_id = ? OR email = ?
+    LIMIT 1
+  `)
+    .bind(g.sub, g.email)
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (!a) {
+    const code = await createReferralCode(e);
+
+    const result = await e.DB.prepare(`
+      INSERT INTO affiliates
+      (
+        google_id,
+        email,
+        name,
+        picture,
+        referral_code,
+        status,
+        created_at,
+        last_active_at
+      )
+      VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+    `)
+      .bind(
+        g.sub,
+        g.email,
+        g.name || "",
+        g.picture || "",
+        code,
+        now,
+        now
+      )
+      .run();
+
+    a = await e.DB.prepare(`
+      SELECT *
+      FROM affiliates
+      WHERE id = ?
+    `)
+      .bind(result.meta.last_row_id)
+      .first();
+
+  } else {
+
+    await e.DB.prepare(`
+      UPDATE affiliates
+      SET
+        google_id = ?,
+        name = ?,
+        picture = ?,
+        last_active_at = ?
+      WHERE id = ?
+    `)
+      .bind(
+        g.sub,
+        g.name || "",
+        g.picture || "",
+        now,
+        a.id
+      )
+      .run();
+
+    a = await e.DB.prepare(`
+      SELECT *
+      FROM affiliates
+      WHERE id = ?
+    `)
+      .bind(a.id)
+      .first();
+  }
+
+  if (a.status !== "ACTIVE") {
+    return new Response(
+      "Affiliate account is not active",
+      { status: 403 }
+    );
+  }
+
+  const rawToken = crypto.randomUUID() +
+    crypto.randomUUID();
+
+  const tokenHash =
+    await sha256(rawToken);
+
+  const expires =
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString();
 
   await e.DB.prepare(`
-   INSERT INTO affiliates
-   (google_id,email,name,picture,referral_code,status,created_at,last_active_at)
-   VALUES(?,?,?,?,?,'ACTIVE',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-  `).bind(
-   x.sub,x.email.toLowerCase(),x.name||"",x.picture||"",code
-  ).run();
+    INSERT OR REPLACE INTO affiliate_sessions
+    (
+      token_hash,
+      affiliate_id,
+      expires_at
+    )
+    VALUES (?, ?, ?)
+  `)
+    .bind(
+      tokenHash,
+      a.id,
+      expires
+    )
+    .run();
 
-  a=await e.DB.prepare(
-   "SELECT * FROM affiliates WHERE email=?"
-  ).bind(x.email.toLowerCase()).first();
- }
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: SITE + "/affiliate",
+      "Set-Cookie":
+        `affiliate_session=${rawToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
+      ...cors()
+    }
+  });
+}
 
- const raw=crypto.randomUUID()+crypto.randomUUID();
- const hash=await sha(raw);
 
- await e.DB.prepare(`
-  INSERT INTO affiliate_sessions(token_hash,affiliate_id,expires_at)
-  VALUES(?,?,datetime('now','+30 days'))
- `).bind(hash,a.id).run();
+/* =========================
+   LOGOUT
+========================= */
 
- return new Response(null,{
-  status:302,
-  headers:{
-   Location:SITE+"/affiliate",
-   "Set-Cookie":
-    `affiliate_session=${raw}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`
+async function logout(r, e) {
+  const token = getCookie(
+    r,
+    "affiliate_session"
+  );
+
+  if (token) {
+    const hash =
+      await sha256(token);
+
+    await e.DB.prepare(`
+      DELETE FROM affiliate_sessions
+      WHERE token_hash = ?
+    `)
+      .bind(hash)
+      .run();
   }
- });
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: SITE + "/",
+      "Set-Cookie":
+        "affiliate_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+      ...cors()
+    }
+  });
 }
 
 
-/* AUTH */
+/* =========================
+   AFFILIATE AUTH
+========================= */
 
-async function auth(r,e){
- const c=r.headers.get("Cookie")||"";
- const raw=cookie(c,"affiliate_session");
- if(!raw)return null;
+async function affiliate(r, e) {
+  const token = getCookie(
+    r,
+    "affiliate_session"
+  );
 
- return e.DB.prepare(`
-  SELECT a.*
-  FROM affiliate_sessions s
-  JOIN affiliates a ON a.id=s.affiliate_id
-  WHERE s.token_hash=?
-  AND s.expires_at>datetime('now')
-  AND a.status='ACTIVE'
- `).bind(await sha(raw)).first();
+  if (!token) return null;
+
+  const hash =
+    await sha256(token);
+
+  const row = await e.DB.prepare(`
+    SELECT
+      a.*
+    FROM affiliate_sessions s
+    JOIN affiliates a
+      ON a.id = s.affiliate_id
+    WHERE s.token_hash = ?
+      AND s.expires_at > ?
+      AND a.status = 'ACTIVE'
+    LIMIT 1
+  `)
+    .bind(
+      hash,
+      new Date().toISOString()
+    )
+    .first();
+
+  return row || null;
 }
 
 
-async function logout(r,e){
- const c=r.headers.get("Cookie")||"";
- const raw=cookie(c,"affiliate_session");
+/* =========================
+   DASHBOARD
+========================= */
 
- if(raw)
-  await e.DB.prepare(
-   "DELETE FROM affiliate_sessions WHERE token_hash=?"
-  ).bind(await sha(raw)).run();
+async function dashboard(r, e) {
+  const a = await affiliate(r, e);
 
- return new Response(null,{
-  status:302,
-  headers:{
-   Location:SITE,
-   "Set-Cookie":
-    "affiliate_session=; Path=/; Max-Age=0"
+  if (!a) {
+    return json({
+      success: false,
+      error: "Login required"
+    }, r, 401);
   }
- });
+
+  const referrals =
+    await e.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM affiliate_referrals
+      WHERE referrer_id = ?
+    `)
+      .bind(a.id)
+      .first();
+
+  const commissions =
+    await e.DB.prepare(`
+      SELECT
+        COALESCE(SUM(commission_amount), 0) AS total
+      FROM affiliate_commissions
+      WHERE referrer_id = ?
+        AND status = 'AVAILABLE'
+    `)
+      .bind(a.id)
+      .first();
+
+  const paid =
+    await e.DB.prepare(`
+      SELECT
+        COALESCE(SUM(commission_amount), 0) AS total
+      FROM affiliate_commissions
+      WHERE referrer_id = ?
+        AND status = 'PAID'
+    `)
+      .bind(a.id)
+      .first();
+
+  const clicks =
+    await e.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM affiliate_clicks
+      WHERE affiliate_id = ?
+    `)
+      .bind(a.id)
+      .first();
+
+  return json({
+    success: true,
+    affiliate: {
+      id: a.id,
+      name: a.name,
+      email: a.email,
+      picture: a.picture,
+      referral_code: a.referral_code,
+      referral_link:
+        SITE + "/?ref=" + a.referral_code
+    },
+    stats: {
+      clicks: Number(clicks?.count || 0),
+      referrals: Number(referrals?.count || 0),
+      available:
+        Number(commissions?.total || 0),
+      paid:
+        Number(paid?.total || 0)
+    }
+  }, r);
 }
 
 
-/* DASHBOARD */
+/* =========================
+   CLICK TRACKING
+========================= */
 
-async function dashboard(a,e){
- const c=await e.DB.prepare(`
-  SELECT COUNT(*) n FROM affiliate_clicks
-  WHERE affiliate_id=?
- `).bind(a.id).first();
+async function click(r, e) {
+  const b =
+    await r.json().catch(() => ({}));
 
- const r=await e.DB.prepare(`
-  SELECT COUNT(*) n FROM affiliate_referrals
-  WHERE referrer_id=?
- `).bind(a.id).first();
+  const code =
+    String(b.referral_code || "").trim();
 
- const m=await e.DB.prepare(`
-  SELECT COALESCE(SUM(commission_amount),0) n
-  FROM affiliate_commissions
-  WHERE referrer_id=? AND status='AVAILABLE'
- `).bind(a.id).first();
-
- return j({
-  success:true,
-  affiliate:{
-   id:a.id,
-   name:a.name,
-   email:a.email,
-   picture:a.picture||"",
-   referral_code:a.referral_code,
-   referral_link:
-    `${SITE}/?ref=${a.referral_code}`
-  },
-  stats:{
-   clicks:Number(c.n||0),
-   referrals:Number(r.n||0),
-   commission:Number(m.n||0)
+  if (!code) {
+    return json({
+      success: false,
+      error: "Referral code required"
+    }, r, 400);
   }
- });
-}
 
+  const a =
+    await e.DB.prepare(`
+      SELECT id
+      FROM affiliates
+      WHERE referral_code = ?
+        AND status = 'ACTIVE'
+      LIMIT 1
+    `)
+      .bind(code)
+      .first();
 
-/* CLICK */
-
-async function click(r,e){
- const code=new URL(r.url).searchParams.get("ref");
- if(!code)return j({error:"Missing referral code"},400);
-
- const a=await e.DB.prepare(
-  "SELECT id FROM affiliates WHERE referral_code=? AND status='ACTIVE'"
- ).bind(code).first();
-
- if(!a)return j({error:"Invalid referral code"},404);
-
- await e.DB.prepare(`
-  INSERT INTO affiliate_clicks
-  (affiliate_id,referral_code,created_at)
-  VALUES(?,?,CURRENT_TIMESTAMP)
- `).bind(a.id,code).run();
-
- return j({success:true});
-}
-
-
-/* INTERNAL REFERRAL */
-
-async function referral(r,e){
- if(!secure(r,e))return j({error:"Unauthorized"},401);
-
- const b=await r.json();
- const a=await e.DB.prepare(
-  "SELECT id FROM affiliates WHERE referral_code=? AND status='ACTIVE'"
- ).bind(b.referral_code).first();
-
- if(!a)return j({error:"Invalid referral"},404);
-
- const old=await e.DB.prepare(
-  "SELECT id FROM affiliate_referrals WHERE referred_user_id=?"
- ).bind(b.user_id).first();
-
- if(old)return j({success:true});
-
- await e.DB.prepare(`
-  INSERT INTO affiliate_referrals
-  (referrer_id,referred_user_id,referral_code)
-  VALUES(?,?,?)
- `).bind(
-  a.id,b.user_id,b.referral_code
- ).run();
-
- return j({success:true});
-}
-
-
-/* INTERNAL COMMISSION */
-
-async function commission(r,e){
- if(!secure(r,e))return j({error:"Unauthorized"},401);
-
- const b=await r.json();
-
- const ref=await e.DB.prepare(`
-  SELECT referrer_id FROM affiliate_referrals
-  WHERE referred_user_id=?
- `).bind(b.referred_user_id).first();
-
- if(!ref)return j({success:true,commission_created:false});
-
- const old=await e.DB.prepare(
-  "SELECT id FROM affiliate_commissions WHERE payment_id=?"
- ).bind(b.payment_id).first();
-
- if(old)return j({success:true,commission_created:false});
-
- const amount=
-  Math.round(Number(b.payment_amount)*.20*100)/100;
-
- await e.DB.prepare(`
-  INSERT INTO affiliate_commissions
-  (payment_id,order_id,referrer_id,referred_user_id,
-   payment_amount,commission_rate,commission_amount,status)
-  VALUES(?,?,?,?,?,?,?,'AVAILABLE')
- `).bind(
-  b.payment_id,
-  b.order_id,
-  ref.referrer_id,
-  b.referred_user_id,
-  b.payment_amount,
-  20,
-  amount
- ).run();
-
- return j({
-  success:true,
-  commission_created:true,
-  commission_amount:amount
- });
-}
-
-
-/* WITHDRAW */
-
-async function withdraw(r,e,a){
- const b=await r.json();
-
- const m=await e.DB.prepare(`
-  SELECT COALESCE(SUM(commission_amount),0) n
-  FROM affiliate_commissions
-  WHERE referrer_id=? AND status='AVAILABLE'
- `).bind(a.id).first();
-
- const amount=Number(b.amount||0);
-
- if(amount<=0||amount>Number(m.n||0))
-  return j({error:"Insufficient balance"},400);
-
- if(!b.bank||!b.branch||!b.account_number)
-  return j({error:"Bank details required"},400);
-
- await e.DB.prepare(`
-  INSERT INTO affiliate_withdrawals
-  (user_id,email,customer_name,bank,branch,account_number,amount)
-  VALUES(?,?,?,?,?,?,?)
- `).bind(
-  a.id,a.email,a.name,b.bank,b.branch,b.account_number,amount
- ).run();
-
- return j({
-  success:true,
-  message:"Withdrawal request submitted"
- });
-}
-
-
-/* WITHDRAWALS */
-
-async function withdrawals(e,a){
- const x=await e.DB.prepare(`
-  SELECT id,amount,status,created_at,processed_at
-  FROM affiliate_withdrawals
-  WHERE user_id=?
-  ORDER BY id DESC
- `).bind(a.id).all();
-
- return j({
-  success:true,
-  withdrawals:x.results||[]
- });
-}
-
-
-/* HELPERS */
-
-async function newCode(e){
- for(let i=0;i<10;i++){
-  const c="CL"+Math.random().toString(36).slice(2,8).toUpperCase();
-
-  const x=await e.DB.prepare(
-   "SELECT id FROM affiliates WHERE referral_code=?"
-  ).bind(c).first();
-
-  if(!x)return c;
- }
-
- return "CL"+Date.now().toString(36).toUpperCase();
-}
-
-async function sha(x){
- const b=await crypto.subtle.digest(
-  "SHA-256",
-  new TextEncoder().encode(x)
- );
- return [...new Uint8Array(b)]
-  .map(x=>x.toString(16).padStart(2,"0")).join("");
-}
-
-function cookie(s,n){
- const x=s.split(";").find(x=>x.trim().startsWith(n+"="));
- return x?x.trim().slice(n.length+1):null;
-}
-
-function secure(r,e){
- return r.headers.get("Authorization")===
-  `Bearer ${e.INTERNAL_SECRET}`;
-}
-
-function j(x,status=200){
- return new Response(JSON.stringify(x),{
-  status,
-  headers:{
-   "Content-Type":"application/json",
-   "Access-Control-Allow-Origin":SITE,
-   "Access-Control-Allow-Credentials":"true"
+  if (!a) {
+    return json({
+      success: false,
+      error: "Invalid referral code"
+    }, r, 404);
   }
- });
+
+  await e.DB.prepare(`
+    INSERT INTO affiliate_clicks
+    (
+      affiliate_id,
+      referral_code,
+      created_at
+    )
+    VALUES (?, ?, ?)
+  `)
+    .bind(
+      a.id,
+      code,
+      new Date().toISOString()
+    )
+    .run();
+
+  return json({
+    success: true
+  }, r);
+}
+
+
+/* =========================
+   INTERNAL REFERRAL
+   Called by ENG
+========================= */
+
+async function internalReferral(r, e) {
+  if (!authorized(r, e)) {
+    return json({
+      success: false,
+      error: "Unauthorized"
+    }, r, 401);
+  }
+
+  const b =
+    await r.json().catch(() => ({}));
+
+  const userId =
+    Number(b.user_id || 0);
+
+  const code =
+    String(b.referral_code || "").trim();
+
+  if (!userId || !code) {
+    return json({
+      success: false,
+      error: "user_id and referral_code required"
+    }, r, 400);
+  }
+
+  const a =
+    await e.DB.prepare(`
+      SELECT id
+      FROM affiliates
+      WHERE referral_code = ?
+        AND status = 'ACTIVE'
+      LIMIT 1
+    `)
+      .bind(code)
+      .first();
+
+  if (!a) {
+    return json({
+      success: false,
+      error: "Invalid referral code"
+    }, r, 404);
+  }
+
+  if (Number(a.id) === userId) {
+    return json({
+      success: false,
+      error: "Self referral not allowed"
+    }, r, 400);
+  }
+
+  const existing =
+    await e.DB.prepare(`
+      SELECT id
+      FROM affiliate_referrals
+      WHERE referred_user_id = ?
+      LIMIT 1
+    `)
+      .bind(userId)
+      .first();
+
+  if (existing) {
+    return json({
+      success: true,
+      already_exists: true
+    }, r);
+  }
+
+  await e.DB.prepare(`
+    INSERT INTO affiliate_referrals
+    (
+      referrer_id,
+      referred_user_id,
+      referral_code,
+      created_at
+    )
+    VALUES (?, ?, ?, ?)
+  `)
+    .bind(
+      a.id,
+      userId,
+      code,
+      new Date().toISOString()
+    )
+    .run();
+
+  return json({
+    success: true
+  }, r);
+}
+
+
+/* =========================
+   INTERNAL COMMISSION
+   Called by PAY
+========================= */
+
+async function internalCommission(r, e) {
+  if (!authorized(r, e)) {
+    return json({
+      success: false,
+      error: "Unauthorized"
+    }, r, 401);
+  }
+
+  const b =
+    await r.json().catch(() => ({}));
+
+  const paymentId =
+    Number(b.payment_id || 0);
+
+  const orderId =
+    String(b.order_id || "").trim();
+
+  const referredUserId =
+    Number(b.referred_user_id || 0);
+
+  const paymentAmount =
+    Number(b.payment_amount || 0);
+
+  if (
+    !paymentId ||
+    !orderId ||
+    !referredUserId ||
+    !paymentAmount
+  ) {
+    return json({
+      success: false,
+      error: "Missing payment details"
+    }, r, 400);
+  }
+
+  const referral =
+    await e.DB.prepare(`
+      SELECT *
+      FROM affiliate_referrals
+      WHERE referred_user_id = ?
+      LIMIT 1
+    `)
+      .bind(referredUserId)
+      .first();
+
+  if (!referral) {
+    return json({
+      success: true,
+      commission_created: false,
+      reason: "No referral"
+    }, r);
+  }
+
+  const existing =
+    await e.DB.prepare(`
+      SELECT id
+      FROM affiliate_commissions
+      WHERE payment_id = ?
+      LIMIT 1
+    `)
+      .bind(paymentId)
+      .first();
+
+  if (existing) {
+    return json({
+      success: true,
+      commission_created: false,
+      already_exists: true
+    }, r);
+  }
+
+  const rate = 20;
+  const commission =
+    Math.round(
+      paymentAmount * rate / 100 * 100
+    ) / 100;
+
+  await e.DB.prepare(`
+    INSERT INTO affiliate_commissions
+    (
+      payment_id,
+      order_id,
+      referrer_id,
+      referred_user_id,
+      payment_amount,
+      commission_rate,
+      commission_amount,
+      status,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?)
+  `)
+    .bind(
+      paymentId,
+      orderId,
+      referral.referrer_id,
+      referredUserId,
+      paymentAmount,
+      rate,
+      commission,
+      new Date().toISOString()
+    )
+    .run();
+
+  return json({
+    success: true,
+    commission_created: true,
+    commission_amount: commission
+  }, r);
+}
+
+
+/* =========================
+   WITHDRAW
+========================= */
+
+async function withdraw(r, e) {
+  const a = await affiliate(r, e);
+
+  if (!a) {
+    return json({
+      success: false,
+      error: "Login required"
+    }, r, 401);
+  }
+
+  const b =
+    await r.json().catch(() => ({}));
+
+  const amount =
+    Number(b.amount || 0);
+
+  const bank =
+    String(b.bank || "").trim();
+
+  const branch =
+    String(b.branch || "").trim();
+
+  const accountNumber =
+    String(b.account_number || "").trim();
+
+  if (
+    amount <= 0 ||
+    !bank ||
+    !branch ||
+    !accountNumber
+  ) {
+    return json({
+      success: false,
+      error:
+        "Amount, bank, branch and account number are required"
+    }, r, 400);
+  }
+
+  const available =
+    await e.DB.prepare(`
+      SELECT
+        COALESCE(SUM(commission_amount), 0) AS total
+      FROM affiliate_commissions
+      WHERE referrer_id = ?
+        AND status = 'AVAILABLE'
+    `)
+      .bind(a.id)
+      .first();
+
+  const balance =
+    Number(available?.total || 0);
+
+  if (amount > balance) {
+    return json({
+      success: false,
+      error: "Insufficient balance",
+      balance
+    }, r, 400);
+  }
+
+  await e.DB.prepare(`
+    INSERT INTO affiliate_withdrawals
+    (
+      user_id,
+      email,
+      customer_name,
+      bank,
+      branch,
+      account_number,
+      amount,
+      status,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+  `)
+    .bind(
+      a.id,
+      a.email,
+      a.name,
+      bank,
+      branch,
+      accountNumber,
+      amount,
+      new Date().toISOString()
+    )
+    .run();
+
+  return json({
+    success: true,
+    status: "PENDING",
+    amount
+  }, r);
+}
+
+
+/* =========================
+   WITHDRAWAL HISTORY
+========================= */
+
+async function withdrawals(r, e) {
+  const a = await affiliate(r, e);
+
+  if (!a) {
+    return json({
+      success: false,
+      error: "Login required"
+    }, r, 401);
+  }
+
+  const rows =
+    await e.DB.prepare(`
+      SELECT *
+      FROM affiliate_withdrawals
+      WHERE user_id = ?
+      ORDER BY id DESC
+    `)
+      .bind(a.id)
+      .all();
+
+  return json({
+    success: true,
+    withdrawals: rows.results || []
+  }, r);
+}
+
+
+/* =========================
+   REFERRAL CODE
+========================= */
+
+async function createReferralCode(e) {
+  for (let i = 0; i < 10; i++) {
+    const code =
+      "CL" +
+      crypto.randomUUID()
+        .replace(/-/g, "")
+        .slice(0, 8)
+        .toUpperCase();
+
+    const exists =
+      await e.DB.prepare(`
+        SELECT id
+        FROM affiliates
+        WHERE referral_code = ?
+        LIMIT 1
+      `)
+        .bind(code)
+        .first();
+
+    if (!exists) return code;
+  }
+
+  throw new Error(
+    "Could not create referral code"
+  );
+}
+
+
+/* =========================
+   INTERNAL AUTH
+========================= */
+
+function authorized(r, e) {
+  const auth =
+    r.headers.get("Authorization") || "";
+
+  return auth ===
+    `Bearer ${e.INTERNAL_SECRET}`;
+}
+
+
+/* =========================
+   COOKIE
+========================= */
+
+function getCookie(r, name) {
+  const header =
+    r.headers.get("Cookie") || "";
+
+  const parts =
+    header.split(";");
+
+  for (const part of parts) {
+    const [k, ...v] =
+      part.trim().split("=");
+
+    if (k === name) {
+      return decodeURIComponent(
+        v.join("=")
+      );
+    }
+  }
+
+  return null;
+}
+
+
+/* =========================
+   SHA256
+========================= */
+
+async function sha256(value) {
+  const data =
+    new TextEncoder().encode(value);
+
+  const hash =
+    await crypto.subtle.digest(
+      "SHA-256",
+      data
+    );
+
+  return [...new Uint8Array(hash)]
+    .map(
+      x => x.toString(16).padStart(2, "0")
+    )
+    .join("");
 }
