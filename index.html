@@ -97,7 +97,6 @@ async function loadMe(){
  try{
   const d=await api("/api/me?_="+Date.now()),u=d.user;
   user=u||null;
-
   if(!u){
    $("loginBtn").style.display="block";
    $("avatar").style.display="none";
@@ -120,12 +119,9 @@ async function loadLessons(){
  try{
   const d=await api("/api/titles?_="+Date.now());
   lessons=d.lessons||[];
-
   const emojis=["👋","🗣️","📖","✍️","🎯","💬","🧠","🔤","📝","🎧","📚","💡","🏆","🌟","🚀","🤝","⏰","🌍","🎓","💎"];
-
   $("lessons").innerHTML=lessons.map((l,i)=>{
    const p=Number(l.id)!==1&&String(l.access_type||"").toUpperCase()!=="FREE";
-
    return`<article class="card">
     <div class="card-top"></div>
     <div class="card-body">
@@ -135,13 +131,18 @@ async function loadLessons(){
     </div>
    </article>`;
   }).join("");
- }catch(e){
-  notice(e.message||"Unable to load lessons.")
- }
+ }catch(e){notice(e.message||"Unable to load lessons.")}
 }
 
 async function openLesson(i){
- const l=lessons[i];if(!l)return;
+ const l=lessons[i];
+ if(!l)return;
+
+ if(!user){
+  login();
+  return;
+ }
+
  lessonId=Number(l.id);
  lessonTitle=l.title||`Lesson ${lessonId}`;
  await loadQuiz();
@@ -157,27 +158,21 @@ async function payment(){
 }
 
 async function loadQuiz(){
- if(!user){notice("Please sign in to start the quiz.");return}
+ if(!user){login();return}
  try{
   const saved=getSaved(),s=await post("/api/quiz/start",{lesson_id:lessonId});
-
   if(s.premium_required)return payment();
-
   if(s.max_attempts&&!s.attempt_id){
    clearSaved();
    notice(s.error||"You have reached the maximum of 3 quiz submissions.");
    return;
   }
-
   if(!s.success&&!s.attempt_id)throw Error(s.error||"Unable to start quiz.");
-
   attemptId=s.attempt_id;
 
   const d=await api("/api/questions?lesson_id="+encodeURIComponent(lessonId)+"&_="+Date.now());
-
   if(d.premium_required)return payment();
   if(!d.success)throw Error(d.error||"Unable to load questions.");
-
   qs=d.questions||[];
   if(!qs.length)throw Error("No questions available.");
 
