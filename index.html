@@ -104,17 +104,56 @@ function premiumTime(){if(!expiry)return;let s=Math.max(0,Math.floor((new Date(e
 
 async function me(){
 try{
-let d=await api("/api/me?_="+Date.now());user=d.user||null;clearInterval(timer);
-if(!user){coins=0;xp=0;$("member").textContent="—";$("login").style.display="block";$("avatar").style.display="none";$("logout").style.display="none";$("account").style.display="none"}
-else{
-coins=+(user.coins??user.total_coins??0);xp=+(user.xp??user.total_xp??0);expiry=d.premium_expires_at||user.premium_expires_at;
-let prem=d.premium===true||user.premium===true||(expiry&&new Date(expiry)>Date.now());
-$("login").style.display="none";$("logout").style.display="block";$("account").style.display="block";
-if(user.picture){$("avatar").src=user.picture;$("avatar").style.display="block"}else $("avatar").style.display="none";
-$("member").textContent=prem?"⭐ PREMIUM":"✓ FREE";if(prem&&expiry){premiumTime();timer=setInterval(premiumTime,1000)}
+let d=await api("/api/me?_="+Date.now());
+user=d.user||null;
+clearInterval(timer);
+
+if(!user){
+coins=0;
+xp=0;
+expiry=null;
+$("member").textContent="—";
+$("login").style.display="block";
+$("avatar").style.display="none";
+$("logout").style.display="none";
+$("account").style.display="none";
+}else{
+coins=+(user.coins??user.total_coins??0);
+xp=+(user.xp??user.total_xp??0);
+
+// FIX: backend uses membership_expiry
+expiry=d.membership_expiry||user.membership_expiry||null;
+
+// FIX: accept all premium indicators returned by backend
+let prem=
+d.premium===true||
+user.is_premium===true||
+String(user.membership_status||"").toUpperCase()==="PREMIUM";
+
+$("login").style.display="none";
+$("logout").style.display="block";
+$("account").style.display="block";
+
+if(user.picture){
+$("avatar").src=user.picture;
+$("avatar").style.display="block";
+}else{
+$("avatar").style.display="none";
 }
-balance()
-}catch(e){console.error(e)}
+
+$("member").textContent=prem?"⭐ PREMIUM":"✓ FREE";
+
+if(prem&&expiry){
+premiumTime();
+timer=setInterval(premiumTime,1000);
+}
+}
+
+balance();
+
+}catch(e){
+console.error(e);
+}
 }
 
 async function lessonsLoad(){
