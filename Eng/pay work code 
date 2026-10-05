@@ -1,6 +1,7 @@
 const ADMIN="gateofheavensl1@gmail.com";
 const SITE="https://createlk.com";
 const COOKIE="pay_admin";
+
 const GOOGLE_AUTH="https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN="https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO="https://openidconnect.googleapis.com/v1/userinfo";
@@ -8,61 +9,184 @@ const GOOGLE_USERINFO="https://openidconnect.googleapis.com/v1/userinfo";
 export default {
  async fetch(req,env){
   const u=new URL(req.url);
+
   try{
-   if(req.method==="OPTIONS")return cors(new Response(null,{status:204}));
+
+   if(req.method==="OPTIONS")
+    return cors(new Response(null,{status:204}));
 
    if(u.pathname==="/api/health")
-    return json({success:true,message:"Premium API is running",version:"PREMIUM-2026-10-05"});
+    return json({
+     success:true,
+     message:"Premium API is running",
+     version:"PREMIUM-2026-10-05"
+    });
 
-   if(u.pathname==="/auth/google")return login(env);
-   if(u.pathname==="/auth/callback")return callback(req,env);
-   if(u.pathname==="/auth/logout")return logout();
+   /* Google Admin Login */
+   if(u.pathname==="/auth/google")
+    return login(env);
 
-   if(u.pathname==="/api/me")return me(req,env);
-   if(u.pathname==="/api/payment/create"&&req.method==="POST")return createPayment(req,env);
-   if(u.pathname==="/api/payment/status")return paymentStatus(req,env);
+   if(u.pathname==="/auth/callback")
+    return callback(req,env);
 
-   if(u.pathname==="/api/admin/me")return adminMe(req,env);
-   if(u.pathname==="/api/admin/payments")return adminPayments(req,env);
-   if(u.pathname==="/api/admin/approve"&&req.method==="POST")return approve(req,env);
-   if(u.pathname==="/api/admin/reject"&&req.method==="POST")return reject(req,env);
+   if(u.pathname==="/auth/logout")
+    return logout();
 
-   if(u.pathname==="/internal/check"&&req.method==="POST")return internalCheck(req,env);
+   /* User */
+   if(u.pathname==="/api/me")
+    return me(req,env);
 
-   return json({success:false,error:"Not found"},404);
+   /* Payments */
+   if(
+    u.pathname==="/api/payment/create" &&
+    req.method==="POST"
+   )
+    return createPayment(req,env);
+
+   if(u.pathname==="/api/payment/status")
+    return paymentStatus(req,env);
+
+   /* Admin */
+   if(u.pathname==="/api/admin/me")
+    return adminMe(req,env);
+
+   if(u.pathname==="/api/admin/payments")
+    return adminPayments(req,env);
+
+   if(
+    u.pathname==="/api/admin/approve" &&
+    req.method==="POST"
+   )
+    return approve(req,env);
+
+   if(
+    u.pathname==="/api/admin/reject" &&
+    req.method==="POST"
+   )
+    return reject(req,env);
+
+   /* Internal premium check */
+   if(
+    u.pathname==="/internal/check" &&
+    req.method==="POST"
+   )
+    return internalCheck(req,env);
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404);
+
   }catch(e){
+
    console.error(e);
-   return json({success:false,error:"Server error"},500);
+
+   return json({
+    success:false,
+    error:"Server error"
+   },500);
   }
  }
 };
 
+
+/* =========================
+   CORS
+========================= */
+
 function cors(r){
+
  const h=new Headers(r.headers);
- h.set("Access-Control-Allow-Origin","https://createlk.com");
- h.set("Access-Control-Allow-Credentials","true");
- h.set("Access-Control-Allow-Headers","Content-Type,Authorization");
- h.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");
- return new Response(r.body,{status:r.status,headers:h});
+
+ h.set(
+  "Access-Control-Allow-Origin",
+  SITE
+ );
+
+ h.set(
+  "Access-Control-Allow-Credentials",
+  "true"
+ );
+
+ h.set(
+  "Access-Control-Allow-Headers",
+  "Content-Type,Authorization"
+ );
+
+ h.set(
+  "Access-Control-Allow-Methods",
+  "GET,POST,OPTIONS"
+ );
+
+ return new Response(
+  r.body,
+  {
+   status:r.status,
+   headers:h
+  }
+ );
 }
+
+
+/* =========================
+   JSON
+========================= */
 
 function json(x,s=200){
- return cors(new Response(JSON.stringify(x),{
-  status:s,
-  headers:{"Content-Type":"application/json"}
- }));
+
+ return cors(
+  new Response(
+   JSON.stringify(x),
+   {
+    status:s,
+    headers:{
+     "Content-Type":"application/json"
+    }
+   }
+  )
+ );
 }
+
+
+/* =========================
+   REDIRECT
+========================= */
 
 function redir(url){
- return new Response(null,{status:302,headers:{Location:url}});
+
+ return new Response(
+  null,
+  {
+   status:302,
+   headers:{
+    Location:url
+   }
+  }
+ );
 }
 
+
+/* =========================
+   GOOGLE LOGIN
+========================= */
+
 async function login(env){
+
  const state=crypto.randomUUID();
- const redirect=`https://pay.createlk.workers.dev/auth/callback`;
- await env.DB.prepare(
-  "INSERT INTO oauth_states(state,expires_at) VALUES(?,?)"
- ).bind(state,Math.floor(Date.now()/1000)+600).run();
+
+ const redirect=
+  "https://pay.createlk.workers.dev/auth/callback";
+
+ await env.DB.prepare(`
+  INSERT INTO oauth_states
+  (state,expires_at)
+  VALUES(?,?)
+ `)
+ .bind(
+  state,
+  Math.floor(Date.now()/1000)+600
+ )
+ .run();
 
  const p=new URLSearchParams({
   client_id:env.GOOGLE_CLIENT_ID,
@@ -71,116 +195,362 @@ async function login(env){
   scope:"openid email profile",
   state
  });
- return redir(`${GOOGLE_AUTH}?${p}`);
+
+ return redir(
+  `${GOOGLE_AUTH}?${p.toString()}`
+ );
 }
+
+
+/* =========================
+   GOOGLE CALLBACK
+========================= */
 
 async function callback(req,env){
+
  const u=new URL(req.url);
+
  const code=u.searchParams.get("code");
  const state=u.searchParams.get("state");
- if(!code||!state)return json({success:false,error:"Invalid login"},400);
 
- const st=await env.DB.prepare(
-  "SELECT state FROM oauth_states WHERE state=? AND expires_at>?"
- ).bind(state,Math.floor(Date.now()/1000)).first();
+ if(!code||!state){
 
- if(!st)return json({success:false,error:"Invalid or expired state"},400);
+  return json({
+   success:false,
+   error:"Invalid login"
+  },400);
+ }
 
- await env.DB.prepare("DELETE FROM oauth_states WHERE state=?").bind(state).run();
 
- const token=await fetch(GOOGLE_TOKEN,{
-  method:"POST",
-  headers:{"Content-Type":"application/x-www-form-urlencoded"},
-  body:new URLSearchParams({
-   code,
-   client_id:env.GOOGLE_CLIENT_ID,
-   client_secret:env.GOOGLE_CLIENT_SECRET,
-   redirect_uri:"https://pay.createlk.workers.dev/auth/callback",
-   grant_type:"authorization_code"
-  })
- });
+ /* Check OAuth state */
+
+ const st=await env.DB.prepare(`
+  SELECT state
+  FROM oauth_states
+  WHERE state=?
+  AND expires_at>?
+ `)
+ .bind(
+  state,
+  Math.floor(Date.now()/1000)
+ )
+ .first();
+
+ if(!st){
+
+  return json({
+   success:false,
+   error:"Invalid or expired state"
+  },400);
+ }
+
+
+ await env.DB.prepare(
+  "DELETE FROM oauth_states WHERE state=?"
+ )
+ .bind(state)
+ .run();
+
+
+ /* Exchange code */
+
+ const token=await fetch(
+  GOOGLE_TOKEN,
+  {
+   method:"POST",
+
+   headers:{
+    "Content-Type":
+     "application/x-www-form-urlencoded"
+   },
+
+   body:new URLSearchParams({
+    code,
+    client_id:env.GOOGLE_CLIENT_ID,
+    client_secret:env.GOOGLE_CLIENT_SECRET,
+    redirect_uri:
+     "https://pay.createlk.workers.dev/auth/callback",
+    grant_type:"authorization_code"
+   })
+  }
+ );
+
  const td=await token.json();
- if(!td.access_token)return json({success:false,error:"Google login failed"},400);
 
- const gr=await fetch(GOOGLE_USERINFO,{
-  headers:{Authorization:`Bearer ${td.access_token}`}
- });
+ if(!td.access_token){
+
+  console.error("Google token error",td);
+
+  return json({
+   success:false,
+   error:"Google login failed"
+  },400);
+ }
+
+
+ /* Get Google account */
+
+ const gr=await fetch(
+  GOOGLE_USERINFO,
+  {
+   headers:{
+    Authorization:
+     `Bearer ${td.access_token}`
+   }
+  }
+ );
+
  const g=await gr.json();
 
- if((g.email||"").toLowerCase()!==ADMIN.toLowerCase())
-  return json({success:false,error:"Admin access only"},403);
+ const email=
+  String(g.email||"").toLowerCase();
 
- const session=crypto.randomUUID();
- await env.DB.prepare(
-  "INSERT OR REPLACE INTO admin_sessions(token_hash,expires_at) VALUES(?,?)"
- ).bind(await hash(session),new Date(Date.now()+86400000).toISOString()).run();
 
- return new Response(null,{
-  status:302,
-  headers:{
-   Location:`${SITE}/admin/payments.html`,
-   "Set-Cookie":`${COOKIE}=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`
+ /* Admin email check */
+
+ if(email!==ADMIN.toLowerCase()){
+
+  return json({
+   success:false,
+   error:"Admin access only"
+  },403);
+ }
+
+
+ /* Create admin session */
+
+ const session=
+  crypto.randomUUID();
+
+ await env.DB.prepare(`
+  INSERT OR REPLACE INTO admin_sessions
+  (token_hash,expires_at)
+  VALUES(?,?)
+ `)
+ .bind(
+  await hash(session),
+  new Date(
+   Date.now()+86400000
+  ).toISOString()
+ )
+ .run();
+
+
+ /*
+  IMPORTANT:
+  After admin login,
+  go to the main English admin page.
+ */
+
+ return new Response(
+  null,
+  {
+   status:302,
+
+   headers:{
+    Location:
+     `${SITE}/Eng/admin.html`,
+
+    "Set-Cookie":
+     `${COOKIE}=${session}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`
+   }
   }
- });
+ );
 }
+
+
+/* =========================
+   LOGOUT
+========================= */
 
 async function logout(){
- return new Response(null,{
-  status:302,
-  headers:{
-   Location:SITE,
-   "Set-Cookie":`${COOKIE}=; Path=/; HttpOnly; Secure; Max-Age=0`
+
+ return new Response(
+  null,
+  {
+   status:302,
+
+   headers:{
+    Location:
+     `${SITE}/Eng/admin.html`,
+
+    "Set-Cookie":
+     `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+   }
   }
- });
+ );
 }
 
-async function admin(req,env){
- const c=req.headers.get("Cookie")||"";
- const m=c.match(new RegExp(`${COOKIE}=([^;]+)`));
- if(!m)return false;
 
- const row=await env.DB.prepare(
-  "SELECT token_hash FROM admin_sessions WHERE token_hash=? AND expires_at>?"
- ).bind(await hash(m[1]),new Date().toISOString()).first();
+/* =========================
+   ADMIN AUTH
+========================= */
+
+async function admin(req,env){
+
+ const c=
+  req.headers.get("Cookie")||"";
+
+ const m=c.match(
+  new RegExp(`${COOKIE}=([^;]+)`)
+ );
+
+ if(!m)
+  return false;
+
+ const token=m[1];
+
+ const row=await env.DB.prepare(`
+  SELECT token_hash
+  FROM admin_sessions
+  WHERE token_hash=?
+  AND expires_at>?
+ `)
+ .bind(
+  await hash(token),
+  new Date().toISOString()
+ )
+ .first();
 
  return !!row;
 }
 
+
+/* =========================
+   ADMIN ME
+========================= */
+
 async function adminMe(req,env){
- return json({success:true,admin:await admin(req,env)});
+
+ const ok=
+  await admin(req,env);
+
+ return json({
+  success:true,
+  admin:ok
+ });
 }
 
+
+/* =========================
+   CREATE PAYMENT
+========================= */
+
 async function createPayment(req,env){
- const b=await req.json();
- const userId=Number(b.user_id);
- const email=String(b.email||"");
- const name=String(b.name||"");
- const amount=Number(b.amount||1000);
- const days=Number(b.duration_days||30);
 
- if(!userId||!email||amount<=0)return json({success:false,error:"Invalid payment"},400);
+ const b=
+  await req.json();
 
- const order=`CL${Date.now()}${Math.floor(Math.random()*1000)}`;
+ const userId=
+  Number(b.user_id);
+
+ const email=
+  String(b.email||"");
+
+ const name=
+  String(b.name||"");
+
+ const amount=
+  Number(b.amount||1000);
+
+ const days=
+  Number(b.duration_days||30);
+
+ if(
+  !userId||
+  !email||
+  amount<=0||
+  days<=0
+ ){
+
+  return json({
+   success:false,
+   error:"Invalid payment"
+  },400);
+ }
+
+
+ const order=
+  `CL${Date.now()}${Math.floor(Math.random()*1000)}`;
+
 
  await env.DB.prepare(`
   INSERT INTO payments
-  (user_id,order_id,amount,currency,status,duration_days,email,name,created_at)
-  VALUES(?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
- `).bind(userId,order,amount,"LKR","PENDING",days,email,name).run();
+  (
+   user_id,
+   order_id,
+   amount,
+   currency,
+   status,
+   duration_days,
+   email,
+   name,
+   created_at
+  )
+  VALUES(
+   ?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP
+  )
+ `)
+ .bind(
+  userId,
+  order,
+  amount,
+  "LKR",
+  "PENDING",
+  days,
+  email,
+  name
+ )
+ .run();
 
- return json({success:true,order_id:order,amount,duration_days:days});
+
+ return json({
+  success:true,
+  order_id:order,
+  amount,
+  duration_days:days
+ });
 }
 
+
+/* =========================
+   PAYMENT STATUS
+========================= */
+
 async function paymentStatus(req,env){
- const u=new URL(req.url);
- const order=u.searchParams.get("order_id");
- if(!order)return json({success:false,error:"Missing order_id"},400);
 
- const p=await env.DB.prepare(
-  "SELECT * FROM payments WHERE order_id=?"
- ).bind(order).first();
+ const u=
+  new URL(req.url);
 
- if(!p)return json({success:false,error:"Payment not found"},404);
+ const order=
+  u.searchParams.get("order_id");
+
+ if(!order){
+
+  return json({
+   success:false,
+   error:"Missing order_id"
+  },400);
+ }
+
+
+ const p=
+  await env.DB.prepare(`
+   SELECT *
+   FROM payments
+   WHERE order_id=?
+  `)
+  .bind(order)
+  .first();
+
+ if(!p){
+
+  return json({
+   success:false,
+   error:"Payment not found"
+  },404);
+ }
+
 
  return json({
   success:true,
@@ -192,152 +562,469 @@ async function paymentStatus(req,env){
  });
 }
 
+
+/* =========================
+   ADMIN PAYMENTS
+========================= */
+
 async function adminPayments(req,env){
- if(!(await admin(req,env)))return json({success:false,error:"Unauthorized"},401);
 
- const rows=await env.DB.prepare(
-  "SELECT * FROM payments ORDER BY id DESC LIMIT 200"
- ).all();
+ if(!(await admin(req,env))){
 
- return json({success:true,payments:rows.results});
+  return json({
+   success:false,
+   error:"Unauthorized"
+  },401);
+ }
+
+
+ const rows=
+  await env.DB.prepare(`
+   SELECT *
+   FROM payments
+   ORDER BY id DESC
+   LIMIT 200
+  `)
+  .all();
+
+
+ return json({
+  success:true,
+  payments:rows.results
+ });
 }
 
+
+/* =========================
+   APPROVE PAYMENT
+========================= */
+
 async function approve(req,env){
- if(!(await admin(req,env)))return json({success:false,error:"Unauthorized"},401);
 
- const b=await req.json();
- const order=String(b.order_id||"");
- if(!order)return json({success:false,error:"Missing order_id"},400);
+ if(!(await admin(req,env))){
 
- const p=await env.DB.prepare(
-  "SELECT * FROM payments WHERE order_id=?"
- ).bind(order).first();
+  return json({
+   success:false,
+   error:"Unauthorized"
+  },401);
+ }
 
- if(!p)return json({success:false,error:"Payment not found"},404);
- if(p.status==="APPROVED")return json({success:true,message:"Already approved"});
 
- const expiry=new Date(
-  Math.max(Date.now(),Date.parse(paidExpiry(p.user_id)))+
-  Number(p.duration_days||30)*86400000
- ).toISOString();
+ const b=
+  await req.json();
+
+ const order=
+  String(b.order_id||"");
+
+ if(!order){
+
+  return json({
+   success:false,
+   error:"Missing order_id"
+  },400);
+ }
+
+
+ const p=
+  await env.DB.prepare(`
+   SELECT *
+   FROM payments
+   WHERE order_id=?
+  `)
+  .bind(order)
+  .first();
+
+ if(!p){
+
+  return json({
+   success:false,
+   error:"Payment not found"
+  },404);
+ }
+
+
+ if(p.status==="APPROVED"){
+
+  return json({
+   success:true,
+   message:"Already approved"
+  });
+ }
+
+
+ /*
+  Get current membership expiry.
+ */
+
+ const u=
+  await env.DB.prepare(`
+   SELECT membership_expiry
+   FROM users
+   WHERE id=?
+  `)
+  .bind(p.user_id)
+  .first();
+
+
+ const currentExpiry=
+  u?.membership_expiry
+   ? Date.parse(u.membership_expiry)
+   : 0;
+
+
+ /*
+  If current premium is still active,
+  extend from current expiry.
+
+  If expired/free,
+  start from today.
+ */
+
+ const base=
+  Math.max(
+   Date.now(),
+   Number.isFinite(currentExpiry)
+    ? currentExpiry
+    : 0
+  );
+
+
+ const expiry=
+  new Date(
+   base+
+   Number(p.duration_days||30)*
+   86400000
+  ).toISOString();
+
+
+ /*
+  Update everything together.
+ */
 
  await env.DB.batch([
+
+  /* Payment */
+
   env.DB.prepare(`
    UPDATE payments
-   SET status='APPROVED',paid_at=CURRENT_TIMESTAMP,
-       approved_by=?,approved_at=CURRENT_TIMESTAMP
+   SET
+    status='APPROVED',
+    paid_at=CURRENT_TIMESTAMP,
+    approved_by=?,
+    approved_at=CURRENT_TIMESTAMP
    WHERE order_id=?
-  `).bind(ADMIN,order),
+  `)
+  .bind(
+   ADMIN,
+   order
+  ),
+
+
+  /* Main user */
 
   env.DB.prepare(`
    UPDATE users
-   SET membership_status='PREMIUM',
-       membership_expiry=?
+   SET
+    membership_status='PREMIUM',
+    membership_expiry=?
    WHERE id=?
-  `).bind(expiry,p.user_id),
+  `)
+  .bind(
+   expiry,
+   p.user_id
+  ),
+
+
+  /* Premium table */
 
   env.DB.prepare(`
    INSERT INTO premium_users
-   (user_id,email,name,status,membership_expiry,updated_at)
-   VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)
-   ON CONFLICT(user_id) DO UPDATE SET
-   email=excluded.email,
-   name=excluded.name,
-   status='PREMIUM',
-   membership_expiry=excluded.membership_expiry,
-   updated_at=CURRENT_TIMESTAMP
-  `).bind(p.user_id,p.email,p.name,"PREMIUM",expiry)
+   (
+    user_id,
+    email,
+    name,
+    status,
+    membership_expiry,
+    updated_at
+   )
+   VALUES(
+    ?,?,?,?,?,CURRENT_TIMESTAMP
+   )
+
+   ON CONFLICT(user_id)
+   DO UPDATE SET
+    email=excluded.email,
+    name=excluded.name,
+    status='PREMIUM',
+    membership_expiry=excluded.membership_expiry,
+    updated_at=CURRENT_TIMESTAMP
+  `)
+  .bind(
+   p.user_id,
+   p.email,
+   p.name,
+   "PREMIUM",
+   expiry
+  )
+
  ]);
 
- return json({success:true,premium:true,expiry});
+
+ return json({
+  success:true,
+  premium:true,
+  expiry
+ });
 }
 
-async function reject(req,env){
- if(!(await admin(req,env)))return json({success:false,error:"Unauthorized"},401);
 
- const b=await req.json();
- if(!b.order_id)return json({success:false,error:"Missing order_id"},400);
+/* =========================
+   REJECT PAYMENT
+========================= */
+
+async function reject(req,env){
+
+ if(!(await admin(req,env))){
+
+  return json({
+   success:false,
+   error:"Unauthorized"
+  },401);
+ }
+
+
+ const b=
+  await req.json();
+
+ const order=
+  String(b.order_id||"");
+
+ if(!order){
+
+  return json({
+   success:false,
+   error:"Missing order_id"
+  },400);
+ }
+
 
  await env.DB.prepare(`
   UPDATE payments
-  SET status='REJECTED',approved_by=?,approved_at=CURRENT_TIMESTAMP
+  SET
+   status='REJECTED',
+   approved_by=?,
+   approved_at=CURRENT_TIMESTAMP
   WHERE order_id=?
- `).bind(ADMIN,b.order_id).run();
+ `)
+ .bind(
+  ADMIN,
+  order
+ )
+ .run();
 
- return json({success:true,status:"REJECTED"});
+
+ return json({
+  success:true,
+  status:"REJECTED"
+ });
 }
 
+
+/* =========================
+   INTERNAL PREMIUM CHECK
+========================= */
+
 async function internalCheck(req,env){
- const auth=req.headers.get("Authorization")||"";
- if(auth!==`Bearer ${env.INTERNAL_SECRET}`)
-  return json({success:false,error:"Unauthorized"},401);
 
- const b=await req.json();
- const id=Number(b.user_id);
- if(!id)return json({success:false,error:"Missing user_id"},400);
+ const auth=
+  req.headers.get("Authorization")||"";
 
- const p=await env.DB.prepare(`
-  SELECT membership_expiry,status
-  FROM premium_users
-  WHERE user_id=?
- `).bind(id).first();
+ if(
+  auth!==`Bearer ${env.INTERNAL_SECRET}`
+ ){
 
- const u=await env.DB.prepare(`
-  SELECT membership_status,membership_expiry
-  FROM users WHERE id=?
- `).bind(id).first();
+  return json({
+   success:false,
+   error:"Unauthorized"
+  },401);
+ }
 
- const expiry=p?.membership_expiry||u?.membership_expiry||null;
+
+ const b=
+  await req.json();
+
+ const id=
+  Number(b.user_id);
+
+ if(!id){
+
+  return json({
+   success:false,
+   error:"Missing user_id"
+  },400);
+ }
+
+
+ /*
+  Check premium_users first.
+ */
+
+ const p=
+  await env.DB.prepare(`
+   SELECT
+    membership_expiry,
+    status
+   FROM premium_users
+   WHERE user_id=?
+  `)
+  .bind(id)
+  .first();
+
+
+ /*
+  Also check users.
+ */
+
+ const u=
+  await env.DB.prepare(`
+   SELECT
+    membership_status,
+    membership_expiry
+   FROM users
+   WHERE id=?
+  `)
+  .bind(id)
+  .first();
+
+
+ const expiry=
+  p?.membership_expiry||
+  u?.membership_expiry||
+  null;
+
+
  const premium=(
-  (p?.status==="PREMIUM"||u?.membership_status==="PREMIUM")&&
-  expiry&&new Date(expiry).getTime()>Date.now()
+  (
+   p?.status==="PREMIUM"||
+   u?.membership_status==="PREMIUM"
+  )&&
+  expiry&&
+  new Date(expiry).getTime()>Date.now()
  );
 
- if(!premium&&u?.membership_status==="PREMIUM"){
-  await env.DB.prepare(`
-   UPDATE users SET membership_status='FREE'
-   WHERE id=?
-  `).bind(id).run();
+
+ /*
+  Automatically downgrade expired user.
+ */
+
+ if(
+  !premium&&
+  u?.membership_status==="PREMIUM"
+ ){
 
   await env.DB.prepare(`
-   UPDATE premium_users SET status='FREE',updated_at=CURRENT_TIMESTAMP
+   UPDATE users
+   SET membership_status='FREE'
+   WHERE id=?
+  `)
+  .bind(id)
+  .run();
+
+
+  await env.DB.prepare(`
+   UPDATE premium_users
+   SET
+    status='FREE',
+    updated_at=CURRENT_TIMESTAMP
    WHERE user_id=?
-  `).bind(id);
+  `)
+  .bind(id)
+  .run();
  }
+
 
  return json({
   success:true,
   premium:!!premium,
-  membership_status:premium?"PREMIUM":"FREE",
-  membership_expiry:premium?expiry:null
+  membership_status:
+   premium?"PREMIUM":"FREE",
+  membership_expiry:
+   premium?expiry:null
  });
 }
 
+
+/* =========================
+   USER ME
+========================= */
+
 async function me(req,env){
- const auth=req.headers.get("Authorization")||"";
- if(!auth.startsWith("Bearer "))
-  return json({success:false,error:"Unauthorized"},401);
+
+ const auth=
+  req.headers.get("Authorization")||"";
+
+ if(!auth.startsWith("Bearer ")){
+
+  return json({
+   success:false,
+   error:"Unauthorized"
+  },401);
+ }
+
+
+ const userId=
+  Number(auth.slice(7));
+
+ if(!userId){
+
+  return json({
+   success:false,
+   error:"Invalid user"
+  },401);
+ }
+
 
  return internalCheck(
-  new Request("https://pay/internal/check",{
-   method:"POST",
-   headers:{
-    Authorization:`Bearer ${env.INTERNAL_SECRET}`,
-    "Content-Type":"application/json"
-   },
-   body:JSON.stringify({user_id:Number(auth.slice(7))})
-  }),env
+  new Request(
+   "https://pay/internal/check",
+   {
+    method:"POST",
+
+    headers:{
+     Authorization:
+      `Bearer ${env.INTERNAL_SECRET}`,
+
+     "Content-Type":
+      "application/json"
+    },
+
+    body:JSON.stringify({
+     user_id:userId
+    })
+   }
+  ),
+  env
  );
 }
+
+
+/* =========================
+   HASH
+========================= */
 
 async function hash(s){
- const b=await crypto.subtle.digest(
-  "SHA-256",
-  new TextEncoder().encode(s)
- );
- return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
-}
 
-function paidExpiry(id){
- return "";
+ const b=
+  await crypto.subtle.digest(
+   "SHA-256",
+   new TextEncoder().encode(s)
+  );
+
+ return [
+  ...new Uint8Array(b)
+ ]
+ .map(
+  x=>x.toString(16).padStart(2,"0")
+ )
+ .join("");
 }
