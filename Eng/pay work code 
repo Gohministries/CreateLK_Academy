@@ -43,10 +43,17 @@ const clean=x=>String(x||"").trim();
 const now=()=>new Date().toISOString();
 
 async function json(x,s=200){
- return cors(new Response(JSON.stringify(x),{status:s,headers:{"Content-Type":"application/json"}}));
+ return cors(new Response(JSON.stringify(x),{
+  status:s,
+  headers:{"Content-Type":"application/json"}
+ }));
 }
+
 const err=(x,s=400)=>json({success:false,error:x},s);
-const body=async r=>{try{return await r.json()}catch{return null}};
+
+const body=async r=>{
+ try{return await r.json()}catch{return null}
+};
 
 function cors(r){
  r.headers.set("Access-Control-Allow-Origin",SITE);
@@ -63,8 +70,13 @@ function token(n=32){
 }
 
 async function hash(x){
- const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(x));
- return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("");
+ const h=await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(x)
+ );
+ return [...new Uint8Array(h)]
+  .map(x=>x.toString(16).padStart(2,"0"))
+  .join("");
 }
 
 function cookies(r){
@@ -79,8 +91,10 @@ function cookies(r){
 async function admin(r,e){
  const s=cookies(r)[SES];
  if(!s)return null;
- return e.DB.prepare(`SELECT email FROM admin_sessions WHERE token_hash=? AND expires_at>?`)
-  .bind(await hash(s),now()).first();
+ return e.DB.prepare(`
+  SELECT email FROM admin_sessions
+  WHERE token_hash=? AND expires_at>?
+ `).bind(await hash(s),now()).first();
 }
 
 async function auth(r,e){
@@ -95,7 +109,6 @@ async function health(){
 
 async function check(r,e){
  if(r.method!=="POST")return err("POST required",405);
-
  if(r.headers.get("Authorization")!==`Bearer ${e.INTERNAL_SECRET}`)
   return err("Unauthorized",401);
 
@@ -104,29 +117,29 @@ async function check(r,e){
 
  const u=await e.DB.prepare(`
   SELECT membership_status,membership_expiry
-  FROM users WHERE id=?
+  FROM users WHERE id=? LIMIT 1
  `).bind(id).first();
 
- let status=u?.membership_status||"FREE";
- let expiry=u?.membership_expiry||null;
+ const p=await e.DB.prepare(`
+  SELECT status,membership_expiry
+  FROM premium_users WHERE user_id=? LIMIT 1
+ `).bind(id).first();
 
- if(status!=="PREMIUM"||!expiry){
-  const p=await e.DB.prepare(`
-   SELECT status,membership_expiry
-   FROM premium_users WHERE user_id=?
-  `).bind(id).first();
+ let expiry=null;
 
-  if(p){
-   status=p.status||status;
-   expiry=p.membership_expiry||expiry;
-  }
+ if(String(u?.membership_status||"").toUpperCase()==="PREMIUM")
+  expiry=u?.membership_expiry||null;
+
+ if(String(p?.status||"").toUpperCase()==="PREMIUM"&&p?.membership_expiry){
+  if(!expiry||new Date(p.membership_expiry)>new Date(expiry))
+   expiry=p.membership_expiry;
  }
 
- const active=status==="PREMIUM"&&expiry&&new Date(expiry)>new Date();
+ const active=!!expiry&&new Date(expiry)>new Date();
 
  return json({
   success:true,
-  premium:!!active,
+  premium:active,
   membership_expiry:active?expiry:null
  });
 }
@@ -134,8 +147,9 @@ async function check(r,e){
 async function login(r,e){
  const s=token();
 
- await e.DB.prepare(`INSERT INTO oauth_states VALUES(?,?)`)
-  .bind(s,Date.now()+600000).run();
+ await e.DB.prepare(`
+  INSERT INTO oauth_states VALUES(?,?)
+ `).bind(s,Date.now()+600000).run();
 
  const q=new URLSearchParams({
   client_id:e.GOOGLE_CLIENT_ID,
@@ -167,8 +181,9 @@ async function callback(r,e){
  if(!st)
   return new Response("Login expired",{status:400});
 
- await e.DB.prepare(`DELETE FROM oauth_states WHERE state=?`)
-  .bind(state).run();
+ await e.DB.prepare(`
+  DELETE FROM oauth_states WHERE state=?
+ `).bind(state).run();
 
  const t=await fetch(GT,{
   method:"POST",
@@ -196,12 +211,13 @@ async function callback(r,e){
 
  const s=token(48);
 
- await e.DB.prepare(`INSERT INTO admin_sessions VALUES(?,?,?)`)
-  .bind(
-   await hash(s),
-   email,
-   new Date(Date.now()+604800000).toISOString()
-  ).run();
+ await e.DB.prepare(`
+  INSERT INTO admin_sessions VALUES(?,?,?)
+ `).bind(
+  await hash(s),
+  email,
+  new Date(Date.now()+604800000).toISOString()
+ ).run();
 
  return new Response(null,{status:302,headers:{
   Location:`${SITE}/Eng/admin.html`,
@@ -286,10 +302,7 @@ async function users(r,e){
   ORDER BY u.id DESC LIMIT 500
  `).all();
 
- return json({
-  success:true,
-  users:x.results||[]
- });
+ return json({success:true,users:x.results||[]});
 }
 
 async function find(r,e){
@@ -332,8 +345,7 @@ async function save(r,e){
  try{await auth(r,e)}
  catch(x){return err(x.message,401)}
 
- if(r.method!=="POST")
-  return err("POST required",405);
+ if(r.method!=="POST")return err("POST required",405);
 
  const b=await body(r);
  const re=clean(b?.referred_email).toLowerCase();
@@ -375,13 +387,7 @@ async function save(r,e){
    referral_code=excluded.referral_code,
    updated_at=excluded.updated_at
  `).bind(
-  a.id,
-  a.email,
-  f.id,
-  f.email,
-  code,
-  t,
-  t
+  a.id,a.email,f.id,f.email,code,t,t
  ).run();
 
  return json({
@@ -401,10 +407,7 @@ async function payments(r,e){
   ORDER BY id DESC LIMIT 500
  `).all();
 
- return json({
-  success:true,
-  payments:x.results||[]
- });
+ return json({success:true,payments:x.results||[]});
 }
 
 async function referrals(r,e){
@@ -416,10 +419,7 @@ async function referrals(r,e){
   ORDER BY id DESC LIMIT 500
  `).all();
 
- return json({
-  success:true,
-  referrals:x.results||[]
- });
+ return json({success:true,referrals:x.results||[]});
 }
 
 async function settings(r,e){
@@ -449,10 +449,7 @@ async function settings(r,e){
   ON CONFLICT(key) DO UPDATE SET value=excluded.value
  `).bind(String(v)).run();
 
- return json({
-  success:true,
-  commission_rate:v
- });
+ return json({success:true,commission_rate:v});
 }
 
 async function payment(r,e){
@@ -464,8 +461,7 @@ async function payment(r,e){
  const email=clean(b?.email).toLowerCase();
  const amount=+b?.amount||0;
 
- if(!uid&&!email)
-  return err("User required");
+ if(!uid&&!email)return err("User required");
 
  const x=await e.DB.prepare(`
   INSERT INTO payments(
@@ -493,7 +489,6 @@ async function payment(r,e){
 async function activate(r,e){
  try{
   const a=await auth(r,e),b=await body(r);
-
   const pid=+b?.payment_id||0;
   const email=clean(b?.email).toLowerCase();
   const days=Math.max(1,+b?.days||DAYS);
@@ -504,11 +499,8 @@ async function activate(r,e){
     .bind(pid).first()
    :null;
 
-  if(pid&&!p)
-   return err("Payment not found",404);
-
-  if(p?.status==="APPROVED")
-   return err("Payment already approved");
+  if(pid&&!p)return err("Payment not found",404);
+  if(p?.status==="APPROVED")return err("Payment already approved");
 
   let uid=+(p?.user_id||b?.user_id||0);
 
@@ -519,8 +511,7 @@ async function activate(r,e){
 
   if(!u&&email){
    u=await e.DB.prepare(`
-    SELECT * FROM users
-    WHERE lower(email)=?
+    SELECT * FROM users WHERE lower(email)=?
    `).bind(email).first();
 
    if(u)uid=+u.id;
@@ -558,12 +549,7 @@ async function activate(r,e){
     membership_expiry=excluded.membership_expiry,
     updated_at=excluded.updated_at
   `).bind(
-   uid,
-   u.email,
-   u.name,
-   "PREMIUM",
-   expiry,
-   t
+   uid,u.email,u.name,"PREMIUM",expiry,t
   ).run();
 
   let id=pid;
@@ -576,16 +562,10 @@ async function activate(r,e){
      approved_at,approved_by
     ) VALUES(?,?,?,?,?,?,?,?,?,?)
    `).bind(
-    uid,
-    u.email,
-    u.name,
-    amount,
+    uid,u.email,u.name,amount,
     clean(b.method)||"MANUAL",
     clean(b.reference),
-    "APPROVED",
-    t,
-    t,
-    a.email
+    "APPROVED",t,t,a.email
    ).run();
 
    id=x.meta.last_row_id;
@@ -597,12 +577,7 @@ async function activate(r,e){
         approved_by=?,
         amount=?
     WHERE id=?
-   `).bind(
-    t,
-    a.email,
-    amount,
-    id
-   ).run();
+   `).bind(t,a.email,amount,id).run();
   }
 
   const l=await e.DB.prepare(`
@@ -635,8 +610,7 @@ async function activate(r,e){
    `).bind(id).first();
 
    const rr=await e.DB.prepare(`
-    SELECT id,email FROM users
-    WHERE id=?
+    SELECT id,email FROM users WHERE id=?
    `).bind(rid).first();
 
    if(!old&&rr){
@@ -650,24 +624,13 @@ async function activate(r,e){
 
     const x=await e.DB.prepare(`
      INSERT INTO referrals(
-      payment_id,
-      referrer_id,
-      referred_user_id,
-      referral_code,
-      commission_rate,
-      commission_amount,
-      status,
-      created_at
+      payment_id,referrer_id,referred_user_id,
+      referral_code,commission_rate,
+      commission_amount,status,created_at
      ) VALUES(?,?,?,?,?,?,?,?)
     `).bind(
-     id,
-     rid,
-     uid,
-     code||`ENG${rid}`,
-     rate,
-     commission,
-     "APPROVED",
-     t
+     id,rid,uid,code||`ENG${rid}`,
+     rate,commission,"APPROVED",t
     ).run();
 
     ref={
