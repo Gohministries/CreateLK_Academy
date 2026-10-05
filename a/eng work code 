@@ -1,942 +1,644 @@
-const SITE = "https://createlk.com";
-const AFF = "https://affiliate-a.createlk.workers.dev";
+const SITE="https://createlk.com";
+const AFF="https://affiliate-a.createlk.workers.dev";
+const SESSION="english_session";
+const REFERRAL="english_referral";
+const COINS=5,XP=10,MAX=3,DAYS=30,SESSION_DAYS=30;
 
-const SESSION = "english_session";
-const REFERRAL = "english_referral";
-
-const COINS = 5;
-const XP = 10;
-const MAX = 3;
-const DAYS = 30;
-const SESSION_DAYS = 30;
-
-function cors(origin) {
-  const allowed = [
-    "https://createlk.com",
-    "https://www.createlk.com"
-  ];
-
-  const o = allowed.includes(origin) ? origin : SITE;
-
+function cors(o){
+  const a=["https://createlk.com","https://www.createlk.com"];
   return {
-    "Access-Control-Allow-Origin": o,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+    "Access-Control-Allow-Origin":a.includes(o)?o:SITE,
+    "Access-Control-Allow-Credentials":"true",
+    "Access-Control-Allow-Headers":"Content-Type, Authorization",
+    "Access-Control-Allow-Methods":"GET, POST, OPTIONS"
   };
 }
 
-function response(data, status = 200, origin = SITE) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...cors(origin)
-    }
+function out(d,s=200,o=SITE,x={}){
+  return new Response(JSON.stringify(d),{
+    status:s,
+    headers:{"Content-Type":"application/json",...cors(o),...x}
   });
 }
 
-function htmlRedirect(url) {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: url
-    }
-  });
+function red(u,x={}){
+  return new Response(null,{status:302,headers:{Location:u,...x}});
 }
 
-function clean(v) {
-  return String(v || "").trim();
-}
+function clean(v){return String(v??"").trim()}
+function validRef(v){return /^CLK[A-Z0-9]+$/i.test(clean(v))}
 
-function validReferral(v) {
-  return /^CLK[A-Z0-9]+$/i.test(clean(v));
-}
-
-function cookieValue(request, name) {
-  const cookie = request.headers.get("Cookie") || "";
-  const parts = cookie.split(";");
-
-  for (const part of parts) {
-    const [k, ...rest] = part.trim().split("=");
-    if (k === name) {
-      return decodeURIComponent(rest.join("="));
-    }
+function cookie(req,n){
+  const h=req.headers.get("Cookie")||"";
+  for(const p of h.split(";")){
+    const [k,...v]=p.trim().split("=");
+    if(k===n)return decodeURIComponent(v.join("="));
   }
-
   return null;
 }
 
-function setCookie(name, value, maxAge) {
-  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; Secure; HttpOnly; SameSite=Lax`;
+function setCookie(n,v,max){
+  return `${n}=${encodeURIComponent(v)}; Max-Age=${max}; Path=/; Secure; HttpOnly; SameSite=Lax`;
 }
 
-function deleteCookie(name) {
-  return `${name}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`;
+function delCookie(n){
+  return `${n}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`;
 }
 
-async function user(request, env) {
-  const token = cookieValue(request, SESSION);
+async function getUser(req,e){
+  const t=cookie(req,SESSION);
+  if(!t)return null;
 
-  if (!token) return null;
-
-  const row = await env.DB.prepare(`
-    SELECT
-      u.id,
-      u.google_id,
-      u.name,
-      u.email,
-      u.membership_status,
-      u.membership_expiry,
-      u.whatsapp_number,
-      u.picture,
-      s.token,
-      s.expires_at
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token = ?
-      AND s.expires_at > ?
-    LIMIT 1
-  `).bind(token, Date.now()).first();
-
-  return row || null;
+  return await e.DB.prepare(`
+    SELECT u.id,u.google_id,u.name,u.email,u.membership_status,
+           u.membership_expiry,u.picture,s.token,s.expires_at
+    FROM sessions s JOIN users u ON u.id=s.user_id
+    WHERE s.token=? AND s.expires_at>? LIMIT 1
+  `).bind(t,Date.now()).first();
 }
 
-async function rewards(env, userId) {
-  let r = await env.DB.prepare(`
-    SELECT user_id, coins, xp
-    FROM user_rewards
-    WHERE user_id = ?
-    LIMIT 1
-  `).bind(userId).first();
+async function rewards(e,id){
+  let r=await e.DB.prepare(`
+    SELECT user_id,coins,xp FROM user_rewards
+    WHERE user_id=? LIMIT 1
+  `).bind(id).first();
 
-  if (!r) {
-    await env.DB.prepare(`
-      INSERT INTO user_rewards(user_id, coins, xp)
-      VALUES(?, 0, 0)
-    `).bind(userId).run();
-
-    r = {
-      user_id: userId,
-      coins: 0,
-      xp: 0
-    };
+  if(!r){
+    await e.DB.prepare(`
+      INSERT INTO user_rewards(user_id,coins,xp)
+      VALUES(?,0,0)
+    `).bind(id).run();
+    r={user_id:id,coins:0,xp:0};
   }
-
   return r;
 }
 
-async function premium(env, userId) {
-  return await env.DB.prepare(`
-    SELECT user_id, email, name, status, membership_expiry
+async function premium(e,id){
+  return await e.DB.prepare(`
+    SELECT user_id,email,name,status,membership_expiry
     FROM premium_users
-    WHERE user_id = ?
-      AND status = 'ACTIVE'
-      AND (
-        membership_expiry IS NULL
-        OR membership_expiry > datetime('now')
-      )
+    WHERE user_id=?
+      AND (status='ACTIVE' OR status='PREMIUM')
+      AND (membership_expiry IS NULL OR membership_expiry>datetime('now'))
     LIMIT 1
-  `).bind(userId).first();
+  `).bind(id).first();
 }
 
-async function me(request, env) {
-  const u = await user(request, env);
+async function me(req,e,o){
+  const u=await getUser(req,e);
 
-  if (!u) {
-    return response({
-      success: true,
-      logged_in: false,
-      user: null,
-      premium: null,
-      rewards: {
-        coins: 0,
-        xp: 0
-      }
-    });
-  }
+  if(!u)return out({
+    success:true,
+    logged_in:false,
+    user:null,
+    premium:null,
+    rewards:{coins:0,xp:0}
+  },200,o);
 
-  const p = await premium(env, u.id);
-  const r = await rewards(env, u.id);
+  const p=await premium(e,u.id);
+  const r=await rewards(e,u.id);
 
-  return response({
-    success: true,
-    logged_in: true,
-
-    user: {
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      picture: u.picture || "",
-      membership_status: u.membership_status,
-      membership_expiry: u.membership_expiry
+  return out({
+    success:true,
+    logged_in:true,
+    user:{
+      id:u.id,
+      name:u.name,
+      email:u.email,
+      picture:u.picture||"",
+      membership_status:u.membership_status,
+      membership_expiry:u.membership_expiry
     },
-
-    premium: p
-      ? {
-          status: p.status,
-          membership_expiry: p.membership_expiry
-        }
-      : null,
-
-    rewards: {
-      coins: Number(r.coins || 0),
-      xp: Number(r.xp || 0)
+    premium:p?{
+      status:p.status,
+      membership_expiry:p.membership_expiry
+    }:null,
+    rewards:{
+      coins:Number(r.coins||0),
+      xp:Number(r.xp||0)
     }
-  });
+  },200,o);
 }
 
-async function titles(env) {
-  const rows = await env.DB.prepare(`
-    SELECT
-      id,
-      title,
-      description,
-      order_no,
-      status
+async function titles(e,o){
+  const r=await e.DB.prepare(`
+    SELECT id,title,description,order_no,status
     FROM lessons
-    WHERE status = 'ACTIVE'
-    ORDER BY order_no ASC, id ASC
+    WHERE status='ACTIVE'
+    ORDER BY order_no ASC,id ASC
   `).all();
 
-  return response({
-    success: true,
-    lessons: rows.results || []
-  });
+  return out({
+    success:true,
+    lessons:r.results||[]
+  },200,o);
 }
 
-async function questions(request, env) {
-  const u = await user(request, env);
+async function questions(req,e,o){
+  const u=await getUser(req,e);
 
-  if (!u) {
-    return response({
-      success: false,
-      error: "LOGIN_REQUIRED"
-    }, 401);
-  }
+  if(!u)return out({
+    success:false,error:"LOGIN_REQUIRED"
+  },401,o);
 
-  const url = new URL(request.url);
-  const lessonId = Number(url.searchParams.get("lesson_id") || 0);
+  const url=new URL(req.url);
+  const lid=Number(
+    url.searchParams.get("lesson_id")||
+    url.searchParams.get("lesson")||0
+  );
 
-  if (!lessonId) {
-    return response({
-      success: false,
-      error: "LESSON_REQUIRED"
-    }, 400);
-  }
+  if(!lid)return out({
+    success:false,error:"LESSON_REQUIRED"
+  },400,o);
 
-  const p = await premium(env, u.id);
+  const p=await premium(e,u.id);
 
-  // Lesson 1 is free.
-  if (!p && lessonId !== 1) {
-    return response({
-      success: false,
-      error: "PREMIUM_REQUIRED"
-    }, 403);
-  }
+  if(!p&&lid!==1)return out({
+    success:false,error:"PREMIUM_REQUIRED"
+  },403,o);
 
-  const rows = await env.DB.prepare(`
-    SELECT
-      id,
-      lesson_id,
-      question,
-      option_a,
-      option_b,
-      option_c,
-      option_d,
-      answer
+  const r=await e.DB.prepare(`
+    SELECT id,lesson_id,question,option_a,option_b,option_c,option_d
     FROM questions
-    WHERE lesson_id = ?
-      AND status = 'ACTIVE'
+    WHERE lesson_id=? AND status='ACTIVE'
     ORDER BY id ASC
-  `).bind(lessonId).all();
+  `).bind(lid).all();
 
-  return response({
-    success: true,
-    lesson_id: lessonId,
-    questions: (rows.results || []).map(q => ({
-      id: q.id,
-      lesson_id: q.lesson_id,
-      question: q.question,
-      options: [
+  return out({
+    success:true,
+    lesson_id:lid,
+    questions:(r.results||[]).map(q=>({
+      id:q.id,
+      lesson_id:q.lesson_id,
+      question:q.question,
+      options:[
         q.option_a,
         q.option_b,
         q.option_c,
         q.option_d
       ]
     }))
-  });
+  },200,o);
 }
 
-async function start(request, env) {
-  const u = await user(request, env);
+async function quizStart(req,e,o){
+  const u=await getUser(req,e);
 
-  if (!u) {
-    return response({
-      success: false,
-      error: "LOGIN_REQUIRED"
-    }, 401);
-  }
+  if(!u)return out({
+    success:false,error:"LOGIN_REQUIRED"
+  },401,o);
 
-  const body = await request.json().catch(() => ({}));
-  const lessonId = Number(body.lesson_id || 0);
+  const b=await req.json().catch(()=>({}));
+  const lid=Number(b.lesson_id||b.lessonId||0);
 
-  if (!lessonId) {
-    return response({
-      success: false,
-      error: "LESSON_REQUIRED"
-    }, 400);
-  }
+  if(!lid)return out({
+    success:false,error:"LESSON_REQUIRED"
+  },400,o);
 
-  const p = await premium(env, u.id);
+  const p=await premium(e,u.id);
 
-  if (!p && lessonId !== 1) {
-    return response({
-      success: false,
-      error: "PREMIUM_REQUIRED"
-    }, 403);
-  }
+  if(!p&&lid!==1)return out({
+    success:false,error:"PREMIUM_REQUIRED"
+  },403,o);
 
-  const since = Date.now() - DAYS * 24 * 60 * 60 * 1000;
+  const since=Date.now()-DAYS*86400000;
 
-  const count = await env.DB.prepare(`
-    SELECT COUNT(*) AS total
+  const c=await e.DB.prepare(`
+    SELECT COUNT(*) total
     FROM quiz_results
-    WHERE user_id = ?
-      AND created_at >= ?
-  `).bind(u.id, since).first();
+    WHERE user_id=? AND created_at>=?
+  `).bind(u.id,since).first();
 
-  if (Number(count?.total || 0) >= MAX) {
-    return response({
-      success: false,
-      error: "QUIZ_LIMIT_REACHED",
-      max: MAX
-    }, 403);
-  }
+  if(Number(c?.total||0)>=MAX)return out({
+    success:false,
+    error:"QUIZ_LIMIT_REACHED",
+    max:MAX
+  },403,o);
 
-  const result = await env.DB.prepare(`
-    INSERT INTO quiz_attempts(
-      user_id,
-      lesson_id,
-      started_at,
-      status
-    )
-    VALUES(?, ?, ?, 'STARTED')
+  const r=await e.DB.prepare(`
+    INSERT INTO quiz_attempts(user_id,lesson_id,started_at,status)
+    VALUES(?,?,?,'STARTED')
     RETURNING id
-  `).bind(
-    u.id,
-    lessonId,
-    Date.now()
-  ).first();
+  `).bind(u.id,lid,Date.now()).first();
 
-  return response({
-    success: true,
-    attempt_id: result?.id
-  });
+  return out({
+    success:true,
+    attempt_id:r?.id
+  },200,o);
 }
 
-async function check(request, env) {
-  const u = await user(request, env);
+async function quizCheck(req,e,o){
+  const u=await getUser(req,e);
 
-  if (!u) {
-    return response({
-      success: false,
-      error: "LOGIN_REQUIRED"
-    }, 401);
-  }
+  if(!u)return out({
+    success:false,error:"LOGIN_REQUIRED"
+  },401,o);
 
-  const body = await request.json().catch(() => ({}));
+  const b=await req.json().catch(()=>({}));
+  const qid=Number(b.question_id||b.questionId||0);
+  const answer=clean(b.answer||b.selected_answer);
 
-  const questionId = Number(body.question_id || 0);
-  const answer = clean(body.answer);
+  if(!qid||!answer)return out({
+    success:false,error:"INVALID_REQUEST"
+  },400,o);
 
-  if (!questionId || !answer) {
-    return response({
-      success: false,
-      error: "INVALID_REQUEST"
-    }, 400);
-  }
+  const q=await e.DB.prepare(`
+    SELECT answer FROM questions
+    WHERE id=? AND status='ACTIVE' LIMIT 1
+  `).bind(qid).first();
 
-  const q = await env.DB.prepare(`
-    SELECT answer
-    FROM questions
-    WHERE id = ?
-      AND status = 'ACTIVE'
-    LIMIT 1
-  `).bind(questionId).first();
+  if(!q)return out({
+    success:false,error:"QUESTION_NOT_FOUND"
+  },404,o);
 
-  if (!q) {
-    return response({
-      success: false,
-      error: "QUESTION_NOT_FOUND"
-    }, 404);
-  }
+  const correct=
+    answer.toUpperCase()===clean(q.answer).toUpperCase();
 
-  const correct =
-    answer.toUpperCase() === clean(q.answer).toUpperCase();
-
-  return response({
-    success: true,
+  return out({
+    success:true,
     correct,
-    reward: correct
-      ? {
-          coins: COINS,
-          xp: XP
-        }
-      : {
-          coins: 0,
-          xp: 0
-        }
-  });
+    reward:correct
+      ?{coins:COINS,xp:XP}
+      :{coins:0,xp:0}
+  },200,o);
 }
 
-async function submit(request, env) {
-  const u = await user(request, env);
+async function quizSubmit(req,e,o){
+  const u=await getUser(req,e);
 
-  if (!u) {
-    return response({
-      success: false,
-      error: "LOGIN_REQUIRED"
-    }, 401);
-  }
+  if(!u)return out({
+    success:false,error:"LOGIN_REQUIRED"
+  },401,o);
 
-  const body = await request.json().catch(() => ({}));
+  const b=await req.json().catch(()=>({}));
+  const aid=Number(b.attempt_id||b.attemptId||0);
+  const lid=Number(b.lesson_id||b.lessonId||0);
+  const answers=Array.isArray(b.answers)?b.answers:[];
 
-  const attemptId = Number(body.attempt_id || 0);
-  const lessonId = Number(body.lesson_id || 0);
-  const answers = Array.isArray(body.answers)
-    ? body.answers
-    : [];
+  if(!aid||!lid||!answers.length)return out({
+    success:false,error:"INVALID_REQUEST"
+  },400,o);
 
-  if (!attemptId || !lessonId || !answers.length) {
-    return response({
-      success: false,
-      error: "INVALID_REQUEST"
-    }, 400);
-  }
-
-  const attempt = await env.DB.prepare(`
-    SELECT id, user_id, status
+  const attempt=await e.DB.prepare(`
+    SELECT id,user_id,status
     FROM quiz_attempts
-    WHERE id = ?
-      AND user_id = ?
-    LIMIT 1
-  `).bind(attemptId, u.id).first();
+    WHERE id=? AND user_id=? LIMIT 1
+  `).bind(aid,u.id).first();
 
-  if (!attempt) {
-    return response({
-      success: false,
-      error: "ATTEMPT_NOT_FOUND"
-    }, 404);
-  }
+  if(!attempt)return out({
+    success:false,error:"ATTEMPT_NOT_FOUND"
+  },404,o);
 
-  if (attempt.status === "COMPLETED") {
-    return response({
-      success: false,
-      error: "ATTEMPT_ALREADY_COMPLETED"
-    }, 400);
-  }
+  if(attempt.status==="COMPLETED")return out({
+    success:false,error:"ATTEMPT_ALREADY_COMPLETED"
+  },400,o);
 
-  let correctCount = 0;
+  let correct=0;
 
-  for (const item of answers) {
-    const questionId = Number(item.question_id || 0);
-    const answer = clean(item.answer);
+  for(const a of answers){
+    const qid=Number(a.question_id||a.questionId||0);
+    const ans=clean(a.answer||a.selected_answer);
+    if(!qid||!ans)continue;
 
-    if (!questionId || !answer) continue;
-
-    const q = await env.DB.prepare(`
-      SELECT answer
-      FROM questions
-      WHERE id = ?
-        AND lesson_id = ?
-        AND status = 'ACTIVE'
+    const q=await e.DB.prepare(`
+      SELECT answer FROM questions
+      WHERE id=? AND lesson_id=? AND status='ACTIVE'
       LIMIT 1
-    `).bind(questionId, lessonId).first();
+    `).bind(qid,lid).first();
 
-    if (
-      q &&
-      answer.toUpperCase() === clean(q.answer).toUpperCase()
-    ) {
-      correctCount++;
-    }
+    if(q&&ans.toUpperCase()===clean(q.answer).toUpperCase())
+      correct++;
   }
 
-  const total = answers.length;
-  const coinsEarned = correctCount * COINS;
-  const xpEarned = correctCount * XP;
+  const total=answers.length;
+  const coins=correct*COINS;
+  const xp=correct*XP;
 
-  await env.DB.prepare(`
+  await e.DB.prepare(`
     INSERT INTO quiz_results(
-      user_id,
-      lesson_id,
-      attempt_id,
-      score,
-      total,
-      coins_earned,
-      xp_earned,
-      created_at
-    )
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+      user_id,lesson_id,attempt_id,score,total,
+      coins_earned,xp_earned,created_at
+    ) VALUES(?,?,?,?,?,?,?,?)
   `).bind(
-    u.id,
-    lessonId,
-    attemptId,
-    correctCount,
-    total,
-    coinsEarned,
-    xpEarned,
-    Date.now()
+    u.id,lid,aid,correct,total,coins,xp,Date.now()
   ).run();
 
-  await env.DB.prepare(`
+  await e.DB.prepare(`
     UPDATE quiz_attempts
-    SET status = 'COMPLETED',
-        completed_at = ?
-    WHERE id = ?
-  `).bind(
-    Date.now(),
-    attemptId
-  ).run();
+    SET status='COMPLETED',completed_at=?
+    WHERE id=?
+  `).bind(Date.now(),aid).run();
 
-  await rewards(env, u.id);
+  await rewards(e,u.id);
 
-  await env.DB.prepare(`
+  await e.DB.prepare(`
     UPDATE user_rewards
-    SET coins = coins + ?,
-        xp = xp + ?
-    WHERE user_id = ?
-  `).bind(
-    coinsEarned,
-    xpEarned,
-    u.id
-  ).run();
+    SET coins=coins+?,xp=xp+?
+    WHERE user_id=?
+  `).bind(coins,xp,u.id).run();
 
-  const r = await rewards(env, u.id);
+  const r=await rewards(e,u.id);
 
-  return response({
-    success: true,
-
-    result: {
-      correct: correctCount,
+  return out({
+    success:true,
+    result:{
+      correct,
       total,
-      percentage: total
-        ? Math.round((correctCount / total) * 100)
-        : 0
+      percentage:total?Math.round(correct/total*100):0
     },
-
-    reward: {
-      coins: coinsEarned,
-      xp: xpEarned
-    },
-
-    balance: {
-      coins: Number(r.coins || 0),
-      xp: Number(r.xp || 0)
+    reward:{coins,xp},
+    balance:{
+      coins:Number(r.coins||0),
+      xp:Number(r.xp||0)
     }
-  });
+  },200,o);
 }
 
-async function referral(request, env) {
-  const code = cookieValue(request, REFERRAL);
+async function referral(req,e,o){
+  const code=cookie(req,REFERRAL);
 
-  return response({
-    success: true,
-    referral_code: validReferral(code)
-      ? code.toUpperCase()
-      : null
-  });
+  return out({
+    success:true,
+    referral_code:validRef(code)?code.toUpperCase():null
+  },200,o);
 }
 
-async function captureReferral(request, env) {
-  const url = new URL(request.url);
-  const code = clean(url.searchParams.get("ref")).toUpperCase();
+async function captureReferral(req,e,o){
+  const code=clean(
+    new URL(req.url).searchParams.get("ref")
+  ).toUpperCase();
 
-  if (!validReferral(code)) {
-    return response({
-      success: false,
-      error: "INVALID_REFERRAL"
-    }, 400);
-  }
+  if(!validRef(code))return out({
+    success:false,error:"INVALID_REFERRAL"
+  },400,o);
 
-  // Record the click.
-  try {
-    await fetch(`${AFF}/api/click`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        referral_code: code
-      })
+  try{
+    await fetch(`${AFF}/api/click`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({referral_code:code})
     });
-  } catch (_) {
-    // Referral capture should not break the English site.
-  }
+  }catch(_){}
 
-  const headers = {
-    "Content-Type": "application/json",
-    ...cors(request.headers.get("Origin") || SITE),
-    "Set-Cookie": setCookie(
-      REFERRAL,
-      code,
-      30 * 24 * 60 * 60
+  return out({
+    success:true,
+    referral_code:code
+  },200,o,{
+    "Set-Cookie":setCookie(
+      REFERRAL,code,30*86400
     )
-  };
-
-  return new Response(JSON.stringify({
-    success: true,
-    referral_code: code
-  }), {
-    status: 200,
-    headers
   });
 }
 
-async function logout() {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${SITE}/Eng/`,
-      "Set-Cookie": deleteCookie(SESSION)
-    }
-  });
-}
+async function googleLogin(e){
+  const state=crypto.randomUUID();
 
-async function googleLogin(env) {
-  const state = crypto.randomUUID();
-
-  await env.DB.prepare(`
-    INSERT INTO oauth_states(state, expires_at)
-    VALUES(?, ?)
+  await e.DB.prepare(`
+    INSERT INTO oauth_states(state,expires_at)
+    VALUES(?,?)
   `).bind(
     state,
-    Date.now() + 10 * 60 * 1000
+    Date.now()+600000
   ).run();
 
-  const params = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
-    redirect_uri:
-      "https://eng-a.createlk.workers.dev/auth/callback",
-    response_type: "code",
-    scope: "openid email profile",
-    access_type: "online",
+  const p=new URLSearchParams({
+    client_id:e.GOOGLE_CLIENT_ID,
+    redirect_uri:"https://eng-a.createlk.workers.dev/auth/callback",
+    response_type:"code",
+    scope:"openid email profile",
+    access_type:"online",
     state
   });
 
-  return htmlRedirect(
-    `https://accounts.google.com/o/oauth2/v2/auth?${params}`
+  return red(
+    `https://accounts.google.com/o/oauth2/v2/auth?${p}`
   );
 }
 
-async function googleCallback(request, env) {
-  const url = new URL(request.url);
+async function googleCallback(req,e){
+  const u=new URL(req.url);
+  const code=u.searchParams.get("code");
+  const state=u.searchParams.get("state");
 
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
+  if(!code||!state)return red(
+    `${SITE}/Eng/?error=google_login`
+  );
 
-  if (!code || !state) {
-    return htmlRedirect(`${SITE}/Eng/?error=google_login`);
-  }
+  const s=await e.DB.prepare(`
+    SELECT state FROM oauth_states
+    WHERE state=? AND expires_at>? LIMIT 1
+  `).bind(state,Date.now()).first();
 
-  const stateRow = await env.DB.prepare(`
-    SELECT state
-    FROM oauth_states
-    WHERE state = ?
-      AND expires_at > ?
-    LIMIT 1
-  `).bind(
-    state,
-    Date.now()
-  ).first();
+  if(!s)return red(
+    `${SITE}/Eng/?error=invalid_state`
+  );
 
-  if (!stateRow) {
-    return htmlRedirect(`${SITE}/Eng/?error=invalid_state`);
-  }
-
-  await env.DB.prepare(`
-    DELETE FROM oauth_states
-    WHERE state = ?
+  await e.DB.prepare(`
+    DELETE FROM oauth_states WHERE state=?
   `).bind(state).run();
 
-  const tokenResponse = await fetch(
+  const tr=await fetch(
     "https://oauth2.googleapis.com/token",
     {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
+      method:"POST",
+      headers:{
+        "Content-Type":
+          "application/x-www-form-urlencoded"
       },
-      body: new URLSearchParams({
+      body:new URLSearchParams({
         code,
-        client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET,
+        client_id:e.GOOGLE_CLIENT_ID,
+        client_secret:e.GOOGLE_CLIENT_SECRET,
         redirect_uri:
           "https://eng-a.createlk.workers.dev/auth/callback",
-        grant_type: "authorization_code"
+        grant_type:"authorization_code"
       })
     }
   );
 
-  if (!tokenResponse.ok) {
-    return htmlRedirect(`${SITE}/Eng/?error=google_token`);
-  }
+  if(!tr.ok)return red(
+    `${SITE}/Eng/?error=google_token`
+  );
 
-  const tokens = await tokenResponse.json();
+  const tokens=await tr.json();
 
-  const infoResponse = await fetch(
+  const ir=await fetch(
     "https://openidconnect.googleapis.com/v1/userinfo",
     {
-      headers: {
-        Authorization: `Bearer ${tokens.access_token}`
+      headers:{
+        Authorization:`Bearer ${tokens.access_token}`
       }
     }
   );
 
-  if (!infoResponse.ok) {
-    return htmlRedirect(`${SITE}/Eng/?error=google_user`);
-  }
+  if(!ir.ok)return red(
+    `${SITE}/Eng/?error=google_user`
+  );
 
-  const info = await infoResponse.json();
+  const info=await ir.json();
 
-  const googleId = clean(info.sub);
-  const name = clean(info.name) || "CreateLK User";
-  const email = clean(info.email).toLowerCase();
-  const picture = clean(info.picture);
+  const gid=clean(info.sub);
+  const name=clean(info.name)||"CreateLK User";
+  const email=clean(info.email).toLowerCase();
+  const picture=clean(info.picture);
 
-  if (!googleId || !email) {
-    return htmlRedirect(`${SITE}/Eng/?error=google_account`);
-  }
+  if(!gid||!email)return red(
+    `${SITE}/Eng/?error=google_account`
+  );
 
-  let u = await env.DB.prepare(`
-    SELECT id
-    FROM users
-    WHERE google_id = ?
-    LIMIT 1
-  `).bind(googleId).first();
+  let u=await e.DB.prepare(`
+    SELECT id FROM users
+    WHERE google_id=? LIMIT 1
+  `).bind(gid).first();
 
-  if (u) {
-    await env.DB.prepare(`
+  if(u){
+    await e.DB.prepare(`
       UPDATE users
-      SET name = ?,
-          email = ?,
-          picture = ?,
-          auth_provider = 'google',
-          last_active_at = ?
-      WHERE id = ?
+      SET name=?,email=?,picture=?,
+          auth_provider='google',last_active_at=?
+      WHERE id=?
     `).bind(
-      name,
-      email,
-      picture,
-      Date.now(),
-      u.id
+      name,email,picture,Date.now(),u.id
     ).run();
-  } else {
-    const byEmail = await env.DB.prepare(`
-      SELECT id
-      FROM users
-      WHERE lower(email) = ?
-      LIMIT 1
+  }else{
+    u=await e.DB.prepare(`
+      SELECT id FROM users
+      WHERE lower(email)=? LIMIT 1
     `).bind(email).first();
 
-    if (byEmail) {
-      u = byEmail;
-
-      await env.DB.prepare(`
+    if(u){
+      await e.DB.prepare(`
         UPDATE users
-        SET google_id = ?,
-            name = ?,
-            email = ?,
-            picture = ?,
-            auth_provider = 'google',
-            last_active_at = ?
-        WHERE id = ?
+        SET google_id=?,name=?,email=?,picture=?,
+            auth_provider='google',last_active_at=?
+        WHERE id=?
       `).bind(
-        googleId,
-        name,
-        email,
-        picture,
-        Date.now(),
-        u.id
+        gid,name,email,picture,Date.now(),u.id
       ).run();
-    } else {
-      const created = await env.DB.prepare(`
+    }else{
+      u=await e.DB.prepare(`
         INSERT INTO users(
-          google_id,
-          name,
-          email,
-          membership_status,
-          created_at,
-          auth_provider,
-          last_active_at,
-          picture
+          google_id,name,email,membership_status,
+          created_at,auth_provider,last_active_at,picture
         )
-        VALUES(?, ?, ?, 'FREE', CURRENT_TIMESTAMP, 'google', ?, ?)
+        VALUES(?,?,?,'FREE',CURRENT_TIMESTAMP,'google',?,?)
         RETURNING id
       `).bind(
-        googleId,
-        name,
-        email,
-        Date.now(),
-        picture
+        gid,name,email,Date.now(),picture
       ).first();
-
-      u = created;
     }
   }
 
-  await rewards(env, u.id);
+  await rewards(e,u.id);
 
-  const token = crypto.randomUUID() +
-    crypto.randomUUID().replace(/-/g, "");
+  const token=
+    crypto.randomUUID()+
+    crypto.randomUUID().replace(/-/g,"");
 
-  await env.DB.prepare(`
+  await e.DB.prepare(`
     INSERT INTO sessions(
-      token,
-      user_id,
-      expires_at,
-      created_at
-    )
-    VALUES(?, ?, ?, ?)
+      token,user_id,expires_at,created_at
+    ) VALUES(?,?,?,?)
   `).bind(
     token,
     u.id,
-    Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
+    Date.now()+SESSION_DAYS*86400000,
     Date.now()
   ).run();
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${SITE}/Eng/`,
-      "Set-Cookie": setCookie(
+  return red(
+    `${SITE}/Eng/`,
+    {
+      "Set-Cookie":setCookie(
         SESSION,
         token,
-        SESSION_DAYS * 24 * 60 * 60
+        SESSION_DAYS*86400
       )
     }
-  });
+  );
 }
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const origin = request.headers.get("Origin") || SITE;
+export default{
+  async fetch(req,e){
+    const url=new URL(req.url);
+    const path=url.pathname;
+    const origin=req.headers.get("Origin")||SITE;
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: cors(origin)
+    if(req.method==="OPTIONS")
+      return new Response(null,{
+        status:204,
+        headers:cors(origin)
       });
-    }
 
-    try {
-      // Health
-      if (path === "/api/health") {
-        return response({
-          success: true,
-          worker: "eng-a",
-          status: "OK"
-        }, 200, origin);
-      }
+    try{
 
-      // Google authentication
-      if (
-        path === "/auth/google" &&
-        request.method === "GET"
-      ) {
-        return await googleLogin(env);
-      }
+      if(path==="/api/health")
+        return out({
+          success:true,
+          worker:"eng-a",
+          status:"OK"
+        },200,origin);
 
-      if (
-        path === "/auth/callback" &&
-        request.method === "GET"
-      ) {
-        return await googleCallback(request, env);
-      }
+      if(path==="/auth/google"&&req.method==="GET")
+        return googleLogin(e);
 
-      if (
-        path === "/auth/logout" &&
-        request.method === "GET"
-      ) {
-        return await logout();
-      }
+      if(path==="/auth/callback"&&req.method==="GET")
+        return googleCallback(req,e);
 
-      // Current user
-      if (
-        path === "/api/me" &&
-        request.method === "GET"
-      ) {
-        return await me(request, env);
-      }
+      if(path==="/auth/logout"&&req.method==="GET")
+        return red(`${SITE}/Eng/`,{
+          "Set-Cookie":delCookie(SESSION)
+        });
 
-      // Lessons
-      if (
-        path === "/api/lessons" &&
-        request.method === "GET"
-      ) {
-        return await titles(env);
-      }
+      if(path==="/api/me"&&req.method==="GET")
+        return me(req,e,origin);
 
-      // Questions
-      if (
-        path === "/api/questions" &&
-        request.method === "GET"
-      ) {
-        return await questions(request, env);
-      }
+      if(
+        (path==="/api/titles"||path==="/api/lessons")&&
+        req.method==="GET"
+      )
+        return titles(e,origin);
 
-      // Start quiz
-      if (
-        path === "/api/start" &&
-        request.method === "POST"
-      ) {
-        return await start(request, env);
-      }
+      if(path==="/api/questions"&&req.method==="GET")
+        return questions(req,e,origin);
 
-      // Check answer
-      if (
-        path === "/api/check" &&
-        request.method === "POST"
-      ) {
-        return await check(request, env);
-      }
+      if(
+        (path==="/api/quiz/start"||path==="/api/start")&&
+        req.method==="POST"
+      )
+        return quizStart(req,e,origin);
 
-      // Submit quiz
-      if (
-        path === "/api/submit" &&
-        request.method === "POST"
-      ) {
-        return await submit(request, env);
-      }
+      if(
+        (path==="/api/quiz/check"||path==="/api/check")&&
+        req.method==="POST"
+      )
+        return quizCheck(req,e,origin);
 
-      // Get stored referral
-      if (
-        path === "/api/referral" &&
-        request.method === "GET"
-      ) {
-        return await referral(request, env);
-      }
+      if(
+        (path==="/api/quiz/submit"||path==="/api/submit")&&
+        req.method==="POST"
+      )
+        return quizSubmit(req,e,origin);
 
-      // Capture affiliate referral
-      if (
-        path === "/api/ref" &&
-        request.method === "GET"
-      ) {
-        return await captureReferral(request, env);
-      }
+      if(path==="/api/ref"&&req.method==="GET")
+        return captureReferral(req,e,origin);
 
-      return response({
-        success: false,
-        error: "NOT_FOUND"
-      }, 404, origin);
+      if(path==="/api/referral"&&req.method==="GET")
+        return referral(req,e,origin);
 
-    } catch (error) {
-      return response({
-        success: false,
-        error: "SERVER_ERROR",
-        message: error?.message || "Unknown error"
-      }, 500, origin);
+      return out({
+        success:false,
+        error:"NOT_FOUND"
+      },404,origin);
+
+    }catch(err){
+      console.error(err);
+
+      return out({
+        success:false,
+        error:"SERVER_ERROR",
+        message:err?.message||"Unknown error"
+      },500,origin);
     }
   }
 };
