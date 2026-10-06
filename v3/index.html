@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -57,7 +58,7 @@ footer{border-top:1px solid #243753;padding:17px 15px;text-align:center;color:#7
 <body>
 
 <header><nav>
-<a class="brand" href="/v3/">
+<a class="brand" href="/">
 <img class="logo-img" src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png" alt="CreateLK English">
 <div class="logo">CreateLK <span>English</span></div>
 </a>
@@ -66,7 +67,7 @@ footer{border-top:1px solid #243753;padding:17px 15px;text-align:center;color:#7
 <div class="menu-wrap">
 <button class="menu-btn" onclick="toggleMenu()">☰</button>
 <div class="menu" id="menu">
-<a href="/v3/" onclick="backLessons()">📚 Lessons</a>
+<a href="/" onclick="backLessons()">📚 Lessons</a>
 <a href="/v3/rank.html">🏆 Leaderboard</a>
 <a href="/v3/aff.html">💰 Affiliate Dashboard</a>
 <a href="/v3/about.html">ℹ️ About Us</a>
@@ -78,7 +79,8 @@ footer{border-top:1px solid #243753;padding:17px 15px;text-align:center;color:#7
 <a href="/v3/payment.html">Payment Policy</a>
 <a href="/v3/disclaimer.html">Disclaimer</a>
 <a id="logoutMenu" href="#" onclick="logout();return false" style="display:none">🚪 Logout</a>
-</div></div>
+</div>
+</div>
 </nav></header>
 
 <main>
@@ -124,7 +126,7 @@ footer{border-top:1px solid #243753;padding:17px 15px;text-align:center;color:#7
 </footer>
 
 <script>
-const API="https://createlk.com/v3";
+const API="https://createlk-english-v3.createlk.workers.dev";
 const $=id=>document.getElementById(id);
 let currentUser=null,currentLesson=null,currentQuestions=[],currentQuestion=0,answered=false;
 
@@ -139,7 +141,10 @@ window.noticeTimer=setTimeout(()=>b.classList.remove("show"),4500);
 }
 
 function toggleMenu(){$("menu").classList.toggle("show")}
-document.addEventListener("click",e=>{if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show")});
+
+document.addEventListener("click",e=>{
+if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
+});
 
 function login(){location.href=API+"/auth/google"}
 function logout(){location.href=API+"/auth/logout"}
@@ -159,7 +164,6 @@ async function loadUser(){
 try{
 const r=await fetch(API+"/api/me?_="+Date.now(),{credentials:"include",cache:"no-store"});
 const d=await r.json();
-console.log("User:",d);
 if(d.logged_in&&d.user){
 currentUser=d.user;
 $("membership").textContent=String(d.user.membership||"free").toUpperCase();
@@ -169,7 +173,10 @@ $("account").style.display="inline-block";
 $("account").textContent="👤 "+(d.user.name||d.user.email||"Account");
 $("loginBtn").style.display="none";
 $("logoutMenu").style.display="block";
-if(d.user.avatar_url){$("avatar").src=d.user.avatar_url;$("avatar").style.display="block"}
+if(d.user.avatar_url){
+$("avatar").src=d.user.avatar_url;
+$("avatar").style.display="block";
+}
 updateMonthly(d);
 }else{
 currentUser=null;
@@ -194,12 +201,12 @@ if(!lessons.length){
 $("lessons").innerHTML='<div class="card"><div class="card-body"><div class="lesson-emoji">📚</div><h3>No Lessons</h3><p>Lessons will be added soon.</p></div></div>';
 return;
 }
+const emojis=["📚","🔤","📝","💬","🎯","🌟","🧠","✍️","🗣️","👂","📖","🏆","🌍","💡","🚀","🎓","🧩","🔎","🕊️","👑"];
 $("lessons").innerHTML=lessons.map((l,i)=>{
 const free=Number(l.is_free)===1||Number(l.id)===1;
 const accessible=l.accessible===true;
-const emoji=["📚","🔤","📝","💬","🎯","🌟","🧠","✍️","🗣️","👂","📖","🏆","🌍","💡","🚀","🎓","🧩","🔎","🕊️","👑"][i%20];
 return `<article class="card"><div class="card-top"></div><div class="card-body">
-<div class="lesson-emoji">${emoji}</div>
+<div class="lesson-emoji">${emojis[i%20]}</div>
 <h3>${esc(l.title||"Lesson "+l.id)}</h3>
 <p>${esc(l.description||"English lesson with quiz practice.")}</p>
 ${free?'<span class="free-badge">FREE</span>':'<span class="premium-badge">PREMIUM</span>'}
@@ -271,21 +278,27 @@ options.forEach(x=>x.classList.add("disabled"));
 const q=currentQuestions[currentQuestion];
 
 if(!q?.id||!q?.lesson_id){
-answered=false;options.forEach(x=>x.classList.remove("disabled"));
+answered=false;
+options.forEach(x=>x.classList.remove("disabled"));
 return notice("Question data is incomplete. Please reload the lesson.");
 }
 
 try{
 const r=await fetch(API+"/api/quiz/answer",{
-method:"POST",credentials:"include",
+method:"POST",
+credentials:"include",
 headers:{"Content-Type":"application/json"},
-body:JSON.stringify({question_id:Number(q.id),lesson_id:Number(q.lesson_id),selected_answer:String(answer)})
+body:JSON.stringify({
+question_id:Number(q.id),
+lesson_id:Number(q.lesson_id),
+selected_answer:String(answer)
+})
 });
 const d=await r.json();
-console.log("Answer:",d);
 
 if(!r.ok||!d.success){
-answered=false;options.forEach(x=>x.classList.remove("disabled"));
+answered=false;
+options.forEach(x=>x.classList.remove("disabled"));
 return notice(d.error||"Unable to submit answer");
 }
 
@@ -295,7 +308,9 @@ $("answerResult").innerHTML=`<div class="result" style="color:#8fd3b5">✅ Corre
 }else{
 button.classList.add("wrong");
 const correct=String(d.correct_answer||"").trim().toUpperCase();
-options.forEach(x=>{if(correct&&x.textContent.trim().charAt(0).toUpperCase()===correct)x.classList.add("correct")});
+options.forEach(x=>{
+if(correct&&x.textContent.trim().charAt(0).toUpperCase()===correct)x.classList.add("correct");
+});
 $("answerResult").innerHTML='<div class="result" style="color:#edb9bf">❌ Wrong! Correct answer highlighted.</div>';
 }
 
@@ -308,13 +323,7 @@ $("coins").textContent=Number(d.user.coins||0);
 $("membership").textContent=String(d.user.membership||"free").toUpperCase();
 }
 
-if(d.monthly){
-$("monthlyBox").style.display="block";
-const premium=String(currentUser?.membership||"free").toLowerCase()==="premium";
-$("monthlyTitle").textContent=premium?"⭐ Premium Monthly Progress":"🆓 Free Monthly Progress";
-$("monthlyText").textContent=Number(d.monthly.answered||0)+" / "+Number(d.monthly.limit||300);
-$("monthlyFill").style.width=(d.monthly.limit?Math.min(100,d.monthly.answered/d.monthly.limit*100):0)+"%";
-}
+if(d.monthly)updateMonthly({logged_in:true,user:currentUser,monthly:d.monthly});
 
 $("answerResult").innerHTML+=`<div class="quiz-actions"><button class="btn" onclick="nextQuestion()">${currentQuestion+1<currentQuestions.length?"Next Question →":"🏁 Finish Lesson"}</button></div>`;
 }catch(e){
@@ -336,11 +345,21 @@ scrollTo({top:0,behavior:"smooth"});
 }
 
 function backLessons(){
-currentLesson=null;currentQuestions=[];currentQuestion=0;answered=false;
+currentLesson=null;
+currentQuestions=[];
+currentQuestion=0;
+answered=false;
 $("quizArea").style.display="none";
 $("lessonArea").style.display="block";
 $("hero").style.display="block";
-if(currentUser)updateMonthly({logged_in:true,user:currentUser,monthly:{answered:0,limit:String(currentUser.membership).toLowerCase()==="premium"?1000:300}});
+if(currentUser)updateMonthly({
+logged_in:true,
+user:currentUser,
+monthly:{
+answered:0,
+limit:String(currentUser.membership||"free").toLowerCase()==="premium"?1000:300
+}
+});
 $("menu").classList.remove("show");
 scrollTo({top:0,behavior:"smooth"});
 }
