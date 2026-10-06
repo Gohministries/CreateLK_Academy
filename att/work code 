@@ -14,6 +14,18 @@ function json(data, status = 200) {
   });
 }
 
+function clean(value) {
+  return String(value ?? "").trim();
+}
+
+function validDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function validTime(value) {
+  return /^\d{2}:\d{2}$/.test(value);
+}
+
 function minutesBetween(date, inTime, outTime) {
   const start = new Date(`${date}T${inTime}:00`);
   let end = new Date(`${date}T${outTime}:00`);
@@ -28,24 +40,13 @@ function minutesBetween(date, inTime, outTime) {
 
   return Math.max(
     0,
-    Math.round((end.getTime() - start.getTime()) / 60000)
+    Math.round((end - start) / 60000)
   );
 }
 
 function authorized(request) {
-  return request.headers.get("X-Admin-Key") === ADMIN_PASSWORD;
-}
-
-function clean(value) {
-  return String(value ?? "").trim();
-}
-
-function validDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function validTime(value) {
-  return /^\d{2}:\d{2}$/.test(value);
+  const key = request.headers.get("X-Admin-Key");
+  return key === ADMIN_PASSWORD;
 }
 
 async function ensureDatabase(env) {
@@ -73,38 +74,12 @@ async function ensureDatabase(env) {
 }
 
 async function getAttendance(env, month) {
-  if (month) {
-    const result = await env.DB.prepare(`
-      SELECT
-        id,
-        name,
-        date,
-        in_time,
-        out_time,
-        total_minutes,
-        created_at
-      FROM attendance
-      WHERE substr(date, 1, 7) = ?
-      ORDER BY date DESC, in_time ASC, name ASC
-    `)
-      .bind(month)
-      .all();
-
-    return result.results || [];
-  }
-
   const result = await env.DB.prepare(`
-    SELECT
-      id,
-      name,
-      date,
-      in_time,
-      out_time,
-      total_minutes,
-      created_at
+    SELECT id,name,date,in_time,out_time,total_minutes,created_at
     FROM attendance
-    ORDER BY date DESC, in_time ASC, name ASC
-  `).all();
+    WHERE substr(date,1,7)=?
+    ORDER BY date DESC,in_time ASC,name ASC
+  `).bind(month).all();
 
   return result.results || [];
 }
@@ -122,15 +97,11 @@ async function addAttendance(env, body) {
   }
 
   if (!validDate(date)) {
-    return json({
-      error: "Invalid date."
-    }, 400);
+    return json({error:"Invalid date."},400);
   }
 
   if (!validTime(inTime) || !validTime(outTime)) {
-    return json({
-      error: "Invalid time."
-    }, 400);
+    return json({error:"Invalid time."},400);
   }
 
   const total = minutesBetween(
@@ -141,64 +112,51 @@ async function addAttendance(env, body) {
 
   if (total <= 0) {
     return json({
-      error: "Out time must be later than in time."
-    }, 400);
+      error:"Out time must be later than in time."
+    },400);
   }
 
   const result = await env.DB.prepare(`
-    INSERT INTO attendance(
-      name,
-      date,
-      in_time,
-      out_time,
-      total_minutes
-    )
+    INSERT INTO attendance
+    (name,date,in_time,out_time,total_minutes)
     VALUES(?,?,?,?,?)
-  `)
-    .bind(
-      name,
-      date,
-      inTime,
-      outTime,
-      total
-    )
-    .run();
+  `).bind(
+    name,
+    date,
+    inTime,
+    outTime,
+    total
+  ).run();
 
   return json({
-    success: true,
-    id: result.meta.last_row_id,
-    total_minutes: total
+    success:true,
+    id:result.meta.last_row_id,
+    total_minutes:total
   });
 }
 
-async function updateAttendance(env, id, body) {
+async function updateAttendance(env,id,body) {
   const name = clean(body.name);
   const date = clean(body.date);
   const inTime = clean(body.in_time);
   const outTime = clean(body.out_time);
 
   if (!id) {
-    return json({
-      error: "Attendance ID required."
-    }, 400);
+    return json({error:"Attendance ID required."},400);
   }
 
   if (!name || !date || !inTime || !outTime) {
     return json({
-      error: "Name, date, in time and out time are required."
-    }, 400);
+      error:"Name, date, in time and out time are required."
+    },400);
   }
 
   if (!validDate(date)) {
-    return json({
-      error: "Invalid date."
-    }, 400);
+    return json({error:"Invalid date."},400);
   }
 
   if (!validTime(inTime) || !validTime(outTime)) {
-    return json({
-      error: "Invalid time."
-    }, 400);
+    return json({error:"Invalid time."},400);
   }
 
   const total = minutesBetween(
@@ -209,178 +167,162 @@ async function updateAttendance(env, id, body) {
 
   if (total <= 0) {
     return json({
-      error: "Out time must be later than in time."
-    }, 400);
+      error:"Out time must be later than in time."
+    },400);
   }
 
   const result = await env.DB.prepare(`
     UPDATE attendance
-    SET
-      name = ?,
-      date = ?,
-      in_time = ?,
-      out_time = ?,
-      total_minutes = ?
-    WHERE id = ?
-  `)
-    .bind(
-      name,
-      date,
-      inTime,
-      outTime,
-      total,
-      id
-    )
-    .run();
+    SET name=?,date=?,in_time=?,out_time=?,total_minutes=?
+    WHERE id=?
+  `).bind(
+    name,
+    date,
+    inTime,
+    outTime,
+    total,
+    id
+  ).run();
 
   if (!result.meta.changes) {
     return json({
-      error: "Attendance record not found."
-    }, 404);
+      error:"Attendance record not found."
+    },404);
   }
 
   return json({
-    success: true,
-    total_minutes: total
+    success:true,
+    total_minutes:total
   });
 }
 
-async function deleteAttendance(env, id) {
-  if (!id) {
-    return json({
-      error: "Attendance ID required."
-    }, 400);
-  }
-
+async function deleteAttendance(env,id) {
   const result = await env.DB.prepare(`
-    DELETE FROM attendance
-    WHERE id = ?
-  `)
-    .bind(id)
-    .run();
+    DELETE FROM attendance WHERE id=?
+  `).bind(id).run();
 
   if (!result.meta.changes) {
     return json({
-      error: "Attendance record not found."
-    }, 404);
+      error:"Attendance record not found."
+    },404);
   }
 
-  return json({
-    success: true
-  });
+  return json({success:true});
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request,env) {
+
     try {
+
       if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: HEADERS
+        return new Response(null,{
+          status:204,
+          headers:HEADERS
         });
       }
 
       const url = new URL(request.url);
       const path = url.pathname;
 
-      /*
-       * HEALTH CHECK
-       */
+      /* HEALTH */
       if (path === "/api/health") {
         return json({
-          success: true,
-          app: "Prayer Attendance",
-          status: "online",
-          time: new Date().toISOString()
+          success:true,
+          app:"Prayer Attendance",
+          status:"online"
         });
       }
 
-      /*
-       * LOGIN
-       */
+      /* LOGIN */
       if (
         path === "/api/login" &&
         request.method === "POST"
       ) {
+
         let body;
 
         try {
           body = await request.json();
         } catch {
           return json({
-            success: false,
-            error: "Invalid JSON."
-          }, 400);
+            success:false,
+            error:"Invalid JSON."
+          },400);
         }
 
-        if (
-          body &&
-          String(body.password || "") === ADMIN_PASSWORD
-        ) {
+        const entered =
+          String(body?.password ?? "");
+
+        if (entered === ADMIN_PASSWORD) {
           return json({
-            success: true
+            success:true
           });
         }
 
         return json({
-          success: false,
-          error: "Wrong password."
-        }, 401);
+          success:false,
+          error:"Wrong password."
+        },401);
       }
 
-      /*
-       * CHECK LOGIN
-       */
+      /* CHECK LOGIN */
       if (
         path === "/api/check-login" &&
         request.method === "GET"
       ) {
+
         if (!authorized(request)) {
           return json({
-            success: false
-          }, 401);
+            success:false,
+            error:"Unauthorized."
+          },401);
         }
 
         return json({
-          success: true
+          success:true
         });
       }
 
-      /*
-       * ALL ATTENDANCE
-       */
+      /* ATTENDANCE GET */
       if (
         path === "/api/attendance" &&
         request.method === "GET"
       ) {
-        const month = clean(
-          url.searchParams.get("month")
-        );
+
+        if (!authorized(request)) {
+          return json({
+            error:"Unauthorized."
+          },401);
+        }
 
         await ensureDatabase(env);
 
-        const rows = await getAttendance(
-          env,
-          month
-        );
+        const month =
+          clean(url.searchParams.get("month"));
+
+        if (!month) {
+          return json({
+            error:"Month required."
+          },400);
+        }
 
         return json({
-          success: true,
-          rows
+          success:true,
+          rows:await getAttendance(env,month)
         });
       }
 
-      /*
-       * ADD
-       */
+      /* ATTENDANCE ADD */
       if (
         path === "/api/attendance" &&
         request.method === "POST"
       ) {
+
         if (!authorized(request)) {
           return json({
-            error: "Unauthorized."
-          }, 401);
+            error:"Unauthorized."
+          },401);
         }
 
         await ensureDatabase(env);
@@ -391,8 +333,8 @@ export default {
           body = await request.json();
         } catch {
           return json({
-            error: "Invalid JSON."
-          }, 400);
+            error:"Invalid JSON."
+          },400);
         }
 
         return await addAttendance(
@@ -401,24 +343,22 @@ export default {
         );
       }
 
-      /*
-       * EDIT
-       */
+      /* UPDATE */
       if (
         path.startsWith("/api/attendance/") &&
         request.method === "PUT"
       ) {
+
         if (!authorized(request)) {
           return json({
-            error: "Unauthorized."
-          }, 401);
+            error:"Unauthorized."
+          },401);
         }
 
         await ensureDatabase(env);
 
-        const id = path
-          .split("/")
-          .pop();
+        const id =
+          path.split("/").pop();
 
         let body;
 
@@ -426,8 +366,8 @@ export default {
           body = await request.json();
         } catch {
           return json({
-            error: "Invalid JSON."
-          }, 400);
+            error:"Invalid JSON."
+          },400);
         }
 
         return await updateAttendance(
@@ -437,24 +377,22 @@ export default {
         );
       }
 
-      /*
-       * DELETE
-       */
+      /* DELETE */
       if (
         path.startsWith("/api/attendance/") &&
         request.method === "DELETE"
       ) {
+
         if (!authorized(request)) {
           return json({
-            error: "Unauthorized."
-          }, 401);
+            error:"Unauthorized."
+          },401);
         }
 
         await ensureDatabase(env);
 
-        const id = path
-          .split("/")
-          .pop();
+        const id =
+          path.split("/").pop();
 
         return await deleteAttendance(
           env,
@@ -462,118 +400,104 @@ export default {
         );
       }
 
-      /*
-       * DASHBOARD SUMMARY
-       */
+      /* SUMMARY */
       if (
         path === "/api/summary" &&
         request.method === "GET"
       ) {
+
         if (!authorized(request)) {
           return json({
-            error: "Unauthorized."
-          }, 401);
+            error:"Unauthorized."
+          },401);
         }
 
         await ensureDatabase(env);
 
         const month =
-          clean(url.searchParams.get("month")) ||
-          new Date().toISOString().slice(0, 7);
+          clean(url.searchParams.get("month"));
 
-        const summary = await env.DB.prepare(`
-          SELECT
-            COUNT(*) AS meetings,
-            COUNT(DISTINCT name) AS people,
-            COALESCE(SUM(total_minutes),0) AS total_minutes
-          FROM attendance
-          WHERE substr(date,1,7)=?
-        `)
-          .bind(month)
-          .first();
+        const result =
+          await env.DB.prepare(`
+            SELECT
+              COUNT(*) AS meetings,
+              COUNT(DISTINCT name) AS people,
+              COALESCE(SUM(total_minutes),0)
+                AS total_minutes
+            FROM attendance
+            WHERE substr(date,1,7)=?
+          `).bind(month).first();
 
         return json({
-          success: true,
+          success:true,
           month,
-          meetings: Number(summary?.meetings || 0),
-          people: Number(summary?.people || 0),
-          total_minutes: Number(
-            summary?.total_minutes || 0
+          meetings:Number(result?.meetings || 0),
+          people:Number(result?.people || 0),
+          total_minutes:Number(
+            result?.total_minutes || 0
           )
         });
       }
 
-      /*
-       * RANKING
-       */
+      /* RANKING */
       if (
         path === "/api/ranking" &&
         request.method === "GET"
       ) {
+
         if (!authorized(request)) {
           return json({
-            error: "Unauthorized."
-          }, 401);
+            error:"Unauthorized."
+          },401);
         }
 
         await ensureDatabase(env);
 
         const month =
-          clean(url.searchParams.get("month")) ||
-          new Date().toISOString().slice(0, 7);
+          clean(url.searchParams.get("month"));
 
-        const result = await env.DB.prepare(`
-          SELECT
-            name,
-            COUNT(*) AS meetings,
-            COALESCE(SUM(total_minutes),0)
-              AS total_minutes
-          FROM attendance
-          WHERE substr(date,1,7)=?
-          GROUP BY name
-          ORDER BY total_minutes DESC,
-                   meetings DESC,
-                   name ASC
-        `)
-          .bind(month)
-          .all();
+        const result =
+          await env.DB.prepare(`
+            SELECT
+              name,
+              COUNT(*) AS meetings,
+              COALESCE(SUM(total_minutes),0)
+                AS total_minutes
+            FROM attendance
+            WHERE substr(date,1,7)=?
+            GROUP BY name
+            ORDER BY
+              total_minutes DESC,
+              meetings DESC,
+              name ASC
+          `).bind(month).all();
 
         return json({
-          success: true,
+          success:true,
           month,
-          rows: result.results || []
+          rows:result.results || []
         });
       }
 
-      /*
-       * ROOT
-       */
       if (path === "/") {
         return json({
-          app: "Prayer Attendance",
-          status: "online",
-          version: "1.0"
+          app:"Prayer Attendance",
+          status:"online"
         });
-      }
-
-      /*
-       * STATIC ASSETS
-       */
-      if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
       }
 
       return json({
-        error: "Not found"
-      }, 404);
+        error:"Not found"
+      },404);
 
-    } catch (error) {
+    } catch(error) {
+
       console.error(error);
 
       return json({
-        error: "Server error",
-        message: error?.message || "Unknown error"
-      }, 500);
+        error:"Server error",
+        message:error?.message || "Unknown error"
+      },500);
     }
   }
 };
