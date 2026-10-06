@@ -3,7 +3,7 @@ const COOKIE_NAME="english_v3_session";
 const SESSION_DAYS=7;
 const FREE_LIMIT=300;
 const PREMIUM_LIMIT=1000;
-const GOOGLE_REDIRECT="https://createlk-english-v2.createlk.workers.dev/auth/google/callback";
+const GOOGLE_REDIRECT="https://createlk.com/v3/auth/google/callback";
 
 function json(data,status=200,req){
   const origin=req?.headers.get("Origin")||"https://createlk.com";
@@ -13,7 +13,7 @@ function json(data,status=200,req){
       "Content-Type":"application/json",
       "Access-Control-Allow-Origin":origin,
       "Access-Control-Allow-Credentials":"true",
-      "Access-Control-Allow-Headers":"Content-Type",
+      "Access-Control-Allow-Headers":"Content-Type, Authorization",
       "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
       "Cache-Control":"no-store"
     }
@@ -30,33 +30,31 @@ function cookie(req,name){
 }
 
 function setCookie(v,max=SESSION_DAYS*86400){
-  return `${COOKIE_NAME}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${max}`;
+  return `${COOKIE_NAME}=${encodeURIComponent(v)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${max}`;
 }
 
 async function setup(env){
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS sessions(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      token TEXT UNIQUE,
-      user_id INTEGER,
-      expires_at TEXT
-    )
-  `).run();
+      token TEXT UNIQUE,user_id INTEGER,expires_at TEXT
+    )`).run();
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS oauth_states(
+      state TEXT PRIMARY KEY,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`).run();
 
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS quiz_answers(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      question_id INTEGER,
-      lesson_id INTEGER,
-      selected_answer TEXT,
-      is_correct INTEGER DEFAULT 0,
-      xp_awarded INTEGER DEFAULT 0,
-      coins_awarded INTEGER DEFAULT 0,
+      user_id INTEGER,question_id INTEGER,lesson_id INTEGER,
+      selected_answer TEXT,is_correct INTEGER DEFAULT 0,
+      xp_awarded INTEGER DEFAULT 0,coins_awarded INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id,question_id)
-    )
-  `).run();
+    )`).run();
 
   try{
     await env.DB.prepare(`
@@ -68,26 +66,21 @@ async function setup(env){
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS monthly_usage(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      month TEXT,
+      user_id INTEGER,month TEXT,
       questions_answered INTEGER DEFAULT 0,
       UNIQUE(user_id,month)
-    )
-  `).run();
+    )`).run();
 }
 
 async function user(req,env){
   const t=cookie(req,COOKIE_NAME);
   if(!t)return null;
-
   await setup(env);
 
-  return await env.DB.prepare(`
-    SELECT u.*,s.token
-    FROM sessions s
+  return env.DB.prepare(`
+    SELECT u.*,s.token FROM sessions s
     JOIN users u ON u.id=s.user_id
-    WHERE s.token=?
-    AND s.expires_at>datetime('now')
+    WHERE s.token=? AND s.expires_at>datetime('now')
     LIMIT 1
   `).bind(t).first();
 }
@@ -99,7 +92,6 @@ function month(){
 
 async function usage(env,u){
   await setup(env);
-
   const m=month();
 
   await env.DB.prepare(`
@@ -109,14 +101,11 @@ async function usage(env,u){
   `).bind(u.id,m).run();
 
   const r=await env.DB.prepare(`
-    SELECT questions_answered
-    FROM monthly_usage
+    SELECT questions_answered FROM monthly_usage
     WHERE user_id=? AND month=?
   `).bind(u.id,m).first();
 
-  const premium=
-    String(u.membership||"free").toLowerCase()==="premium";
-
+  const premium=String(u.membership||"free").toLowerCase()==="premium";
   const limit=premium?PREMIUM_LIMIT:FREE_LIMIT;
   const answered=Number(r?.questions_answered||0);
 
@@ -148,80 +137,58 @@ async function access(env,u,id){
 
   if(!lesson)return{error:"Lesson not found",status:404};
 
-  const premium=
-    String(u.membership||"free").toLowerCase()==="premium";
+  const premium=String(u.membership||"free").toLowerCase()==="premium";
 
-  if(
-    Number(lesson.id)!==1 &&
-    Number(lesson.is_free||0)!==1 &&
-    !premium
-  ){
-    return{
-      error:"Premium membership required",
-      status:403
-    };
-  }
+  if(Number(lesson.id)!==1&&!Number(lesson.is_free||0)&&!premium)
+    return{error:"Premium membership required",status:403};
 
   return{lesson};
 }
 
 async function googleUrl(env){
+  await setup(env);
   const state=crypto.randomUUID();
-
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS oauth_states(
-      state TEXT PRIMARY KEY,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run();
 
   await env.DB.prepare(`
     INSERT INTO oauth_states(state) VALUES(?)
   `).bind(state).run();
 
-  const p=new URLSearchParams({
-    client_id:env.GOOGLE_CLIENT_ID,
-    redirect_uri:env.GOOGLE_REDIRECT_URI||GOOGLE_REDIRECT,
-    response_type:"code",
-    scope:"openid email profile",
-    state,
-    prompt:"select_account"
-  });
+  const redirect=env.GOOGLE_REDIRECT_URI||GOOGLE_REDIRECT;
 
-  return"https://accounts.google.com/o/oauth2/v2/auth?"+p;
+  return "https://accounts.google.com/o/oauth2/v2/auth?"+
+    new URLSearchParams({
+      client_id:env.GOOGLE_CLIENT_ID,
+      redirect_uri:redirect,
+      response_type:"code",
+      scope:"openid email profile",
+      state,
+      prompt:"select_account"
+    });
 }
 
 async function googleToken(code,env){
-  const r=await fetch(
-    "https://oauth2.googleapis.com/token",
-    {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/x-www-form-urlencoded"
-      },
-      body:new URLSearchParams({
-        client_id:env.GOOGLE_CLIENT_ID,
-        client_secret:env.GOOGLE_CLIENT_SECRET,
-        code,
-        grant_type:"authorization_code",
-        redirect_uri:env.GOOGLE_REDIRECT_URI||GOOGLE_REDIRECT
-      })
-    }
-  );
+  const redirect=env.GOOGLE_REDIRECT_URI||GOOGLE_REDIRECT;
+
+  const r=await fetch("https://oauth2.googleapis.com/token",{
+    method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({
+      client_id:env.GOOGLE_CLIENT_ID,
+      client_secret:env.GOOGLE_CLIENT_SECRET,
+      code,
+      grant_type:"authorization_code",
+      redirect_uri:redirect
+    })
+  });
 
   if(!r.ok)throw new Error(await r.text());
   return r.json();
 }
 
 async function googleProfile(token){
-  const r=await fetch(
-    "https://www.googleapis.com/oauth2/v3/userinfo",
-    {
-      headers:{
-        Authorization:`Bearer ${token}`
-      }
-    }
-  );
+  const r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+    headers:{Authorization:`Bearer ${token}`}
+  });
 
   if(!r.ok)throw new Error("Google profile failed");
   return r.json();
@@ -234,52 +201,35 @@ async function saveUser(p,env){
   const avatar=String(p.picture||"");
 
   let u=await env.DB.prepare(`
-    SELECT * FROM users
-    WHERE google_id=?
-    LIMIT 1
+    SELECT * FROM users WHERE google_id=? LIMIT 1
   `).bind(gid).first();
 
   if(!u){
-    const code=
-      "CLK"+
-      Math.random().toString(36).substring(2,8).toUpperCase();
+    const code="CLK"+Math.random().toString(36).substring(2,8).toUpperCase();
 
     await env.DB.prepare(`
       INSERT INTO users(
-        google_id,email,name,avatar_url,
-        membership,xp,coins,
-        correct_answers,questions_answered,
-        lessons_completed,affiliate_code
-      )
-      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        google_id,email,name,avatar_url,membership,xp,coins,
+        correct_answers,questions_answered,lessons_completed,affiliate_code
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
     `).bind(
-      gid,email,name,avatar,
-      "free",0,0,0,0,0,code
+      gid,email,name,avatar,"free",0,0,0,0,0,code
     ).run();
   }else{
     await env.DB.prepare(`
-      UPDATE users
-      SET email=?,name=?,avatar_url=?
+      UPDATE users SET email=?,name=?,avatar_url=?
       WHERE google_id=?
-    `).bind(
-      email,name,avatar,gid
-    ).run();
+    `).bind(email,name,avatar,gid).run();
   }
 
   return env.DB.prepare(`
-    SELECT * FROM users
-    WHERE google_id=?
-    LIMIT 1
+    SELECT * FROM users WHERE google_id=? LIMIT 1
   `).bind(gid).first();
 }
 
 async function session(userId,env){
-  const token=
-    crypto.randomUUID()+"-"+crypto.randomUUID();
-
-  const expires=new Date(
-    Date.now()+SESSION_DAYS*86400000
-  ).toISOString();
+  const token=crypto.randomUUID()+"-"+crypto.randomUUID();
+  const expires=new Date(Date.now()+SESSION_DAYS*86400000).toISOString();
 
   await env.DB.prepare(`
     INSERT INTO sessions(token,user_id,expires_at)
@@ -298,18 +248,13 @@ export default{
       return json({success:true},200,req);
 
     if(url.pathname==="/api/health")
-      return json({
-        success:true,
-        status:"online"
-      },200,req);
+      return json({success:true,status:"online"},200,req);
 
     if(url.pathname==="/auth/google"){
       try{
-        return Response.redirect(
-          await googleUrl(env),302
-        );
+        return Response.redirect(await googleUrl(env),302);
       }catch(e){
-        return new Response(e.message,{status:500});
+        return new Response("Google Login Error: "+e.message,{status:500});
       }
     }
 
@@ -321,8 +266,10 @@ export default{
         if(!code||!state)
           return new Response("Missing OAuth data",{status:400});
 
+        await setup(env);
+
         const s=await env.DB.prepare(`
-          SELECT * FROM oauth_states
+          SELECT state FROM oauth_states
           WHERE state=? LIMIT 1
         `).bind(state).first();
 
@@ -357,11 +304,10 @@ export default{
     if(url.pathname==="/auth/logout"){
       const t=cookie(req,COOKIE_NAME);
 
-      if(t){
+      if(t)
         await env.DB.prepare(`
           DELETE FROM sessions WHERE token=?
         `).bind(t).run();
-      }
 
       return new Response(null,{
         status:302,
@@ -409,8 +355,7 @@ export default{
 
       const r=await env.DB.prepare(`
         SELECT id,title,description,sort_order,is_free
-        FROM lessons
-        ORDER BY sort_order,id
+        FROM lessons ORDER BY sort_order,id
       `).all();
 
       const premium=
@@ -433,13 +378,9 @@ export default{
       const u=await user(req,env);
 
       if(!u)
-        return json({
-          success:false,
-          error:"Login required"
-        },401,req);
+        return json({success:false,error:"Login required"},401,req);
 
-      const lessonId=
-        Number(url.searchParams.get("lesson_id"));
+      const lessonId=Number(url.searchParams.get("lesson_id"));
 
       if(!lessonId)
         return json({
@@ -465,8 +406,7 @@ export default{
         },429,req);
 
       const r=await env.DB.prepare(`
-        SELECT
-          id,lesson_id,question,
+        SELECT id,lesson_id,question,
           option_a,option_b,option_c,option_d
         FROM questions
         WHERE lesson_id=?
@@ -481,28 +421,18 @@ export default{
       },200,req);
     }
 
-    if(
-      url.pathname==="/api/quiz/answer"&&
-      req.method==="POST"
-    ){
-
+    if(url.pathname==="/api/quiz/answer"&&req.method==="POST"){
       const u=await user(req,env);
 
       if(!u)
-        return json({
-          success:false,
-          error:"Login required"
-        },401,req);
+        return json({success:false,error:"Login required"},401,req);
 
       const b=await req.json().catch(()=>null);
 
       const questionId=Number(b?.question_id);
       const lessonId=Number(b?.lesson_id);
-
       const selected=String(
-        b?.selected_answer??
-        b?.answer??
-        ""
+        b?.selected_answer??b?.answer??""
       ).trim();
 
       if(!questionId||!lessonId||!selected)
@@ -557,13 +487,9 @@ export default{
           error:"Question not found"
         },404,req);
 
-      const correct=String(
-        q.correct_answer||""
-      ).trim();
-
+      const correct=String(q.correct_answer||"").trim();
       const isCorrect=
-        selected.toLowerCase()===
-        correct.toLowerCase();
+        selected.toLowerCase()===correct.toLowerCase();
 
       const xp=isCorrect?10:0;
       const coins=isCorrect?5:0;
@@ -574,19 +500,12 @@ export default{
 
       await env.DB.prepare(`
         INSERT INTO quiz_answers(
-          user_id,question_id,lesson_id,
-          selected_answer,is_correct,
-          xp_awarded,coins_awarded
-        )
-        VALUES(?,?,?,?,?,?,?)
+          user_id,question_id,lesson_id,selected_answer,
+          is_correct,xp_awarded,coins_awarded
+        ) VALUES(?,?,?,?,?,?,?)
       `).bind(
-        u.id,
-        questionId,
-        lessonId,
-        selected,
-        isCorrect?1:0,
-        actualXp,
-        coins
+        u.id,questionId,lessonId,selected,
+        isCorrect?1:0,actualXp,coins
       ).run();
 
       await env.DB.prepare(`
@@ -598,25 +517,17 @@ export default{
           questions_answered=COALESCE(questions_answered,0)+1
         WHERE id=?
       `).bind(
-        newXp,
-        coins,
-        isCorrect?1:0,
-        u.id
+        newXp,coins,isCorrect?1:0,u.id
       ).run();
 
       const monthly=await addUsage(env,u);
 
       const updated=await env.DB.prepare(`
-        SELECT
-          id,name,email,avatar_url,
-          membership,membership_expiry,
-          xp,coins,
-          correct_answers,questions_answered,
-          lessons_completed,
+        SELECT id,name,email,avatar_url,membership,
+          membership_expiry,xp,coins,correct_answers,
+          questions_answered,lessons_completed,
           affiliate_code,referred_by
-        FROM users
-        WHERE id=?
-        LIMIT 1
+        FROM users WHERE id=? LIMIT 1
       `).bind(u.id).first();
 
       return json({
