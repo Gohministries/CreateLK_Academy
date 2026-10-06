@@ -197,6 +197,8 @@ and improve your English step by step.
 
 <div class="notice" id="notice"></div>
 
+<!-- LESSONS -->
+
 <div id="lessonArea">
 
 <div class="section-title">
@@ -218,6 +220,8 @@ and improve your English step by step.
 </section>
 
 </div>
+
+<!-- QUIZ -->
 
 <section id="quizSection">
 
@@ -258,9 +262,15 @@ let score=0;
 let xpEarned=0;
 let answered=false;
 
+window.lessonsData=[];
+
 function esc(v){
 return String(v??"").replace(/[&<>"']/g,c=>({
-"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+"&":"&amp;",
+"<":"&lt;",
+">":"&gt;",
+'"':"&quot;",
+"'":"&#39;"
 }[c]));
 }
 
@@ -334,7 +344,6 @@ $("xp").textContent="0";
 $("coins").textContent="0";
 $("loginBtn").style.display="block";
 $("logoutMenu").style.display="none";
-$("avatar").style.display="none";
 
 }
 
@@ -367,6 +376,8 @@ if(!data.success)
 throw new Error(data.error||"Unable to load lessons.");
 
 const lessons=Array.isArray(data.lessons)?data.lessons:[];
+
+window.lessonsData=lessons;
 
 if(!lessons.length){
 
@@ -464,6 +475,35 @@ return;
 startQuiz(id);
 }
 
+/* SCROLL TO QUESTION */
+
+function scrollToQuestion(){
+
+setTimeout(()=>{
+
+const question=document.querySelector(".question");
+
+if(question){
+
+const rect=question.getBoundingClientRect();
+
+const y=
+rect.top+
+window.scrollY-
+(window.innerHeight/2)+
+(rect.height/2);
+
+window.scrollTo({
+top:Math.max(0,y),
+behavior:"smooth"
+});
+
+}
+
+},150);
+
+}
+
 /* START QUIZ */
 
 async function startQuiz(id){
@@ -475,6 +515,12 @@ score=0;
 xpEarned=0;
 answered=false;
 
+const lesson=window.lessonsData?.find(
+x=>Number(x.id)===Number(id)
+);
+
+currentLessonTitle=lesson?.title||"Lesson "+id;
+
 $("lessonArea").style.display="none";
 $("quizSection").style.display="block";
 
@@ -483,13 +529,6 @@ $("quizContent").innerHTML=`
 <div style="font-size:35px">📚</div>
 <p>Loading questions...</p>
 </div>`;
-
-setTimeout(()=>{
-$("quizSection").scrollIntoView({
-behavior:"smooth",
-block:"center"
-});
-},150);
 
 try{
 
@@ -514,11 +553,12 @@ throw new Error("No questions found for this lesson.");
 currentLessonTitle=
 data.lesson_title||
 data.lesson_name||
-questions[0].lesson_title||
-questions[0].lesson_name||
+currentLessonTitle||
 "Lesson "+id;
 
 renderQuestion();
+
+scrollToQuestion();
 
 }catch(e){
 
@@ -714,14 +754,10 @@ notice(e.message||"Unable to submit answer.");
 function nextQuestion(){
 
 qIndex++;
+
 renderQuestion();
 
-setTimeout(()=>{
-$("quizSection").scrollIntoView({
-behavior:"smooth",
-block:"center"
-});
-},100);
+scrollToQuestion();
 
 }
 
