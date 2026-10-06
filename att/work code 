@@ -1,701 +1,579 @@
-const COOKIE_NAME="english_v3_session";
-const REF_COOKIE="english_v3_ref";
-const SESSION_DAYS=7;
-const XP_PER_CORRECT=10;
-const COINS_PER_CORRECT=10;
-const MAX_XP=10000;
-const FREE_LEADERBOARD_LIMIT=300;
-const PREMIUM_LEADERBOARD_LIMIT=1000;
-const REFERRAL_COOKIE_DAYS=30;
+const ADMIN_PASSWORD = "sathya#2026#";
 
-const CORS={
-  "Access-Control-Allow-Origin":"https://createlk.com",
-  "Access-Control-Allow-Credentials":"true",
-  "Access-Control-Allow-Headers":"Content-Type",
-  "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
+const HEADERS = {
+  "Content-Type": "application/json; charset=UTF-8",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, X-Admin-Key",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
 };
 
-const json=(data,status=200)=>new Response(JSON.stringify(data),{
-  status,
-  headers:{
-    "Content-Type":"application/json;charset=UTF-8",
-    "Cache-Control":"no-store",
-    ...CORS
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: HEADERS
+  });
+}
+
+function minutesBetween(date, inTime, outTime) {
+  const start = new Date(`${date}T${inTime}:00`);
+  let end = new Date(`${date}T${outTime}:00`);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return 0;
   }
-});
 
-function getCookie(req,name){
-  const h=req.headers.get("Cookie")||"";
-  const m=h.match(new RegExp("(?:^|;\\s*)"+name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"=([^;]*)"));
-  return m?decodeURIComponent(m[1]):null;
+  if (end < start) {
+    end.setDate(end.getDate() + 1);
+  }
+
+  return Math.max(
+    0,
+    Math.round((end.getTime() - start.getTime()) / 60000)
+  );
 }
 
-function randomString(n=32){
-  const a=new Uint8Array(n);
-  crypto.getRandomValues(a);
-  return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+function authorized(request) {
+  return request.headers.get("X-Admin-Key") === ADMIN_PASSWORD;
 }
 
-function sessionCookie(id,maxAge=SESSION_DAYS*86400){
-  return `${COOKIE_NAME}=${encodeURIComponent(id)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=None`;
+function clean(value) {
+  return String(value ?? "").trim();
 }
 
-function refCookie(code){
-  return `${REF_COOKIE}=${encodeURIComponent(code)}; Max-Age=${REFERRAL_COOKIE_DAYS*86400}; Path=/; Secure; SameSite=None`;
+function validDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function clearCookie(){
-  return `${COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`;
+function validTime(value) {
+  return /^\d{2}:\d{2}$/.test(value);
 }
 
-async function setup(env){
+async function ensureDatabase(env) {
   await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS sessions(
-      id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )
-  `).run();
-
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS affiliates(
-      user_id INTEGER PRIMARY KEY,
-      affiliate_code TEXT UNIQUE NOT NULL,
-      clicks INTEGER DEFAULT 0,
-      signups INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL
-    )
-  `).run();
-
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS referrals(
+    CREATE TABLE IF NOT EXISTS attendance(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      referrer_id INTEGER NOT NULL,
-      referred_id INTEGER NOT NULL UNIQUE,
-      affiliate_code TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      name TEXT NOT NULL,
+      date TEXT NOT NULL,
+      in_time TEXT NOT NULL,
+      out_time TEXT NOT NULL,
+      total_minutes INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
 
   await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS quiz_answers(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      question_id INTEGER NOT NULL,
-      selected_answer TEXT NOT NULL,
-      is_correct INTEGER NOT NULL DEFAULT 0,
-      xp_awarded INTEGER NOT NULL DEFAULT 0,
-      coins_awarded INTEGER NOT NULL DEFAULT 0,
-      answered_at TEXT NOT NULL,
-      UNIQUE(user_id,question_id)
-    )
+    CREATE INDEX IF NOT EXISTS idx_attendance_date
+    ON attendance(date)
   `).run();
 
-  try{
-    await env.DB.prepare(
-      `ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0`
-    ).run();
-  }catch(e){}
-
-  try{
-    await env.DB.prepare(
-      `ALTER TABLE quiz_answers ADD COLUMN coins_awarded INTEGER DEFAULT 0`
-    ).run();
-  }catch(e){}
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_attendance_name
+    ON attendance(name)
+  `).run();
 }
 
-async function user(env,req){
-  const sid=getCookie(req,COOKIE_NAME);
-  if(!sid)return null;
+async function getAttendance(env, month) {
+  if (month) {
+    const result = await env.DB.prepare(`
+      SELECT
+        id,
+        name,
+        date,
+        in_time,
+        out_time,
+        total_minutes,
+        created_at
+      FROM attendance
+      WHERE substr(date, 1, 7) = ?
+      ORDER BY date DESC, in_time ASC, name ASC
+    `)
+      .bind(month)
+      .all();
 
-  return await env.DB.prepare(`
+    return result.results || [];
+  }
+
+  const result = await env.DB.prepare(`
     SELECT
-      s.id session_id,
-      s.expires_at session_expires_at,
-      u.id,u.google_id,u.email,u.name,u.avatar_url,
-      u.membership,u.xp,COALESCE(u.coins,0) coins,
-      u.correct_answers,u.questions_answered,u.lessons_completed,
-      u.affiliate_code,u.referred_by
-    FROM sessions s
-    JOIN users u ON u.id=s.user_id
-    WHERE s.id=? AND s.expires_at>?
-    LIMIT 1
-  `).bind(sid,new Date().toISOString()).first();
+      id,
+      name,
+      date,
+      in_time,
+      out_time,
+      total_minutes,
+      created_at
+    FROM attendance
+    ORDER BY date DESC, in_time ASC, name ASC
+  `).all();
+
+  return result.results || [];
 }
 
-async function createSession(env,userId){
-  const id=randomString();
-  const expires=new Date(Date.now()+SESSION_DAYS*86400000).toISOString();
+async function addAttendance(env, body) {
+  const name = clean(body.name);
+  const date = clean(body.date);
+  const inTime = clean(body.in_time);
+  const outTime = clean(body.out_time);
 
-  await env.DB.prepare(`
-    INSERT INTO sessions(id,user_id,expires_at,created_at)
-    VALUES(?,?,?,?)
-  `).bind(id,userId,expires,new Date().toISOString()).run();
-
-  return id;
-}
-
-async function monthlyCount(env,userId){
-  const month=new Date().toISOString().slice(0,7);
-  const r=await env.DB.prepare(`
-    SELECT COUNT(*) count
-    FROM quiz_answers
-    WHERE user_id=? AND substr(answered_at,1,7)=?
-  `).bind(userId,month).first();
-
-  return Number(r?.count||0);
-}
-
-function limitFor(u){
-  return String(u.membership||"").toLowerCase()==="premium"
-    ? PREMIUM_LEADERBOARD_LIMIT
-    : FREE_LEADERBOARD_LIMIT;
-}
-
-async function access(env,u,lessonId){
-  const lesson=await env.DB.prepare(`
-    SELECT * FROM lessons WHERE id=? LIMIT 1
-  `).bind(lessonId).first();
-
-  if(!lesson)return {ok:false,status:404,error:"Lesson not found"};
-
-  const free=Number(lesson.is_free||0)===1||Number(lesson.id)===1;
-  const premium=String(u.membership||"").toLowerCase()==="premium";
-
-  if(!free&&!premium){
-    return {ok:false,status:403,error:"Premium membership required"};
-  }
-
-  return {ok:true,lesson};
-}
-
-async function googleUser(env,code,req){
-  const redirectUri=new URL("/auth/google/callback",req.url).toString();
-
-  const r=await fetch("https://oauth2.googleapis.com/token",{
-    method:"POST",
-    headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({
-      code,
-      client_id:env.GOOGLE_CLIENT_ID,
-      client_secret:env.GOOGLE_CLIENT_SECRET,
-      redirect_uri:redirectUri,
-      grant_type:"authorization_code"
-    })
-  });
-
-  if(!r.ok)throw new Error("Google token exchange failed");
-
-  const token=await r.json();
-
-  const u=await fetch("https://www.googleapis.com/oauth2/v2/userinfo",{
-    headers:{Authorization:`Bearer ${token.access_token}`}
-  });
-
-  if(!u.ok)throw new Error("Google user info failed");
-
-  return await u.json();
-}
-
-async function googleCallback(env,req){
-  const url=new URL(req.url);
-  const code=url.searchParams.get("code");
-
-  if(!code)return json({error:"Missing Google code"},400);
-
-  const g=await googleUser(env,code,req);
-  if(!g.email)return json({error:"Google account email unavailable"},400);
-
-  const now=new Date().toISOString();
-
-  let u=await env.DB.prepare(`
-    SELECT * FROM users WHERE google_id=? LIMIT 1
-  `).bind(g.id).first();
-
-  if(!u){
-    u=await env.DB.prepare(`
-      SELECT * FROM users WHERE email=? LIMIT 1
-    `).bind(g.email).first();
-  }
-
-  if(u){
-    await env.DB.prepare(`
-      UPDATE users
-      SET google_id=?,name=?,avatar_url=?
-      WHERE id=?
-    `).bind(
-      g.id,
-      g.name||u.name||"",
-      g.picture||u.avatar_url||"",
-      u.id
-    ).run();
-  }else{
-    const code="CL"+randomString(5).toUpperCase();
-
-    const r=await env.DB.prepare(`
-      INSERT INTO users(
-        google_id,email,name,avatar_url,membership,
-        xp,coins,correct_answers,questions_answered,
-        lessons_completed,affiliate_code,created_at
-      )
-      VALUES(?,?,?,?,'free',0,0,0,0,0,?,?)
-    `).bind(
-      g.id,
-      g.email,
-      g.name||"",
-      g.picture||"",
-      code,
-      now
-    ).run();
-
-    u=await env.DB.prepare(`
-      SELECT * FROM users WHERE id=?
-    `).bind(r.meta.last_row_id).first();
-  }
-
-  const sid=await createSession(env,u.id);
-
-  const headers=new Headers({
-    Location:"/v2/index.html",
-    ...CORS
-  });
-
-  headers.set("Set-Cookie",sessionCookie(sid));
-
-  const ref=
-    getCookie(req,REF_COOKIE)||
-    url.searchParams.get("ref")||
-    url.searchParams.get("referral");
-
-  if(ref){
-    const owner=await env.DB.prepare(`
-      SELECT id FROM users WHERE affiliate_code=? LIMIT 1
-    `).bind(ref).first();
-
-    if(owner&&Number(owner.id)!==Number(u.id)){
-      try{
-        await env.DB.prepare(`
-          INSERT INTO referrals(
-            referrer_id,referred_id,affiliate_code,created_at
-          )
-          VALUES(?,?,?,?)
-        `).bind(owner.id,u.id,ref,now).run();
-
-        await env.DB.prepare(`
-          UPDATE users
-          SET referred_by=?
-          WHERE id=?
-          AND (referred_by IS NULL OR referred_by='')
-        `).bind(owner.id,u.id).run();
-
-        await env.DB.prepare(`
-          UPDATE affiliates
-          SET signups=signups+1
-          WHERE affiliate_code=?
-        `).bind(ref).run();
-      }catch(e){}
-    }
-  }
-
-  return new Response(null,{status:302,headers});
-}
-
-async function answer(env,req,u){
-  let b;
-
-  try{
-    b=await req.json();
-  }catch(e){
-    return json({error:"Invalid JSON"},400);
-  }
-
-  const questionId=Number(b.question_id);
-  const selected=String(b.answer||"").toUpperCase();
-
-  if(!questionId||!["A","B","C","D"].includes(selected)){
-    return json({error:"Invalid question or answer"},400);
-  }
-
-  const q=await env.DB.prepare(`
-    SELECT id,lesson_id,correct_answer,explanation
-    FROM quiz_questions
-    WHERE id=? LIMIT 1
-  `).bind(questionId).first();
-
-  if(!q)return json({error:"Question not found"},404);
-
-  const a=await access(env,u,q.lesson_id);
-
-  if(!a.ok)return json({error:a.error},a.status);
-
-  const old=await env.DB.prepare(`
-    SELECT id FROM quiz_answers
-    WHERE user_id=? AND question_id=? LIMIT 1
-  `).bind(u.id,questionId).first();
-
-  if(old){
+  if (!name || !date || !inTime || !outTime) {
     return json({
-      error:"You already answered this question",
-      already_answered:true
-    },409);
+      error: "Name, date, in time and out time are required."
+    }, 400);
   }
 
-  const correct=selected===String(q.correct_answer).toUpperCase();
-  const count=await monthlyCount(env,u.id);
-  const limit=limitFor(u);
-  const eligible=count<limit;
-
-  const xp=correct&&eligible?XP_PER_CORRECT:0;
-  const coins=correct?COINS_PER_CORRECT:0;
-
-  const newXP=Math.min(MAX_XP,Number(u.xp||0)+xp);
-  const newCoins=Number(u.coins||0)+coins;
-  const now=new Date().toISOString();
-
-  await env.DB.prepare(`
-    INSERT INTO quiz_answers(
-      user_id,question_id,selected_answer,
-      is_correct,xp_awarded,coins_awarded,answered_at
-    )
-    VALUES(?,?,?,?,?,?,?)
-  `).bind(
-    u.id,
-    questionId,
-    selected,
-    correct?1:0,
-    xp,
-    coins,
-    now
-  ).run();
-
-  await env.DB.prepare(`
-    UPDATE users
-    SET xp=?,
-        coins=?,
-        correct_answers=COALESCE(correct_answers,0)+?,
-        questions_answered=COALESCE(questions_answered,0)+1
-    WHERE id=?
-  `).bind(
-    newXP,
-    newCoins,
-    correct?1:0,
-    u.id
-  ).run();
-
-  return json({
-    success:true,
-    correct,
-    selected_answer:selected,
-    correct_answer:String(q.correct_answer).toUpperCase(),
-    xp_awarded:xp,
-    coins_awarded:coins,
-    xp:newXP,
-    coins:newCoins,
-    monthly_answered:count+1,
-    monthly_limit:limit,
-    leaderboard_limit_reached:count+1>=limit,
-    leaderboard_xp_eligible:eligible,
-    explanation:q.explanation||""
-  });
-}
-
-async function leaderboard(env,type,u){
-  let condition="";
-  const args=[];
-
-  if(type==="monthly"){
-    condition="AND substr(qa.answered_at,1,7)=?";
-    args.push(new Date().toISOString().slice(0,7));
-  }else if(type==="weekly"){
-    condition="AND qa.answered_at>=?";
-    args.push(new Date(Date.now()-7*86400000).toISOString());
+  if (!validDate(date)) {
+    return json({
+      error: "Invalid date."
+    }, 400);
   }
 
-  const rows=await env.DB.prepare(`
-    SELECT
-      u.id,u.name,u.avatar_url,u.membership,
-      u.xp,COALESCE(u.coins,0) coins,
-      COALESCE(SUM(qa.xp_awarded),0) period_xp,
-      COUNT(qa.id) answered
-    FROM users u
-    LEFT JOIN quiz_answers qa
-      ON qa.user_id=u.id ${condition}
-    GROUP BY u.id
-    ORDER BY period_xp DESC,u.xp DESC,u.id ASC
-    LIMIT 100
-  `).bind(...args).all();
+  if (!validTime(inTime) || !validTime(outTime)) {
+    return json({
+      error: "Invalid time."
+    }, 400);
+  }
 
-  const all=await env.DB.prepare(`
-    SELECT
-      u.id,
-      COALESCE(SUM(qa.xp_awarded),0) period_xp
-    FROM users u
-    LEFT JOIN quiz_answers qa
-      ON qa.user_id=u.id ${condition}
-    GROUP BY u.id
-    ORDER BY period_xp DESC,u.xp DESC,u.id ASC
-  `).bind(...args).all();
-
-  const i=all.results.findIndex(
-    x=>Number(x.id)===Number(u.id)
+  const total = minutesBetween(
+    date,
+    inTime,
+    outTime
   );
 
-  return {
-    type,
-    limit:limitFor(u),
-    rank:i<0?null:i+1,
-    leaderboard:rows.results
-  };
+  if (total <= 0) {
+    return json({
+      error: "Out time must be later than in time."
+    }, 400);
+  }
+
+  const result = await env.DB.prepare(`
+    INSERT INTO attendance(
+      name,
+      date,
+      in_time,
+      out_time,
+      total_minutes
+    )
+    VALUES(?,?,?,?,?)
+  `)
+    .bind(
+      name,
+      date,
+      inTime,
+      outTime,
+      total
+    )
+    .run();
+
+  return json({
+    success: true,
+    id: result.meta.last_row_id,
+    total_minutes: total
+  });
 }
 
-export default{
-  async fetch(req,env){
-    try{
-      if(req.method==="OPTIONS"){
-        return new Response(null,{status:204,headers:CORS});
+async function updateAttendance(env, id, body) {
+  const name = clean(body.name);
+  const date = clean(body.date);
+  const inTime = clean(body.in_time);
+  const outTime = clean(body.out_time);
+
+  if (!id) {
+    return json({
+      error: "Attendance ID required."
+    }, 400);
+  }
+
+  if (!name || !date || !inTime || !outTime) {
+    return json({
+      error: "Name, date, in time and out time are required."
+    }, 400);
+  }
+
+  if (!validDate(date)) {
+    return json({
+      error: "Invalid date."
+    }, 400);
+  }
+
+  if (!validTime(inTime) || !validTime(outTime)) {
+    return json({
+      error: "Invalid time."
+    }, 400);
+  }
+
+  const total = minutesBetween(
+    date,
+    inTime,
+    outTime
+  );
+
+  if (total <= 0) {
+    return json({
+      error: "Out time must be later than in time."
+    }, 400);
+  }
+
+  const result = await env.DB.prepare(`
+    UPDATE attendance
+    SET
+      name = ?,
+      date = ?,
+      in_time = ?,
+      out_time = ?,
+      total_minutes = ?
+    WHERE id = ?
+  `)
+    .bind(
+      name,
+      date,
+      inTime,
+      outTime,
+      total,
+      id
+    )
+    .run();
+
+  if (!result.meta.changes) {
+    return json({
+      error: "Attendance record not found."
+    }, 404);
+  }
+
+  return json({
+    success: true,
+    total_minutes: total
+  });
+}
+
+async function deleteAttendance(env, id) {
+  if (!id) {
+    return json({
+      error: "Attendance ID required."
+    }, 400);
+  }
+
+  const result = await env.DB.prepare(`
+    DELETE FROM attendance
+    WHERE id = ?
+  `)
+    .bind(id)
+    .run();
+
+  if (!result.meta.changes) {
+    return json({
+      error: "Attendance record not found."
+    }, 404);
+  }
+
+  return json({
+    success: true
+  });
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: HEADERS
+        });
       }
 
-      await setup(env);
+      const url = new URL(request.url);
+      const path = url.pathname;
 
-      const url=new URL(req.url);
-      const path=url.pathname;
-
-      if(path==="/auth/google"){
-        const redirectUri=
-          new URL("/auth/google/callback",req.url).toString();
-
-        const target=
-          "https://accounts.google.com/o/oauth2/v2/auth?"+
-          new URLSearchParams({
-            client_id:env.GOOGLE_CLIENT_ID,
-            redirect_uri:redirectUri,
-            response_type:"code",
-            scope:"openid email profile",
-            access_type:"offline",
-            prompt:"select_account"
-          }).toString();
-
-        return Response.redirect(target,302);
+      /*
+       * HEALTH CHECK
+       */
+      if (path === "/api/health") {
+        return json({
+          success: true,
+          app: "Prayer Attendance",
+          status: "online",
+          time: new Date().toISOString()
+        });
       }
 
-      if(path==="/auth/google/callback"){
-        return await googleCallback(env,req);
-      }
+      /*
+       * LOGIN
+       */
+      if (
+        path === "/api/login" &&
+        request.method === "POST"
+      ) {
+        let body;
 
-      if(path==="/auth/logout"){
-        const sid=getCookie(req,COOKIE_NAME);
-
-        if(sid){
-          await env.DB.prepare(`
-            DELETE FROM sessions WHERE id=?
-          `).bind(sid).run();
+        try {
+          body = await request.json();
+        } catch {
+          return json({
+            success: false,
+            error: "Invalid JSON."
+          }, 400);
         }
 
-        return new Response(null,{
-          status:302,
-          headers:{
-            Location:"/v2/index.html",
-            "Set-Cookie":clearCookie(),
-            ...CORS
-          }
-        });
-      }
-
-      if(path==="/api/me"){
-        const u=await user(env,req);
-
-        if(!u)return json({logged_in:false});
-
-        const monthly=await monthlyCount(env,u.id);
-        const limit=limitFor(u);
-
-        return json({
-          logged_in:true,
-          user:{
-            id:u.id,
-            email:u.email,
-            name:u.name,
-            avatar_url:u.avatar_url,
-            membership:u.membership,
-            xp:Number(u.xp||0),
-            coins:Number(u.coins||0),
-            correct_answers:Number(u.correct_answers||0),
-            questions_answered:Number(u.questions_answered||0),
-            lessons_completed:Number(u.lessons_completed||0),
-            affiliate_code:u.affiliate_code,
-            referred_by:u.referred_by
-          },
-          monthly_answered:monthly,
-          monthly_limit:limit,
-          leaderboard_xp_eligible:monthly<limit
-        });
-      }
-
-      if(path==="/api/lessons"){
-        const u=await user(env,req);
-
-        if(!u){
-          return json({logged_in:false,lessons:[]});
+        if (
+          body &&
+          String(body.password || "") === ADMIN_PASSWORD
+        ) {
+          return json({
+            success: true
+          });
         }
 
-        const r=await env.DB.prepare(`
-          SELECT * FROM lessons ORDER BY id ASC
-        `).all();
+        return json({
+          success: false,
+          error: "Wrong password."
+        }, 401);
+      }
 
-        const premium=
-          String(u.membership||"").toLowerCase()==="premium";
+      /*
+       * CHECK LOGIN
+       */
+      if (
+        path === "/api/check-login" &&
+        request.method === "GET"
+      ) {
+        if (!authorized(request)) {
+          return json({
+            success: false
+          }, 401);
+        }
 
         return json({
-          logged_in:true,
-          membership:u.membership,
-          lessons:r.results.map(l=>({
-            ...l,
-            accessible:
-              Number(l.is_free||0)===1||
-              Number(l.id)===1||
-              premium
-          }))
+          success: true
         });
       }
 
-      if(path==="/api/quiz"){
-        const u=await user(env,req);
-
-        if(!u)return json({error:"Login required"},401);
-
-        const lessonId=Number(
-          url.searchParams.get("lesson")
+      /*
+       * ALL ATTENDANCE
+       */
+      if (
+        path === "/api/attendance" &&
+        request.method === "GET"
+      ) {
+        const month = clean(
+          url.searchParams.get("month")
         );
 
-        if(!lessonId){
-          return json({error:"Lesson ID required"},400);
+        await ensureDatabase(env);
+
+        const rows = await getAttendance(
+          env,
+          month
+        );
+
+        return json({
+          success: true,
+          rows
+        });
+      }
+
+      /*
+       * ADD
+       */
+      if (
+        path === "/api/attendance" &&
+        request.method === "POST"
+      ) {
+        if (!authorized(request)) {
+          return json({
+            error: "Unauthorized."
+          }, 401);
         }
 
-        const a=await access(env,u,lessonId);
+        await ensureDatabase(env);
 
-        if(!a.ok)return json({error:a.error},a.status);
+        let body;
 
-        const r=await env.DB.prepare(`
+        try {
+          body = await request.json();
+        } catch {
+          return json({
+            error: "Invalid JSON."
+          }, 400);
+        }
+
+        return await addAttendance(
+          env,
+          body
+        );
+      }
+
+      /*
+       * EDIT
+       */
+      if (
+        path.startsWith("/api/attendance/") &&
+        request.method === "PUT"
+      ) {
+        if (!authorized(request)) {
+          return json({
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        await ensureDatabase(env);
+
+        const id = path
+          .split("/")
+          .pop();
+
+        let body;
+
+        try {
+          body = await request.json();
+        } catch {
+          return json({
+            error: "Invalid JSON."
+          }, 400);
+        }
+
+        return await updateAttendance(
+          env,
+          id,
+          body
+        );
+      }
+
+      /*
+       * DELETE
+       */
+      if (
+        path.startsWith("/api/attendance/") &&
+        request.method === "DELETE"
+      ) {
+        if (!authorized(request)) {
+          return json({
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        await ensureDatabase(env);
+
+        const id = path
+          .split("/")
+          .pop();
+
+        return await deleteAttendance(
+          env,
+          id
+        );
+      }
+
+      /*
+       * DASHBOARD SUMMARY
+       */
+      if (
+        path === "/api/summary" &&
+        request.method === "GET"
+      ) {
+        if (!authorized(request)) {
+          return json({
+            error: "Unauthorized."
+          }, 401);
+        }
+
+        await ensureDatabase(env);
+
+        const month =
+          clean(url.searchParams.get("month")) ||
+          new Date().toISOString().slice(0, 7);
+
+        const summary = await env.DB.prepare(`
           SELECT
-            id,lesson_id,question_number,question,
-            option_a,option_b,option_c,option_d
-          FROM quiz_questions
-          WHERE lesson_id=?
-          ORDER BY question_number ASC,id ASC
-        `).bind(lessonId).all();
+            COUNT(*) AS meetings,
+            COUNT(DISTINCT name) AS people,
+            COALESCE(SUM(total_minutes),0) AS total_minutes
+          FROM attendance
+          WHERE substr(date,1,7)=?
+        `)
+          .bind(month)
+          .first();
 
         return json({
-          lesson:a.lesson,
-          questions:r.results
+          success: true,
+          month,
+          meetings: Number(summary?.meetings || 0),
+          people: Number(summary?.people || 0),
+          total_minutes: Number(
+            summary?.total_minutes || 0
+          )
         });
       }
 
-      if(path==="/api/quiz/answer"&&req.method==="POST"){
-        const u=await user(env,req);
-
-        if(!u)return json({error:"Login required"},401);
-
-        return await answer(env,req,u);
-      }
-
-      if(path==="/api/leaderboard"){
-        const u=await user(env,req);
-
-        if(!u)return json({error:"Login required"},401);
-
-        let type=url.searchParams.get("type")||"all";
-
-        if(type==="all-time")type="all";
-
-        if(!["weekly","monthly","all"].includes(type)){
-          return json({error:"Invalid leaderboard type"},400);
+      /*
+       * RANKING
+       */
+      if (
+        path === "/api/ranking" &&
+        request.method === "GET"
+      ) {
+        if (!authorized(request)) {
+          return json({
+            error: "Unauthorized."
+          }, 401);
         }
 
-        return json(await leaderboard(env,type,u));
-      }
+        await ensureDatabase(env);
 
-      if(path==="/api/referral"){
-        const code=
-          url.searchParams.get("code")||
-          url.searchParams.get("ref");
+        const month =
+          clean(url.searchParams.get("month")) ||
+          new Date().toISOString().slice(0, 7);
 
-        if(!code){
-          return json({error:"Referral code required"},400);
-        }
+        const result = await env.DB.prepare(`
+          SELECT
+            name,
+            COUNT(*) AS meetings,
+            COALESCE(SUM(total_minutes),0)
+              AS total_minutes
+          FROM attendance
+          WHERE substr(date,1,7)=?
+          GROUP BY name
+          ORDER BY total_minutes DESC,
+                   meetings DESC,
+                   name ASC
+        `)
+          .bind(month)
+          .all();
 
-        let a=await env.DB.prepare(`
-          SELECT a.affiliate_code,a.clicks,a.signups,u.name
-          FROM affiliates a
-          JOIN users u ON u.id=a.user_id
-          WHERE a.affiliate_code=?
-          LIMIT 1
-        `).bind(code).first();
-
-        if(!a){
-          const u=await env.DB.prepare(`
-            SELECT id,name,affiliate_code
-            FROM users
-            WHERE affiliate_code=?
-            LIMIT 1
-          `).bind(code).first();
-
-          if(!u)return json({valid:false});
-
-          await env.DB.prepare(`
-            INSERT OR IGNORE INTO affiliates(
-              user_id,affiliate_code,clicks,signups,created_at
-            )
-            VALUES(?,?,0,0,?)
-          `).bind(
-            u.id,
-            u.affiliate_code,
-            new Date().toISOString()
-          ).run();
-
-          a={affiliate_code:u.affiliate_code};
-        }
-
-        await env.DB.prepare(`
-          UPDATE affiliates
-          SET clicks=clicks+1
-          WHERE affiliate_code=?
-        `).bind(code).run();
-
-        return new Response(null,{
-          status:302,
-          headers:{
-            Location:"/v2/index.html",
-            "Set-Cookie":refCookie(code),
-            ...CORS
-          }
-        });
-      }
-
-      if(path==="/"){
         return json({
-          app:"CreateLK English",
-          version:"V3",
-          status:"online",
-          rewards:{
-            correct_answer_xp:XP_PER_CORRECT,
-            correct_answer_coins:COINS_PER_CORRECT
-          },
-          limits:{
-            free:FREE_LEADERBOARD_LIMIT,
-            premium:PREMIUM_LEADERBOARD_LIMIT
-          }
+          success: true,
+          month,
+          rows: result.results || []
         });
       }
 
-      return json({error:"Not found"},404);
+      /*
+       * ROOT
+       */
+      if (path === "/") {
+        return json({
+          app: "Prayer Attendance",
+          status: "online",
+          version: "1.0"
+        });
+      }
 
-    }catch(e){
-      console.error(e);
+      /*
+       * STATIC ASSETS
+       */
+      if (env.ASSETS) {
+        return env.ASSETS.fetch(request);
+      }
+
       return json({
-        error:"Server error",
-        message:e?.message||"Unknown error"
-      },500);
+        error: "Not found"
+      }, 404);
+
+    } catch (error) {
+      console.error(error);
+
+      return json({
+        error: "Server error",
+        message: error?.message || "Unknown error"
+      }, 500);
     }
   }
 };
