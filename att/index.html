@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
+<title>Prayer Attendance</title>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}
+button,input{font:inherit}
+button{cursor:pointer;border:0;border-radius:8px;padding:10px 14px;font-weight:700}
+input{width:100%;padding:10px;border:1px solid #d5dce7;border-radius:8px;outline:0}
+.hidden{display:none!important}
+
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:#102a56}
+.login-box{width:100%;max-width:390px;background:#fff;padding:30px;border-radius:18px;text-align:center}
+.logo{font-size:40px}
+.login h1{color:#102a56;margin:8px 0}
+.login p{color:#687386;margin-bottom:22px}
+.login input{margin-bottom:10px}
+
+.primary{background:#102a56;color:#fff}
+.gold{background:#d69b16;color:#fff}
+.green{background:#198754;color:#fff}
+.danger{background:#dc3545;color:#fff}
+.gray{background:#e9edf3;color:#26364f}
+.error{color:#dc3545;font-size:14px;margin-top:10px}
+
+header{background:#102a56;color:#fff;padding:15px 20px}
+.header{max-width:1200px;margin:auto;display:flex;justify-content:space-between;align-items:center}
+header h1{margin:0;font-size:21px}
+header small{opacity:.8}
+
+main{max-width:1200px;margin:auto;padding:20px}
+
+.toolbar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.toolbar div{display:flex;gap:8px;align-items:center}
+
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
+.card{background:#fff;border:1px solid #e8edf4;border-radius:14px;padding:18px;margin-bottom:20px}
+.stat small{color:#687386}
+.stat strong{display:block;color:#102a56;font-size:26px;margin-top:7px}
+
+h2{font-size:18px;color:#102a56;margin:0 0 15px}
+
+.form{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:9px;align-items:end}
+label{display:block;font-size:12px;font-weight:bold;color:#536074;margin-bottom:5px}
+
+.table{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:650px}
+th,td{padding:11px 9px;border-bottom:1px solid #edf0f5;text-align:left}
+th{background:#f5f7fa;font-size:13px}
+.actions{display:flex;gap:5px}
+.small{padding:6px 9px;font-size:12px}
+
+.ranking{display:grid;gap:8px}
+.rank{display:grid;grid-template-columns:40px 1fr auto auto;gap:10px;align-items:center;background:#f8fafc;padding:11px;border-radius:9px}
+.number{width:30px;height:30px;border-radius:50%;background:#102a56;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold}
+.rank-time{font-weight:bold;color:#102a56}
+.empty{text-align:center;color:#7a8495;padding:25px}
+
+.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal-box{background:#fff;width:100%;max-width:450px;border-radius:15px;padding:22px}
+.modal-box input{margin-bottom:10px}
+.modal-buttons{display:flex;justify-content:flex-end;gap:8px}
+
+@media(max-width:800px){
+.cards{grid-template-columns:1fr}
+.form{grid-template-columns:1fr 1fr}
+}
+
+@media(max-width:550px){
+main{padding:12px}
+.form{grid-template-columns:1fr}
+.toolbar div{width:100%}
+.toolbar button{flex:1}
+.rank{grid-template-columns:35px 1fr}
+.rank-time,.rank-meetings{grid-column:2}
+}
+
+@media print{
+.no-print,.toolbar,.add-card,.actions{display:none!important}
+body{background:#fff}
+main{padding:0}
+.card{border:0}
+}
+</style>
+</head>
+
+<body>
+
+<!-- LOGIN -->
+<div id="loginPage" class="login">
+  <div class="login-box">
+    <div class="logo">🙏</div>
+    <h1>Prayer Attendance</h1>
+    <p>Prayer Team Attendance Management</p>
+
+    <input id="password" type="password"
+      autocomplete="current-password"
+      placeholder="Admin Password">
+
+    <button id="loginBtn" class="primary"
+      style="width:100%" onclick="login()">
+      🔐 Login
+    </button>
+
+    <div id="loginError" class="error"></div>
+  </div>
+</div>
+
+
+<!-- APP -->
+<div id="app" class="hidden">
+
+<header>
+  <div class="header">
+    <div>
+      <h1>🙏 Prayer Attendance</h1>
+      <small>Prayer Team Attendance Management</small>
+    </div>
+
+    <button class="gray no-print" onclick="logout()">
+      Logout
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar no-print">
+
+    <div>
+      <strong>Month</strong>
+
+      <input id="month" type="month" style="width:auto">
+
+      <button class="primary" onclick="load()">
+        🔄 Refresh
+      </button>
+    </div>
+
+    <div>
+      <button class="green" onclick="csv()">
+        📊 CSV
+      </button>
+
+      <button class="gray" onclick="window.print()">
+        🖨️ PDF
+      </button>
+    </div>
+
+  </div>
+
+
+  <!-- SUMMARY -->
+  <div class="cards">
+
+    <div class="card stat">
+      <small>Total Meetings</small>
+      <strong id="meetings">0</strong>
+    </div>
+
+    <div class="card stat">
+      <small>People</small>
+      <strong id="people">0</strong>
+    </div>
+
+    <div class="card stat">
+      <small>Total Prayer Time</small>
+      <strong id="total">0h 0m</strong>
+    </div>
+
+  </div>
+
+
+  <!-- ADD -->
+  <div class="card add-card no-print">
+
+    <h2>➕ Add Attendance</h2>
+
+    <div class="form">
+
+      <div>
+        <label>Name</label>
+        <input id="name" placeholder="Name">
+      </div>
+
+      <div>
+        <label>Date</label>
+        <input id="date" type="date">
+      </div>
+
+      <div>
+        <label>In Time</label>
+        <input id="in" type="time">
+      </div>
+
+      <div>
+        <label>Out Time</label>
+        <input id="out" type="time">
+      </div>
+
+      <button class="gold" onclick="add()">
+        ➕ Add
+      </button>
+
+    </div>
+  </div>
+
+
+  <!-- RECORDS -->
+  <div class="card">
+
+    <h2>📋 Attendance Records</h2>
+
+    <div class="table">
+
+      <table>
+
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Date</th>
+            <th>In</th>
+            <th>Out</th>
+            <th>Total</th>
+            <th class="no-print">Actions</th>
+          </tr>
+        </thead>
+
+        <tbody id="rows"></tbody>
+
+      </table>
+
+    </div>
+  </div>
+
+
+  <!-- RANKING -->
+  <div class="card">
+
+    <h2>🏆 Monthly Ranking</h2>
+
+    <div id="ranking" class="ranking"></div>
+
+  </div>
+
+</main>
+</div>
+
+
+<!-- EDIT -->
+<div id="modal" class="modal hidden">
+
+  <div class="modal-box">
+
+    <h2>✏️ Edit Attendance</h2>
+
+    <input id="editId" type="hidden">
+
+    <label>Name</label>
+    <input id="editName">
+
+    <label>Date</label>
+    <input id="editDate" type="date">
+
+    <label>In Time</label>
+    <input id="editIn" type="time">
+
+    <label>Out Time</label>
+    <input id="editOut" type="time">
+
+    <div class="modal-buttons">
+
+      <button class="gray" onclick="closeEdit()">
+        Cancel
+      </button>
+
+      <button class="primary" onclick="saveEdit()">
+        Save
+      </button>
+
+    </div>
+
+  </div>
+</div>
+
+
+<script>
+
+const API="https://attendance.createlk.workers.dev";
+const KEY="prayer_attendance_admin";
+
+const $=id=>document.getElementById(id);
+
+function month(){
+  return $("month").value;
+}
+
+function fmt(min){
+  min=Number(min||0);
+  return Math.floor(min/60)+"h "+(min%60)+"m";
+}
+
+function today(){
+  const d=new Date();
+  return d.getFullYear()+"-"+
+    String(d.getMonth()+1).padStart(2,"0")+"-"+
+    String(d.getDate()).padStart(2,"0");
+}
+
+function thisMonth(){
+  const d=new Date();
+  return d.getFullYear()+"-"+
+    String(d.getMonth()+1).padStart(2,"0");
+}
+
+function esc(v){
+  return String(v??"")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+}
+
+
+/* API */
+
+async function request(path,options={}){
+
+  const headers={
+    "Content-Type":"application/json",
+    ...(options.headers||{})
+  };
+
+  const key=localStorage.getItem(KEY);
+
+  if(key) headers["X-Admin-Key"]=key;
+
+  let r;
+
+  try{
+    r=await fetch(API+path,{
+      ...options,
+      headers
+    });
+  }catch{
+    throw new Error("Failed to connect to server.");
+  }
+
+  let data;
+
+  try{
+    data=await r.json();
+  }catch{
+    throw new Error("Invalid server response.");
+  }
+
+  if(!r.ok)
+    throw new Error(data.error||"Request failed.");
+
+  return data;
+}
+
+
+/* LOGIN */
+
+async function login(){
+
+  const password=$("password").value;
+
+  $("loginError").textContent="";
+
+  if(!password){
+    $("loginError").textContent="Enter password.";
+    return;
+  }
+
+  const btn=$("loginBtn");
+
+  btn.disabled=true;
+  btn.textContent="⏳ Checking...";
+
+  try{
+
+    const r=await fetch(API+"/api/login",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({password})
+    });
+
+    const data=await r.json();
+
+    if(!r.ok||!data.success)
+      throw new Error(data.error||"Wrong password.");
+
+    localStorage.setItem(KEY,password);
+
+    $("password").value="";
+
+    showApp();
+
+  }catch(e){
+
+    $("loginError").textContent="❌ "+e.message;
+
+  }finally{
+
+    btn.disabled=false;
+    btn.textContent="🔐 Login";
+
+  }
+}
+
+
+async function checkLogin(){
+
+  if(!localStorage.getItem(KEY)){
+    showLogin();
+    return;
+  }
+
+  try{
+    await request("/api/check-login");
+    showApp();
+  }catch{
+    localStorage.removeItem(KEY);
+    showLogin();
+  }
+}
+
+
+function showLogin(){
+  $("loginPage").classList.remove("hidden");
+  $("app").classList.add("hidden");
+}
+
+
+function showApp(){
+  $("loginPage").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  load();
+}
+
+
+function logout(){
+  localStorage.removeItem(KEY);
+  $("password").value="";
+  $("loginError").textContent="";
+  showLogin();
+}
+
+
+/* LOAD */
+
+async function load(){
+
+  const m=month();
+
+  if(!m)return;
+
+  try{
+
+    const [a,s,r]=await Promise.all([
+
+      request("/api/attendance?month="+encodeURIComponent(m)),
+
+      request("/api/summary?month="+encodeURIComponent(m)),
+
+      request("/api/ranking?month="+encodeURIComponent(m))
+
+    ]);
+
+    renderRows(a.rows||[]);
+
+    $("meetings").textContent=s.meetings||0;
+    $("people").textContent=s.people||0;
+    $("total").textContent=fmt(s.total_minutes);
+
+    renderRanking(r.rows||[]);
+
+  }catch(e){
+
+    alert(e.message);
+
+  }
+}
+
+
+/* RECORDS */
+
+function renderRows(data){
+
+  if(!data.length){
+
+    $("rows").innerHTML=
+      `<tr><td colspan="6" class="empty">
+        No attendance records.
+      </td></tr>`;
+
+    return;
+  }
+
+  $("rows").innerHTML=data.map(r=>`
+
+    <tr>
+
+      <td><strong>${esc(r.name)}</strong></td>
+
+      <td>${esc(r.date)}</td>
+
+      <td>${esc(r.in_time)}</td>
+
+      <td>${esc(r.out_time)}</td>
+
+      <td><strong>${fmt(r.total_minutes)}</strong></td>
+
+      <td class="no-print">
+
+        <div class="actions">
+
+          <button class="small primary"
+            onclick='edit(${JSON.stringify(r)})'>
+            ✏️
+          </button>
+
+          <button class="small danger"
+            onclick="remove(${Number(r.id)})">
+            🗑️
+          </button>
+
+        </div>
+
+      </td>
+
+    </tr>
+
+  `).join("");
+}
+
+
+/* ADD */
+
+async function add(){
+
+  const body={
+    name:$("name").value.trim(),
+    date:$("date").value,
+    in_time:$("in").value,
+    out_time:$("out").value
+  };
+
+  if(!body.name||!body.date||
+     !body.in_time||!body.out_time){
+
+    alert("Please fill all fields.");
+    return;
+  }
+
+  try{
+
+    await request("/api/attendance",{
+      method:"POST",
+      body:JSON.stringify(body)
+    });
+
+    $("name").value="";
+    $("in").value="";
+    $("out").value="";
+
+    $("month").value=body.date.slice(0,7);
+
+    load();
+
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+
+/* EDIT */
+
+function edit(r){
+
+  $("editId").value=r.id;
+  $("editName").value=r.name;
+  $("editDate").value=r.date;
+  $("editIn").value=r.in_time;
+  $("editOut").value=r.out_time;
+
+  $("modal").classList.remove("hidden");
+}
+
+
+function closeEdit(){
+  $("modal").classList.add("hidden");
+}
+
+
+async function saveEdit(){
+
+  const id=$("editId").value;
+
+  const body={
+    name:$("editName").value.trim(),
+    date:$("editDate").value,
+    in_time:$("editIn").value,
+    out_time:$("editOut").value
+  };
+
+  if(!body.name||!body.date||
+     !body.in_time||!body.out_time){
+
+    alert("Please fill all fields.");
+    return;
+  }
+
+  try{
+
+    await request("/api/attendance/"+encodeURIComponent(id),{
+      method:"PUT",
+      body:JSON.stringify(body)
+    });
+
+    closeEdit();
+
+    $("month").value=body.date.slice(0,7);
+
+    load();
+
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+
+/* DELETE */
+
+async function remove(id){
+
+  if(!confirm("Delete this attendance record?"))
+    return;
+
+  try{
+
+    await request(
+      "/api/attendance/"+encodeURIComponent(id),
+      {method:"DELETE"}
+    );
+
+    load();
+
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+
+/* RANKING */
+
+function renderRanking(data){
+
+  if(!data.length){
+
+    $("ranking").innerHTML=
+      `<div class="empty">No ranking data.</div>`;
+
+    return;
+  }
+
+  $("ranking").innerHTML=data.map((r,i)=>`
+
+    <div class="rank">
+
+      <div class="number">${i+1}</div>
+
+      <strong>${esc(r.name)}</strong>
+
+      <span class="rank-meetings">
+        ${Number(r.meetings||0)} meetings
+      </span>
+
+      <span class="rank-time">
+        ${fmt(r.total_minutes)}
+      </span>
+
+    </div>
+
+  `).join("");
+}
+
+
+/* CSV */
+
+async function csv(){
+
+  try{
+
+    const data=await request(
+      "/api/attendance?month="+encodeURIComponent(month())
+    );
+
+    const rows=data.rows||[];
+
+    if(!rows.length){
+      alert("No records to export.");
+      return;
+    }
+
+    const lines=[
+      ["Name","Date","In Time","Out Time","Total"]
+    ];
+
+    rows.forEach(r=>{
+      lines.push([
+        r.name,
+        r.date,
+        r.in_time,
+        r.out_time,
+        fmt(r.total_minutes)
+      ]);
+    });
+
+    const text="\uFEFF"+
+      lines.map(row=>
+        row.map(v=>
+          `"${String(v).replace(/"/g,'""')}"`
+        ).join(",")
+      ).join("\n");
+
+    const blob=new Blob(
+      [text],
+      {type:"text/csv;charset=utf-8"}
+    );
+
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+
+    a.href=url;
+    a.download=`prayer-attendance-${month()}.csv`;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+
+  }catch(e){
+
+    alert(e.message);
+
+  }
+}
+
+
+/* START */
+
+$("month").value=thisMonth();
+$("date").value=today();
+
+$("month").addEventListener("change",load);
+
+$("password").addEventListener("keydown",e=>{
+  if(e.key==="Enter") login();
+});
+
+checkLogin();
+
+</script>
+
+</body>
+</html>
