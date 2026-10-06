@@ -223,6 +223,17 @@ main{
   font-weight:700;
 }
 
+.login-btn{
+  display:inline-block;
+  margin-top:15px;
+  padding:12px 20px;
+  background:#d9b85c;
+  color:#0b1628;
+  border-radius:10px;
+  text-decoration:none;
+  font-weight:700;
+}
+
 @media(max-width:600px){
   main{padding:22px 12px 40px}
   .card{padding:18px}
@@ -237,8 +248,10 @@ main{
   <div class="header">
 
     <a class="logo" href="/v2/">
-      <img src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png"
-           alt="CreateLK English">
+      <img
+        src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png"
+        alt="CreateLK English"
+      >
       <span>CreateLK English</span>
     </a>
 
@@ -260,42 +273,77 @@ main{
   <section id="quiz" style="display:none">
 
     <div class="top">
-      <h1 id="lessonTitle">Quiz</h1>
+
+      <h1 id="lessonTitle">
+        Quiz
+      </h1>
+
       <p id="lessonDescription"></p>
+
     </div>
 
     <div class="progress-box">
 
       <div class="progress-text">
-        <span id="progressText">Question 1 of 50</span>
-        <span id="xpText">XP: 0</span>
+
+        <span id="progressText">
+          Question 1 of 50
+        </span>
+
+        <span id="xpText">
+          XP: 0
+        </span>
+
       </div>
 
       <div class="progress">
-        <div id="progressBar" class="progress-bar"></div>
+
+        <div
+          id="progressBar"
+          class="progress-bar">
+        </div>
+
       </div>
 
     </div>
 
     <div class="card">
 
-      <div id="questionNumber" class="number">
+      <div
+        id="questionNumber"
+        class="number">
         Question 1
       </div>
 
-      <div id="question" class="question"></div>
+      <div
+        id="question"
+        class="question">
+      </div>
 
-      <div id="options" class="options"></div>
+      <div
+        id="options"
+        class="options">
+      </div>
 
-      <div id="result" class="result">
+      <div
+        id="result"
+        class="result">
 
-        <div id="resultTitle" class="result-title"></div>
+        <div
+          id="resultTitle"
+          class="result-title">
+        </div>
 
-        <div id="explanation" class="explanation"></div>
+        <div
+          id="explanation"
+          class="explanation">
+        </div>
 
       </div>
 
-      <button id="nextBtn" class="next">
+      <button
+        id="nextBtn"
+        class="next">
         Next Question →
       </button>
 
@@ -303,15 +351,25 @@ main{
 
   </section>
 
-  <section id="finished" class="finished" style="display:none">
+  <section
+    id="finished"
+    class="finished"
+    style="display:none">
 
-    <h2>Quiz Complete 🎉</h2>
+    <h2>
+      Quiz Complete 🎉
+    </h2>
 
-    <div id="score" class="score"></div>
+    <div
+      id="score"
+      class="score">
+    </div>
 
     <p id="finishedText"></p>
 
-    <a class="home" href="/v2/lessons.html">
+    <a
+      class="home"
+      href="/v2/lessons.html">
       Back to Lessons
     </a>
 
@@ -382,17 +440,52 @@ const xpText =
 function showError(message){
 
   loading.style.display = "none";
+
   quiz.style.display = "none";
+
   finished.style.display = "none";
 
   errorBox.textContent = message;
+
   errorBox.style.display = "block";
+
+}
+
+
+function showLoginMessage(){
+
+  loading.style.display = "none";
+
+  quiz.style.display = "none";
+
+  finished.style.display = "none";
+
+  errorBox.innerHTML =
+    'Please sign in first.<br><br>' +
+
+    '<a class="login-btn" href="' +
+    API +
+    '/auth/google">' +
+
+    'Sign in with Google' +
+
+    '</a>';
+
+  errorBox.style.display = "block";
+
 }
 
 
 async function loadQuiz(){
 
   try{
+
+    /*
+      Check current session.
+      IMPORTANT:
+      Do not automatically redirect to Google.
+      This prevents a repeated login loop.
+    */
 
     const me =
       await fetch(
@@ -406,10 +499,18 @@ async function loadQuiz(){
     const meData =
       await me.json();
 
-    if(!meData.logged_in){
-      location.href = API + "/auth/google";
+    if(!me.ok || !meData.logged_in){
+
+      showLoginMessage();
+
       return;
+
     }
+
+
+    /*
+      Load quiz.
+    */
 
     const response =
       await fetch(
@@ -425,36 +526,61 @@ async function loadQuiz(){
     const data =
       await response.json();
 
+
     if(!response.ok || !data.success){
+
       showError(
-        data.error || "Unable to load quiz."
+        data.error ||
+        "Unable to load quiz."
       );
+
       return;
+
     }
+
 
     questions =
       data.questions || [];
 
+
     if(!questions.length){
-      showError("No questions found.");
+
+      showError(
+        "No questions found."
+      );
+
       return;
+
     }
 
-    document.getElementById("lessonTitle")
-      .textContent =
+
+    document.getElementById(
+      "lessonTitle"
+    ).textContent =
       data.lesson.title;
 
-    document.getElementById("lessonDescription")
-      .textContent =
+
+    document.getElementById(
+      "lessonDescription"
+    ).textContent =
       data.lesson.description || "";
 
-    xp =
-      Number(meData.user?.xp || 0);
 
-    loading.style.display = "none";
-    quiz.style.display = "block";
+    xp =
+      Number(
+        meData.user?.xp || 0
+      );
+
+
+    loading.style.display =
+      "none";
+
+    quiz.style.display =
+      "block";
+
 
     renderQuestion();
+
 
   }catch(e){
 
@@ -463,6 +589,7 @@ async function loadQuiz(){
     );
 
   }
+
 }
 
 
@@ -473,8 +600,11 @@ function renderQuestion(){
   const q =
     questions[current];
 
+
   questionNumber.textContent =
-    "Question " + (current + 1);
+    "Question " +
+    (current + 1);
+
 
   progressText.textContent =
     "Question " +
@@ -482,44 +612,83 @@ function renderQuestion(){
     " of " +
     questions.length;
 
+
   progressBar.style.width =
-    ((current + 1) / questions.length * 100) +
+    (
+      (current + 1) /
+      questions.length *
+      100
+    ) +
     "%";
 
+
   xpText.textContent =
-    "XP: " + xp;
+    "XP: " +
+    xp;
+
 
   question.textContent =
     q.question;
 
+
   options.innerHTML = "";
 
+
   const choices = [
+
     ["A", q.option_a],
+
     ["B", q.option_b],
+
     ["C", q.option_c],
+
     ["D", q.option_d]
+
   ];
 
-  choices.forEach(([letter,text]) => {
 
-    const button =
-      document.createElement("button");
+  choices.forEach(
+    ([letter,text]) => {
 
-    button.className = "option";
+      const button =
+        document.createElement(
+          "button"
+        );
 
-    button.textContent =
-      letter + ". " + text;
 
-    button.onclick = () =>
-      submitAnswer(q.id, letter, button);
+      button.className =
+        "option";
 
-    options.appendChild(button);
 
-  });
+      button.textContent =
+        letter +
+        ". " +
+        text;
 
-  result.style.display = "none";
-  nextBtn.style.display = "none";
+
+      button.onclick = () =>
+        submitAnswer(
+          q.id,
+          letter,
+          button
+        );
+
+
+      options.appendChild(
+        button
+      );
+
+    }
+  );
+
+
+  result.style.display =
+    "none";
+
+
+  nextBtn.style.display =
+    "none";
+
 }
 
 
@@ -533,48 +702,94 @@ async function submitAnswer(
 
   answered = true;
 
-  const buttons =
-    [...document.querySelectorAll(".option")];
 
-  buttons.forEach(b => {
-    b.disabled = true;
-  });
+  const buttons =
+    [
+      ...document.querySelectorAll(
+        ".option"
+      )
+    ];
+
+
+  buttons.forEach(
+    b => {
+      b.disabled = true;
+    }
+  );
+
 
   try{
 
     const response =
       await fetch(
-        API + "/api/quiz/answer",
+        API +
+        "/api/quiz/answer",
         {
           method:"POST",
+
           credentials:"include",
+
           headers:{
-            "Content-Type":"application/json"
+            "Content-Type":
+              "application/json"
           },
+
           body:JSON.stringify({
-            question_id:questionId,
-            answer:answer
+            question_id:
+              questionId,
+
+            answer:
+              answer
           })
+
         }
       );
 
+
     const data =
       await response.json();
+
 
     if(!response.ok || !data.success){
 
       answered = false;
 
-      buttons.forEach(b => {
-        b.disabled = false;
-      });
 
-      alert(
-        data.error || "Unable to submit answer."
+      buttons.forEach(
+        b => {
+          b.disabled = false;
+        }
       );
 
+
+      /*
+        If the session has expired,
+        show login instead of creating
+        a repeated redirect loop.
+      */
+
+      if(
+        response.status === 401 ||
+        data.error === "Not logged in"
+      ){
+
+        showLoginMessage();
+
+        return;
+
+      }
+
+
+      alert(
+        data.error ||
+        "Unable to submit answer."
+      );
+
+
       return;
+
     }
+
 
     if(data.already_answered){
 
@@ -583,24 +798,39 @@ async function submitAnswer(
           ? "Already answered — Correct"
           : "Already answered — Incorrect";
 
+
       explanation.textContent =
         "This question has already been answered.";
 
-      result.style.display = "block";
 
-      nextBtn.style.display = "block";
+      result.style.display =
+        "block";
+
+
+      nextBtn.style.display =
+        "block";
+
 
       return;
+
     }
+
 
     if(data.correct){
 
-      clickedButton.classList.add("correct");
+      clickedButton.classList.add(
+        "correct"
+      );
+
 
       score++;
 
+
       xp =
-        Number(data.total_xp || xp);
+        Number(
+          data.total_xp || xp
+        );
+
 
       resultTitle.textContent =
         "Correct! 🎉 +" +
@@ -609,28 +839,45 @@ async function submitAnswer(
 
     }else{
 
-      clickedButton.classList.add("wrong");
+      clickedButton.classList.add(
+        "wrong"
+      );
+
 
       resultTitle.textContent =
         "Incorrect";
 
     }
 
+
     xp =
-      Number(data.total_xp || xp);
+      Number(
+        data.total_xp || xp
+      );
+
 
     xpText.textContent =
-      "XP: " + xp;
+      "XP: " +
+      xp;
+
 
     explanation.textContent =
       data.explanation ||
       "";
 
-    result.style.display = "block";
 
-    nextBtn.style.display = "block";
+    result.style.display =
+      "block";
 
-    if(current === questions.length - 1){
+
+    nextBtn.style.display =
+      "block";
+
+
+    if(
+      current ===
+      questions.length - 1
+    ){
 
       nextBtn.textContent =
         "View Results →";
@@ -642,55 +889,80 @@ async function submitAnswer(
 
     }
 
+
   }catch(e){
 
     answered = false;
 
-    buttons.forEach(b => {
-      b.disabled = false;
-    });
+
+    buttons.forEach(
+      b => {
+        b.disabled = false;
+      }
+    );
+
 
     alert(
       "Connection error. Please try again."
     );
 
   }
+
 }
 
 
-nextBtn.onclick = function(){
+nextBtn.onclick =
+  function(){
 
-  if(current < questions.length - 1){
+    if(
+      current <
+      questions.length - 1
+    ){
 
-    current++;
+      current++;
 
-    renderQuestion();
+      renderQuestion();
 
-    window.scrollTo({
-      top:0,
-      behavior:"smooth"
-    });
 
-  }else{
+      window.scrollTo({
+        top:0,
+        behavior:"smooth"
+      });
 
-    finishQuiz();
 
-  }
-};
+    }else{
+
+      finishQuiz();
+
+    }
+
+  };
 
 
 function finishQuiz(){
 
-  quiz.style.display = "none";
-  finished.style.display = "block";
+  quiz.style.display =
+    "none";
+
+
+  finished.style.display =
+    "block";
+
 
   const percent =
     Math.round(
-      (score / questions.length) * 100
+      (
+        score /
+        questions.length
+      ) *
+      100
     );
 
-  document.getElementById("score")
-    .textContent =
+
+  document.getElementById(
+    "score"
+  ).textContent =
+
     score +
     " / " +
     questions.length +
@@ -698,8 +970,11 @@ function finishQuiz(){
     percent +
     "%)";
 
-  document.getElementById("finishedText")
-    .textContent =
+
+  document.getElementById(
+    "finishedText"
+  ).textContent =
+
     "You earned XP and completed this quiz.";
 
 }
