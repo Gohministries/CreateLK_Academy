@@ -1,442 +1,449 @@
 const COOKIE="english_v2_session",DAYS=7,XP=10,COINS=5,MAXXP=10000,FREE=300,PREMIUM=1000;
 
 const cors=r=>({
- "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
- "Access-Control-Allow-Credentials":"true",
- "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
- "Access-Control-Allow-Headers":"Content-Type,Authorization",
- "Vary":"Origin"
+  "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers":"Content-Type,Authorization"
 });
 
-const json=(d,s,r)=>new Response(JSON.stringify(d),{
- status:s||200,
- headers:{"Content-Type":"application/json;charset=UTF-8","Cache-Control":"no-store",...cors(r)}
+const out=(d,s,r)=>new Response(JSON.stringify(d),{
+  status:s,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...cors(r)}
 });
 
-const cookie=(r,n)=>{
- const m=(r.headers.get("Cookie")||"").match(new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"));
- return m?decodeURIComponent(m[1]):null;
-};
-
-const rnd=(n=32)=>{
- const b=new Uint8Array(n);
- crypto.getRandomValues(b);
- return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
-};
-
-const limit=u=>u.membership==="premium"?PREMIUM:FREE;
-
-async function setup(e){
- try{
-  const r=await e.DB.prepare("PRAGMA table_info(users)").all();
-  if(!(r.results||[]).some(x=>x.name==="coins"))
-   await e.DB.prepare("ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0").run();
- }catch{}
-
- await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS sessions(
- token TEXT PRIMARY KEY,user_id TEXT NOT NULL,
- expires_at TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)`).run();
-
- await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS quiz_answers(
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- user_id TEXT NOT NULL,question_id INTEGER NOT NULL,
- lesson_id INTEGER NOT NULL,selected_answer TEXT NOT NULL,
- is_correct INTEGER DEFAULT 0,xp_awarded INTEGER DEFAULT 0,
- coins_awarded INTEGER DEFAULT 0,answered_at TEXT DEFAULT CURRENT_TIMESTAMP,
- UNIQUE(user_id,question_id))`).run();
-
- try{
-  const r=await e.DB.prepare("PRAGMA table_info(quiz_answers)").all();
-  if(!(r.results||[]).some(x=>x.name==="coins_awarded"))
-   await e.DB.prepare("ALTER TABLE quiz_answers ADD COLUMN coins_awarded INTEGER DEFAULT 0").run();
- }catch{}
-
- await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS referrals(
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- referrer_id TEXT NOT NULL,referred_user_id TEXT NOT NULL UNIQUE,
- affiliate_code TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)`).run();
+function getCookie(r,n){
+  const m=(r.headers.get("Cookie")||"").match(new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"));
+  return m?decodeURIComponent(m[1]):null;
 }
+
+function rnd(n=32){
+  const b=new Uint8Array(n);crypto.getRandomValues(b);
+  return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+function limit(u){return u.membership==="premium"?PREMIUM:FREE}
 
 async function me(r,e){
- const t=cookie(r,COOKIE);
- if(!t)return null;
- return e.DB.prepare(`
- SELECT u.id,u.google_id,u.email,u.name,u.avatar_url,u.membership,
- u.xp,u.coins,u.correct_answers,u.questions_answered,u.lessons_completed,
- u.affiliate_code,u.referred_by
- FROM sessions s JOIN users u ON u.id=s.user_id
- WHERE s.token=? AND s.expires_at>? LIMIT 1
- `).bind(t,new Date().toISOString()).first();
+  const t=getCookie(r,COOKIE);
+  if(!t)return null;
+  return e.DB.prepare(`
+    SELECT u.*,s.expires_at session_expires_at
+    FROM sessions s JOIN users u ON u.id=s.user_id
+    WHERE s.token=? AND s.expires_at>? LIMIT 1
+  `).bind(t,new Date().toISOString()).first();
 }
 
-async function used(e,id){
- const r=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM quiz_answers WHERE user_id=?"
- ).bind(id).first();
- return Number(r?.n)||0;
+async function count(e,id){
+  const r=await e.DB.prepare(
+    "SELECT COUNT(*) n FROM quiz_answers WHERE user_id=?"
+  ).bind(id).first();
+  return Number(r?.n)||0;
 }
 
-async function session(e,id){
- const t=rnd(),x=new Date(Date.now()+DAYS*86400000).toISOString();
- await e.DB.prepare(
-  "INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)"
- ).bind(t,id,x).run();
- return t;
+async function setup(e){
+  const u=await e.DB.prepare("PRAGMA table_info(users)").all();
+  if(!(u.results||[]).some(x=>x.name==="coins"))
+    try{await e.DB.prepare("ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0").run()}catch{}
+
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS sessions(
+      token TEXT PRIMARY KEY,user_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`).run();
+
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS quiz_answers(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,
+      question_id INTEGER NOT NULL,lesson_id INTEGER NOT NULL,
+      selected_answer TEXT NOT NULL,is_correct INTEGER DEFAULT 0,
+      xp_awarded INTEGER DEFAULT 0,coins_awarded INTEGER DEFAULT 0,
+      answered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id,question_id)
+    )`).run();
+
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS referrals(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referrer_id TEXT NOT NULL,
+      referred_user_id TEXT NOT NULL UNIQUE,
+      affiliate_code TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`).run();
 }
 
 async function googleToken(e,code,uri){
- const r=await fetch("https://oauth2.googleapis.com/token",{
-  method:"POST",
-  headers:{"Content-Type":"application/x-www-form-urlencoded"},
-  body:new URLSearchParams({
-   client_id:e.GOOGLE_CLIENT_ID,
-   client_secret:e.GOOGLE_CLIENT_SECRET,
-   code,grant_type:"authorization_code",redirect_uri:uri
-  })
- });
- if(!r.ok)throw Error("Google token exchange failed");
- return r.json();
+  const b=new URLSearchParams({
+    client_id:e.GOOGLE_CLIENT_ID,
+    client_secret:e.GOOGLE_CLIENT_SECRET,
+    code,grant_type:"authorization_code",redirect_uri:uri
+  });
+  const r=await fetch("https://oauth2.googleapis.com/token",{
+    method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body:b
+  });
+  if(!r.ok)throw Error("Google login failed");
+  return r.json();
 }
 
 async function googleUser(t){
- const r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
-  headers:{Authorization:`Bearer ${t}`}
- });
- if(!r.ok)throw Error("Google account error");
- return r.json();
+  const r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+    headers:{Authorization:`Bearer ${t}`}
+  });
+  if(!r.ok)throw Error("Google account error");
+  return r.json();
+}
+
+async function session(e,id){
+  const t=rnd(),x=new Date(Date.now()+DAYS*86400000).toISOString();
+  await e.DB.prepare(
+    "INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)"
+  ).bind(t,id,x).run();
+  return `${COOKIE}=${t}; Path=/; Max-Age=${DAYS*86400}; HttpOnly; Secure; SameSite=None`;
 }
 
 export default{
- async fetch(request,env){
-  const url=new URL(request.url);
+async fetch(r,e){
+  const u=new URL(r.url);
 
-  if(request.method==="OPTIONS")
-   return new Response(null,{status:204,headers:cors(request)});
+  if(r.method==="OPTIONS")
+    return new Response(null,{status:204,headers:cors(r)});
 
   try{
-   await setup(env);
+    await setup(e);
 
-   if(url.pathname==="/")
-    return new Response("CreateLK English V2 API is running ✅");
+    if(u.pathname==="/")
+      return new Response("CreateLK English V2 API is running ✅");
 
-   if(url.pathname==="/api/health"){
-    const x=await env.DB.prepare("SELECT 1 ok").first();
-    return json({success:true,database:x?.ok===1,database_name:"createlk-english-v2"},200,request);
-   }
+    /* GOOGLE */
 
-   /* GOOGLE LOGIN */
-   if(url.pathname==="/auth/google"){
-    if(!env.GOOGLE_CLIENT_ID)
-     return json({success:false,error:"GOOGLE_CLIENT_ID secret is missing"},500,request);
+    if(u.pathname==="/auth/google"){
+      const state=rnd();
+      const ref=(u.searchParams.get("ref")||"").trim().toUpperCase();
+      const st=ref?`${state}.${ref}`:state;
+      const uri=`${u.origin}/auth/google/callback`;
+      const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
-    const ref=(url.searchParams.get("ref")||"").trim().toUpperCase();
-    const state=rnd()+(ref?"."+ref:"");
-    const redirect=`${url.origin}/auth/google/callback`;
-    const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+      Object.entries({
+        client_id:e.GOOGLE_CLIENT_ID,
+        redirect_uri:uri,
+        response_type:"code",
+        scope:"openid email profile",
+        access_type:"online",
+        prompt:"select_account",
+        state:st
+      }).forEach(([k,v])=>g.searchParams.set(k,v));
 
-    g.searchParams.set("client_id",env.GOOGLE_CLIENT_ID);
-    g.searchParams.set("redirect_uri",redirect);
-    g.searchParams.set("response_type","code");
-    g.searchParams.set("scope","openid email profile");
-    g.searchParams.set("access_type","online");
-    g.searchParams.set("prompt","select_account");
-    g.searchParams.set("state",state);
-
-    return new Response(null,{
-     status:302,
-     headers:{
-      Location:g.toString(),
-      "Set-Cookie":`oauth_state=${encodeURIComponent(state)}; Path=/auth/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`
-     }
-    });
-   }
-
-   /* GOOGLE CALLBACK */
-   if(url.pathname==="/auth/google/callback"){
-    const code=url.searchParams.get("code"),state=url.searchParams.get("state")||"";
-    const saved=cookie(request,"oauth_state");
-
-    if(!code||!saved||state!==saved)
-     return json({success:false,error:"Invalid Google login"},400,request);
-
-    const ref=state.split(".").slice(1).join(".").toUpperCase();
-    const redirect=`${url.origin}/auth/google/callback`;
-    const tok=await googleToken(env,code,redirect);
-
-    if(!tok.access_token)throw Error("Google access token missing");
-
-    const g=await googleUser(tok.access_token);
-    let u=await env.DB.prepare(
-     "SELECT * FROM users WHERE google_id=? LIMIT 1"
-    ).bind(g.sub).first();
-
-    if(!u&&g.email)
-     u=await env.DB.prepare(
-      "SELECT * FROM users WHERE email=? LIMIT 1"
-     ).bind(g.email).first();
-
-    let id;
-
-    if(u){
-     id=u.id;
-     await env.DB.prepare(`
-      UPDATE users SET google_id=?,name=?,avatar_url=?,
-      updated_at=CURRENT_TIMESTAMP WHERE id=?`
-     ).bind(g.sub,g.name||g.email.split("@")[0],g.picture||null,id).run();
-    }else{
-     id=crypto.randomUUID();
-     const aff=rnd(6).toUpperCase();
-     let referredBy=null,referrerId=null;
-
-     if(ref){
-      const r=await env.DB.prepare(
-       "SELECT id,affiliate_code FROM users WHERE affiliate_code=? LIMIT 1"
-      ).bind(ref).first();
-      if(r){referredBy=r.affiliate_code;referrerId=r.id;}
-     }
-
-     await env.DB.prepare(`
-      INSERT INTO users(
-       id,google_id,email,name,avatar_url,membership,xp,coins,
-       correct_answers,questions_answered,lessons_completed,
-       affiliate_code,referred_by
-      ) VALUES(?,?,?,?,?,'free',0,0,0,0,0,?,?)`
-     ).bind(
-      id,g.sub,g.email,g.name||g.email.split("@")[0],
-      g.picture||null,aff,referredBy
-     ).run();
-
-     try{
-      await env.DB.prepare(
-       "INSERT OR IGNORE INTO affiliates(user_id,affiliate_code) VALUES(?,?)"
-      ).bind(id,aff).run();
-     }catch{}
-
-     if(referrerId)
-      await env.DB.prepare(
-       "INSERT OR IGNORE INTO referrals(referrer_id,referred_user_id,affiliate_code) VALUES(?,?,?)"
-      ).bind(referrerId,id,ref).run();
+      return new Response(null,{
+        status:302,
+        headers:{
+          Location:g,
+          "Set-Cookie":`oauth_state=${st}; Path=/auth/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`
+        }
+      });
     }
 
-    const s=await session(env,id);
-    const res=new Response(null,{
-     status:302,
-     headers:{Location:"https://createlk.com/v2/index.html"}
-    });
+    if(u.pathname==="/auth/google/callback"){
+      const code=u.searchParams.get("code"),st=u.searchParams.get("state")||"";
 
-    res.headers.append(
-     "Set-Cookie",
-     `english_v2_session=${s}; Path=/; Max-Age=${DAYS*86400}; HttpOnly; Secure; SameSite=None`
-    );
-    res.headers.append(
-     "Set-Cookie",
-     "oauth_state=; Path=/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
-    );
-    return res;
-   }
+      if(!code||st!==getCookie(r,"oauth_state"))
+        return out({success:false,error:"Invalid Google login"},400,r);
 
-   /* ME */
-   if(url.pathname==="/api/me"){
-    const u=await me(request,env);
-    if(!u)return json({success:true,logged_in:false,user:null},200,request);
+      const ref=st.split(".").slice(1).join(".").toUpperCase();
+      const g=await googleUser(
+        (await googleToken(e,code,`${u.origin}/auth/google/callback`)).access_token
+      );
 
-    const n=await used(env,u.id);
-    const r=await env.DB.prepare(
-     "SELECT COUNT(*) n FROM referrals WHERE referrer_id=?"
-    ).bind(u.id).first();
+      let user=await e.DB.prepare(
+        "SELECT * FROM users WHERE google_id=? LIMIT 1"
+      ).bind(g.sub).first();
 
-    return json({
-     success:true,logged_in:true,user:u,
-     usage:{used:n,limit:limit(u),remaining:Math.max(0,limit(u)-n)},
-     referral:{
-      code:u.affiliate_code,
-      referred_by:u.referred_by||null,
-      count:Number(r?.n)||0,
-      link:`https://createlk.com/v2/?ref=${u.affiliate_code}`
-     }
-    },200,request);
-   }
+      if(!user&&g.email)
+        user=await e.DB.prepare(
+          "SELECT * FROM users WHERE email=? LIMIT 1"
+        ).bind(g.email).first();
 
-   /* REFERRAL */
-   if(url.pathname==="/api/referral"){
-    const u=await me(request,env);
-    if(!u)return json({success:false,error:"Login required"},401,request);
+      let id;
 
-    const r=await env.DB.prepare(
-     "SELECT COUNT(*) n FROM referrals WHERE referrer_id=?"
-    ).bind(u.id).first();
+      if(user){
+        id=user.id;
+        await e.DB.prepare(`
+          UPDATE users SET google_id=?,name=?,avatar_url=?,
+          updated_at=CURRENT_TIMESTAMP WHERE id=?
+        `).bind(g.sub,g.name||g.email.split("@")[0],g.picture||null,id).run();
+      }else{
+        id=crypto.randomUUID();
+        const code=rnd(6).toUpperCase();
+        let referred=null,referrer=null;
 
-    return json({
-     success:true,
-     affiliate_code:u.affiliate_code,
-     referral_link:`https://createlk.com/v2/?ref=${u.affiliate_code}`,
-     referred_by:u.referred_by||null,
-     referrals:Number(r?.n)||0
-    },200,request);
-   }
+        if(ref){
+          const x=await e.DB.prepare(
+            "SELECT id,affiliate_code FROM users WHERE affiliate_code=? LIMIT 1"
+          ).bind(ref).first();
 
-   /* LESSONS */
-   if(url.pathname==="/api/lessons"){
-    const u=await me(request,env);
-    const r=await env.DB.prepare(
-     "SELECT id,title,description,sort_order,is_free FROM lessons ORDER BY sort_order"
-    ).all();
+          if(x){referred=x.affiliate_code;referrer=x.id}
+        }
 
-    const membership=u?.membership||"guest";
-    const n=u?await used(env,u.id):0;
-    const lim=u?limit(u):FREE;
+        await e.DB.prepare(`
+          INSERT INTO users(
+            id,google_id,email,name,avatar_url,membership,
+            xp,coins,correct_answers,questions_answered,
+            lessons_completed,affiliate_code,referred_by
+          ) VALUES(?,?,?,?,?,'free',0,0,0,0,0,?,?)
+        `).bind(
+          id,g.sub,g.email,g.name||g.email.split("@")[0],
+          g.picture||null,code,referred
+        ).run();
 
-    return json({
-     success:true,membership,
-     usage:{used:n,limit:lim,remaining:Math.max(0,lim-n)},
-     lessons:(r.results||[]).map(x=>({
-      ...x,
-      is_free:Number(x.is_free)===1?1:0,
-      accessible:Number(x.is_free)===1||membership==="premium"
-     }))
-    },200,request);
-   }
+        try{
+          await e.DB.prepare(
+            "INSERT OR IGNORE INTO affiliates(user_id,affiliate_code) VALUES(?,?)"
+          ).bind(id,code).run();
+        }catch{}
 
-   /* QUIZ */
-   if(url.pathname==="/api/quiz"&&request.method==="GET"){
-    const u=await me(request,env);
-    if(!u)return json({success:false,error:"Login required"},401,request);
+        if(referrer)
+          await e.DB.prepare(`
+            INSERT OR IGNORE INTO referrals(
+              referrer_id,referred_user_id,affiliate_code
+            ) VALUES(?,?,?)
+          `).bind(referrer,id,ref).run();
+      }
 
-    const lid=Number(url.searchParams.get("lesson"));
-    if(!Number.isInteger(lid)||lid<1)
-     return json({success:false,error:"Invalid lesson ID"},400,request);
+      return new Response(null,{
+        status:302,
+        headers:{
+          Location:"https://createlk.com/v2/index.html",
+          "Set-Cookie":[
+            await session(e,id),
+            "oauth_state=; Path=/auth/google; Max-Age=0"
+          ]
+        }
+      });
+    }
 
-    const lesson=await env.DB.prepare(
-     "SELECT id,title,description,is_free FROM lessons WHERE id=? LIMIT 1"
-    ).bind(lid).first();
+    /* ME */
 
-    if(!lesson)return json({success:false,error:"Lesson not found"},404,request);
+    if(u.pathname==="/api/me"){
+      const user=await me(r,e);
 
-    if(Number(lesson.is_free)!==1&&u.membership!=="premium")
-     return json({success:false,error:"Premium membership required"},403,request);
+      if(!user)
+        return out({success:true,logged_in:false,user:null},200,r);
 
-    const n=await used(env,u.id),lim=limit(u),remaining=lim-n;
+      const used=await count(e,user.id);
+      const lim=limit(user);
+      const rr=await e.DB.prepare(
+        "SELECT COUNT(*) n FROM referrals WHERE referrer_id=?"
+      ).bind(user.id).first();
 
-    if(remaining<=0)
-     return json({success:false,error:`Question limit reached (${lim})`,used:n,limit:lim,remaining:0},403,request);
+      return out({
+        success:true,
+        logged_in:true,
+        user,
+        usage:{used,limit:lim,remaining:Math.max(0,lim-used)},
+        referral:{
+          code:user.affiliate_code,
+          referred_by:user.referred_by||null,
+          count:Number(rr?.n)||0,
+          link:`https://createlk.com/v2/?ref=${user.affiliate_code}`
+        }
+      },200,r);
+    }
 
-    const q=await env.DB.prepare(`
-     SELECT q.id,q.lesson_id,q.question_number,q.question,
-     q.option_a,q.option_b,q.option_c,q.option_d
-     FROM questions q
-     WHERE q.lesson_id=?
-     AND NOT EXISTS(
-      SELECT 1 FROM quiz_answers a
-      WHERE a.user_id=? AND a.question_id=q.id
-     )
-     ORDER BY q.question_number LIMIT ?`
-    ).bind(lid,u.id,remaining).all();
+    /* REFERRAL */
 
-    return json({
-     success:true,lesson,membership:u.membership,
-     usage:{used:n,limit:lim,remaining},
-     questions:q.results||[]
-    },200,request);
-   }
+    if(u.pathname==="/api/referral"){
+      const user=await me(r,e);
+      if(!user)return out({success:false,error:"Login required"},401,r);
 
-   /* ANSWER */
-   if(url.pathname==="/api/quiz/answer"&&request.method==="POST"){
-    const u=await me(request,env);
-    if(!u)return json({success:false,error:"Login required"},401,request);
+      const x=await e.DB.prepare(
+        "SELECT COUNT(*) n FROM referrals WHERE referrer_id=?"
+      ).bind(user.id).first();
 
-    const b=await request.json();
-    const qid=Number(b.question_id);
-    const ans=String(b.selected_answer||"").trim().toUpperCase();
+      return out({
+        success:true,
+        affiliate_code:user.affiliate_code,
+        referral_link:`https://createlk.com/v2/?ref=${user.affiliate_code}`,
+        referred_by:user.referred_by||null,
+        referrals:Number(x?.n)||0
+      },200,r);
+    }
 
-    if(!Number.isInteger(qid)||!["A","B","C","D"].includes(ans))
-     return json({success:false,error:"Invalid answer"},400,request);
+    /* LESSONS */
 
-    const q=await env.DB.prepare(
-     "SELECT id,lesson_id,correct_answer FROM questions WHERE id=? LIMIT 1"
-    ).bind(qid).first();
+    if(u.pathname==="/api/lessons"){
+      const user=await me(r,e);
+      const x=await e.DB.prepare(
+        "SELECT id,title,description,sort_order,is_free FROM lessons ORDER BY sort_order"
+      ).all();
 
-    if(!q)return json({success:false,error:"Question not found"},404,request);
+      const membership=user?.membership||"guest";
+      const used=user?await count(e,user.id):0;
+      const lim=user?limit(user):FREE;
 
-    const old=await env.DB.prepare(`
-     SELECT is_correct,xp_awarded,coins_awarded
-     FROM quiz_answers WHERE user_id=? AND question_id=? LIMIT 1`
-    ).bind(u.id,qid).first();
+      return out({
+        success:true,membership,
+        usage:{used,limit:lim,remaining:Math.max(0,lim-used)},
+        lessons:(x.results||[]).map(l=>({
+          ...l,
+          is_free:Number(l.is_free)===1?1:0,
+          accessible:Number(l.is_free)===1||membership==="premium"
+        }))
+      },200,r);
+    }
 
-    const n=await used(env,u.id),lim=limit(u);
+    /* QUIZ */
 
-    if(old)return json({
-     success:true,already_answered:true,
-     correct:Number(old.is_correct)===1,
-     correct_answer:q.correct_answer,
-     xp_awarded:Number(old.xp_awarded)||0,
-     coins_awarded:Number(old.coins_awarded)||0,
-     questions_answered:n,question_limit:lim,
-     remaining:Math.max(0,lim-n)
-    },200,request);
+    if(u.pathname==="/api/quiz"&&r.method==="GET"){
+      const user=await me(r,e);
+      if(!user)return out({success:false,error:"Login required"},401,r);
 
-    if(n>=lim)
-     return json({success:false,error:"Question limit reached",used:n,limit:lim,remaining:0},403,request);
+      const id=Number(u.searchParams.get("lesson"));
+      if(!Number.isInteger(id)||id<1)
+        return out({success:false,error:"Invalid lesson ID"},400,r);
 
-    const correct=ans===String(q.correct_answer||"").trim().toUpperCase();
-    const xp=correct?XP:0,coins=correct?COINS:0;
+      const lesson=await e.DB.prepare(
+        "SELECT id,title,description,is_free FROM lessons WHERE id=?"
+      ).bind(id).first();
 
-    await env.DB.prepare(`
-     INSERT INTO quiz_answers(
-      user_id,question_id,lesson_id,selected_answer,
-      is_correct,xp_awarded,coins_awarded
-     ) VALUES(?,?,?,?,?,?,?)`
-    ).bind(u.id,qid,q.lesson_id,ans,correct?1:0,xp,coins).run();
+      if(!lesson)return out({success:false,error:"Lesson not found"},404,r);
 
-    await env.DB.prepare(`
-     UPDATE users SET
-      xp=MIN(?,COALESCE(xp,0)+?),
-      coins=COALESCE(coins,0)+?,
-      correct_answers=COALESCE(correct_answers,0)+?,
-      questions_answered=COALESCE(questions_answered,0)+1,
-      updated_at=CURRENT_TIMESTAMP
-     WHERE id=?`
-    ).bind(MAXXP,xp,coins,correct?1:0,u.id).run();
+      if(Number(lesson.is_free)!==1&&user.membership!=="premium")
+        return out({success:false,error:"Premium membership required"},403,r);
 
-    const fresh=await me(request,env),total=n+1;
+      const used=await count(e,user.id),lim=limit(user);
 
-    return json({
-     success:true,correct,selected_answer:ans,
-     correct_answer:q.correct_answer,
-     xp_awarded:xp,coins_awarded:coins,
-     xp:Number(fresh?.xp)||0,
-     coins:Number(fresh?.coins)||0,
-     correct_answers:Number(fresh?.correct_answers)||0,
-     questions_answered:total,
-     question_limit:limit(fresh||u),
-     remaining:Math.max(0,limit(fresh||u)-total)
-    },200,request);
-   }
+      if(used>=lim)
+        return out({
+          success:false,
+          error:`Question limit reached (${lim})`,
+          used,limit:lim,remaining:0
+        },403,r);
 
-   /* LOGOUT */
-   if(url.pathname==="/auth/logout"){
-    const t=cookie(request,COOKIE);
-    if(t)await env.DB.prepare("DELETE FROM sessions WHERE token=?").bind(t).run();
+      const x=await e.DB.prepare(`
+        SELECT q.id,q.lesson_id,q.question_number,q.question,
+        q.option_a,q.option_b,q.option_c,q.option_d
+        FROM questions q
+        WHERE q.lesson_id=?
+        AND NOT EXISTS(
+          SELECT 1 FROM quiz_answers a
+          WHERE a.user_id=? AND a.question_id=q.id
+        )
+        ORDER BY q.question_number
+        LIMIT ?
+      `).bind(id,user.id,lim-used).all();
 
-    const res=new Response(null,{
-     status:302,
-     headers:{Location:"https://createlk.com/v2/index.html"}
-    });
+      return out({
+        success:true,
+        lesson,
+        membership:user.membership,
+        usage:{used,limit:lim,remaining:lim-used},
+        questions:x.results||[]
+      },200,r);
+    }
 
-    res.headers.append(
-     "Set-Cookie",
-     `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None`
-    );
+    /* ANSWER */
 
-    return res;
-   }
+    if(u.pathname==="/api/quiz/answer"&&r.method==="POST"){
+      const user=await me(r,e);
+      if(!user)return out({success:false,error:"Login required"},401,r);
 
-   return json({success:false,error:"Not found"},404,request);
+      const b=await r.json();
+      const qid=Number(b.question_id);
+      const answer=String(b.selected_answer||"").toUpperCase();
+
+      if(!Number.isInteger(qid)||!["A","B","C","D"].includes(answer))
+        return out({success:false,error:"Invalid answer"},400,r);
+
+      const q=await e.DB.prepare(`
+        SELECT id,lesson_id,correct_answer
+        FROM questions WHERE id=? LIMIT 1
+      `).bind(qid).first();
+
+      if(!q)return out({success:false,error:"Question not found"},404,r);
+
+      const old=await e.DB.prepare(`
+        SELECT * FROM quiz_answers
+        WHERE user_id=? AND question_id=? LIMIT 1
+      `).bind(user.id,qid).first();
+
+      if(old)
+        return out({
+          success:true,
+          already_answered:true,
+          correct:Number(old.is_correct)===1,
+          correct_answer:q.correct_answer,
+          xp_awarded:Number(old.xp_awarded)||0,
+          coins_awarded:Number(old.coins_awarded)||0
+        },200,r);
+
+      const used=await count(e,user.id),lim=limit(user);
+
+      if(used>=lim)
+        return out({
+          success:false,error:"Question limit reached",
+          used,limit:lim,remaining:0
+        },403,r);
+
+      const correct=answer===String(q.correct_answer).toUpperCase();
+      const xp=correct?XP:0,coins=correct?COINS:0;
+
+      await e.DB.prepare(`
+        INSERT INTO quiz_answers(
+          user_id,question_id,lesson_id,selected_answer,
+          is_correct,xp_awarded,coins_awarded
+        ) VALUES(?,?,?,?,?,?,?)
+      `).bind(
+        user.id,qid,q.lesson_id,answer,correct?1:0,xp,coins
+      ).run();
+
+      await e.DB.prepare(`
+        UPDATE users SET
+          xp=MIN(?,COALESCE(xp,0)+?),
+          coins=COALESCE(coins,0)+?,
+          correct_answers=COALESCE(correct_answers,0)+?,
+          questions_answered=COALESCE(questions_answered,0)+1,
+          updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+      `).bind(
+        MAXXP,xp,coins,correct?1:0,user.id
+      ).run();
+
+      const fresh=await me(r,e),total=used+1;
+
+      return out({
+        success:true,
+        correct,
+        selected_answer:answer,
+        correct_answer:q.correct_answer,
+        xp_awarded:xp,
+        coins_awarded:coins,
+        xp:Number(fresh?.xp)||0,
+        coins:Number(fresh?.coins)||0,
+        correct_answers:Number(fresh?.correct_answers)||0,
+        questions_answered:total,
+        question_limit:limit(fresh||user),
+        remaining:Math.max(0,limit(fresh||user)-total)
+      },200,r);
+    }
+
+    /* LOGOUT */
+
+    if(u.pathname==="/auth/logout"){
+      const t=getCookie(r,COOKIE);
+      if(t)await e.DB.prepare("DELETE FROM sessions WHERE token=?").bind(t).run();
+
+      return new Response(null,{
+        status:302,
+        headers:{
+          Location:"https://createlk.com/v2/index.html",
+          "Set-Cookie":`${COOKIE}=; Path=/; Max-Age=0`
+        }
+      });
+    }
+
+    return out({success:false,error:"Not found"},404,r);
 
   }catch(e){
-   return json({success:false,error:e.message||"Server error"},500,request);
+    return out({success:false,error:e.message||"Server error"},500,r);
   }
- }
-};
+}
