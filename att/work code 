@@ -1,457 +1,310 @@
 const ADMIN_PASSWORD="sathya#2026#";
 
-const HEADERS={
-  "Content-Type":"application/json; charset=UTF-8",
-  "Access-Control-Allow-Origin":"*",
-  "Access-Control-Allow-Headers":"Content-Type, X-Admin-Key",
-  "Access-Control-Allow-Methods":"GET, POST, PUT, DELETE, OPTIONS"
+const H={
+ "Content-Type":"application/json;charset=UTF-8",
+ "Access-Control-Allow-Origin":"*",
+ "Access-Control-Allow-Headers":"Content-Type,X-Admin-Key",
+ "Access-Control-Allow-Methods":"GET,POST,PUT,DELETE,OPTIONS"
 };
 
-function json(data,status=200){
-  return new Response(JSON.stringify(data),{status,headers:HEADERS});
+const json=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:H});
+const clean=v=>String(v??"").trim();
+const auth=r=>r.headers.get("X-Admin-Key")===ADMIN_PASSWORD;
+const dateOK=v=>/^\d{4}-\d{2}-\d{2}$/.test(v);
+const timeOK=v=>/^\d{2}:\d{2}$/.test(v);
+
+function bool(v){
+ return v===true||v===1||["1","true","yes","on"].includes(String(v).toLowerCase())?1:0;
 }
 
-function clean(value){return String(value??"").trim()}
-
-function validDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(value)}
-function validTime(value){return /^\d{2}:\d{2}$/.test(value)}
-
-function boolValue(value){
-  if(value===true||value===1)return 1;
-  if(value===false||value===0)return 0;
-  const v=String(value??"").toLowerCase().trim();
-  return ["1","true","yes","on"].includes(v)?1:0;
+function mins(date,a,b){
+ if(!timeOK(a)||!timeOK(b))return 0;
+ const x=new Date(`${date}T${a}:00`);
+ let y=new Date(`${date}T${b}:00`);
+ if(y<x)y.setDate(y.getDate()+1);
+ return Math.max(0,Math.round((y-x)/60000));
 }
 
-function minutesBetween(date,inTime,outTime){
-  const start=new Date(`${date}T${inTime}:00`);
-  let end=new Date(`${date}T${outTime}:00`);
-  if(isNaN(start.getTime())||isNaN(end.getTime()))return 0;
-  if(end<start)end.setDate(end.getDate()+1);
-  return Math.max(0,Math.round((end-start)/60000));
+async function setup(env){
+ await env.DB.prepare(`
+ CREATE TABLE IF NOT EXISTS members(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+ )`).run();
+
+ await env.DB.prepare(`
+ CREATE TABLE IF NOT EXISTS daily_attendance(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  member_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ABSENT',
+  in_time TEXT DEFAULT '',
+  out_time TEXT DEFAULT '',
+  total_minutes INTEGER DEFAULT 0,
+  mic INTEGER DEFAULT 0,
+  video INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(member_id,date)
+ )`).run();
+
+ await env.DB.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_att_date ON daily_attendance(date)`
+ ).run();
 }
 
-function authorized(request){
-  return request.headers.get("X-Admin-Key")===ADMIN_PASSWORD;
+async function members(env){
+ const r=await env.DB.prepare(
+  `SELECT id,name FROM members ORDER BY name COLLATE NOCASE`
+ ).all();
+ return r.results||[];
 }
 
-async function ensureDatabase(env){
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS attendance(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      date TEXT NOT NULL,
-      in_time TEXT NOT NULL,
-      out_time TEXT NOT NULL,
-      total_minutes INTEGER NOT NULL DEFAULT 0,
-      mic INTEGER NOT NULL DEFAULT 0,
-      camera INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run();
+async function day(env,date){
+ const r=await env.DB.prepare(`
+ SELECT m.id member_id,m.name,
+ COALESCE(a.status,'ABSENT') status,
+ COALESCE(a.in_time,'') in_time,
+ COALESCE(a.out_time,'') out_time,
+ COALESCE(a.total_minutes,0) total_minutes,
+ COALESCE(a.mic,0) mic,
+ COALESCE(a.video,0) video
+ FROM members m
+ LEFT JOIN daily_attendance a
+ ON a.member_id=m.id AND a.date=?
+ ORDER BY m.name COLLATE NOCASE
+ `).bind(date).all();
 
-  const info=await env.DB.prepare(`PRAGMA table_info(attendance)`).all();
-  const columns=(info.results||[]).map(x=>x.name);
-
-  if(!columns.includes("mic")){
-    await env.DB.prepare(
-      `ALTER TABLE attendance ADD COLUMN mic INTEGER NOT NULL DEFAULT 0`
-    ).run();
-  }
-
-  if(!columns.includes("camera")){
-    await env.DB.prepare(
-      `ALTER TABLE attendance ADD COLUMN camera INTEGER NOT NULL DEFAULT 0`
-    ).run();
-  }
-
-  await env.DB.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_attendance_date
-    ON attendance(date)
-  `).run();
-
-  await env.DB.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_attendance_name
-    ON attendance(name)
-  `).run();
+ return r.results||[];
 }
 
-async function getAttendance(env,month){
-  const result=await env.DB.prepare(`
-    SELECT
-      id,name,date,in_time,out_time,total_minutes,
-      mic,camera,created_at
-    FROM attendance
-    WHERE substr(date,1,7)=?
-    ORDER BY date DESC,in_time ASC,name ASC
-  `).bind(month).all();
+async function save(env,x){
+ const id=Number(x.member_id);
+ const date=clean(x.date);
+ let status=clean(x.status).toUpperCase()==="PRESENT"?"PRESENT":"ABSENT";
+ let inTime=clean(x.in_time);
+ let outTime=clean(x.out_time);
+ let mic=bool(x.mic),video=bool(x.video);
+ let total=0;
 
-  return result.results||[];
+ if(!id||!dateOK(date))throw Error("Invalid member or date.");
+
+ if(status==="PRESENT"){
+  if(inTime&&!timeOK(inTime))throw Error("Invalid in time.");
+  if(outTime&&!timeOK(outTime))throw Error("Invalid out time.");
+  if(inTime&&outTime){
+   total=mins(date,inTime,outTime);
+   if(total<=0)throw Error("Out time must be later than in time.");
+  }
+ }else{
+  inTime="";
+  outTime="";
+  mic=0;
+  video=0;
+ }
+
+ await env.DB.prepare(`
+ INSERT INTO daily_attendance
+ (member_id,date,status,in_time,out_time,total_minutes,mic,video)
+ VALUES(?,?,?,?,?,?,?,?)
+ ON CONFLICT(member_id,date) DO UPDATE SET
+ status=excluded.status,
+ in_time=excluded.in_time,
+ out_time=excluded.out_time,
+ total_minutes=excluded.total_minutes,
+ mic=excluded.mic,
+ video=excluded.video,
+ updated_at=CURRENT_TIMESTAMP
+ `).bind(
+  id,date,status,inTime,outTime,total,mic,video
+ ).run();
 }
 
-async function addAttendance(env,body){
-  const name=clean(body.name);
-  const date=clean(body.date);
-  const inTime=clean(body.in_time);
-  const outTime=clean(body.out_time);
-  const mic=boolValue(body.mic);
-  const camera=boolValue(body.camera);
+async function period(env,from,to){
+ const r=await env.DB.prepare(`
+ SELECT m.name,a.date,a.status,a.in_time,a.out_time,
+ a.total_minutes,a.mic,a.video
+ FROM daily_attendance a
+ JOIN members m ON m.id=a.member_id
+ WHERE a.date BETWEEN ? AND ?
+ ORDER BY a.date,m.name COLLATE NOCASE
+ `).bind(from,to).all();
 
-  if(!name||!date||!inTime||!outTime){
-    return json({
-      error:"Name, date, in time and out time are required."
-    },400);
-  }
-
-  if(!validDate(date)){
-    return json({error:"Invalid date."},400);
-  }
-
-  if(!validTime(inTime)||!validTime(outTime)){
-    return json({error:"Invalid time."},400);
-  }
-
-  const total=minutesBetween(date,inTime,outTime);
-
-  if(total<=0){
-    return json({
-      error:"Out time must be later than in time."
-    },400);
-  }
-
-  const result=await env.DB.prepare(`
-    INSERT INTO attendance
-    (name,date,in_time,out_time,total_minutes,mic,camera)
-    VALUES(?,?,?,?,?,?,?)
-  `).bind(
-    name,
-    date,
-    inTime,
-    outTime,
-    total,
-    mic,
-    camera
-  ).run();
-
-  return json({
-    success:true,
-    id:result.meta.last_row_id,
-    total_minutes:total,
-    mic:!!mic,
-    camera:!!camera
-  });
-}
-
-async function updateAttendance(env,id,body){
-  const name=clean(body.name);
-  const date=clean(body.date);
-  const inTime=clean(body.in_time);
-  const outTime=clean(body.out_time);
-  const mic=boolValue(body.mic);
-  const camera=boolValue(body.camera);
-
-  if(!id){
-    return json({error:"Attendance ID required."},400);
-  }
-
-  if(!name||!date||!inTime||!outTime){
-    return json({
-      error:"Name, date, in time and out time are required."
-    },400);
-  }
-
-  if(!validDate(date)){
-    return json({error:"Invalid date."},400);
-  }
-
-  if(!validTime(inTime)||!validTime(outTime)){
-    return json({error:"Invalid time."},400);
-  }
-
-  const total=minutesBetween(date,inTime,outTime);
-
-  if(total<=0){
-    return json({
-      error:"Out time must be later than in time."
-    },400);
-  }
-
-  const result=await env.DB.prepare(`
-    UPDATE attendance
-    SET
-      name=?,
-      date=?,
-      in_time=?,
-      out_time=?,
-      total_minutes=?,
-      mic=?,
-      camera=?
-    WHERE id=?
-  `).bind(
-    name,
-    date,
-    inTime,
-    outTime,
-    total,
-    mic,
-    camera,
-    id
-  ).run();
-
-  if(!result.meta.changes){
-    return json({
-      error:"Attendance record not found."
-    },404);
-  }
-
-  return json({
-    success:true,
-    total_minutes:total,
-    mic:!!mic,
-    camera:!!camera
-  });
-}
-
-async function deleteAttendance(env,id){
-  const result=await env.DB.prepare(
-    `DELETE FROM attendance WHERE id=?`
-  ).bind(id).run();
-
-  if(!result.meta.changes){
-    return json({
-      error:"Attendance record not found."
-    },404);
-  }
-
-  return json({success:true});
+ return r.results||[];
 }
 
 export default{
-  async fetch(request,env){
+ async fetch(request,env){
+  try{
+   if(request.method==="OPTIONS")
+    return new Response(null,{status:204,headers:H});
+
+   const u=new URL(request.url);
+   const p=u.pathname;
+
+   if(p==="/api/health")
+    return json({success:true,app:"Prayer Attendance",status:"online"});
+
+   if(p==="/api/login"&&request.method==="POST"){
+    const b=await request.json().catch(()=>({}));
+    return clean(b.password)===ADMIN_PASSWORD
+     ?json({success:true})
+     :json({success:false,error:"Wrong password."},401);
+   }
+
+   if(p==="/api/check-login")
+    return auth(request)
+     ?json({success:true})
+     :json({success:false,error:"Unauthorized."},401);
+
+   if(!auth(request))
+    return json({error:"Unauthorized."},401);
+
+   await setup(env);
+
+   if(p==="/api/members"&&request.method==="GET")
+    return json({success:true,rows:await members(env)});
+
+   if(p==="/api/members"&&request.method==="POST"){
+    const b=await request.json().catch(()=>({}));
+    const name=clean(b.name);
+    if(!name)return json({error:"Member name required."},400);
 
     try{
+     const r=await env.DB.prepare(
+      `INSERT INTO members(name) VALUES(?)`
+     ).bind(name).run();
 
-      if(request.method==="OPTIONS"){
-        return new Response(null,{
-          status:204,
-          headers:HEADERS
-        });
-      }
-
-      const url=new URL(request.url);
-      const path=url.pathname;
-
-      if(path==="/api/health"){
-        return json({
-          success:true,
-          app:"Prayer Attendance",
-          status:"online"
-        });
-      }
-
-      if(path==="/api/login"&&request.method==="POST"){
-
-        let body;
-
-        try{
-          body=await request.json();
-        }catch{
-          return json({
-            success:false,
-            error:"Invalid JSON."
-          },400);
-        }
-
-        const entered=String(body?.password??"");
-
-        if(entered===ADMIN_PASSWORD){
-          return json({success:true});
-        }
-
-        return json({
-          success:false,
-          error:"Wrong password."
-        },401);
-      }
-
-      if(path==="/api/check-login"&&request.method==="GET"){
-
-        if(!authorized(request)){
-          return json({
-            success:false,
-            error:"Unauthorized."
-          },401);
-        }
-
-        return json({success:true});
-      }
-
-      if(path==="/api/attendance"&&request.method==="GET"){
-
-        if(!authorized(request)){
-          return json({error:"Unauthorized."},401);
-        }
-
-        await ensureDatabase(env);
-
-        const month=clean(url.searchParams.get("month"));
-
-        if(!month){
-          return json({error:"Month required."},400);
-        }
-
-        return json({
-          success:true,
-          rows:await getAttendance(env,month)
-        });
-      }
-
-      if(path==="/api/attendance"&&request.method==="POST"){
-
-        if(!authorized(request)){
-          return json({error:"Unauthorized."},401);
-        }
-
-        await ensureDatabase(env);
-
-        let body;
-
-        try{
-          body=await request.json();
-        }catch{
-          return json({error:"Invalid JSON."},400);
-        }
-
-        return await addAttendance(env,body);
-      }
-
-      if(path.startsWith("/api/attendance/")&&request.method==="PUT"){
-
-        if(!authorized(request)){
-          return json({error:"Unauthorized."},401);
-        }
-
-        await ensureDatabase(env);
-
-        const id=path.split("/").pop();
-
-        let body;
-
-        try{
-          body=await request.json();
-        }catch{
-          return json({error:"Invalid JSON."},400);
-        }
-
-        return await updateAttendance(env,id,body);
-      }
-
-      if(path.startsWith("/api/attendance/")&&request.method==="DELETE"){
-
-        if(!authorized(request)){
-          return json({error:"Unauthorized."},401);
-        }
-
-        await ensureDatabase(env);
-
-        const id=path.split("/").pop();
-
-        return await deleteAttendance(env,id);
-      }
-
-      if(path==="/api/summary"&&request.method==="GET"){
-
-        if(!authorized(request)){
-          return json({error:"Unauthorized."},401);
-        }
-
-        await ensureDatabase(env);
-
-        const month=clean(url.searchParams.get("month"));
-
-        if(!month){
-          return json({error:"Month required."},400);
-        }
-
-        const result=await env.DB.prepare(`
-          SELECT
-            COUNT(*) AS meetings,
-            COUNT(DISTINCT name) AS people,
-            COALESCE(SUM(total_minutes),0) AS total_minutes,
-            COALESCE(SUM(CASE WHEN mic=1 THEN 1 ELSE 0 END),0) AS mic_active,
-            COALESCE(SUM(CASE WHEN camera=1 THEN 1 ELSE 0 END),0) AS camera_active,
-            COALESCE(SUM(CASE WHEN mic=1 AND camera=1 THEN 1 ELSE 0 END),0) AS mic_camera_active
-          FROM attendance
-          WHERE substr(date,1,7)=?
-        `).bind(month).first();
-
-        return json({
-          success:true,
-          month,
-          meetings:Number(result?.meetings||0),
-          people:Number(result?.people||0),
-          total_minutes:Number(result?.total_minutes||0),
-          mic_active:Number(result?.mic_active||0),
-          camera_active:Number(result?.camera_active||0),
-          mic_camera_active:Number(result?.mic_camera_active||0)
-        });
-      }
-
-      if(path==="/api/ranking"&&request.method==="GET"){
-
-        if(!authorized(request)){
-          return json({error:"Unauthorized."},401);
-        }
-
-        await ensureDatabase(env);
-
-        const month=clean(url.searchParams.get("month"));
-
-        if(!month){
-          return json({error:"Month required."},400);
-        }
-
-        const result=await env.DB.prepare(`
-          SELECT
-            name,
-            COUNT(*) AS meetings,
-            COALESCE(SUM(total_minutes),0) AS total_minutes,
-            COALESCE(SUM(CASE WHEN mic=1 THEN 1 ELSE 0 END),0) AS mic_active,
-            COALESCE(SUM(CASE WHEN camera=1 THEN 1 ELSE 0 END),0) AS camera_active,
-            COALESCE(SUM(CASE WHEN mic=1 AND camera=1 THEN 1 ELSE 0 END),0) AS mic_camera_active
-          FROM attendance
-          WHERE substr(date,1,7)=?
-          GROUP BY name
-          ORDER BY
-            total_minutes DESC,
-            meetings DESC,
-            name ASC
-        `).bind(month).all();
-
-        return json({
-          success:true,
-          month,
-          rows:result.results||[]
-        });
-      }
-
-      if(path==="/"){
-        return json({
-          app:"Prayer Attendance",
-          status:"online"
-        });
-      }
-
-      return json({error:"Not found"},404);
-
-    }catch(error){
-
-      console.error(error);
-
-      return json({
-        error:"Server error",
-        message:error?.message||"Unknown error"
-      },500);
+     return json({
+      success:true,
+      id:r.meta.last_row_id,
+      name
+     });
+    }catch{
+     return json({error:"This member already exists."},409);
     }
+   }
+
+   if(p.startsWith("/api/members/")&&request.method==="PUT"){
+    const id=Number(p.split("/").pop());
+    const b=await request.json().catch(()=>({}));
+    const name=clean(b.name);
+
+    if(!id||!name)
+     return json({error:"Member ID and name required."},400);
+
+    try{
+     const r=await env.DB.prepare(
+      `UPDATE members SET name=? WHERE id=?`
+     ).bind(name,id).run();
+
+     return r.meta.changes
+      ?json({success:true})
+      :json({error:"Member not found."},404);
+    }catch{
+     return json({error:"This member already exists."},409);
+    }
+   }
+
+   if(p.startsWith("/api/members/")&&request.method==="DELETE"){
+    const id=Number(p.split("/").pop());
+
+    await env.DB.batch([
+     env.DB.prepare(`DELETE FROM daily_attendance WHERE member_id=?`).bind(id),
+     env.DB.prepare(`DELETE FROM members WHERE id=?`).bind(id)
+    ]);
+
+    return json({success:true});
+   }
+
+   if(p==="/api/day"&&request.method==="GET"){
+    const date=clean(u.searchParams.get("date"));
+
+    if(!dateOK(date))
+     return json({error:"Valid date required."},400);
+
+    return json({
+     success:true,
+     date,
+     rows:await day(env,date)
+    });
+   }
+
+   if(p==="/api/save"&&request.method==="POST"){
+    const b=await request.json().catch(()=>({}));
+
+    if(!Array.isArray(b.rows))
+     return json({error:"Invalid attendance data."},400);
+
+    try{
+     for(const x of b.rows)await save(env,x);
+     return json({success:true,count:b.rows.length});
+    }catch(e){
+     return json({error:e.message||"Save failed."},400);
+    }
+   }
+
+   if(p==="/api/delete-day"&&request.method==="DELETE"){
+    const date=clean(u.searchParams.get("date"));
+
+    if(!dateOK(date))
+     return json({error:"Invalid date."},400);
+
+    await env.DB.prepare(
+     `DELETE FROM daily_attendance WHERE date=?`
+    ).bind(date).run();
+
+    return json({success:true});
+   }
+
+   if(p==="/api/period"&&request.method==="GET"){
+    const from=clean(u.searchParams.get("from"));
+    const to=clean(u.searchParams.get("to"));
+
+    if(!dateOK(from)||!dateOK(to))
+     return json({error:"Valid dates required."},400);
+
+    if(from>to)
+     return json({error:"From date cannot be after To date."},400);
+
+    const rows=await period(env,from,to);
+
+    const s=await env.DB.prepare(`
+     SELECT
+      COUNT(*) total_records,
+      SUM(status='PRESENT') present,
+      SUM(status='ABSENT') absent,
+      COALESCE(SUM(total_minutes),0) minutes,
+      COALESCE(SUM(mic=1),0) mic,
+      COALESCE(SUM(video=1),0) video
+     FROM daily_attendance
+     WHERE date BETWEEN ? AND ?
+    `).bind(from,to).first();
+
+    return json({
+     success:true,
+     from,
+     to,
+     rows,
+     summary:{
+      total_records:Number(s?.total_records||0),
+      present:Number(s?.present||0),
+      absent:Number(s?.absent||0),
+      minutes:Number(s?.minutes||0),
+      mic:Number(s?.mic||0),
+      video:Number(s?.video||0)
+     }
+    });
+   }
+
+   return json({error:"Not found."},404);
+
+  }catch(e){
+   return json({
+    error:"Server error",
+    message:e.message||"Unknown error"
+   },500);
   }
+ }
 };
