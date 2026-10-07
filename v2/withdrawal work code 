@@ -30,8 +30,7 @@ async function verifyToken(token,secret){
   const p=token.split(".");
   if(p.length!==2)return null;
 
-  const payload=p[0];
-  const sig=unb64(p[1]);
+  const payload=p[0],sig=unb64(p[1]);
 
   const key=await crypto.subtle.importKey(
    "raw",
@@ -88,16 +87,26 @@ async function setup(env){
 
 async function available(userId,env){
 
+ const u=await env.DB.prepare(`
+  SELECT affiliate_code
+  FROM users
+  WHERE id=?
+ `).bind(userId).first();
+
+ if(!u?.affiliate_code)return 0;
+
  const a=await env.DB.prepare(`
   SELECT COALESCE(SUM(commission),0) total
   FROM affiliate_referrals
-  WHERE affiliate_id=? AND status='APPROVED'
- `).bind(userId).first();
+  WHERE affiliate_code=?
+  AND status='APPROVED'
+ `).bind(u.affiliate_code).first();
 
  const p=await env.DB.prepare(`
   SELECT COALESCE(SUM(amount),0) total
   FROM withdrawal_requests
-  WHERE user_id=? AND status='PAID'
+  WHERE user_id=?
+  AND status='PAID'
  `).bind(userId).first();
 
  const l=await env.DB.prepare(`
@@ -128,7 +137,6 @@ export default{
 
    const url=new URL(request.url);
 
-
    /* USER: SUBMIT WITHDRAWAL */
 
    if(
@@ -139,21 +147,17 @@ export default{
     const user=await auth(request,env);
 
     if(!user)
-     return json({success:false,error:"Unauthorized"},401,request);
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401,request);
 
     const body=await request.json().catch(()=>({}));
 
-    const account_name=
-     String(body.account_name||"").trim();
-
-    const bank=
-     String(body.bank||"").trim();
-
-    const branch=
-     String(body.branch||"").trim();
-
-    const account_number=
-     String(body.account_number||"").trim();
+    const account_name=String(body.account_name||"").trim();
+    const bank=String(body.bank||"").trim();
+    const branch=String(body.branch||"").trim();
+    const account_number=String(body.account_number||"").trim();
 
     if(
      !account_name||
@@ -175,9 +179,6 @@ export default{
       available:amount
      },400,request);
 
-
-    /* Prevent duplicate active requests */
-
     const existing=await env.DB.prepare(`
      SELECT id
      FROM withdrawal_requests
@@ -191,7 +192,6 @@ export default{
       success:false,
       error:"You already have a withdrawal request being processed."
      },400,request);
-
 
     await env.DB.prepare(`
      INSERT INTO withdrawal_requests
@@ -222,7 +222,6 @@ export default{
      message:"Withdrawal request sent to admin."
     },200,request);
    }
-
 
    /* USER: VIEW OWN REQUESTS */
 
@@ -260,7 +259,6 @@ export default{
     },200,request);
    }
 
-
    return json({
     success:false,
     error:"Not found"
@@ -272,7 +270,6 @@ export default{
     success:false,
     error:e.message||"Server error"
    },500,request);
-
   }
  }
 };
