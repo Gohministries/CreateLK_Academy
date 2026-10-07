@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1628">
+<title>CreateLK English - Global Leaderboard</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;
+ font-family:Arial,Helvetica,sans-serif;
+ background:#0b1628;
+ color:#dbe4f0
+}
+.wrap{
+ max-width:900px;
+ margin:auto;
+ padding:20px 14px 50px
+}
+header{
+ text-align:center;
+ padding:20px 0
+}
+.logo{
+ font-size:28px;
+ font-weight:800;
+ color:#f0b92f
+}
+.sub{
+ color:#91a3b8;
+ margin-top:7px;
+ font-size:14px
+}
+.card{
+ background:#101f35;
+ border:1px solid #213653;
+ border-radius:16px;
+ margin-top:16px;
+ overflow:hidden
+}
+.cardhead{
+ padding:16px;
+ border-bottom:1px solid #213653
+}
+.cardhead h2{
+ margin:0;
+ font-size:18px
+}
+.month{
+ color:#91a3b8;
+ font-size:13px;
+ margin-top:5px
+}
+.my{
+ padding:18px;
+ text-align:center
+}
+.rank{
+ font-size:42px;
+ font-weight:800;
+ color:#f0b92f
+}
+.myname{
+ font-size:18px;
+ font-weight:700;
+ margin-top:4px
+}
+.mypoints{
+ color:#91a3b8;
+ margin-top:5px
+}
+.login{
+ padding:18px;
+ text-align:center;
+ color:#91a3b8
+}
+.table{
+ width:100%;
+ border-collapse:collapse
+}
+th,td{
+ padding:13px 12px;
+ border-bottom:1px solid #1d3049;
+ text-align:left
+}
+th{
+ color:#91a3b8;
+ font-size:12px;
+ text-transform:uppercase
+}
+td{
+ font-size:14px
+}
+th:first-child,
+td:first-child{
+ width:65px;
+ text-align:center
+}
+.points{
+ text-align:right;
+ font-weight:700;
+ color:#f0b92f
+}
+.top{
+ font-weight:800
+}
+.empty{
+ padding:30px;
+ text-align:center;
+ color:#91a3b8
+}
+.error{
+ padding:18px;
+ text-align:center;
+ color:#ff9b9b
+}
+button{
+ border:0;
+ border-radius:10px;
+ padding:11px 18px;
+ background:#f0b92f;
+ color:#08111f;
+ font-weight:700;
+ cursor:pointer
+}
+.refresh{
+ margin:15px;
+ width:calc(100% - 30px)
+}
+.copy{
+ margin:0 15px 15px;
+ width:calc(100% - 30px);
+ background:#18365d;
+ color:#fff
+}
+.note{
+ text-align:center;
+ color:#71859d;
+ font-size:12px;
+ margin-top:18px;
+ line-height:1.5
+}
+@media(max-width:500px){
+ .wrap{padding:12px 10px 40px}
+ .logo{font-size:24px}
+ th,td{padding:11px 8px}
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+<header>
+ <div class="logo">CreateLK English</div>
+ <div class="sub">Global Premium Leaderboard</div>
+</header>
+
+<div class="card">
+ <div class="cardhead">
+  <h2>🏆 Top 100 Students</h2>
+  <div class="month">Active Premium students ranked by XP</div>
+ </div>
+
+ <table class="table">
+  <thead>
+   <tr>
+    <th>#</th>
+    <th>Student</th>
+    <th class="points">XP</th>
+   </tr>
+  </thead>
+  <tbody id="list">
+   <tr>
+    <td colspan="3" class="empty">Loading...</td>
+   </tr>
+  </tbody>
+ </table>
+
+ <button class="copy" onclick="copyBoard()">📋 Copy Leaderboard</button>
+ <button class="refresh" onclick="load()">↻ Refresh</button>
+</div>
+
+<div class="card" id="myCard">
+ <div class="cardhead">
+  <h2>👤 My Rank</h2>
+ </div>
+
+ <div id="myRank" class="login">
+  Checking login...
+ </div>
+</div>
+
+<div class="note">
+Only active Premium students are included in the global ranking.
+</div>
+
+</div>
+
+<script>
+const API="https://rank-v2.createlk.workers.dev";
+
+let board=[];
+
+async function load(){
+ const list=document.getElementById("list");
+
+ list.innerHTML=`
+  <tr>
+   <td colspan="3" class="empty">Loading...</td>
+  </tr>`;
+
+ try{
+  const r=await fetch(API+"/api/leaderboard",{
+   credentials:"include"
+  });
+
+  const d=await r.json();
+
+  if(!d.success)
+   throw new Error("Failed");
+
+  board=d.leaderboard||[];
+
+  if(!board.length){
+   list.innerHTML=`
+    <tr>
+     <td colspan="3" class="empty">
+      No Premium students yet.
+     </td>
+    </tr>`;
+  }else{
+   list.innerHTML=board.map(u=>`
+    <tr>
+     <td class="top">${u.rank}</td>
+     <td>${esc(u.name)}</td>
+     <td class="points">${Number(u.points||0)}</td>
+    </tr>
+   `).join("");
+  }
+
+ }catch(e){
+  list.innerHTML=`
+   <tr>
+    <td colspan="3" class="error">
+     Unable to load leaderboard.
+    </td>
+   </tr>`;
+ }
+
+ loadMyRank();
+}
+
+async function loadMyRank(){
+ const box=document.getElementById("myRank");
+
+ try{
+  const r=await fetch(API+"/api/leaderboard/me",{
+   credentials:"include"
+  });
+
+  const d=await r.json();
+
+  if(!d.success){
+   box.innerHTML=`
+    <div>
+     🔒 Login with an active Premium account
+     to see your rank.
+    </div>`;
+   return;
+  }
+
+  box.innerHTML=`
+   <div class="rank">#${d.rank}</div>
+   <div class="myname">${esc(d.user.name)}</div>
+   <div class="mypoints">
+    ${Number(d.user.xp||0)} XP
+   </div>`;
+ }catch(e){
+  box.innerHTML=`
+   <div>Unable to check your rank.</div>`;
+ }
+}
+
+function copyBoard(){
+ if(!board.length){
+  alert("No leaderboard data.");
+  return;
+ }
+
+ const text=[
+  "CreateLK English - Global Leaderboard",
+  "",
+  ...board.map(u=>
+   `${u.rank}. ${u.name} - ${Number(u.points||0)} XP`
+  )
+ ].join("\n");
+
+ navigator.clipboard.writeText(text)
+  .then(()=>alert("Leaderboard copied!"))
+  .catch(()=>alert("Copy failed."));
+}
+
+function esc(s){
+ return String(s??"")
+  .replace(/&/g,"&amp;")
+  .replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;")
+  .replace(/'/g,"&#039;");
+}
+
+load();
+</script>
+
+</body>
+</html>
+
