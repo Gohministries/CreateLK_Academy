@@ -1,692 +1,1000 @@
 const COOKIE="english_admin_session";
 const OAUTH_COOKIE="english_admin_oauth";
 const DAYS=7;
+const COMMISSION_RATE=.20;
+const DEFAULT_AMOUNT=1000;
 
 const cors=r=>({
-  "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
-  "Access-Control-Allow-Credentials":"true",
-  "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers":"Content-Type",
-  "Vary":"Origin"
+ "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
+ "Access-Control-Allow-Credentials":"true",
+ "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+ "Access-Control-Allow-Headers":"Content-Type",
+ "Vary":"Origin"
 });
 
-const json=(d,s=200,r)=>new Response(
-  JSON.stringify(d),
-  {
-    status:s,
-    headers:{
-      "Content-Type":"application/json;charset=UTF-8",
-      "Cache-Control":"no-store",
-      ...cors(r)
-    }
-  }
-);
+const json=(d,s=200,r)=>new Response(JSON.stringify(d),{
+ status:s,
+ headers:{
+  "Content-Type":"application/json;charset=UTF-8",
+  "Cache-Control":"no-store",
+  ...cors(r)
+ }
+});
 
 const cookie=(r,n)=>{
-  const m=(r.headers.get("Cookie")||"")
-    .match(new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"));
-  return m?decodeURIComponent(m[1]):null;
+ const m=(r.headers.get("Cookie")||"")
+  .match(new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"));
+ return m?decodeURIComponent(m[1]):null;
 };
 
 const rnd=(n=32)=>{
-  const b=new Uint8Array(n);
-  crypto.getRandomValues(b);
-  return [...b]
-    .map(x=>x.toString(16).padStart(2,"0"))
-    .join("");
+ const b=new Uint8Array(n);
+ crypto.getRandomValues(b);
+ return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");
 };
+
+const now=()=>new Date().toISOString();
 
 async function setup(env){
 
+ await env.DB.prepare(`
+  CREATE TABLE IF NOT EXISTS admin_sessions(
+   token TEXT PRIMARY KEY,
+   admin_email TEXT NOT NULL,
+   expires_at TEXT NOT NULL,
+   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+ `).run();
+
+ try{
+  const r=await env.DB.prepare("PRAGMA table_info(users)").all();
+
+  if(!(r.results||[]).some(x=>x.name==="membership_expiry"))
+   await env.DB.prepare(
+    "ALTER TABLE users ADD COLUMN membership_expiry TEXT"
+   ).run();
+
+ }catch{}
+
+ try{
   await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS admin_sessions(
-      token TEXT PRIMARY KEY,
-      admin_email TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
+   CREATE TABLE IF NOT EXISTS affiliate_referrals(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    affiliate_code TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    status TEXT DEFAULT 'PENDING',
+    sale_amount INTEGER DEFAULT 0,
+    commission INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    approved_at TEXT
+   )
   `).run();
 
-  try{
-    const r=await env.DB.prepare(
-      "PRAGMA table_info(users)"
-    ).all();
+ }catch{}
 
-    if(!(r.results||[]).some(x=>x.name==="membership_expiry")){
-
-      await env.DB.prepare(
-        "ALTER TABLE users ADD COLUMN membership_expiry TEXT"
-      ).run();
-
-    }
-
-  }catch{}
-
+ await env.DB.prepare(`
+  CREATE TABLE IF NOT EXISTS withdrawal_requests(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   user_id TEXT NOT NULL,
+   amount INTEGER NOT NULL,
+   account_name TEXT NOT NULL,
+   bank TEXT NOT NULL,
+   branch TEXT NOT NULL,
+   account_number TEXT NOT NULL,
+   status TEXT NOT NULL DEFAULT 'PENDING',
+   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+ `).run();
 }
+
 
 async function adminOK(request,env){
 
-  const token=cookie(request,COOKIE);
+ const token=cookie(request,COOKIE);
 
-  if(!token)return false;
+ if(!token)return false;
 
-  const row=await env.DB.prepare(`
-    SELECT token
-    FROM admin_sessions
-    WHERE token=?
-    AND expires_at>?
-    LIMIT 1
-  `).bind(
-    token,
-    new Date().toISOString()
-  ).first();
+ const row=await env.DB.prepare(`
+  SELECT token
+  FROM admin_sessions
+  WHERE token=? AND expires_at>?
+  LIMIT 1
+ `).bind(token,now()).first();
 
-  return !!row;
+ return !!row;
 }
+
+
+/* GOOGLE LOGIN */
 
 async function googleLogin(request,env){
 
-  if(!env.GOOGLE_CLIENT_ID)
-    return new Response(
-      "GOOGLE_CLIENT_ID is not configured",
-      {status:500}
-    );
-
-  const state=rnd();
-
-  const redirect=
-    `${new URL(request.url).origin}/auth/google/callback`;
-
-  const g=new URL(
-    "https://accounts.google.com/o/oauth2/v2/auth"
+ if(!env.GOOGLE_CLIENT_ID)
+  return new Response(
+   "GOOGLE_CLIENT_ID is not configured",
+   {status:500}
   );
 
-  g.searchParams.set(
-    "client_id",
-    env.GOOGLE_CLIENT_ID
-  );
+ const state=rnd();
 
-  g.searchParams.set(
-    "redirect_uri",
-    redirect
-  );
+ const redirect=
+  `${new URL(request.url).origin}/auth/google/callback`;
 
-  g.searchParams.set(
-    "response_type",
-    "code"
-  );
+ const g=
+  new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
-  g.searchParams.set(
-    "scope",
-    "openid email profile"
-  );
+ g.searchParams.set(
+  "client_id",
+  env.GOOGLE_CLIENT_ID
+ );
 
-  g.searchParams.set(
-    "access_type",
-    "online"
-  );
+ g.searchParams.set(
+  "redirect_uri",
+  redirect
+ );
 
-  g.searchParams.set(
-    "prompt",
-    "select_account"
-  );
+ g.searchParams.set("response_type","code");
+ g.searchParams.set(
+  "scope",
+  "openid email profile"
+ );
+ g.searchParams.set("access_type","online");
+ g.searchParams.set("prompt","select_account");
+ g.searchParams.set("state",state);
 
-  g.searchParams.set(
-    "state",
-    state
-  );
+ const res=new Response(null,{
+  status:302,
+  headers:{Location:g.toString()}
+ });
 
-  const res=new Response(null,{
-    status:302,
-    headers:{
-      Location:g.toString()
-    }
-  });
+ res.headers.append(
+  "Set-Cookie",
+  `${OAUTH_COOKIE}=${encodeURIComponent(state)}; Path=/auth/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`
+ );
 
-  res.headers.append(
-    "Set-Cookie",
-    `${OAUTH_COOKIE}=${encodeURIComponent(state)}; Path=/auth/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`
-  );
-
-  return res;
+ return res;
 }
+
+
+/* GOOGLE CALLBACK */
 
 async function googleCallback(request,env){
 
-  const url=new URL(request.url);
+ const url=new URL(request.url);
 
-  const code=url.searchParams.get("code");
-  const state=url.searchParams.get("state")||"";
-  const saved=cookie(request,OAUTH_COOKIE);
+ const code=url.searchParams.get("code");
+ const state=url.searchParams.get("state")||"";
+ const saved=cookie(request,OAUTH_COOKIE);
 
-  if(!code||!saved||state!==saved)
-    return new Response(
-      "Invalid Google login",
-      {status:400}
-    );
-
-  const redirect=
-    `${url.origin}/auth/google/callback`;
-
-  const tokenResponse=await fetch(
-    "https://oauth2.googleapis.com/token",
-    {
-      method:"POST",
-      headers:{
-        "Content-Type":
-        "application/x-www-form-urlencoded"
-      },
-      body:new URLSearchParams({
-        client_id:env.GOOGLE_CLIENT_ID,
-        client_secret:env.GOOGLE_CLIENT_SECRET,
-        code,
-        grant_type:"authorization_code",
-        redirect_uri:redirect
-      })
-    }
+ if(!code||!saved||state!==saved)
+  return new Response(
+   "Invalid Google login",
+   {status:400}
   );
 
-  if(!tokenResponse.ok)
-    return new Response(
-      "Google token exchange failed",
-      {status:400}
-    );
+ const redirect=
+  `${url.origin}/auth/google/callback`;
 
-  const token=await tokenResponse.json();
-
-  if(!token.access_token)
-    return new Response(
-      "Google access token missing",
-      {status:400}
-    );
-
-  const userResponse=await fetch(
-    "https://www.googleapis.com/oauth2/v3/userinfo",
-    {
-      headers:{
-        Authorization:
-        `Bearer ${token.access_token}`
-      }
-    }
-  );
-
-  if(!userResponse.ok)
-    return new Response(
-      "Unable to read Google account",
-      {status:400}
-    );
-
-  const google=await userResponse.json();
-
-  const email=
-    String(google.email||"")
-    .trim()
-    .toLowerCase();
-
-  const allowed=
-    String(env.ADMIN_EMAIL||"")
-    .trim()
-    .toLowerCase();
-
-  if(!email||!allowed||email!==allowed){
-
-    return new Response(
-      "Access denied. This Google account is not an administrator.",
-      {
-        status:403,
-        headers:{
-          "Content-Type":"text/plain;charset=UTF-8"
-        }
-      }
-    );
-
+ const tokenResponse=await fetch(
+  "https://oauth2.googleapis.com/token",
+  {
+   method:"POST",
+   headers:{
+    "Content-Type":
+     "application/x-www-form-urlencoded"
+   },
+   body:new URLSearchParams({
+    client_id:env.GOOGLE_CLIENT_ID,
+    client_secret:env.GOOGLE_CLIENT_SECRET,
+    code,
+    grant_type:"authorization_code",
+    redirect_uri:redirect
+   })
   }
+ );
 
-  const session=rnd();
+ if(!tokenResponse.ok)
+  return new Response(
+   "Google token exchange failed",
+   {status:400}
+  );
 
-  const expires=new Date(
-    Date.now()+DAYS*86400000
+ const token=await tokenResponse.json();
+
+ if(!token.access_token)
+  return new Response(
+   "Google access token missing",
+   {status:400}
+  );
+
+ const userResponse=await fetch(
+  "https://www.googleapis.com/oauth2/v3/userinfo",
+  {
+   headers:{
+    Authorization:
+     `Bearer ${token.access_token}`
+   }
+  }
+ );
+
+ if(!userResponse.ok)
+  return new Response(
+   "Unable to read Google account",
+   {status:400}
+  );
+
+ const google=await userResponse.json();
+
+ const email=
+  String(google.email||"")
+   .trim()
+   .toLowerCase();
+
+ const allowed=
+  String(env.ADMIN_EMAIL||"")
+   .trim()
+   .toLowerCase();
+
+ if(!email||!allowed||email!==allowed)
+  return new Response(
+   "Access denied. This Google account is not an administrator.",
+   {status:403}
+  );
+
+ const session=rnd();
+
+ const expires=
+  new Date(
+   Date.now()+DAYS*86400000
   ).toISOString();
 
-  await env.DB.prepare(`
-    INSERT INTO admin_sessions(
-      token,admin_email,expires_at
-    )
-    VALUES(?,?,?)
-  `).bind(
-    session,
-    email,
-    expires
-  ).run();
+ await env.DB.prepare(`
+  INSERT INTO admin_sessions(
+   token,admin_email,expires_at
+  )
+  VALUES(?,?,?)
+ `).bind(
+  session,
+  email,
+  expires
+ ).run();
 
-  const res=new Response(null,{
-    status:302,
-    headers:{
-      Location:
-      "https://createlk.com/v2/admin.html"
-    }
-  });
+ const res=new Response(null,{
+  status:302,
+  headers:{
+   Location:"https://createlk.com/v2/admin.html"
+  }
+ });
 
-  res.headers.append(
-    "Set-Cookie",
-    `${COOKIE}=${session}; Path=/; Max-Age=${DAYS*86400}; HttpOnly; Secure; SameSite=None`
-  );
+ res.headers.append(
+  "Set-Cookie",
+  `${COOKIE}=${session}; Path=/; Max-Age=${DAYS*86400}; HttpOnly; Secure; SameSite=None`
+ );
 
-  res.headers.append(
-    "Set-Cookie",
-    `${OAUTH_COOKIE}=; Path=/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax`
-  );
+ res.headers.append(
+  "Set-Cookie",
+  `${OAUTH_COOKIE}=; Path=/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax`
+ );
 
-  return res;
+ return res;
 }
+
+
+/* PASSWORD LOGIN */
 
 async function passwordLogin(request,env){
 
-  if(!env.ADMIN_PASSWORD)
-    return json({
-      success:false,
-      error:"Password login is not configured"
-    },500,request);
+ if(!env.ADMIN_PASSWORD)
+  return json({
+   success:false,
+   error:"Password login is not configured"
+  },500,request);
 
-  const body=await request.json();
+ const body=
+  await request.json().catch(()=>({}));
 
-  const password=
-    String(body.password||"");
+ if(String(body.password||"")!==env.ADMIN_PASSWORD)
+  return json({
+   success:false,
+   error:"Invalid admin password"
+  },401,request);
 
-  if(password!==env.ADMIN_PASSWORD)
-    return json({
-      success:false,
-      error:"Invalid admin password"
-    },401,request);
+ const email=
+  String(env.ADMIN_EMAIL||"admin").toLowerCase();
 
-  const email=
-    String(env.ADMIN_EMAIL||"admin")
-    .toLowerCase();
+ const token=rnd();
 
-  const token=rnd();
-
-  const expires=new Date(
-    Date.now()+DAYS*86400000
+ const expires=
+  new Date(
+   Date.now()+DAYS*86400000
   ).toISOString();
 
-  await env.DB.prepare(`
-    INSERT INTO admin_sessions(
-      token,admin_email,expires_at
-    )
-    VALUES(?,?,?)
-  `).bind(
-    token,
-    email,
-    expires
-  ).run();
+ await env.DB.prepare(`
+  INSERT INTO admin_sessions(
+   token,admin_email,expires_at
+  )
+  VALUES(?,?,?)
+ `).bind(
+  token,
+  email,
+  expires
+ ).run();
 
-  const res=json({
-    success:true
-  },200,request);
+ const res=json(
+  {success:true},
+  200,
+  request
+ );
 
-  res.headers.append(
-    "Set-Cookie",
-    `${COOKIE}=${token}; Path=/; Max-Age=${DAYS*86400}; HttpOnly; Secure; SameSite=None`
-  );
+ res.headers.append(
+  "Set-Cookie",
+  `${COOKIE}=${token}; Path=/; Max-Age=${DAYS*86400}; HttpOnly; Secure; SameSite=None`
+ );
 
-  return res;
+ return res;
 }
+
+
+/* LOGOUT */
 
 async function logout(request,env){
 
-  const token=cookie(request,COOKIE);
+ const token=cookie(request,COOKIE);
 
-  if(token){
+ if(token)
+  await env.DB.prepare(
+   "DELETE FROM admin_sessions WHERE token=?"
+  ).bind(token).run();
 
-    await env.DB.prepare(
-      "DELETE FROM admin_sessions WHERE token=?"
-    ).bind(token).run();
+ const res=json(
+  {success:true},
+  200,
+  request
+ );
 
-  }
+ res.headers.append(
+  "Set-Cookie",
+  `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None`
+ );
 
-  const res=json({
-    success:true
-  },200,request);
-
-  res.headers.append(
-    "Set-Cookie",
-    `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None`
-  );
-
-  return res;
+ return res;
 }
+
+
+/* STATUS */
 
 async function status(request,env){
 
-  if(!await adminOK(request,env))
-    return json({
-      success:true,
-      logged_in:false
-    },200,request);
-
-  const token=cookie(request,COOKIE);
-
-  const row=await env.DB.prepare(`
-    SELECT admin_email,expires_at
-    FROM admin_sessions
-    WHERE token=?
-    LIMIT 1
-  `).bind(token).first();
-
+ if(!await adminOK(request,env))
   return json({
-    success:true,
-    logged_in:true,
-    admin_email:row?.admin_email||"",
-    expires_at:row?.expires_at||null
+   success:true,
+   logged_in:false
   },200,request);
+
+ const token=cookie(request,COOKIE);
+
+ const row=await env.DB.prepare(`
+  SELECT admin_email,expires_at
+  FROM admin_sessions
+  WHERE token=?
+  LIMIT 1
+ `).bind(token).first();
+
+ return json({
+  success:true,
+  logged_in:true,
+  admin_email:row?.admin_email||"",
+  expires_at:row?.expires_at||null
+ },200,request);
 }
+
+
+/* USERS */
 
 async function users(request,env){
 
-  if(!await adminOK(request,env))
-    return json({
-      success:false,
-      error:"Admin login required"
-    },401,request);
+ if(!await adminOK(request,env))
+  return json({
+   success:false,
+   error:"Admin login required"
+  },401,request);
 
-  const url=new URL(request.url);
+ const url=new URL(request.url);
 
-  const search=
-    (url.searchParams.get("search")||"").trim();
+ const search=
+  (url.searchParams.get("search")||"").trim();
 
-  const membership=
-    (url.searchParams.get("membership")||"").trim();
+ const membership=
+  (url.searchParams.get("membership")||"").trim();
 
-  let sql=`
-    SELECT
-      id,
-      email,
-      name,
-      avatar_url,
-      membership,
-      membership_expiry,
-      xp,
-      coins,
-      correct_answers,
-      questions_answered,
-      lessons_completed,
-      affiliate_code,
-      referred_by,
-      created_at,
-      updated_at
-    FROM users
-    WHERE 1=1
-  `;
+ let sql=`
+  SELECT
+   id,
+   email,
+   name,
+   avatar_url,
+   membership,
+   membership_expiry,
+   xp,
+   coins,
+   correct_answers,
+   questions_answered,
+   lessons_completed,
+   affiliate_code,
+   referred_by,
+   created_at,
+   updated_at
+  FROM users
+  WHERE 1=1
+ `;
 
-  const args=[];
+ const args=[];
 
-  if(search){
-
-    sql+=`
-      AND (
-        email LIKE ?
-        OR name LIKE ?
-        OR id LIKE ?
-      )
-    `;
-
-    const x="%"+search+"%";
-
-    args.push(x,x,x);
-
-  }
-
-  if(membership==="free"||
-     membership==="premium"){
-
-    sql+=" AND membership=?";
-
-    args.push(membership);
-
-  }
+ if(search){
 
   sql+=`
-    ORDER BY created_at DESC
-    LIMIT 200
+   AND(
+    email LIKE ?
+    OR name LIKE ?
+    OR id LIKE ?
+   )
   `;
 
-  const result=
-    await env.DB.prepare(sql)
-    .bind(...args)
-    .all();
+  const x="%"+search+"%";
 
-  return json({
-    success:true,
-    users:result.results||[]
-  },200,request);
+  args.push(x,x,x);
+ }
+
+ if(
+  membership==="free"||
+  membership==="premium"
+ ){
+
+  sql+=" AND membership=?";
+  args.push(membership);
+ }
+
+ sql+=`
+  ORDER BY created_at DESC
+  LIMIT 200
+ `;
+
+ const result=
+  await env.DB.prepare(sql)
+   .bind(...args)
+   .all();
+
+ return json({
+  success:true,
+  users:result.results||[]
+ },200,request);
 }
+
+
+/* ACTIVATE PREMIUM */
 
 async function activatePremium(request,env){
 
-  if(!await adminOK(request,env))
-    return json({
-      success:false,
-      error:"Admin login required"
-    },401,request);
+ if(!await adminOK(request,env))
+  return json({
+   success:false,
+   error:"Admin login required"
+  },401,request);
 
-  const body=await request.json();
+ const body=
+  await request.json().catch(()=>({}));
 
-  const id=
-    String(body.user_id||"").trim();
+ const id=
+  String(body.user_id||"").trim();
 
-  const days=Math.max(
-    1,
-    Math.min(
-      3650,
-      Number(body.days)||30
-    )
+ const days=
+  Math.max(
+   1,
+   Math.min(
+    3650,
+    Number(body.days)||30
+   )
   );
 
-  if(!id)
-    return json({
-      success:false,
-      error:"User ID required"
-    },400,request);
+ const amount=
+  Math.max(
+   0,
+   Number(body.amount)||DEFAULT_AMOUNT
+  );
 
-  const user=await env.DB.prepare(`
-    SELECT id
-    FROM users
-    WHERE id=?
-    LIMIT 1
+ if(!id)
+  return json({
+   success:false,
+   error:"User ID required"
+  },400,request);
+
+ const user=
+  await env.DB.prepare(`
+   SELECT
+    id,
+    name,
+    email,
+    referred_by
+   FROM users
+   WHERE id=?
+   LIMIT 1
   `).bind(id).first();
 
-  if(!user)
-    return json({
-      success:false,
-      error:"User not found"
-    },404,request);
+ if(!user)
+  return json({
+   success:false,
+   error:"User not found"
+  },404,request);
 
-  const expiry=new Date(
-    Date.now()+days*86400000
+ const expiry=
+  new Date(
+   Date.now()+days*86400000
   ).toISOString();
 
-  await env.DB.prepare(`
-    UPDATE users
-    SET
-      membership='premium',
-      membership_expiry=?,
-      updated_at=CURRENT_TIMESTAMP
-    WHERE id=?
-  `).bind(
-    expiry,
-    id
-  ).run();
+ await env.DB.prepare(`
+  UPDATE users
+  SET
+   membership='premium',
+   membership_expiry=?,
+   updated_at=CURRENT_TIMESTAMP
+  WHERE id=?
+ `).bind(expiry,id).run();
 
-  return json({
-    success:true,
-    message:"Premium activated",
-    membership:"premium",
-    membership_expiry:expiry,
-    days
-  },200,request);
+ let commission=0;
+ let affiliate=null;
+
+ if(user.referred_by){
+
+  affiliate=
+   await env.DB.prepare(`
+    SELECT id,name,email
+    FROM users
+    WHERE affiliate_code=?
+    LIMIT 1
+   `).bind(user.referred_by).first();
+
+  if(affiliate){
+
+   const existing=
+    await env.DB.prepare(`
+     SELECT id
+     FROM affiliate_referrals
+     WHERE affiliate_code=?
+     AND student_id=?
+     AND status='APPROVED'
+     LIMIT 1
+    `).bind(
+     user.referred_by,
+     String(id)
+    ).first();
+
+   if(!existing){
+
+    commission=
+     Math.round(
+      amount*COMMISSION_RATE
+     );
+
+    await env.DB.prepare(`
+     INSERT INTO affiliate_referrals(
+      affiliate_code,
+      student_id,
+      status,
+      sale_amount,
+      commission,
+      created_at,
+      approved_at
+     )
+     VALUES(?,?,?,?,?,?,?)
+    `).bind(
+     user.referred_by,
+     String(id),
+     "APPROVED",
+     amount,
+     commission,
+     now(),
+     now()
+    ).run();
+   }
+  }
+ }
+
+ return json({
+  success:true,
+  message:"Premium activated",
+  user_id:id,
+  membership:"premium",
+  membership_expiry:expiry,
+  days,
+  sale_amount:amount,
+  commission_rate:20,
+  affiliate_code:user.referred_by||null,
+  affiliate_commission:commission,
+  affiliate_name:affiliate?.name||null
+ },200,request);
 }
+
+
+/* REMOVE PREMIUM */
 
 async function removePremium(request,env){
 
-  if(!await adminOK(request,env))
-    return json({
-      success:false,
-      error:"Admin login required"
-    },401,request);
-
-  const body=await request.json();
-
-  const id=
-    String(body.user_id||"").trim();
-
-  if(!id)
-    return json({
-      success:false,
-      error:"User ID required"
-    },400,request);
-
-  await env.DB.prepare(`
-    UPDATE users
-    SET
-      membership='free',
-      membership_expiry=NULL,
-      updated_at=CURRENT_TIMESTAMP
-    WHERE id=?
-  `).bind(id).run();
-
+ if(!await adminOK(request,env))
   return json({
-    success:true,
-    message:"Premium removed"
-  },200,request);
+   success:false,
+   error:"Admin login required"
+  },401,request);
+
+ const body=
+  await request.json().catch(()=>({}));
+
+ const id=
+  String(body.user_id||"").trim();
+
+ if(!id)
+  return json({
+   success:false,
+   error:"User ID required"
+  },400,request);
+
+ await env.DB.prepare(`
+  UPDATE users
+  SET
+   membership='free',
+   membership_expiry=NULL,
+   updated_at=CURRENT_TIMESTAMP
+  WHERE id=?
+ `).bind(id).run();
+
+ return json({
+  success:true,
+  message:"Premium removed"
+ },200,request);
 }
+
+
+/* ADD PREMIUM DAYS */
 
 async function setExpiry(request,env){
 
-  if(!await adminOK(request,env))
-    return json({
-      success:false,
-      error:"Admin login required"
-    },401,request);
+ if(!await adminOK(request,env))
+  return json({
+   success:false,
+   error:"Admin login required"
+  },401,request);
 
-  const body=await request.json();
+ const body=
+  await request.json().catch(()=>({}));
 
-  const id=
-    String(body.user_id||"").trim();
+ const id=
+  String(body.user_id||"").trim();
 
-  const expiry=
-    String(body.membership_expiry||"").trim();
+ if(!id)
+  return json({
+   success:false,
+   error:"User ID required"
+  },400,request);
 
-  if(!id||!expiry)
-    return json({
-      success:false,
-      error:"User ID and expiry required"
-    },400,request);
+ let expiry;
 
-  const d=new Date(expiry);
+ /* SUPPORT EXPLICIT EXPIRY */
+
+ if(body.membership_expiry){
+
+  const d=
+   new Date(
+    String(body.membership_expiry)
+   );
 
   if(Number.isNaN(d.getTime()))
-    return json({
-      success:false,
-      error:"Invalid expiry date"
-    },400,request);
+   return json({
+    success:false,
+    error:"Invalid expiry date"
+   },400,request);
 
-  await env.DB.prepare(`
-    UPDATE users
-    SET
-      membership='premium',
-      membership_expiry=?,
-      updated_at=CURRENT_TIMESTAMP
+  expiry=d;
+
+ }else{
+
+  /* ADD DAYS TO CURRENT EXPIRY */
+
+  const days=
+   Math.max(
+    1,
+    Math.min(
+     3650,
+     Number(body.days)||30
+    )
+   );
+
+  const user=
+   await env.DB.prepare(`
+    SELECT membership_expiry
+    FROM users
     WHERE id=?
-  `).bind(
-    d.toISOString(),
-    id
-  ).run();
+    LIMIT 1
+   `).bind(id).first();
 
-  return json({
-    success:true,
-    message:"Premium expiry updated",
-    membership:"premium",
-    membership_expiry:d.toISOString()
-  },200,request);
+  if(!user)
+   return json({
+    success:false,
+    error:"User not found"
+   },404,request);
+
+  expiry=
+   new Date(
+    user.membership_expiry
+   );
+
+  if(
+   Number.isNaN(expiry.getTime())||
+   expiry.getTime()<Date.now()
+  )
+   expiry=new Date();
+
+  expiry=
+   new Date(
+    expiry.getTime()+
+    days*86400000
+   );
+ }
+
+ await env.DB.prepare(`
+  UPDATE users
+  SET
+   membership='premium',
+   membership_expiry=?,
+   updated_at=CURRENT_TIMESTAMP
+  WHERE id=?
+ `).bind(
+  expiry.toISOString(),
+  id
+ ).run();
+
+ return json({
+  success:true,
+  message:"Premium expiry updated",
+  membership:"premium",
+  membership_expiry:
+   expiry.toISOString()
+ },200,request);
 }
+
+
+/* ADMIN: WITHDRAWAL LIST */
+
+async function withdrawals(request,env){
+
+ if(!await adminOK(request,env))
+  return json({
+   success:false,
+   error:"Admin login required"
+  },401,request);
+
+ const r=
+  await env.DB.prepare(`
+   SELECT
+    w.id,
+    w.user_id,
+    w.amount,
+    w.account_name,
+    w.bank,
+    w.branch,
+    w.account_number,
+    w.status,
+    w.created_at,
+    w.updated_at,
+    u.name,
+    u.email,
+    u.affiliate_code
+   FROM withdrawal_requests w
+   LEFT JOIN users u
+    ON u.id=w.user_id
+   ORDER BY
+    CASE w.status
+     WHEN 'PENDING' THEN 1
+     WHEN 'PROCESSING' THEN 2
+     WHEN 'PAID' THEN 3
+     WHEN 'REJECTED' THEN 4
+     ELSE 5
+    END,
+    w.id DESC
+   LIMIT 200
+  `)
+  .all();
+
+ return json({
+  success:true,
+  requests:r.results||[]
+ },200,request);
+}
+
+
+/* ADMIN: UPDATE WITHDRAWAL */
+
+async function updateWithdrawal(request,env){
+
+ if(!await adminOK(request,env))
+  return json({
+   success:false,
+   error:"Admin login required"
+  },401,request);
+
+ const url=
+  new URL(request.url);
+
+ const id=
+  url.pathname.split("/").pop();
+
+ const body=
+  await request.json().catch(()=>({}));
+
+ const status=
+  String(body.status||"")
+   .trim()
+   .toUpperCase();
+
+ const allowed=[
+  "PENDING",
+  "PROCESSING",
+  "PAID",
+  "REJECTED"
+ ];
+
+ if(!id||!allowed.includes(status))
+  return json({
+   success:false,
+   error:"Invalid withdrawal status"
+  },400,request);
+
+ const row=
+  await env.DB.prepare(`
+   SELECT id
+   FROM withdrawal_requests
+   WHERE id=?
+   LIMIT 1
+  `).bind(id).first();
+
+ if(!row)
+  return json({
+   success:false,
+   error:"Withdrawal request not found"
+  },404,request);
+
+ await env.DB.prepare(`
+  UPDATE withdrawal_requests
+  SET
+   status=?,
+   updated_at=CURRENT_TIMESTAMP
+  WHERE id=?
+ `).bind(
+  status,
+  id
+ ).run();
+
+ return json({
+  success:true,
+  message:"Withdrawal updated",
+  id:Number(id),
+  status
+ },200,request);
+}
+
+
+/* ROUTES */
 
 export default{
 
-  async fetch(request,env){
+ async fetch(request,env){
 
-    const url=new URL(request.url);
+  const url=
+   new URL(request.url);
 
-    if(request.method==="OPTIONS")
-      return new Response(null,{
-        status:204,
-        headers:cors(request)
-      });
-
-    try{
-
-      await setup(env);
-
-      if(url.pathname==="/")
-        return new Response(
-          "CreateLK English Admin Worker is running ✅"
-        );
-
-      if(url.pathname==="/auth/google")
-        return googleLogin(request,env);
-
-      if(url.pathname==="/auth/google/callback")
-        return googleCallback(request,env);
-
-      if(
-        url.pathname==="/api/admin/login" &&
-        request.method==="POST"
-      )
-        return passwordLogin(request,env);
-
-      if(url.pathname==="/api/admin/logout")
-        return logout(request,env);
-
-      if(url.pathname==="/api/admin/status")
-        return status(request,env);
-
-      if(
-        url.pathname==="/api/admin/users" &&
-        request.method==="GET"
-      )
-        return users(request,env);
-
-      if(
-        url.pathname==="/api/admin/premium" &&
-        request.method==="POST"
-      )
-        return activatePremium(request,env);
-
-      if(
-        url.pathname==="/api/admin/premium/remove" &&
-        request.method==="POST"
-      )
-        return removePremium(request,env);
-
-      if(
-        url.pathname==="/api/admin/premium/expiry" &&
-        request.method==="POST"
-      )
-        return setExpiry(request,env);
-
-      return json({
-        success:false,
-        error:"Not found"
-      },404,request);
-
-    }catch(e){
-
-      return json({
-        success:false,
-        error:e.message||"Server error"
-      },500,request);
-
+  if(request.method==="OPTIONS")
+   return new Response(
+    null,
+    {
+     status:204,
+     headers:cors(request)
     }
+   );
+
+  try{
+
+   await setup(env);
+
+   if(url.pathname==="/")
+    return new Response(
+     "CreateLK English Admin Worker is running ✅"
+    );
+
+
+   if(url.pathname==="/auth/google")
+    return googleLogin(request,env);
+
+
+   if(url.pathname==="/auth/google/callback")
+    return googleCallback(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/login"&&
+    request.method==="POST"
+   )
+    return passwordLogin(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/logout"
+   )
+    return logout(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/status"
+   )
+    return status(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/users"&&
+    request.method==="GET"
+   )
+    return users(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/premium"&&
+    request.method==="POST"
+   )
+    return activatePremium(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/premium/remove"&&
+    request.method==="POST"
+   )
+    return removePremium(request,env);
+
+
+   if(
+    url.pathname==="/api/admin/premium/expiry"&&
+    request.method==="POST"
+   )
+    return setExpiry(request,env);
+
+
+   /* WITHDRAWAL ADMIN ROUTES */
+
+   if(
+    url.pathname==="/api/admin/withdrawals"&&
+    request.method==="GET"
+   )
+    return withdrawals(request,env);
+
+
+   if(
+    url.pathname.startsWith(
+     "/api/admin/withdrawals/"
+    )&&
+    request.method==="POST"
+   )
+    return updateWithdrawal(request,env);
+
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404,request);
+
+  }catch(e){
+
+   return json({
+    success:false,
+    error:e.message||"Server error"
+   },500,request);
 
   }
-
+ }
 };
