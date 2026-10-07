@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1628">
+<title>CreateLK English - Affiliate</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#0b1628;color:#dbe4f0}
+.wrap{max-width:700px;margin:auto;padding:20px 14px 50px}
+header{text-align:center;padding:15px 0 25px}
+.logo{font-size:27px;font-weight:800;color:#f0b92f}
+.sub{color:#91a3b8;margin-top:6px}
+.card{background:#101f35;border:1px solid #213653;border-radius:16px;padding:18px;margin-bottom:14px}
+h2{margin:0 0 14px;font-size:18px}
+.link{background:#0b1628;border:1px solid #29415f;border-radius:10px;padding:13px;word-break:break-all;color:#f0b92f;font-size:14px}
+button{width:100%;border:0;border-radius:10px;padding:12px;margin-top:10px;font-weight:700;cursor:pointer}
+.copy{background:#f0b92f;color:#08111f}
+.share{background:#18365d;color:white}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#0b1628;border-radius:12px;padding:15px;text-align:center}
+.num{font-size:24px;font-weight:800;color:#f0b92f}
+.label{color:#91a3b8;font-size:12px;margin-top:5px}
+.money{text-align:center;font-size:30px;font-weight:800;color:#f0b92f}
+.note{text-align:center;color:#91a3b8;font-size:13px;line-height:1.5}
+.error{text-align:center;color:#ff9999;padding:25px}
+.code{text-align:center;font-size:22px;font-weight:800;color:#f0b92f}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<header>
+ <div class="logo">CreateLK English</div>
+ <div class="sub">Affiliate Dashboard</div>
+</header>
+
+<div id="app">
+ <div class="card">
+  <div class="note">Loading...</div>
+ </div>
+</div>
+
+</div>
+
+<script>
+const API="https://affiliate-v2.createlk.workers.dev";
+let referralLink="";
+
+async function load(){
+ try{
+  const r=await fetch(API+"/api/dashboard",{
+   credentials:"include"
+  });
+  const d=await r.json();
+
+  if(!d.success){
+   document.getElementById("app").innerHTML=`
+    <div class="card error">
+     Please login first to use the Affiliate Program.
+    </div>`;
+   return;
+  }
+
+  referralLink=d.referral_link;
+
+  document.getElementById("app").innerHTML=`
+
+   <div class="card">
+    <h2>🔗 Your Affiliate Code</h2>
+    <div class="code">${esc(d.affiliate_code)}</div>
+   </div>
+
+   <div class="card">
+    <h2>📣 Your Referral Link</h2>
+    <div class="link">${esc(referralLink)}</div>
+
+    <button class="copy" onclick="copyLink()">
+     📋 Copy Link
+    </button>
+
+    <button class="share" onclick="shareLink()">
+     📤 Share Link
+    </button>
+   </div>
+
+   <div class="card">
+    <h2>📊 Performance</h2>
+
+    <div class="grid">
+
+     <div class="stat">
+      <div class="num">${d.clicks}</div>
+      <div class="label">Clicks</div>
+     </div>
+
+     <div class="stat">
+      <div class="num">${d.referrals}</div>
+      <div class="label">Referrals</div>
+     </div>
+
+     <div class="stat">
+      <div class="num">${d.approved_sales}</div>
+      <div class="label">Sales</div>
+     </div>
+
+     <div class="stat">
+      <div class="num">${d.commission_rate}%</div>
+      <div class="label">Commission</div>
+     </div>
+
+    </div>
+   </div>
+
+   <div class="card">
+    <h2>💰 Earnings</h2>
+
+    <div class="money">
+     LKR ${Number(d.available_commission||0).toLocaleString()}
+    </div>
+
+    <div class="note">Available Commission</div>
+
+    <div class="grid" style="margin-top:12px">
+
+     <div class="stat">
+      <div class="num">
+       ${Number(d.pending_commission||0).toLocaleString()}
+      </div>
+      <div class="label">Pending</div>
+     </div>
+
+     <div class="stat">
+      <div class="num">
+       ${Number(d.paid||0).toLocaleString()}
+      </div>
+      <div class="label">Paid</div>
+     </div>
+
+    </div>
+   </div>
+
+   <div class="card">
+    <div class="note">
+     Earn ${d.commission_rate}% from approved Premium sales.<br>
+     Minimum payout: LKR ${Number(d.minimum_payout||0).toLocaleString()}.
+    </div>
+   </div>
+  `;
+
+ }catch(e){
+  document.getElementById("app").innerHTML=`
+   <div class="card error">
+    Unable to load affiliate dashboard.
+   </div>`;
+ }
+}
+
+function copyLink(){
+ navigator.clipboard.writeText(referralLink)
+ .then(()=>alert("Referral link copied!"))
+ .catch(()=>alert("Copy failed."));
+}
+
+async function shareLink(){
+ if(navigator.share){
+  try{
+   await navigator.share({
+    title:"CreateLK English",
+    text:"Join CreateLK English",
+    url:referralLink
+   });
+  }catch(e){}
+ }else{
+  copyLink();
+ }
+}
+
+function esc(s){
+ return String(s??"")
+ .replace(/&/g,"&amp;")
+ .replace(/</g,"&lt;")
+ .replace(/>/g,"&gt;")
+ .replace(/"/g,"&quot;")
+ .replace(/'/g,"&#039;");
+}
+
+load();
+</script>
+</body>
+</html>
