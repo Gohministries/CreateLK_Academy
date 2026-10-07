@@ -1,0 +1,278 @@
+const MINIMUM=2000;
+const COOKIE="withdrawal_admin_session";
+
+const cors=r=>({
+ "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
+ "Access-Control-Allow-Credentials":"true",
+ "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+ "Access-Control-Allow-Headers":"Content-Type,Authorization"
+});
+
+const json=(d,s=200,r)=>new Response(JSON.stringify(d),{
+ status:s,
+ headers:{...cors(r),"Content-Type":"application/json"}
+});
+
+function b64(a){
+ let s="";
+ for(const x of a)s+=String.fromCharCode(x);
+ return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+
+function unb64(s){
+ s=s.replace(/-/g,"+").replace(/_/g,"/");
+ while(s.length%4)s+="=";
+ return Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+}
+
+async function verifyToken(token,secret){
+ try{
+  const p=token.split(".");
+  if(p.length!==2)return null;
+
+  const payload=p[0];
+  const sig=unb64(p[1]);
+
+  const key=await crypto.subtle.importKey(
+   "raw",
+   new TextEncoder().encode(secret),
+   {name:"HMAC",hash:"SHA-256"},
+   false,
+   ["verify"]
+  );
+
+  const ok=await crypto.subtle.verify(
+   "HMAC",
+   key,
+   sig,
+   new TextEncoder().encode(payload)
+  );
+
+  if(!ok)return null;
+
+  const d=JSON.parse(
+   new TextDecoder().decode(unb64(payload))
+  );
+
+  if(!d.user_id||!d.exp)return null;
+  if(Date.now()>Number(d.exp))return null;
+
+  return d;
+ }catch{
+  return null;
+ }
+}
+
+async function auth(request,env){
+ const h=request.headers.get("Authorization")||"";
+ if(!h.startsWith("Bearer "))return null;
+ return verifyToken(h.slice(7),env.AFFILIATE_SECRET);
+}
+
+async function setup(env){
+ await env.DB.prepare(`
+  CREATE TABLE IF NOT EXISTS withdrawal_requests(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   user_id TEXT NOT NULL,
+   amount INTEGER NOT NULL,
+   account_name TEXT NOT NULL,
+   bank TEXT NOT NULL,
+   branch TEXT NOT NULL,
+   account_number TEXT NOT NULL,
+   status TEXT NOT NULL DEFAULT 'PENDING',
+   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+ `).run();
+}
+
+async function available(userId,env){
+
+ const a=await env.DB.prepare(`
+  SELECT COALESCE(SUM(commission),0) total
+  FROM affiliate_referrals
+  WHERE affiliate_id=? AND status='APPROVED'
+ `).bind(userId).first();
+
+ const p=await env.DB.prepare(`
+  SELECT COALESCE(SUM(amount),0) total
+  FROM withdrawal_requests
+  WHERE user_id=? AND status='PAID'
+ `).bind(userId).first();
+
+ const l=await env.DB.prepare(`
+  SELECT COALESCE(SUM(amount),0) total
+  FROM withdrawal_requests
+  WHERE user_id=?
+  AND status IN ('PENDING','PROCESSING')
+ `).bind(userId).first();
+
+ return Math.max(
+  0,
+  Number(a?.total||0)-
+  Number(p?.total||0)-
+  Number(l?.total||0)
+ );
+}
+
+export default{
+
+ async fetch(request,env){
+
+  if(request.method==="OPTIONS")
+   return new Response(null,{headers:cors(request)});
+
+  try{
+
+   await setup(env);
+
+   const url=new URL(request.url);
+
+
+   /* USER: SUBMIT WITHDRAWAL */
+
+   if(
+    url.pathname==="/api/withdraw" &&
+    request.method==="POST"
+   ){
+
+    const user=await auth(request,env);
+
+    if(!user)
+     return json({success:false,error:"Unauthorized"},401,request);
+
+    const body=await request.json().catch(()=>({}));
+
+    const account_name=
+     String(body.account_name||"").trim();
+
+    const bank=
+     String(body.bank||"").trim();
+
+    const branch=
+     String(body.branch||"").trim();
+
+    const account_number=
+     String(body.account_number||"").trim();
+
+    if(
+     !account_name||
+     !bank||
+     !branch||
+     !account_number
+    )
+     return json({
+      success:false,
+      error:"Please complete all bank details."
+     },400,request);
+
+    const amount=await available(user.user_id,env);
+
+    if(amount<MINIMUM)
+     return json({
+      success:false,
+      error:`Minimum withdrawal is LKR ${MINIMUM.toLocaleString()}.`,
+      available:amount
+     },400,request);
+
+
+    /* Prevent duplicate active requests */
+
+    const existing=await env.DB.prepare(`
+     SELECT id
+     FROM withdrawal_requests
+     WHERE user_id=?
+     AND status IN ('PENDING','PROCESSING')
+     LIMIT 1
+    `).bind(user.user_id).first();
+
+    if(existing)
+     return json({
+      success:false,
+      error:"You already have a withdrawal request being processed."
+     },400,request);
+
+
+    await env.DB.prepare(`
+     INSERT INTO withdrawal_requests
+     (
+      user_id,
+      amount,
+      account_name,
+      bank,
+      branch,
+      account_number,
+      status
+     )
+     VALUES(?,?,?,?,?,?,?)
+    `).bind(
+     user.user_id,
+     amount,
+     account_name,
+     bank,
+     branch,
+     account_number,
+     "PENDING"
+    ).run();
+
+    return json({
+     success:true,
+     amount,
+     status:"PENDING",
+     message:"Withdrawal request sent to admin."
+    },200,request);
+   }
+
+
+   /* USER: VIEW OWN REQUESTS */
+
+   if(
+    url.pathname==="/api/withdrawals" &&
+    request.method==="GET"
+   ){
+
+    const user=await auth(request,env);
+
+    if(!user)
+     return json({
+      success:false,
+      error:"Unauthorized"
+     },401,request);
+
+    const r=await env.DB.prepare(`
+     SELECT
+      id,
+      amount,
+      bank,
+      branch,
+      status,
+      created_at,
+      updated_at
+     FROM withdrawal_requests
+     WHERE user_id=?
+     ORDER BY id DESC
+     LIMIT 20
+    `).bind(user.user_id).all();
+
+    return json({
+     success:true,
+     requests:r.results||[]
+    },200,request);
+   }
+
+
+   return json({
+    success:false,
+    error:"Not found"
+   },404,request);
+
+  }catch(e){
+
+   return json({
+    success:false,
+    error:e.message||"Server error"
+   },500,request);
+
+  }
+ }
+};
