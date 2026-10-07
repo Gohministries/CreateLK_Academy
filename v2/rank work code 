@@ -1,0 +1,139 @@
+const COOKIE="english_v2_session";
+
+const cors=r=>({
+  "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Methods":"GET,OPTIONS",
+  "Access-Control-Allow-Headers":"Content-Type",
+  "Cache-Control":"no-store"
+});
+
+const json=(d,s,r)=>new Response(JSON.stringify(d),{
+  status:s,
+  headers:{"Content-Type":"application/json",...cors(r)}
+});
+
+const now=()=>new Date().toISOString();
+
+const premium=`
+  membership='premium'
+  AND membership_expiry IS NOT NULL
+  AND membership_expiry>?
+`;
+
+export default{
+  async fetch(request,env){
+    const url=new URL(request.url);
+
+    if(request.method==="OPTIONS")
+      return new Response(null,{headers:cors(request)});
+
+    try{
+
+      /* TOP 100 — PUBLIC */
+      if(url.pathname==="/api/leaderboard"){
+        const q=await env.DB.prepare(`
+          SELECT id,name,xp
+          FROM users
+          WHERE ${premium}
+          ORDER BY xp DESC,name ASC
+          LIMIT 100
+        `).bind(now()).all();
+
+        const leaderboard=(q.results||[]).map((u,i)=>({
+          rank:i+1,
+          id:u.id,
+          name:u.name||"Student",
+          points:Number(u.xp||0)
+        }));
+
+        return json({
+          success:true,
+          leaderboard,
+          count:leaderboard.length
+        },200,request);
+      }
+
+      /* MY RANK — PREMIUM ONLY */
+      if(url.pathname==="/api/leaderboard/me"){
+        const cookie=request.headers.get("Cookie")||"";
+        const m=cookie.match(
+          new RegExp(`${COOKIE}=([^;]+)`)
+        );
+
+        if(!m)
+          return json({
+            success:false,
+            logged_in:false
+          },401,request);
+
+        const u=await env.DB.prepare(`
+          SELECT u.*
+          FROM sessions s
+          JOIN users u ON u.id=s.user_id
+          WHERE s.token=?
+          AND s.expires_at>?
+          LIMIT 1
+        `).bind(m[1],now()).first();
+
+        if(!u)
+          return json({
+            success:false,
+            logged_in:false
+          },401,request);
+
+        if(
+          u.membership!=="premium"||
+          !u.membership_expiry||
+          new Date(u.membership_expiry)<=new Date()
+        )
+          return json({
+            success:false,
+            logged_in:true,
+            premium:false
+          },403,request);
+
+        const r=await env.DB.prepare(`
+          SELECT COUNT(*) AS n
+          FROM users
+          WHERE ${premium}
+          AND(
+            xp>?
+            OR(xp=? AND name<?)
+          )
+        `).bind(
+          now(),
+          Number(u.xp||0),
+          Number(u.xp||0),
+          u.name||""
+        ).first();
+
+        return json({
+          success:true,
+          logged_in:true,
+          premium:true,
+          rank:Number(r?.n||0)+1,
+          user:{
+            id:u.id,
+            name:u.name||"Student",
+            xp:Number(u.xp||0),
+            points:Number(u.xp||0)
+          }
+        },200,request);
+      }
+
+      return json({
+        success:true,
+        worker:"CreateLK English Rank",
+        status:"running"
+      },200,request);
+
+    }catch(e){
+      return json({
+        success:false,
+        error:e.message
+      },500,request);
+    }
+  }
+};
+
