@@ -41,7 +41,6 @@ main{max-width:1000px;margin:auto;padding:8px 15px 20px}
 .lesson-emoji{font-size:27px}.card .btn{width:100%;margin-top:6px}
 .premium-badge,.free-badge{display:inline-block;padding:3px 7px;margin-top:3px;border-radius:5px;font-size:9px;font-weight:800}
 .premium-badge{background:#2b3444;color:#d9b85c}.free-badge{background:#193b32;color:#b8e4d1}
-
 .global-progress{max-width:900px;margin:9px auto 0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .progress-card{background:#172942;border:1px solid #2b405c;border-radius:9px;padding:10px}
 .progress-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:bold}
@@ -49,7 +48,6 @@ main{max-width:1000px;margin:auto;padding:8px 15px 20px}
 .progress-bar{height:7px;background:#0d1c30;border-radius:10px;overflow:hidden;margin-top:7px}
 .progress-fill{height:100%;background:#c5a64b;width:0;transition:.3s}
 .progress-text{font-size:10px;color:#8497af;margin-top:5px}
-
 .quiz-wrap{max-width:900px;margin:15px auto}.quiz-card{padding:16px}
 .quiz-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.quiz-head .btn{width:auto}
 .quiz-progress{height:7px;background:#172942;border-radius:10px;overflow:hidden;margin:10px 0 15px}
@@ -80,10 +78,8 @@ footer a{color:#aab8cc;text-decoration:none;margin:0 5px}
 <img class="logo-img" src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png">
 <div class="logo">CreateLK <span>English</span></div>
 </a>
-
 <button class="btn" id="loginBtn" onclick="login()">Sign in</button>
 <img id="avatar" class="avatar" alt="Profile">
-
 <div class="menu-wrap">
 <button class="menu-btn" onclick="toggleMenu()">☰</button>
 <div class="menu" id="menu">
@@ -202,7 +198,7 @@ const n=$("notice");
 n.textContent=msg;
 n.classList.add("show");
 clearTimeout(window.noticeTimer);
-window.noticeTimer=setTimeout(()=>n.classList.remove("show"),4500);
+window.noticeTimer=setTimeout(()=>n.classList.remove("show"),5000);
 }
 
 function toggleMenu(){
@@ -223,8 +219,10 @@ location.href=API+"/auth/logout";
 }
 
 function updateGlobalProgress(lessons){
-let freeTotal=0,freeAnswered=0;
-let premiumTotal=0,premiumAnswered=0;
+let freeTotal=0;
+let freeAnswered=0;
+let premiumTotal=0;
+let premiumAnswered=0;
 
 lessons.forEach(l=>{
 const p=l.progress||{};
@@ -245,11 +243,11 @@ const pp=premiumTotal?Math.min(100,Math.round(premiumAnswered/premiumTotal*100))
 
 $("freePercent").textContent=fp+"%";
 $("freeBar").style.width=fp+"%";
-$("freeText").textContent=`${freeAnswered} / ${freeTotal} questions`;
+$("freeText").textContent=freeAnswered+" / "+freeTotal+" questions";
 
 $("premiumPercent").textContent=pp+"%";
 $("premiumBar").style.width=pp+"%";
-$("premiumText").textContent=`${premiumAnswered} / ${premiumTotal} questions`;
+$("premiumText").textContent=premiumAnswered+" / "+premiumTotal+" questions";
 }
 
 async function loadUser(){
@@ -258,6 +256,8 @@ const r=await fetch(API+"/api/me?_="+Date.now(),{
 credentials:"include",
 cache:"no-store"
 });
+
+if(!r.ok)throw Error("API /api/me returned HTTP "+r.status);
 
 const d=await r.json();
 
@@ -290,7 +290,7 @@ $("account").style.display="none";
 $("avatar").style.display="none";
 }
 }catch(e){
-console.error(e);
+console.error("loadUser:",e);
 }
 }
 
@@ -301,9 +301,18 @@ credentials:"include",
 cache:"no-store"
 });
 
+if(!r.ok){
+let msg="HTTP "+r.status;
+try{
+const x=await r.json();
+if(x.error)msg=x.error;
+}catch(e){}
+throw Error(msg);
+}
+
 const d=await r.json();
 
-if(!r.ok||!d.success)
+if(!d.success)
 throw Error(d.error||"Unable to load lessons");
 
 const lessons=Array.isArray(d.lessons)?d.lessons:[];
@@ -351,7 +360,7 @@ ${access?"▶ Start":"🔒 Unlock"}
 }).join("");
 
 }catch(e){
-console.error(e);
+console.error("loadLessons:",e);
 
 $("lessons").innerHTML=`
 <div class="card">
@@ -367,8 +376,10 @@ $("lessons").innerHTML=`
 
 function openLesson(id,free,access){
 if(!loggedUser)return login();
+
 if(!free&&!access)
 return notice("⭐ Premium membership is required for this lesson.");
+
 loadQuiz(id);
 }
 
@@ -395,9 +406,18 @@ credentials:"include",
 cache:"no-store"
 });
 
+if(!r.ok){
+let msg="HTTP "+r.status;
+try{
+const x=await r.json();
+if(x.error)msg=x.error;
+}catch(e){}
+throw Error(msg);
+}
+
 const d=await r.json();
 
-if(!r.ok||!d.success)
+if(!d.success)
 throw Error(d.error||"Unable to load lesson");
 
 currentLesson=d.lesson;
@@ -464,15 +484,12 @@ Question ${n} of ${total}
 <button class="option" onclick="answerQuestion(this,'A')">
 A. ${esc(q.option_a)}
 </button>
-
 <button class="option" onclick="answerQuestion(this,'B')">
 B. ${esc(q.option_b)}
 </button>
-
 <button class="option" onclick="answerQuestion(this,'C')">
 C. ${esc(q.option_c)}
 </button>
-
 <button class="option" onclick="answerQuestion(this,'D')">
 D. ${esc(q.option_d)}
 </button>
@@ -505,13 +522,19 @@ answer
 })
 });
 
+if(!r.ok){
+let msg="HTTP "+r.status;
+try{
+const x=await r.json();
+if(x.error)msg=x.error;
+}catch(e){}
+throw Error(msg);
+}
+
 const d=await r.json();
 
-if(!r.ok||!d.success){
-answered=false;
-options.forEach(x=>x.classList.remove("disabled"));
-return notice(d.error||"Unable to submit answer");
-}
+if(!d.success)
+throw Error(d.error||"Unable to submit answer");
 
 if(d.correct){
 button.classList.add("correct");
@@ -524,8 +547,7 @@ $("answerResult").innerHTML=`
 }else{
 button.classList.add("wrong");
 
-const correct=String(d.correct_answer||"")
-.trim().toUpperCase();
+const correct=String(d.correct_answer||"").trim().toUpperCase();
 
 if(["A","B","C","D"].includes(correct)){
 options.forEach(x=>{
@@ -559,11 +581,14 @@ ${currentQuestion+1<currentQuestions.length?
 </button>
 </div>`;
 
+loadUser();
+loadLessons();
+
 }catch(e){
-console.error(e);
+console.error("answerQuestion:",e);
 answered=false;
 options.forEach(x=>x.classList.remove("disabled"));
-notice("Connection error. Please try again.");
+notice(e.message||"Connection error. Please try again.");
 }
 }
 
@@ -592,7 +617,7 @@ renderQuestion();
 scrollTo({top:0,behavior:"smooth"});
 }
 
-function backLessons(){
+async function backLessons(){
 currentLesson=null;
 currentQuestions=[];
 currentQuestion=0;
@@ -603,8 +628,8 @@ $("lessonArea").style.display="block";
 $("hero").style.display="block";
 $("menu").classList.remove("show");
 
-loadUser();
-loadLessons();
+await loadUser();
+await loadLessons();
 
 scrollTo({top:0,behavior:"smooth"});
 }
