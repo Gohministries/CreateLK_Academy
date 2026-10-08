@@ -23,6 +23,31 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .share{background:#18365d;color:#fff}
 .withdraw{background:#19a974;color:#fff}
 .guide{background:#29415f;color:#fff;text-decoration:none;display:block;text-align:center;padding:13px;border-radius:10px;font-weight:700}
+
+.signin{
+background:#f0b92f;
+color:#08111f;
+text-decoration:none;
+display:block;
+text-align:center;
+padding:13px;
+border-radius:10px;
+font-weight:800;
+margin-top:12px
+}
+
+.home{
+background:#29415f;
+color:#fff;
+text-decoration:none;
+display:block;
+text-align:center;
+padding:13px;
+border-radius:10px;
+font-weight:700;
+margin-top:10px
+}
+
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .stat{background:#0b1628;border-radius:12px;padding:15px;text-align:center}
 .num{font-size:24px;font-weight:800;color:#f0b92f}
@@ -64,7 +89,7 @@ input:focus{border-color:#f0b92f}
 <div class="wrap">
 
 <header>
-<a class="back" href="index.html">← Back</a>
+<a class="back" href="/v2/">← Back</a>
 <div class="logo">Create<span>LK</span> English</div>
 <div class="sub">Affiliate Dashboard</div>
 </header>
@@ -158,25 +183,125 @@ let referralLink="";
 let availableCommission=0;
 let minimumWithdrawal=MINIMUM;
 
+
+/* =========================
+   LOGIN
+========================= */
+
+function login(){
+
+ location.href=
+ ENGLISH_API+"/auth/google?return="+
+ encodeURIComponent("/v2/aff.html");
+
+}
+
+
+/* =========================
+   AUTH TOKEN
+========================= */
+
 async function getToken(){
 
  const r=await fetch(
   ENGLISH_API+"/api/affiliate/token",
-  {method:"GET",credentials:"include",cache:"no-store"}
+  {
+   method:"GET",
+   credentials:"include",
+   cache:"no-store"
+  }
  );
 
  const d=await r.json().catch(()=>({}));
 
- if(!r.ok||!d.success)
-  throw new Error(d.error||"Please login to CreateLK English first.");
+ /*
+  IMPORTANT:
+  A normal unauthenticated visitor is NOT
+  treated as an error anymore.
+
+  We return null so the page can display
+  the Sign in screen.
+ */
+ if(!r.ok||!d.success){
+
+  if(
+   r.status===401||
+   r.status===403||
+   d.error
+  ){
+
+   return null;
+
+  }
+
+  throw new Error(
+   d.error||
+   "Unable to verify your account."
+  );
+
+ }
 
  authToken=d.token;
 
  if(!authToken)
-  throw new Error("Authentication token missing.");
+  return null;
 
  return authToken;
+
 }
+
+
+/* =========================
+   SIGN IN SCREEN
+========================= */
+
+function showSignIn(){
+
+ document.getElementById("app").innerHTML=`
+
+ <div class="card" style="text-align:center;padding:30px 20px">
+
+  <div style="font-size:45px;margin-bottom:10px">
+   👤
+  </div>
+
+  <h2 style="margin-bottom:8px">
+   Sign in to your account
+  </h2>
+
+  <div class="note">
+   Please sign in to CreateLK English to access
+   your Affiliate Dashboard, referral link,
+   commissions and withdrawals.
+  </div>
+
+  <a
+   class="signin"
+   href="#"
+   onclick="login();return false">
+
+   🔐 Sign in
+
+  </a>
+
+  <a
+   class="home"
+   href="/v2/">
+
+   ← Back to CreateLK English
+
+  </a>
+
+ </div>
+
+ `;
+
+}
+
+
+/* =========================
+   WITHDRAWALS
+========================= */
 
 async function getWithdrawals(){
 
@@ -186,7 +311,9 @@ async function getWithdrawals(){
    WITHDRAWAL_API+"/api/withdrawals",
    {
     method:"GET",
-    headers:{Authorization:"Bearer "+authToken},
+    headers:{
+     Authorization:"Bearer "+authToken
+    },
     cache:"no-store"
    }
   );
@@ -194,76 +321,156 @@ async function getWithdrawals(){
   const d=await r.json().catch(()=>({}));
 
   if(!r.ok||!d.success)
-   return{pending:0,paid:0};
+   return{
+    pending:0,
+    paid:0
+   };
 
-  const list=Array.isArray(d.withdrawals)
+  const list=
+   Array.isArray(d.withdrawals)
    ?d.withdrawals
    :Array.isArray(d.requests)
    ?d.requests
    :[];
 
-  let pending=0,paid=0;
+  let pending=0;
+  let paid=0;
 
   for(const x of list){
 
-   const amount=Number(x.amount||0);
-   const status=String(x.status||"").toUpperCase();
+   const amount=
+    Number(x.amount||0);
 
-   if(status==="PENDING")pending+=amount;
-   if(status==="PAID")paid+=amount;
+   const status=
+    String(x.status||"").toUpperCase();
+
+   if(status==="PENDING")
+    pending+=amount;
+
+   if(status==="PAID")
+    paid+=amount;
+
   }
 
-  return{pending,paid};
+  return{
+   pending,
+   paid
+  };
 
  }catch{
 
-  return{pending:0,paid:0};
+  return{
+   pending:0,
+   paid:0
+  };
 
  }
+
 }
+
+
+/* =========================
+   LOAD DASHBOARD
+========================= */
 
 async function load(){
 
  try{
 
-  await getToken();
+  const token=await getToken();
+
+  /*
+   NOT LOGGED IN
+   Show Sign in instead of error.
+  */
+
+  if(!token){
+
+   showSignIn();
+   return;
+
+  }
+
 
   const ar=await fetch(
    AFFILIATE_API+"/api/dashboard",
    {
     method:"GET",
-    headers:{Authorization:"Bearer "+authToken},
+    headers:{
+     Authorization:"Bearer "+authToken
+    },
     cache:"no-store"
    }
   );
 
   const ad=await ar.json().catch(()=>({}));
 
-  if(!ar.ok||!ad.success)
-   throw new Error(ad.error||"Unable to load affiliate dashboard.");
+  if(!ar.ok||!ad.success){
 
-  referralLink=ad.referral_link||"";
+   /*
+    If the affiliate API says the user is
+    not authenticated, show Sign in.
+   */
 
-  const referrals=Number(ad.referrals||0);
-  const sales=Number(ad.approved_sales||0);
-  const rate=Number(ad.commission_rate||20);
+   if(
+    ar.status===401||
+    ar.status===403
+   ){
 
-  minimumWithdrawal=Number(
-   ad.minimum_withdrawal||MINIMUM
-  );
+    showSignIn();
+    return;
 
-  const totalEarned=Number(ad.total_earned||0);
-  const pendingCommission=Number(ad.pending_commission||0);
+   }
 
-  const wd=await getWithdrawals();
+   throw new Error(
+    ad.error||
+    "Unable to load affiliate dashboard."
+   );
 
-  const withdrawalPending=Number(wd.pending||0);
-  const withdrawalPaid=Number(wd.paid||0);
+  }
 
-  availableCommission=Math.max(
-   0,
-   totalEarned-withdrawalPending-withdrawalPaid
-  );
+
+  referralLink=
+   ad.referral_link||"";
+
+  const referrals=
+   Number(ad.referrals||0);
+
+  const sales=
+   Number(ad.approved_sales||0);
+
+  const rate=
+   Number(ad.commission_rate||20);
+
+  minimumWithdrawal=
+   Number(
+    ad.minimum_withdrawal||
+    MINIMUM
+   );
+
+  const totalEarned=
+   Number(ad.total_earned||0);
+
+  const pendingCommission=
+   Number(ad.pending_commission||0);
+
+  const wd=
+   await getWithdrawals();
+
+  const withdrawalPending=
+   Number(wd.pending||0);
+
+  const withdrawalPaid=
+   Number(wd.paid||0);
+
+  availableCommission=
+   Math.max(
+    0,
+    totalEarned-
+    withdrawalPending-
+    withdrawalPaid
+   );
+
 
   document.getElementById("app").innerHTML=`
 
@@ -271,7 +478,9 @@ async function load(){
 
    <h2>📣 Your Referral Link</h2>
 
-   <div class="link">${esc(referralLink)}</div>
+   <div class="link">
+    ${esc(referralLink)}
+   </div>
 
    <button class="copy" onclick="copyLink()">
     📋 Copy Link
@@ -283,6 +492,7 @@ async function load(){
 
   </div>
 
+
   <div class="card">
 
    <h2>📊 Performance</h2>
@@ -290,28 +500,45 @@ async function load(){
    <div class="grid">
 
     <div class="stat">
-     <div class="num">${referrals.toLocaleString()}</div>
-     <div class="label">Referrals</div>
+     <div class="num">
+      ${referrals.toLocaleString()}
+     </div>
+     <div class="label">
+      Referrals
+     </div>
     </div>
 
     <div class="stat">
-     <div class="num">${sales.toLocaleString()}</div>
-     <div class="label">Approved Sales</div>
+     <div class="num">
+      ${sales.toLocaleString()}
+     </div>
+     <div class="label">
+      Approved Sales
+     </div>
     </div>
 
     <div class="stat">
-     <div class="num">${rate}%</div>
-     <div class="label">Commission</div>
+     <div class="num">
+      ${rate}%
+     </div>
+     <div class="label">
+      Commission
+     </div>
     </div>
 
     <div class="stat">
-     <div class="num">LKR ${minimumWithdrawal.toLocaleString()}</div>
-     <div class="label">Minimum Withdrawal</div>
+     <div class="num">
+      LKR ${minimumWithdrawal.toLocaleString()}
+     </div>
+     <div class="label">
+      Minimum Withdrawal
+     </div>
     </div>
 
    </div>
 
   </div>
+
 
   <div class="card">
 
@@ -321,7 +548,9 @@ async function load(){
     LKR ${availableCommission.toLocaleString()}
    </div>
 
-   <div class="note">Available Commission</div>
+   <div class="note">
+    Available Commission
+   </div>
 
    <button
     class="withdraw"
@@ -347,25 +576,38 @@ async function load(){
 
    </div>
 
+
    <div class="grid" style="margin-top:12px">
 
     <div class="stat">
+
      <div class="num">
       LKR ${withdrawalPending.toLocaleString()}
      </div>
-     <div class="label">Pending</div>
+
+     <div class="label">
+      Pending
+     </div>
+
     </div>
 
+
     <div class="stat">
+
      <div class="num">
       LKR ${withdrawalPaid.toLocaleString()}
      </div>
-     <div class="label">Paid</div>
+
+     <div class="label">
+      Paid
+     </div>
+
     </div>
 
    </div>
 
   </div>
+
 
   <div class="card">
 
@@ -376,12 +618,16 @@ async function load(){
     <br><br>
 
     Total earned:
-    <strong>LKR ${totalEarned.toLocaleString()}</strong>
+    <strong>
+     LKR ${totalEarned.toLocaleString()}
+    </strong>
 
     <br><br>
 
     Pending commission:
-    <strong>LKR ${pendingCommission.toLocaleString()}</strong>
+    <strong>
+     LKR ${pendingCommission.toLocaleString()}
+    </strong>
 
     <br><br>
 
@@ -395,6 +641,7 @@ async function load(){
   </div>
 
   `;
+
 
  }catch(e){
 
@@ -415,22 +662,39 @@ async function load(){
   `;
 
  }
+
 }
+
+
+/* =========================
+   COPY
+========================= */
 
 async function copyLink(){
 
  try{
 
-  await navigator.clipboard.writeText(referralLink);
+  await navigator.clipboard.writeText(
+   referralLink
+  );
+
   alert("Referral link copied!");
 
  }catch{
 
-  prompt("Copy your referral link:",referralLink);
+  prompt(
+   "Copy your referral link:",
+   referralLink
+  );
 
  }
 
 }
+
+
+/* =========================
+   SHARE
+========================= */
 
 async function shareLink(){
 
@@ -446,13 +710,25 @@ async function shareLink(){
 
   }catch{}
 
- }else copyLink();
+ }else{
+
+  copyLink();
+
+ }
 
 }
+
+
+/* =========================
+   WITHDRAW
+========================= */
 
 function openWithdraw(){
 
- if(availableCommission<minimumWithdrawal){
+ if(
+  availableCommission<
+  minimumWithdrawal
+ ){
 
   alert(
    "Minimum withdrawal is LKR "+
@@ -460,38 +736,83 @@ function openWithdraw(){
   );
 
   return;
+
  }
 
- document.getElementById("amount").value=availableCommission;
- document.getElementById("withdrawModal").classList.add("show");
+ document.getElementById("amount").value=
+  availableCommission;
+
+ document.getElementById(
+  "withdrawModal"
+ ).classList.add("show");
 
 }
+
 
 function closeWithdraw(){
 
- document.getElementById("withdrawModal").classList.remove("show");
+ document.getElementById(
+  "withdrawModal"
+ ).classList.remove("show");
 
 }
 
+
+/* =========================
+   SUBMIT WITHDRAWAL
+========================= */
+
 async function submitWithdrawal(){
 
- const accountName=document.getElementById("accountName").value.trim();
- const bank=document.getElementById("bank").value.trim();
- const branch=document.getElementById("branch").value.trim();
- const accountNumber=document.getElementById("accountNumber").value.trim();
+ const accountName=
+  document.getElementById(
+   "accountName"
+  ).value.trim();
+
+ const bank=
+  document.getElementById(
+   "bank"
+  ).value.trim();
+
+ const branch=
+  document.getElementById(
+   "branch"
+  ).value.trim();
+
+ const accountNumber=
+  document.getElementById(
+   "accountNumber"
+  ).value.trim();
 
  const amount=Math.floor(
-  Number(document.getElementById("amount").value)
+  Number(
+   document.getElementById(
+    "amount"
+   ).value
+  )
  );
 
- if(!accountName||!bank||!branch||!accountNumber){
 
-  alert("Please complete all bank details.");
+ if(
+  !accountName||
+  !bank||
+  !branch||
+  !accountNumber
+ ){
+
+  alert(
+   "Please complete all bank details."
+  );
+
   return;
 
  }
 
- if(!Number.isFinite(amount)||amount<minimumWithdrawal){
+
+ if(
+  !Number.isFinite(amount)||
+  amount<minimumWithdrawal
+ ){
 
   alert(
    "Minimum withdrawal is LKR "+
@@ -502,7 +823,10 @@ async function submitWithdrawal(){
 
  }
 
- if(amount>availableCommission){
+
+ if(
+  amount>availableCommission
+ ){
 
   alert(
    "Withdrawal amount cannot exceed your available commission."
@@ -512,10 +836,15 @@ async function submitWithdrawal(){
 
  }
 
- const btn=document.getElementById("submitBtn");
+
+ const btn=
+  document.getElementById(
+   "submitBtn"
+  );
 
  btn.disabled=true;
  btn.textContent="Submitting...";
+
 
  try{
 
@@ -523,45 +852,92 @@ async function submitWithdrawal(){
    WITHDRAWAL_API+"/api/withdraw",
    {
     method:"POST",
+
     headers:{
      "Content-Type":"application/json",
-     "Authorization":"Bearer "+authToken
+     "Authorization":
+      "Bearer "+authToken
     },
+
     body:JSON.stringify({
+
      amount,
-     account_name:accountName,
+
+     account_name:
+      accountName,
+
      bank,
+
      branch,
-     account_number:accountNumber
+
+     account_number:
+      accountNumber
+
     })
+
    }
   );
 
-  const d=await r.json().catch(()=>({}));
 
-  if(!r.ok||!d.success)
-   throw new Error(
-    d.error||"Withdrawal request failed."
+  const d=
+   await r.json().catch(
+    ()=>({})
    );
+
+
+  if(
+   !r.ok||
+   !d.success
+  ){
+
+   throw new Error(
+    d.error||
+    "Withdrawal request failed."
+   );
+
+  }
+
 
   alert(
    "Withdrawal request submitted successfully!\n\n"+
    "Amount: LKR "+
-   Number(d.amount||amount).toLocaleString()
+   Number(
+    d.amount||amount
+   ).toLocaleString()
   );
 
-  document.getElementById("accountName").value="";
-  document.getElementById("bank").value="";
-  document.getElementById("branch").value="";
-  document.getElementById("accountNumber").value="";
-  document.getElementById("amount").value="";
+
+  document.getElementById(
+   "accountName"
+  ).value="";
+
+  document.getElementById(
+   "bank"
+  ).value="";
+
+  document.getElementById(
+   "branch"
+  ).value="";
+
+  document.getElementById(
+   "accountNumber"
+  ).value="";
+
+  document.getElementById(
+   "amount"
+  ).value="";
+
 
   closeWithdraw();
 
   btn.disabled=false;
-  btn.textContent="Submit Withdrawal Request";
+
+  btn.textContent=
+   "Submit Withdrawal Request";
+
 
   await load();
+
 
  }catch(e){
 
@@ -571,10 +947,18 @@ async function submitWithdrawal(){
   );
 
   btn.disabled=false;
-  btn.textContent="Submit Withdrawal Request";
+
+  btn.textContent=
+   "Submit Withdrawal Request";
 
  }
+
 }
+
+
+/* =========================
+   ESCAPE HTML
+========================= */
 
 function esc(s){
 
@@ -586,6 +970,11 @@ function esc(s){
  .replace(/'/g,"&#039;");
 
 }
+
+
+/* =========================
+   START
+========================= */
 
 load();
 
