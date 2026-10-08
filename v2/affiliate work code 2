@@ -1,4 +1,4 @@
-const MIN_WITHDRAWAL=2000,COMMISSION_RATE=.20;
+const MIN=2000,RATE=.20;
 
 const cors=r=>({
  "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
@@ -10,11 +10,7 @@ const cors=r=>({
 
 const json=(d,s,r)=>new Response(JSON.stringify(d),{
  status:s||200,
- headers:{
-  "Content-Type":"application/json;charset=UTF-8",
-  "Cache-Control":"no-store",
-  ...cors(r)
- }
+ headers:{"Content-Type":"application/json","Cache-Control":"no-store",...cors(r)}
 });
 
 const b64u=a=>btoa(String.fromCharCode(...new Uint8Array(a)))
@@ -26,56 +22,35 @@ const unb64u=s=>{
  return Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 };
 
-async function key(secret){
- return crypto.subtle.importKey(
-  "raw",
-  new TextEncoder().encode(secret),
-  {name:"HMAC",hash:"SHA-256"},
-  false,
-  ["verify"]
- );
-}
-
 async function auth(r,e){
  const h=r.headers.get("Authorization")||"";
- if(!h.startsWith("Bearer "))return null;
-
- const p=h.slice(7).split(".");
- if(p.length!==2)return null;
+ if(!h.startsWith("Bearer ")||!e.AFFILIATE_SECRET)return null;
 
  try{
-  const data=JSON.parse(
-   new TextDecoder().decode(unb64u(p[0]))
+  const p=h.slice(7).split(".");
+  if(p.length!==2)return null;
+
+  const d=JSON.parse(new TextDecoder().decode(unb64u(p[0])));
+  if(!d.user_id||Date.now()>Number(d.exp))return null;
+
+  const k=await crypto.subtle.importKey(
+   "raw",new TextEncoder().encode(e.AFFILIATE_SECRET),
+   {name:"HMAC",hash:"SHA-256"},false,["verify"]
   );
 
-  if(!data.user_id||!data.exp||Date.now()>Number(data.exp))
-   return null;
-
-  if(!e.AFFILIATE_SECRET)return null;
-
-  const ok=await crypto.subtle.verify(
-   "HMAC",
-   await key(e.AFFILIATE_SECRET),
-   unb64u(p[1]),
-   new TextEncoder().encode(p[0])
-  );
-
-  if(!ok)return null;
+  if(!await crypto.subtle.verify(
+   "HMAC",k,unb64u(p[1]),new TextEncoder().encode(p[0])
+  ))return null;
 
   return await e.DB.prepare(`
    SELECT id,name,email,affiliate_code
-   FROM users
-   WHERE id=?
-   LIMIT 1
-  `).bind(data.user_id).first();
+   FROM users WHERE id=? LIMIT 1
+  `).bind(d.user_id).first();
 
- }catch{
-  return null;
- }
+ }catch{return null}
 }
 
 async function setup(e){
-
  await e.DB.prepare(`
   CREATE TABLE IF NOT EXISTS affiliate_clicks(
    id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,471 +90,195 @@ async function setup(e){
  `).run();
 }
 
-
-/* COPY REGISTRATIONS INTO AFFILIATE RECORDS */
-
-async function syncReferrals(e){
-
+async function sync(e){
  const r=await e.DB.prepare(`
-  SELECT
-   r.referrer_id,
-   r.referred_user_id,
-   UPPER(TRIM(u.affiliate_code)) affiliate_code,
-   r.created_at
+  SELECT r.referrer_id,r.referred_user_id,
+         UPPER(TRIM(r.affiliate_code)) code,r.created_at
   FROM referrals r
-  JOIN users u
-   ON u.id=r.referrer_id
-  JOIN users s
-   ON s.id=r.referred_user_id
+  JOIN users a ON a.id=r.referrer_id
+  JOIN users s ON s.id=r.referred_user_id
   WHERE r.referrer_id!=r.referred_user_id
-  AND u.affiliate_code IS NOT NULL
-  AND TRIM(u.affiliate_code)!=''
  `).all();
 
  for(const x of r.results||[]){
-
+  if(!x.code)continue;
   await e.DB.prepare(`
-   INSERT OR IGNORE INTO affiliate_referrals(
-    affiliate_code,
-    student_id,
-    status,
-    sale_amount,
-    commission,
-    created_at
-   )
+   INSERT OR IGNORE INTO affiliate_referrals
+   (affiliate_code,student_id,status,sale_amount,commission,created_at)
    VALUES(?,?,'PENDING',0,0,?)
   `).bind(
-   x.affiliate_code,
-   String(x.referred_user_id),
+   x.code,String(x.referred_user_id),
    x.created_at||new Date().toISOString()
   ).run();
  }
 }
 
-
-/* AVAILABLE COMMISSION */
-
 async function available(e,code){
-
- const earned=await e.DB.prepare(`
+ const a=await e.DB.prepare(`
   SELECT COALESCE(SUM(commission),0) n
   FROM affiliate_referrals
-  WHERE affiliate_code=?
-  AND status='APPROVED'
+  WHERE affiliate_code=? AND status='APPROVED'
  `).bind(code).first();
 
- const used=await e.DB.prepare(`
+ const w=await e.DB.prepare(`
   SELECT COALESCE(SUM(amount),0) n
   FROM affiliate_withdrawals
-  WHERE affiliate_code=?
-  AND status IN('PENDING','PAID')
+  WHERE affiliate_code=? AND status IN('PENDING','PAID')
  `).bind(code).first();
 
- return Math.max(
-  0,
-  Number(earned?.n||0)-Number(used?.n||0)
- );
+ return Math.max(0,Number(a?.n||0)-Number(w?.n||0));
 }
 
-
 export default{
-
  async fetch(request,env){
-
   if(request.method==="OPTIONS")
-   return new Response(null,{
-    status:204,
-    headers:cors(request)
-   });
+   return new Response(null,{status:204,headers:cors(request)});
 
   try{
+   if(!env.DB)
+    return json({success:false,error:"D1 binding DB is missing"},500,request);
 
    await setup(env);
-   await syncReferrals(env);
+   await sync(env);
 
    const url=new URL(request.url);
 
-
-   /* HOME */
-
    if(url.pathname==="/")
-    return new Response(
-     "CreateLK Affiliate V2 API is running ✅"
-    );
+    return new Response("CreateLK Affiliate V2 API is running ✅");
 
-
-   /* CLICK */
-
-   if(
-    url.pathname==="/api/click"&&
-    request.method==="POST"
-   ){
-
+   if(url.pathname==="/api/click"&&request.method==="POST"){
     const b=await request.json();
-
-    const code=String(
-     b.affiliate_code||""
-    ).trim().toUpperCase();
-
-    if(!/^[A-Z0-9_-]{3,100}$/.test(code))
-     return json({
-      success:false,
-      error:"Invalid affiliate code"
-     },400,request);
+    const code=String(b.affiliate_code||"").trim().toUpperCase();
 
     const u=await env.DB.prepare(`
-     SELECT id
-     FROM users
-     WHERE UPPER(TRIM(affiliate_code))=?
-     LIMIT 1
+     SELECT id FROM users
+     WHERE UPPER(TRIM(affiliate_code))=? LIMIT 1
     `).bind(code).first();
 
-    if(!u)
-     return json({
-      success:false,
-      error:"Affiliate not found"
-     },404,request);
+    if(!u)return json({success:false,error:"Affiliate not found"},404,request);
 
     await env.DB.prepare(`
-     INSERT INTO affiliate_clicks(affiliate_code)
-     VALUES(?)
+     INSERT INTO affiliate_clicks(affiliate_code) VALUES(?)
     `).bind(code).run();
 
-    return json({
-     success:true
-    },200,request);
+    return json({success:true},200,request);
    }
-
-
-   /* DASHBOARD */
 
    if(url.pathname==="/api/dashboard"){
-
     const u=await auth(request,env);
+    if(!u)return json({success:false,error:"Invalid or expired affiliate token"},401,request);
 
-    if(!u)
-     return json({
-      success:false,
-      error:"Invalid or expired affiliate token"
-     },401,request);
+    await sync(env);
 
-    await syncReferrals(env);
-
-    const code=String(
-     u.affiliate_code||""
-    ).trim().toUpperCase();
-
-
-    /* REAL REGISTRATION REFERRALS */
-
-    const referrals=await env.DB.prepare(`
-     SELECT COUNT(*) n
-     FROM referrals r
-     JOIN users ref
-      ON ref.id=r.referrer_id
-     JOIN users student
-      ON student.id=r.referred_user_id
-     WHERE r.referrer_id!=r.referred_user_id
-     AND UPPER(TRIM(ref.affiliate_code))=?
-    `).bind(code).first();
-
-
-    /* CLICKS */
-
-    const clicks=await env.DB.prepare(`
-     SELECT COUNT(*) n
-     FROM affiliate_clicks
-     WHERE affiliate_code=?
-    `).bind(code).first();
-
-
-    /* APPROVED SALES */
-
-    const approved=await env.DB.prepare(`
-     SELECT COUNT(*) n
-     FROM affiliate_referrals
-     WHERE affiliate_code=?
-     AND status='APPROVED'
-    `).bind(code).first();
-
-
-    /* PENDING COMMISSION */
-
-    const pending=await env.DB.prepare(`
-     SELECT COALESCE(SUM(commission),0) n
-     FROM affiliate_referrals
-     WHERE affiliate_code=?
-     AND status='PENDING'
-    `).bind(code).first();
-
-
-    /* TOTAL EARNED */
-
-    const earned=await env.DB.prepare(`
-     SELECT COALESCE(SUM(commission),0) n
-     FROM affiliate_referrals
-     WHERE affiliate_code=?
-     AND status='APPROVED'
-    `).bind(code).first();
-
-
-    /* PAID WITHDRAWALS */
-
-    const paid=await env.DB.prepare(`
-     SELECT COALESCE(SUM(amount),0) n
-     FROM affiliate_withdrawals
-     WHERE user_id=?
-     AND status='PAID'
-    `).bind(u.id).first();
-
-
-    /* PENDING WITHDRAWALS */
-
-    const pendingWithdraw=await env.DB.prepare(`
-     SELECT COALESCE(SUM(amount),0) n
-     FROM affiliate_withdrawals
-     WHERE user_id=?
-     AND status='PENDING'
-    `).bind(u.id).first();
-
-
-    const totalEarned=Number(earned?.n||0);
-    const pendingW=Number(pendingWithdraw?.n||0);
-    const paidW=Number(paid?.n||0);
-
-    return json({
-
-     success:true,
-
-     user:{
-      id:u.id,
-      name:u.name,
-      email:u.email,
-      affiliate_code:code
-     },
-
-     referral_link:
-      `https://createlk.com/v2/?ref=${code}`,
-
-     clicks:
-      Number(clicks?.n)||0,
-
-     referrals:
-      Number(referrals?.n)||0,
-
-     approved_sales:
-      Number(approved?.n)||0,
-
-     commission_rate:
-      COMMISSION_RATE*100,
-
-     total_earned:
-      totalEarned,
-
-     pending_commission:
-      Number(pending?.n)||0,
-
-     withdrawal_pending:
-      pendingW,
-
-     withdrawal_paid:
-      paidW,
-
-     available_commission:
-      Math.max(
-       0,
-       totalEarned-pendingW-paidW
-      ),
-
-     minimum_withdrawal:
-      MIN_WITHDRAWAL
-
-    },200,request);
-   }
-
-
-   /* WITHDRAW */
-
-   if(
-    url.pathname==="/api/withdraw"&&
-    request.method==="POST"
-   ){
-
-    const u=await auth(request,env);
-
-    if(!u)
-     return json({
-      success:false,
-      error:"Invalid or expired affiliate token"
-     },401,request);
-
-    const b=await request.json();
-
-    const amount=Math.floor(
-     Number(b.amount)
-    );
-
-    const accountName=String(
-     b.account_name||""
-    ).trim();
-
-    const bank=String(
-     b.bank||""
-    ).trim();
-
-    const branch=String(
-     b.branch||""
-    ).trim();
-
-    const accountNumber=String(
-     b.account_number||""
-    ).trim();
-
-
-    if(
-     !Number.isFinite(amount)||
-     amount<MIN_WITHDRAWAL
-    )
-     return json({
-      success:false,
-      error:
-       `Minimum withdrawal is LKR ${MIN_WITHDRAWAL}`
-     },400,request);
-
-
-    if(
-     !accountName||
-     !bank||
-     !branch||
-     !accountNumber
-    )
-     return json({
-      success:false,
-      error:"Complete bank details are required"
-     },400,request);
-
-
-    if(
-     accountName.length>100||
-     bank.length>100||
-     branch.length>100||
-     accountNumber.length>50
-    )
-     return json({
-      success:false,
-      error:"Invalid bank details"
-     },400,request);
-
-
-    const code=String(
-     u.affiliate_code||""
-    ).trim().toUpperCase();
-
-    const avail=await available(env,code);
-
-    if(amount>avail)
-     return json({
-      success:false,
-      error:"Insufficient available commission",
-      available:avail
-     },400,request);
-
-
-    const pending=await env.DB.prepare(`
-     SELECT id
-     FROM affiliate_withdrawals
-     WHERE user_id=?
-     AND status='PENDING'
-     LIMIT 1
-    `).bind(u.id).first();
-
-    if(pending)
-     return json({
-      success:false,
-      error:"You already have a pending withdrawal"
-     },409,request);
-
-
-    await env.DB.prepare(`
-     INSERT INTO affiliate_withdrawals(
-      user_id,
-      affiliate_code,
-      amount,
-      account_name,
-      bank,
-      branch,
-      account_number
-     )
-     VALUES(?,?,?,?,?,?,?)
-    `).bind(
-     u.id,
-     code,
-     amount,
-     accountName,
-     bank,
-     branch,
-     accountNumber
-    ).run();
-
-
-    return json({
-     success:true,
-     message:"Withdrawal request submitted",
-     amount
-    },200,request);
-   }
-
-
-   /* WITHDRAWAL HISTORY */
-
-   if(url.pathname==="/api/withdrawals"){
-
-    const u=await auth(request,env);
-
-    if(!u)
-     return json({
-      success:false,
-      error:"Invalid or expired affiliate token"
-     },401,request);
-
+    const code=String(u.affiliate_code||"").trim().toUpperCase();
 
     const r=await env.DB.prepare(`
      SELECT
-      id,
-      amount,
-      account_name,
-      bank,
-      branch,
-      account_number,
-      status,
-      created_at,
-      processed_at
+      COUNT(*) referrals,
+      COALESCE(SUM(status='APPROVED'),0) approved,
+      COALESCE(SUM(CASE WHEN status='APPROVED'
+       THEN commission ELSE 0 END),0) earned,
+      COALESCE(SUM(CASE WHEN status='PENDING'
+       THEN commission ELSE 0 END),0) pending
+     FROM affiliate_referrals
+     WHERE affiliate_code=?
+    `).bind(code).first();
+
+    const c=await env.DB.prepare(`
+     SELECT COUNT(*) n FROM affiliate_clicks
+     WHERE affiliate_code=?
+    `).bind(code).first();
+
+    const w=await env.DB.prepare(`
+     SELECT
+      COALESCE(SUM(CASE WHEN status='PENDING' THEN amount ELSE 0 END),0) pending,
+      COALESCE(SUM(CASE WHEN status='PAID' THEN amount ELSE 0 END),0) paid
      FROM affiliate_withdrawals
      WHERE user_id=?
-     ORDER BY id DESC
-     LIMIT 100
-    `).bind(u.id).all();
+    `).bind(u.id).first();
 
+    const earned=Number(r?.earned||0);
+    const pendingW=Number(w?.pending||0);
+    const paidW=Number(w?.paid||0);
 
     return json({
      success:true,
-     withdrawals:r.results||[]
+     user:{
+      id:u.id,name:u.name,email:u.email,
+      affiliate_code:code
+     },
+     referral_link:`https://createlk.com/v2/?ref=${code}`,
+     clicks:Number(c?.n||0),
+     referrals:Number(r?.referrals||0),
+     approved_sales:Number(r?.approved||0),
+     commission_rate:20,
+     total_earned:earned,
+     pending_commission:Number(r?.pending||0),
+     withdrawal_pending:pendingW,
+     withdrawal_paid:paidW,
+     available_commission:Math.max(0,earned-pendingW-paidW),
+     minimum_withdrawal:MIN
     },200,request);
    }
 
+   if(url.pathname==="/api/withdraw"&&request.method==="POST"){
+    const u=await auth(request,env);
+    if(!u)return json({success:false,error:"Invalid or expired affiliate token"},401,request);
 
-   return json({
-    success:false,
-    error:"Not found"
-   },404,request);
+    const b=await request.json();
+    const amount=Math.floor(Number(b.amount));
+    const name=String(b.account_name||"").trim();
+    const bank=String(b.bank||"").trim();
+    const branch=String(b.branch||"").trim();
+    const number=String(b.account_number||"").trim();
 
+    if(!Number.isFinite(amount)||amount<MIN)
+     return json({success:false,error:`Minimum withdrawal is LKR ${MIN}`},400,request);
+
+    if(!name||!bank||!branch||!number)
+     return json({success:false,error:"Complete bank details are required"},400,request);
+
+    const code=String(u.affiliate_code||"").trim().toUpperCase();
+    const avail=await available(env,code);
+
+    if(amount>avail)
+     return json({success:false,error:"Insufficient available commission",available:avail},400,request);
+
+    const pending=await env.DB.prepare(`
+     SELECT id FROM affiliate_withdrawals
+     WHERE user_id=? AND status='PENDING' LIMIT 1
+    `).bind(u.id).first();
+
+    if(pending)
+     return json({success:false,error:"You already have a pending withdrawal"},409,request);
+
+    await env.DB.prepare(`
+     INSERT INTO affiliate_withdrawals
+     (user_id,affiliate_code,amount,account_name,bank,branch,account_number)
+     VALUES(?,?,?,?,?,?,?)
+    `).bind(u.id,code,amount,name,bank,branch,number).run();
+
+    return json({success:true,message:"Withdrawal request submitted",amount},200,request);
+   }
+
+   if(url.pathname==="/api/withdrawals"){
+    const u=await auth(request,env);
+    if(!u)return json({success:false,error:"Invalid or expired affiliate token"},401,request);
+
+    const r=await env.DB.prepare(`
+     SELECT id,amount,account_name,bank,branch,
+            account_number,status,created_at,processed_at
+     FROM affiliate_withdrawals
+     WHERE user_id=? ORDER BY id DESC LIMIT 100
+    `).bind(u.id).all();
+
+    return json({success:true,withdrawals:r.results||[]},200,request);
+   }
+
+   return json({success:false,error:"Not found"},404,request);
 
   }catch(e){
-
-   return json({
-    success:false,
-    error:e?.message||"Server error"
-   },500,request);
+   return json({success:false,error:e?.message||"Server error"},500,request);
   }
  }
 };
