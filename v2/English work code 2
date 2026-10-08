@@ -1,5 +1,4 @@
-const COOKIE="english_v3_session",DAYS=7,XP=10,COINS=5,MAXXP=10000,FREE=300,PREMIUM=1000;
-const AFFILIATE_TOKEN_MINUTES=2;
+const COOKIE="english_v2_session",DAYS=7,XP=10,COINS=5,MAXXP=10000,FREE=300,PREMIUM=1000,AFFILIATE_TOKEN_MINUTES=2;
 
 const cors=r=>({
  "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
@@ -11,17 +10,11 @@ const cors=r=>({
 
 const json=(d,s,r)=>new Response(JSON.stringify(d),{
  status:s||200,
- headers:{
-  "Content-Type":"application/json;charset=UTF-8",
-  "Cache-Control":"no-store",
-  ...cors(r)
- }
+ headers:{"Content-Type":"application/json;charset=UTF-8","Cache-Control":"no-store",...cors(r)}
 });
 
 const cookie=(r,n)=>{
- const m=(r.headers.get("Cookie")||"").match(
-  new RegExp("(?:^|;\\s*)"+n+"=([^;]*)")
- );
+ const m=(r.headers.get("Cookie")||"").match(new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"));
  return m?decodeURIComponent(m[1]):null;
 };
 
@@ -33,405 +26,162 @@ const rnd=(n=32)=>{
 
 const limit=u=>u.membership==="premium"?PREMIUM:FREE;
 
-/* AFFILIATE TOKEN */
-
-const b64u=a=>btoa(
- String.fromCharCode(...new Uint8Array(a))
-).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const b64u=a=>btoa(String.fromCharCode(...new Uint8Array(a)))
+ .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 
 async function affiliateKey(secret){
  return crypto.subtle.importKey(
-  "raw",
-  new TextEncoder().encode(secret),
-  {name:"HMAC",hash:"SHA-256"},
-  false,
-  ["sign"]
+  "raw",new TextEncoder().encode(secret),
+  {name:"HMAC",hash:"SHA-256"},false,["sign"]
  );
 }
 
-async function makeAffiliateToken(userId,secret){
-
- const payload=b64u(
-  new TextEncoder().encode(
-   JSON.stringify({
-    user_id:userId,
-    exp:Date.now()+AFFILIATE_TOKEN_MINUTES*60*1000
-   })
-  )
- );
-
- const k=await affiliateKey(secret);
-
+async function makeAffiliateToken(id,secret){
+ const payload=b64u(new TextEncoder().encode(JSON.stringify({
+  user_id:id,
+  exp:Date.now()+AFFILIATE_TOKEN_MINUTES*60000
+ })));
  const sig=await crypto.subtle.sign(
-  "HMAC",
-  k,
+  "HMAC",await affiliateKey(secret),
   new TextEncoder().encode(payload)
  );
-
  return payload+"."+b64u(sig);
 }
 
 async function setup(e){
-
  try{
-  const r=await e.DB.prepare(
-   "PRAGMA table_info(users)"
-  ).all();
-
+  const r=await e.DB.prepare("PRAGMA table_info(users)").all();
   if(!(r.results||[]).some(x=>x.name==="coins"))
-   await e.DB.prepare(
-    "ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0"
-   ).run();
-
+   await e.DB.prepare("ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 0").run();
  }catch{}
 
  await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS sessions(
-  token TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
- )`).run();
+  CREATE TABLE IF NOT EXISTS sessions(
+   token TEXT PRIMARY KEY,
+   user_id TEXT NOT NULL,
+   expires_at TEXT NOT NULL,
+   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`).run();
 
  await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS quiz_answers(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  question_id INTEGER NOT NULL,
-  lesson_id INTEGER NOT NULL,
-  selected_answer TEXT NOT NULL,
-  is_correct INTEGER DEFAULT 0,
-  xp_awarded INTEGER DEFAULT 0,
-  coins_awarded INTEGER DEFAULT 0,
-  answered_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(user_id,question_id)
- )`).run();
+  CREATE TABLE IF NOT EXISTS quiz_answers(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   user_id TEXT NOT NULL,
+   question_id INTEGER NOT NULL,
+   lesson_id INTEGER NOT NULL,
+   selected_answer TEXT NOT NULL,
+   is_correct INTEGER DEFAULT 0,
+   xp_awarded INTEGER DEFAULT 0,
+   coins_awarded INTEGER DEFAULT 0,
+   answered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+   UNIQUE(user_id,question_id)
+  )`).run();
 
  try{
-  const r=await e.DB.prepare(
-   "PRAGMA table_info(quiz_answers)"
-  ).all();
-
+  const r=await e.DB.prepare("PRAGMA table_info(quiz_answers)").all();
   if(!(r.results||[]).some(x=>x.name==="coins_awarded"))
-   await e.DB.prepare(
-    "ALTER TABLE quiz_answers ADD COLUMN coins_awarded INTEGER DEFAULT 0"
-   ).run();
-
+   await e.DB.prepare("ALTER TABLE quiz_answers ADD COLUMN coins_awarded INTEGER DEFAULT 0").run();
  }catch{}
 
  await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS referrals(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  referrer_id TEXT NOT NULL,
-  referred_user_id TEXT NOT NULL UNIQUE,
-  affiliate_code TEXT NOT NULL,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
- )`).run();
-
- /* TOTAL CLICK TRACKING */
-
- await e.DB.prepare(`
- CREATE TABLE IF NOT EXISTS affiliate_clicks(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  affiliate_code TEXT NOT NULL,
-  clicked_at TEXT DEFAULT CURRENT_TIMESTAMP
- )`).run();
-
+  CREATE TABLE IF NOT EXISTS referrals(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   referrer_id TEXT NOT NULL,
+   referred_user_id TEXT NOT NULL UNIQUE,
+   affiliate_code TEXT NOT NULL,
+   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`).run();
 }
 
 async function me(r,e){
-
  const t=cookie(r,COOKIE);
-
  if(!t)return null;
-
  return e.DB.prepare(`
- SELECT
-  u.id,
-  u.google_id,
-  u.email,
-  u.name,
-  u.avatar_url,
-  u.membership,
-  u.xp,
-  u.coins,
-  u.correct_answers,
-  u.questions_answered,
-  u.lessons_completed,
-  u.affiliate_code,
-  u.referred_by
- FROM sessions s
- JOIN users u ON u.id=s.user_id
- WHERE s.token=?
- AND s.expires_at>?
- LIMIT 1
- `).bind(
-  t,
-  new Date().toISOString()
- ).first();
+  SELECT u.id,u.google_id,u.email,u.name,u.avatar_url,u.membership,
+   u.xp,u.coins,u.correct_answers,u.questions_answered,
+   u.lessons_completed,u.affiliate_code,u.referred_by
+  FROM sessions s JOIN users u ON u.id=s.user_id
+  WHERE s.token=? AND s.expires_at>? LIMIT 1
+ `).bind(t,new Date().toISOString()).first();
 }
 
 async function used(e,id){
-
  const r=await e.DB.prepare(
   "SELECT COUNT(*) n FROM quiz_answers WHERE user_id=?"
  ).bind(id).first();
-
  return Number(r?.n)||0;
-}
-
-async function clicks(e,code){
-
- if(!code)return 0;
-
- const r=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM affiliate_clicks WHERE affiliate_code=?"
- ).bind(code).first();
-
- return Number(r?.n)||0;
-}
-
-async function totalClicks(e){
-
- const r=await e.DB.prepare(
-  "SELECT COUNT(*) n FROM affiliate_clicks"
- ).first();
-
- return Number(r?.n)||0;
-}
-
-async function trackClick(e,code){
-
- code=String(code||"")
-  .trim()
-  .toUpperCase();
-
- if(!code)return 0;
-
- const user=await e.DB.prepare(
-  "SELECT id FROM users WHERE affiliate_code=? LIMIT 1"
- ).bind(code).first();
-
- if(!user)return 0;
-
- await e.DB.prepare(
-  "INSERT INTO affiliate_clicks(affiliate_code) VALUES(?)"
- ).bind(code).run();
-
- return await clicks(e,code);
 }
 
 async function session(e,id){
-
- const t=rnd();
-
- const x=new Date(
-  Date.now()+DAYS*86400000
- ).toISOString();
-
+ const t=rnd(),x=new Date(Date.now()+DAYS*86400000).toISOString();
  await e.DB.prepare(
   "INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)"
  ).bind(t,id,x).run();
-
  return t;
 }
 
 async function googleToken(e,code,uri){
-
- const r=await fetch(
-  "https://oauth2.googleapis.com/token",
-  {
-   method:"POST",
-   headers:{
-    "Content-Type":
-     "application/x-www-form-urlencoded"
-   },
-   body:new URLSearchParams({
-    client_id:e.GOOGLE_CLIENT_ID,
-    client_secret:e.GOOGLE_CLIENT_SECRET,
-    code,
-    grant_type:"authorization_code",
-    redirect_uri:uri
-   })
-  }
- );
-
- if(!r.ok)
-  throw Error("Google token exchange failed");
-
+ const r=await fetch("https://oauth2.googleapis.com/token",{
+  method:"POST",
+  headers:{"Content-Type":"application/x-www-form-urlencoded"},
+  body:new URLSearchParams({
+   client_id:e.GOOGLE_CLIENT_ID,
+   client_secret:e.GOOGLE_CLIENT_SECRET,
+   code,grant_type:"authorization_code",redirect_uri:uri
+  })
+ });
+ if(!r.ok)throw Error("Google token exchange failed");
  return r.json();
 }
 
 async function googleUser(t){
-
- const r=await fetch(
-  "https://www.googleapis.com/oauth2/v3/userinfo",
-  {
-   headers:{
-    Authorization:`Bearer ${t}`
-   }
-  }
- );
-
- if(!r.ok)
-  throw Error("Google account error");
-
+ const r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+  headers:{Authorization:`Bearer ${t}`}
+ });
+ if(!r.ok)throw Error("Google account error");
  return r.json();
 }
 
 export default{
-
  async fetch(request,env){
-
   const url=new URL(request.url);
 
   if(request.method==="OPTIONS")
-   return new Response(null,{
-    status:204,
-    headers:cors(request)
-   });
+   return new Response(null,{status:204,headers:cors(request)});
 
   try{
-
    await setup(env);
 
    if(url.pathname==="/")
-    return new Response(
-     "CreateLK English V3 API is running ✅"
-    );
-
-   /* HEALTH */
+    return new Response("CreateLK English V2 API is running ✅");
 
    if(url.pathname==="/api/health"){
-
-    const x=await env.DB.prepare(
-     "SELECT 1 ok"
-    ).first();
-
+    const x=await env.DB.prepare("SELECT 1 ok").first();
     return json({
      success:true,
      database:x?.ok===1,
-     database_name:"createlk-english-v3"
-    },200,request);
-   }
-
-   /* CLICK TRACKING */
-
-   if(
-    url.pathname==="/api/click"&&
-    request.method==="GET"
-   ){
-
-    const ref=(url.searchParams.get("ref")||"")
-     .trim()
-     .toUpperCase();
-
-    if(!ref)
-     return json({
-      success:false,
-      error:"Affiliate code required"
-     },400,request);
-
-    const count=await trackClick(
-     env,
-     ref
-    );
-
-    if(!count)
-     return json({
-      success:false,
-      error:"Invalid affiliate code"
-     },404,request);
-
-    return json({
-     success:true,
-     affiliate_code:ref,
-     clicks:count
-    },200,request);
-   }
-
-   /* TOTAL CLICKS */
-
-   if(
-    url.pathname==="/api/clicks"&&
-    request.method==="GET"
-   ){
-
-    const total=await totalClicks(env);
-
-    return json({
-     success:true,
-     total_clicks:total
+     database_name:"createlk-english-v2"
     },200,request);
    }
 
    /* GOOGLE LOGIN */
-
    if(url.pathname==="/auth/google"){
-
     if(!env.GOOGLE_CLIENT_ID)
-     return json({
-      success:false,
-      error:"GOOGLE_CLIENT_ID secret is missing"
-     },500,request);
+     return json({success:false,error:"GOOGLE_CLIENT_ID secret is missing"},500,request);
 
-    const ref=(url.searchParams.get("ref")||"")
-     .trim()
-     .toUpperCase();
+    const ref=(url.searchParams.get("ref")||"").trim().toUpperCase();
+    const safeRef=/^[A-Z0-9_-]{3,100}$/.test(ref)?ref:"";
+    const state=rnd()+(safeRef?"."+safeRef:"");
+    const redirect=`${url.origin}/auth/google/callback`;
 
-    /*
-     * Track referral click when the
-     * affiliate Google-login link is opened.
-     */
-    if(ref){
-     try{
-      await trackClick(env,ref);
-     }catch{}
-    }
-
-    const state=rnd()+(ref?"."+ref:"");
-
-    const redirect=
-     `${url.origin}/auth/google/callback`;
-
-    const g=new URL(
-     "https://accounts.google.com/o/oauth2/v2/auth"
-    );
-
-    g.searchParams.set(
-     "client_id",
-     env.GOOGLE_CLIENT_ID
-    );
-
-    g.searchParams.set(
-     "redirect_uri",
-     redirect
-    );
-
-    g.searchParams.set(
-     "response_type",
-     "code"
-    );
-
-    g.searchParams.set(
-     "scope",
-     "openid email profile"
-    );
-
-    g.searchParams.set(
-     "access_type",
-     "online"
-    );
-
-    g.searchParams.set(
-     "prompt",
-     "select_account"
-    );
-
-    g.searchParams.set(
-     "state",
-     state
-    );
+    const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    g.searchParams.set("client_id",env.GOOGLE_CLIENT_ID);
+    g.searchParams.set("redirect_uri",redirect);
+    g.searchParams.set("response_type","code");
+    g.searchParams.set("scope","openid email profile");
+    g.searchParams.set("access_type","online");
+    g.searchParams.set("prompt","select_account");
+    g.searchParams.set("state",state);
 
     return new Response(null,{
      status:302,
@@ -444,158 +194,110 @@ export default{
    }
 
    /* GOOGLE CALLBACK */
-
    if(url.pathname==="/auth/google/callback"){
-
     const code=url.searchParams.get("code");
     const state=url.searchParams.get("state")||"";
     const saved=cookie(request,"oauth_state");
 
     if(!code||!saved||state!==saved)
-     return json({
-      success:false,
-      error:"Invalid Google login"
-     },400,request);
+     return json({success:false,error:"Invalid Google login"},400,request);
 
-    const ref=state
-     .split(".")
-     .slice(1)
-     .join(".")
-     .toUpperCase();
+    const parts=state.split(".");
+    const ref=parts.length>1?parts.slice(1).join(".").toUpperCase():"";
+    const safeRef=/^[A-Z0-9_-]{3,100}$/.test(ref)?ref:"";
+    const redirect=`${url.origin}/auth/google/callback`;
 
-    const redirect=
-     `${url.origin}/auth/google/callback`;
+    const tok=await googleToken(env,code,redirect);
+    if(!tok.access_token)throw Error("Google access token missing");
 
-    const tok=await googleToken(
-     env,
-     code,
-     redirect
-    );
+    const g=await googleUser(tok.access_token);
+    const googleId=String(g.sub||"").trim();
+    const email=String(g.email||"").trim().toLowerCase();
 
-    if(!tok.access_token)
-     throw Error(
-      "Google access token missing"
-     );
-
-    const g=await googleUser(
-     tok.access_token
-    );
+    if(!googleId||!email)
+     throw Error("Google account information missing");
 
     let u=await env.DB.prepare(
      "SELECT * FROM users WHERE google_id=? LIMIT 1"
-    ).bind(g.sub).first();
+    ).bind(googleId).first();
 
-    if(!u&&g.email)
+    if(!u)
      u=await env.DB.prepare(
       "SELECT * FROM users WHERE email=? LIMIT 1"
-     ).bind(g.email).first();
+     ).bind(email).first();
 
     let id;
 
     if(u){
-
      id=u.id;
 
      await env.DB.prepare(`
-      UPDATE users
-      SET google_id=?,
-          name=?,
-          avatar_url=?,
-          updated_at=CURRENT_TIMESTAMP
-      WHERE id=?
+      UPDATE users SET google_id=?,name=?,avatar_url=?,
+      updated_at=CURRENT_TIMESTAMP WHERE id=?
      `).bind(
-      g.sub,
-      g.name||g.email.split("@")[0],
+      googleId,
+      g.name||email.split("@")[0],
       g.picture||null,
       id
      ).run();
 
     }else{
-
      id=crypto.randomUUID();
 
      const aff=rnd(6).toUpperCase();
+     let referredBy=null,referrerId=null;
 
-     let referredBy=null;
-     let referrerId=null;
-
-     if(ref){
-
+     if(safeRef){
       const r=await env.DB.prepare(`
-       SELECT id,affiliate_code
-       FROM users
-       WHERE affiliate_code=?
-       LIMIT 1
-      `).bind(ref).first();
+       SELECT id,email,affiliate_code FROM users
+       WHERE UPPER(TRIM(affiliate_code))=? LIMIT 1
+      `).bind(safeRef).first();
 
       if(r){
-       referredBy=r.affiliate_code;
-       referrerId=r.id;
+       const refEmail=String(r.email||"").trim().toLowerCase();
+
+       if(!refEmail||refEmail!==email){
+        referredBy=String(r.affiliate_code).trim().toUpperCase();
+        referrerId=r.id;
+       }
       }
      }
 
      await env.DB.prepare(`
       INSERT INTO users(
-       id,
-       google_id,
-       email,
-       name,
-       avatar_url,
-       membership,
-       xp,
-       coins,
-       correct_answers,
-       questions_answered,
-       lessons_completed,
-       affiliate_code,
-       referred_by
+       id,google_id,email,name,avatar_url,membership,
+       xp,coins,correct_answers,questions_answered,
+       lessons_completed,affiliate_code,referred_by
       )
-      VALUES(
-       ?,
-       ?,
-       ?,
-       ?,
-       ?,
-       'free',
-       0,
-       0,
-       0,
-       0,
-       0,
-       ?,
-       ?
-      )
+      VALUES(?,?,?,?,?,'free',0,0,0,0,0,?,?)
      `).bind(
       id,
-      g.sub,
-      g.email,
-      g.name||g.email.split("@")[0],
+      googleId,
+      email,
+      g.name||email.split("@")[0],
       g.picture||null,
       aff,
       referredBy
      ).run();
 
      try{
-
       await env.DB.prepare(
        "INSERT OR IGNORE INTO affiliates(user_id,affiliate_code) VALUES(?,?)"
       ).bind(id,aff).run();
-
      }catch{}
 
-     if(referrerId){
-
+     if(referrerId&&String(referrerId)!==String(id)&&referredBy){
       await env.DB.prepare(`
        INSERT OR IGNORE INTO referrals(
-        referrer_id,
-        referred_user_id,
-        affiliate_code
+        referrer_id,referred_user_id,affiliate_code
        )
-       VALUES(?,?,?)
+       SELECT ?,?,?
+       WHERE NOT EXISTS(
+        SELECT 1 FROM referrals
+        WHERE referred_user_id=?
+       )
       `).bind(
-       referrerId,
-       id,
-       ref
+       referrerId,id,referredBy,id
       ).run();
      }
     }
@@ -604,10 +306,7 @@ export default{
 
     const res=new Response(null,{
      status:302,
-     headers:{
-      Location:
-       "https://createlk.com/v3/index.html"
-     }
+     headers:{Location:"https://createlk.com/v2/index.html"}
     });
 
     res.headers.append(
@@ -624,31 +323,18 @@ export default{
    }
 
    /* ME */
-
    if(url.pathname==="/api/me"){
-
     const u=await me(request,env);
 
     if(!u)
      return json({
-      success:true,
-      logged_in:false,
-      user:null
+      success:true,logged_in:false,user:null
      },200,request);
 
-    const n=await used(
-     env,
-     u.id
-    );
-
+    const n=await used(env,u.id);
     const r=await env.DB.prepare(
      "SELECT COUNT(*) n FROM referrals WHERE referrer_id=?"
     ).bind(u.id).first();
-
-    const clickCount=await clicks(
-     env,
-     u.affiliate_code
-    );
 
     return json({
      success:true,
@@ -657,108 +343,65 @@ export default{
      usage:{
       used:n,
       limit:limit(u),
-      remaining:Math.max(
-       0,
-       limit(u)-n
-      )
+      remaining:Math.max(0,limit(u)-n)
      },
      referral:{
       code:u.affiliate_code,
       referred_by:u.referred_by||null,
       count:Number(r?.n)||0,
-      clicks:clickCount,
-      link:
-       `https://createlk.com/v3/?ref=${u.affiliate_code}`
+      link:`https://createlk.com/v2/?ref=${u.affiliate_code}`
      }
     },200,request);
    }
 
    /* AFFILIATE TOKEN */
-
    if(url.pathname==="/api/affiliate/token"){
-
     const u=await me(request,env);
 
     if(!u)
-     return json({
-      success:false,
-      error:"Login required"
-     },401,request);
+     return json({success:false,error:"Login required"},401,request);
 
     if(!env.AFFILIATE_SECRET)
-     return json({
-      success:false,
-      error:"AFFILIATE_SECRET is missing"
-     },500,request);
-
-    const token=await makeAffiliateToken(
-     u.id,
-     env.AFFILIATE_SECRET
-    );
+     return json({success:false,error:"AFFILIATE_SECRET is missing"},500,request);
 
     return json({
      success:true,
-     token
+     token:await makeAffiliateToken(u.id,env.AFFILIATE_SECRET)
     },200,request);
    }
 
    /* REFERRAL */
-
    if(url.pathname==="/api/referral"){
-
     const u=await me(request,env);
 
     if(!u)
-     return json({
-      success:false,
-      error:"Login required"
-     },401,request);
+     return json({success:false,error:"Login required"},401,request);
 
     const r=await env.DB.prepare(
      "SELECT COUNT(*) n FROM referrals WHERE referrer_id=?"
     ).bind(u.id).first();
 
-    const clickCount=await clicks(
-     env,
-     u.affiliate_code
-    );
-
     return json({
      success:true,
      affiliate_code:u.affiliate_code,
-     referral_link:
-      `https://createlk.com/v3/?ref=${u.affiliate_code}`,
+     referral_link:`https://createlk.com/v2/?ref=${u.affiliate_code}`,
      referred_by:u.referred_by||null,
-     referrals:Number(r?.n)||0,
-     clicks:clickCount
+     referrals:Number(r?.n)||0
     },200,request);
    }
 
    /* LESSONS */
-
    if(url.pathname==="/api/lessons"){
-
     const u=await me(request,env);
 
     const r=await env.DB.prepare(`
-     SELECT
-      id,
-      title,
-      description,
-      sort_order,
-      is_free
-     FROM lessons
-     ORDER BY sort_order
+     SELECT id,title,description,sort_order,is_free
+     FROM lessons ORDER BY sort_order
     `).all();
 
-    const membership=
-     u?.membership||"guest";
-
-    const n=u?
-     await used(env,u.id):0;
-
-    const lim=u?
-     limit(u):FREE;
+    const membership=u?.membership||"guest";
+    const n=u?await used(env,u.id):0;
+    const lim=u?limit(u):FREE;
 
     return json({
      success:true,
@@ -770,274 +413,148 @@ export default{
      },
      lessons:(r.results||[]).map(x=>({
       ...x,
-      is_free:
-       Number(x.is_free)===1?1:0,
-      accessible:
-       Number(x.is_free)===1||
-       membership==="premium"
+      is_free:Number(x.is_free)===1?1:0,
+      accessible:Number(x.is_free)===1||membership==="premium"
      }))
     },200,request);
    }
 
    /* QUIZ */
-
-   if(
-    url.pathname==="/api/quiz"&&
-    request.method==="GET"
-   ){
-
+   if(url.pathname==="/api/quiz"&&request.method==="GET"){
     const u=await me(request,env);
 
     if(!u)
-     return json({
-      success:false,
-      error:"Login required"
-     },401,request);
+     return json({success:false,error:"Login required"},401,request);
 
-    const lid=Number(
-     url.searchParams.get("lesson")
-    );
+    const lid=Number(url.searchParams.get("lesson"));
 
     if(!Number.isInteger(lid)||lid<1)
-     return json({
-      success:false,
-      error:"Invalid lesson ID"
-     },400,request);
+     return json({success:false,error:"Invalid lesson ID"},400,request);
 
     const lesson=await env.DB.prepare(`
-     SELECT
-      id,
-      title,
-      description,
-      is_free
-     FROM lessons
-     WHERE id=?
-     LIMIT 1
+     SELECT id,title,description,is_free
+     FROM lessons WHERE id=? LIMIT 1
     `).bind(lid).first();
 
     if(!lesson)
-     return json({
-      success:false,
-      error:"Lesson not found"
-     },404,request);
+     return json({success:false,error:"Lesson not found"},404,request);
 
-    if(
-     Number(lesson.is_free)!==1&&
-     u.membership!=="premium"
-    )
+    if(Number(lesson.is_free)!==1&&u.membership!=="premium")
      return json({
       success:false,
       error:"Premium membership required"
      },403,request);
 
-    const n=await used(
-     env,
-     u.id
-    );
-
+    const n=await used(env,u.id);
     const lim=limit(u);
     const remaining=lim-n;
 
     if(remaining<=0)
      return json({
       success:false,
-      error:
-       `Question limit reached (${lim})`,
-      used:n,
-      limit:lim,
-      remaining:0
+      error:`Question limit reached (${lim})`,
+      used:n,limit:lim,remaining:0
      },403,request);
 
     const q=await env.DB.prepare(`
-     SELECT
-      q.id,
-      q.lesson_id,
-      q.question_number,
-      q.question,
-      q.option_a,
-      q.option_b,
-      q.option_c,
-      q.option_d
+     SELECT q.id,q.lesson_id,q.question_number,q.question,
+      q.option_a,q.option_b,q.option_c,q.option_d
      FROM questions q
      WHERE q.lesson_id=?
      AND NOT EXISTS(
-      SELECT 1
-      FROM quiz_answers a
-      WHERE a.user_id=?
-      AND a.question_id=q.id
+      SELECT 1 FROM quiz_answers a
+      WHERE a.user_id=? AND a.question_id=q.id
      )
      ORDER BY q.question_number
      LIMIT ?
-    `).bind(
-     lid,
-     u.id,
-     remaining
-    ).all();
+    `).bind(lid,u.id,remaining).all();
 
     return json({
      success:true,
      lesson,
      membership:u.membership,
-     usage:{
-      used:n,
-      limit:lim,
-      remaining
-     },
+     usage:{used:n,limit:lim,remaining},
      questions:q.results||[]
     },200,request);
    }
 
    /* ANSWER */
-
-   if(
-    url.pathname==="/api/quiz/answer"&&
-    request.method==="POST"
-   ){
-
+   if(url.pathname==="/api/quiz/answer"&&request.method==="POST"){
     const u=await me(request,env);
 
     if(!u)
-     return json({
-      success:false,
-      error:"Login required"
-     },401,request);
+     return json({success:false,error:"Login required"},401,request);
 
     const b=await request.json();
-
     const qid=Number(b.question_id);
+    const ans=String(b.selected_answer||"").trim().toUpperCase();
 
-    const ans=String(
-     b.selected_answer||""
-    ).trim().toUpperCase();
-
-    if(
-     !Number.isInteger(qid)||
-     !["A","B","C","D"].includes(ans)
-    )
-     return json({
-      success:false,
-      error:"Invalid answer"
-     },400,request);
+    if(!Number.isInteger(qid)||!["A","B","C","D"].includes(ans))
+     return json({success:false,error:"Invalid answer"},400,request);
 
     const q=await env.DB.prepare(`
-     SELECT
-      id,
-      lesson_id,
-      correct_answer
-     FROM questions
-     WHERE id=?
-     LIMIT 1
+     SELECT id,lesson_id,correct_answer
+     FROM questions WHERE id=? LIMIT 1
     `).bind(qid).first();
 
     if(!q)
-     return json({
-      success:false,
-      error:"Question not found"
-     },404,request);
+     return json({success:false,error:"Question not found"},404,request);
 
     const old=await env.DB.prepare(`
-     SELECT
-      is_correct,
-      xp_awarded,
-      coins_awarded
+     SELECT is_correct,xp_awarded,coins_awarded
      FROM quiz_answers
-     WHERE user_id=?
-     AND question_id=?
-     LIMIT 1
-    `).bind(
-     u.id,
-     qid
-    ).first();
+     WHERE user_id=? AND question_id=? LIMIT 1
+    `).bind(u.id,qid).first();
 
-    const n=await used(
-     env,
-     u.id
-    );
-
+    const n=await used(env,u.id);
     const lim=limit(u);
 
     if(old)
      return json({
       success:true,
       already_answered:true,
-      correct:
-       Number(old.is_correct)===1,
+      correct:Number(old.is_correct)===1,
       correct_answer:q.correct_answer,
-      xp_awarded:
-       Number(old.xp_awarded)||0,
-      coins_awarded:
-       Number(old.coins_awarded)||0,
+      xp_awarded:Number(old.xp_awarded)||0,
+      coins_awarded:Number(old.coins_awarded)||0,
       questions_answered:n,
       question_limit:lim,
-      remaining:Math.max(
-       0,
-       lim-n
-      )
+      remaining:Math.max(0,lim-n)
      },200,request);
 
     if(n>=lim)
      return json({
       success:false,
       error:"Question limit reached",
-      used:n,
-      limit:lim,
-      remaining:0
+      used:n,limit:lim,remaining:0
      },403,request);
 
-    const correct=
-     ans===
-     String(
-      q.correct_answer||""
-     ).trim().toUpperCase();
-
+    const correct=ans===String(q.correct_answer||"").trim().toUpperCase();
     const xp=correct?XP:0;
     const coins=correct?COINS:0;
 
     await env.DB.prepare(`
      INSERT INTO quiz_answers(
-      user_id,
-      question_id,
-      lesson_id,
-      selected_answer,
-      is_correct,
-      xp_awarded,
-      coins_awarded
-     )
-     VALUES(?,?,?,?,?,?,?)
+      user_id,question_id,lesson_id,selected_answer,
+      is_correct,xp_awarded,coins_awarded
+     ) VALUES(?,?,?,?,?,?,?)
     `).bind(
-     u.id,
-     qid,
-     q.lesson_id,
-     ans,
-     correct?1:0,
-     xp,
-     coins
+     u.id,qid,q.lesson_id,ans,correct?1:0,xp,coins
     ).run();
 
     await env.DB.prepare(`
-     UPDATE users
-     SET
+     UPDATE users SET
       xp=MIN(?,COALESCE(xp,0)+?),
       coins=COALESCE(coins,0)+?,
-      correct_answers=
-       COALESCE(correct_answers,0)+?,
-      questions_answered=
-       COALESCE(questions_answered,0)+1,
+      correct_answers=COALESCE(correct_answers,0)+?,
+      questions_answered=COALESCE(questions_answered,0)+1,
       updated_at=CURRENT_TIMESTAMP
      WHERE id=?
     `).bind(
-     MAXXP,
-     xp,
-     coins,
-     correct?1:0,
-     u.id
+     MAXXP,xp,coins,correct?1:0,u.id
     ).run();
 
-    const fresh=await me(
-     request,
-     env
-    );
-
+    const fresh=await me(request,env);
     const total=n+1;
 
     return json({
@@ -1049,26 +566,16 @@ export default{
      coins_awarded:coins,
      xp:Number(fresh?.xp)||0,
      coins:Number(fresh?.coins)||0,
-     correct_answers:
-      Number(fresh?.correct_answers)||0,
+     correct_answers:Number(fresh?.correct_answers)||0,
      questions_answered:total,
-     question_limit:
-      limit(fresh||u),
-     remaining:Math.max(
-      0,
-      limit(fresh||u)-total
-     )
+     question_limit:limit(fresh||u),
+     remaining:Math.max(0,limit(fresh||u)-total)
     },200,request);
    }
 
    /* LOGOUT */
-
    if(url.pathname==="/auth/logout"){
-
-    const t=cookie(
-     request,
-     COOKIE
-    );
+    const t=cookie(request,COOKIE);
 
     if(t)
      await env.DB.prepare(
@@ -1077,10 +584,7 @@ export default{
 
     const res=new Response(null,{
      status:302,
-     headers:{
-      Location:
-       "https://createlk.com/v3/index.html"
-     }
+     headers:{Location:"https://createlk.com/v2/index.html"}
     });
 
     res.headers.append(
@@ -1091,16 +595,12 @@ export default{
     return res;
    }
 
-   return json({
-    success:false,
-    error:"Not found"
-   },404,request);
+   return json({success:false,error:"Not found"},404,request);
 
   }catch(e){
-
    return json({
     success:false,
-    error:e.message||"Server error"
+    error:e?.message||"Server error"
    },500,request);
   }
  }
