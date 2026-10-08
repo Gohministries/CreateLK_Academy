@@ -35,6 +35,7 @@ const rnd=(n=32)=>{
 
 const now=()=>new Date().toISOString();
 
+
 async function setup(env){
 
  await env.DB.prepare(`
@@ -47,12 +48,17 @@ async function setup(env){
  `).run();
 
  try{
-  const r=await env.DB.prepare("PRAGMA table_info(users)").all();
+  const r=await env.DB.prepare(
+   "PRAGMA table_info(users)"
+  ).all();
 
-  if(!(r.results||[]).some(x=>x.name==="membership_expiry"))
+  if(!(r.results||[]).some(
+   x=>x.name==="membership_expiry"
+  )){
    await env.DB.prepare(
     "ALTER TABLE users ADD COLUMN membership_expiry TEXT"
    ).run();
+  }
 
  }catch{}
 
@@ -122,7 +128,9 @@ async function googleLogin(request,env){
   `${new URL(request.url).origin}/auth/google/callback`;
 
  const g=
-  new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  new URL(
+   "https://accounts.google.com/o/oauth2/v2/auth"
+  );
 
  g.searchParams.set(
   "client_id",
@@ -134,18 +142,36 @@ async function googleLogin(request,env){
   redirect
  );
 
- g.searchParams.set("response_type","code");
+ g.searchParams.set(
+  "response_type",
+  "code"
+ );
+
  g.searchParams.set(
   "scope",
   "openid email profile"
  );
- g.searchParams.set("access_type","online");
- g.searchParams.set("prompt","select_account");
- g.searchParams.set("state",state);
+
+ g.searchParams.set(
+  "access_type",
+  "online"
+ );
+
+ g.searchParams.set(
+  "prompt",
+  "select_account"
+ );
+
+ g.searchParams.set(
+  "state",
+  state
+ );
 
  const res=new Response(null,{
   status:302,
-  headers:{Location:g.toString()}
+  headers:{
+   Location:g.toString()
+  }
  });
 
  res.headers.append(
@@ -294,14 +320,17 @@ async function passwordLogin(request,env){
  const body=
   await request.json().catch(()=>({}));
 
- if(String(body.password||"")!==env.ADMIN_PASSWORD)
+ if(
+  String(body.password||"")!==env.ADMIN_PASSWORD
+ )
   return json({
    success:false,
    error:"Invalid admin password"
   },401,request);
 
  const email=
-  String(env.ADMIN_EMAIL||"admin").toLowerCase();
+  String(env.ADMIN_EMAIL||"admin")
+   .toLowerCase();
 
  const token=rnd();
 
@@ -548,11 +577,16 @@ async function activatePremium(request,env){
 
   affiliate=
    await env.DB.prepare(`
-    SELECT id,name,email
+    SELECT
+     id,
+     name,
+     email
     FROM users
     WHERE affiliate_code=?
     LIMIT 1
-   `).bind(user.referred_by).first();
+   `).bind(
+    user.referred_by
+   ).first();
 
   if(affiliate){
 
@@ -654,7 +688,7 @@ async function removePremium(request,env){
 }
 
 
-/* ADD PREMIUM DAYS */
+/* ADD PREMIUM DAYS + REPEAT AFFILIATE COMMISSION */
 
 async function setExpiry(request,env){
 
@@ -676,51 +710,58 @@ async function setExpiry(request,env){
    error:"User ID required"
   },400,request);
 
+ const days=
+  Math.max(
+   1,
+   Math.min(
+    3650,
+    Number(body.days)||30
+   )
+  );
+
+ const amount=
+  Math.max(
+   0,
+   Number(body.amount)||DEFAULT_AMOUNT
+  );
+
+ const user=
+  await env.DB.prepare(`
+   SELECT
+    id,
+    name,
+    email,
+    referred_by,
+    membership_expiry
+   FROM users
+   WHERE id=?
+   LIMIT 1
+  `).bind(id).first();
+
+ if(!user)
+  return json({
+   success:false,
+   error:"User not found"
+  },404,request);
+
  let expiry;
 
- /* SUPPORT EXPLICIT EXPIRY */
+/* EXPLICIT EXPIRY */
 
  if(body.membership_expiry){
 
-  const d=
+  expiry=
    new Date(
     String(body.membership_expiry)
    );
 
-  if(Number.isNaN(d.getTime()))
+  if(Number.isNaN(expiry.getTime()))
    return json({
     success:false,
     error:"Invalid expiry date"
    },400,request);
 
-  expiry=d;
-
  }else{
-
-  /* ADD DAYS TO CURRENT EXPIRY */
-
-  const days=
-   Math.max(
-    1,
-    Math.min(
-     3650,
-     Number(body.days)||30
-    )
-   );
-
-  const user=
-   await env.DB.prepare(`
-    SELECT membership_expiry
-    FROM users
-    WHERE id=?
-    LIMIT 1
-   `).bind(id).first();
-
-  if(!user)
-   return json({
-    success:false,
-    error:"User not found"
-   },404,request);
 
   expiry=
    new Date(
@@ -740,6 +781,9 @@ async function setExpiry(request,env){
    );
  }
 
+
+/* UPDATE PREMIUM */
+
  await env.DB.prepare(`
   UPDATE users
   SET
@@ -752,12 +796,74 @@ async function setExpiry(request,env){
   id
  ).run();
 
+
+/* REPEAT AFFILIATE COMMISSION */
+
+ let commission=0;
+ let affiliate=null;
+
+ if(user.referred_by){
+
+  affiliate=
+   await env.DB.prepare(`
+    SELECT
+     id,
+     name,
+     email
+    FROM users
+    WHERE LOWER(affiliate_code)=LOWER(?)
+    LIMIT 1
+   `).bind(
+    String(user.referred_by).trim()
+   ).first();
+
+  if(affiliate){
+
+   commission=
+    Math.round(
+     amount*COMMISSION_RATE
+    );
+
+   await env.DB.prepare(`
+    INSERT INTO affiliate_referrals(
+     affiliate_code,
+     student_id,
+     status,
+     sale_amount,
+     commission,
+     created_at,
+     approved_at
+    )
+    VALUES(?,?,?,?,?,?,?)
+   `).bind(
+    user.referred_by,
+    String(id),
+    "APPROVED",
+    amount,
+    commission,
+    now(),
+    now()
+   ).run();
+  }
+ }
+
+
  return json({
   success:true,
   message:"Premium expiry updated",
+  user_id:id,
   membership:"premium",
   membership_expiry:
-   expiry.toISOString()
+   expiry.toISOString(),
+  days,
+  sale_amount:amount,
+  commission_rate:20,
+  affiliate_code:
+   user.referred_by||null,
+  affiliate_commission:
+   commission,
+  affiliate_name:
+   affiliate?.name||null
  },200,request);
 }
 
