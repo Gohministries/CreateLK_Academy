@@ -1,6 +1,9 @@
 <!doctype html><html><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Prayer Attendance</title><style>
+<title>Prayer Attendance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script>
+<style>
 *{box-sizing:border-box}body{margin:0;font:14px Arial;background:#f4f7fb;color:#172033}button,input{font:inherit}button{border:0;cursor:pointer}.hidden{display:none!important}
 .wrap{max-width:1050px;margin:auto;padding:12px}.login{min-height:100vh;display:grid;place-items:center;background:#102a56;padding:20px}.box,.card{background:#fff;padding:18px;border-radius:14px;box-shadow:0 3px 15px #0001}.login .box{width:min(380px,100%);text-align:center}.logo{font-size:30px;color:#d69b16;background:#102a56;border-radius:50%;width:60px;height:60px;display:grid;place-items:center;margin:auto}.login h1,h2{color:#102a56}.login h1{margin:10px 0}.login p{color:#687386}
 input{padding:10px;border:1px solid #d5dce7;border-radius:8px;width:100%}.btn{padding:10px 13px;border-radius:8px;font-weight:bold}.p{background:#102a56;color:white}.g{background:#d69b16;color:white}.green{background:#16834b;color:white}.red{background:#d64545;color:white}.gray{background:#e8edf4}.full{width:100%}.msg{color:#d64545;min-height:20px;margin-top:7px}
@@ -53,7 +56,7 @@ header{background:#102a56;color:white;position:sticky;top:0;z-index:5}.head{max-
 <div class="stat"><b id="totalAbsent">0</b><span>Total Absent</span></div>
 <div class="stat"><b id="delayDays">0</b><span>Delay Days</span></div>
 <div class="stat"><b id="totalPrayer">0h 0m</b><span>Total Prayer Time</span></div>
-</div><div class="reportBtns"><button id="csv" class="btn green">CSV</button><button id="pdf" class="btn g">PDF / Print</button></div>
+</div><div class="reportBtns"><button id="csv" class="btn green">CSV</button><button id="pdf" class="btn g">Download PDF</button></div>
 <div id="reportList" class="table"></div></section>
 
 <footer>Korea - Sri Lanka Prayer Group<br>Prayer Attendance</footer>
@@ -128,15 +131,19 @@ render()
 }
 function time(i,k,v){D[i][k]=v;stat()}
 function check(i,k,v){D[i][k]=v?1:0}
+
 function mins(x){
 if(x.status!=="PRESENT"||!x.in_time||!x.out_time)return 0;
 let a=x.in_time.split(":").map(Number),b=x.out_time.split(":").map(Number),n=b[0]*60+b[1]-a[0]*60-a[1];return n<0?n+1440:n
 }
+
 function delayed(x){return x.status==="PRESENT"&&((x.in_time&&x.in_time>"05:00")||(x.out_time&&x.out_time<"06:00"))}
+
 function stat(){
 let n=D.length,p=D.filter(x=>x.status==="PRESENT").length,m=D.reduce((s,x)=>s+mins(x),0);
 $("mc").textContent=n;$("pc").textContent=p;$("ac").textContent=n-p;$("pct").textContent=n?Math.round(p/n*100)+"%":"0%";$("pt").textContent=fmt(m)
 }
+
 function allP(){D.forEach(x=>{x.status="PRESENT";x.in_time||="05:00";x.out_time||="06:00"});render()}
 
 async function saveD(){
@@ -177,66 +184,46 @@ a.href=URL.createObjectURL(new Blob(["\ufeff"+s],{type:"text/csv"}));a.download=
 
 function PDF(){
 if(!R.length)return alert("Load a report first.");
-let w=window.open("","_blank");if(!w)return;
+if(!window.jspdf)return alert("PDF library not loaded. Please try again.");
 
 let members=[...new Set(R.map(x=>x.name))].map(name=>{
 let a=R.filter(x=>x.name===name),p=a.filter(x=>x.status==="PRESENT").length;
-return{
-name,present:p,absent:a.length-p,
-mic:[...new Set(a.filter(x=>+x.mic&&x.status==="PRESENT").map(x=>x.date))].length,
-video:[...new Set(a.filter(x=>+x.video&&x.status==="PRESENT").map(x=>x.date))].length,
-active:[...new Set(a.filter(x=>+x.mic&&+x.video&&x.status==="PRESENT").map(x=>x.date))].length,
-delay:[...new Set(a.filter(delayed).map(x=>x.date))].length,
-rate:a.length?Math.round(p/a.length*100):0
-}
+return[
+name,p,a.length-p,
+[...new Set(a.filter(x=>+x.mic&&x.status==="PRESENT").map(x=>x.date))].length,
+[...new Set(a.filter(x=>+x.video&&x.status==="PRESENT").map(x=>x.date))].length,
+[...new Set(a.filter(x=>+x.mic&&+x.video&&x.status==="PRESENT").map(x=>x.date))].length,
+[...new Set(a.filter(delayed).map(x=>x.date))].length,
+(a.length?Math.round(p/a.length*100):0)+"%"
+]
 });
 
-let present=R.filter(x=>x.status==="PRESENT").length;
-let absent=R.length-present;
-let rate=R.length?Math.round(present/R.length*100):0;
-let dates=k=>[...new Set(R.filter(k).map(x=>x.date))].length;
+let{jsPDF}=window.jspdf,doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+doc.setFillColor(16,42,86);doc.rect(0,0,297,30,"F");
+doc.setTextColor(255,255,255);doc.setFontSize(20);doc.setFont("helvetica","bold");
+doc.text("Prayer Attendance Report",148.5,12,{align:"center"});
+doc.setFontSize(11);doc.setFont("helvetica","normal");
+doc.text("Korea - Sri Lanka Prayer Group",148.5,19,{align:"center"});
+doc.setFontSize(9);doc.text(`${$("from").value} — ${$("to").value}`,148.5,25,{align:"center"});
 
-w.document.write(`<html><head><title>Prayer Attendance Report</title><style>
-*{box-sizing:border-box}body{margin:0;padding:15px;background:#eef3f9;font:10px Arial;color:#172033}
-.report{width:100%;max-width:1100px;margin:auto;background:#fff;padding:22px}
-.head{text-align:center}.logo{width:52px;height:52px;margin:auto;border-radius:50%;display:grid;place-items:center;background:#102a56;color:#d69b16;font-size:26px}
-h1{margin:7px 0 3px;color:#102a56;font-size:24px}h2{margin:0;color:#d69b16;font-size:15px}.head p{color:#687386;margin:5px}
-.period{text-align:center;background:#f1f5fa;color:#102a56;font-weight:bold;padding:8px;border-radius:7px;margin:14px 0}
-.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:16px}.s{padding:9px;text-align:center;border-radius:8px;border:1px solid #ddd}
-.s b{display:block;font-size:18px;color:#102a56}.s span{font-size:9px;color:#687386;font-weight:bold}
-.a{background:#edf7ff}.p{background:#eaf8f0}.ab{background:#fff0f0}.r{background:#f3f7f2}.m{background:#eef5ff}.v{background:#f5efff}.f{background:#fff8e7}.d{background:#fff3e6}
-.title{text-align:center;color:#102a56;font-weight:bold;margin:8px}
-table{width:100%;border-collapse:collapse;font-size:10px}th{background:#102a56;color:#fff;padding:8px;text-align:center}
-td{padding:7px;text-align:center;border:1px solid #dce2e9}td.name{text-align:left;font-weight:bold;color:#102a56}tr:nth-child(even){background:#f7f9fc}
-.present{color:#16834b}.absent{color:#d64545}.delay{color:#c66b00}
-.foot{text-align:center;margin-top:14px;padding-top:8px;border-top:1px solid #ddd;color:#7b8797;font-size:9px}
-@media print{body{background:#fff;padding:0}.report{max-width:none;padding:5px}@page{size:A4 landscape;margin:8mm}}
-</style></head><body><div class="report">
+doc.setTextColor(16,42,86);doc.setFontSize(13);doc.setFont("helvetica","bold");
+doc.text("Member Attendance Summary",148.5,40,{align:"center"});
 
-<div class="head"><div class="logo">✝</div><h1>Prayer Attendance Report</h1><h2>Korea - Sri Lanka Prayer Group</h2><p>Member Attendance Summary</p></div>
+doc.autoTable({
+startY:45,
+head:[["Member","Present","Absent","Mic ON","Video ON","Fully Active","Delay","Attendance Rate"]],
+body:members,
+theme:"grid",
+headStyles:{fillColor:[16,42,86],textColor:255,fontStyle:"bold",halign:"center"},
+bodyStyles:{fontSize:10,cellPadding:4,halign:"center"},
+columnStyles:{0:{halign:"left",fontStyle:"bold"}},
+alternateRowStyles:{fillColor:[245,247,250]},
+margin:{left:12,right:12}
+});
 
-<div class="period">${$("from").value} — ${$("to").value}</div>
-
-<div class="summary">
-<div class="s a"><b>${R.length}</b><span>Total Records</span></div>
-<div class="s p"><b>${present}</b><span>Total Present</span></div>
-<div class="s ab"><b>${absent}</b><span>Total Absence</span></div>
-<div class="s r"><b>${rate}%</b><span>Attendance Rate</span></div>
-<div class="s m"><b>${dates(x=>+x.mic&&x.status==="PRESENT")}</b><span>Mic ON Days</span></div>
-<div class="s v"><b>${dates(x=>+x.video&&x.status==="PRESENT")}</b><span>Video ON Days</span></div>
-<div class="s f"><b>${dates(x=>+x.mic&&+x.video&&x.status==="PRESENT")}</b><span>Fully Active Days</span></div>
-<div class="s d"><b>${dates(delayed)}</b><span>Delay Days</span></div>
-</div>
-
-<div class="title">Total Attendance by Member</div>
-<table><thead><tr><th>Member</th><th>Present</th><th>Absent</th><th>Mic ON</th><th>Video ON</th><th>Fully Active</th><th>Delay</th><th>Attendance Rate</th></tr></thead><tbody>
-${members.map(x=>`<tr><td class="name">${esc(x.name)}</td><td class="present">${x.present}</td><td class="absent">${x.absent}</td><td>${x.mic}</td><td>${x.video}</td><td>${x.active}</td><td class="delay">${x.delay}</td><td><b>${x.rate}%</b></td></tr>`).join("")}
-</tbody></table>
-
-<div class="foot">Korea - Sri Lanka Prayer Group<br>Prayer Attendance Report</div>
-</div><script>onload=()=>setTimeout(()=>print(),300)<\/script></body></html>`);
-
-w.document.close()
+doc.setFontSize(8);doc.setTextColor(100,110,125);
+doc.text("Korea - Sri Lanka Prayer Group • Prayer Attendance",148.5,202,{align:"center"});
+doc.save(`prayer-attendance-${$("from").value}-to-${$("to").value}.pdf`);
 }
 
 function go(id){$("menu").classList.add("hidden");$(id).scrollIntoView({behavior:"smooth"})}
