@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1628">
+<title>CreateLK English Admin</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#0b1628;color:#e8eef8}
+button,input,select{font:inherit}
+button{cursor:pointer}
+.wrap{max-width:1100px;margin:auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;padding:8px 0 18px}
+.logo{font-size:21px;font-weight:800}
+.logo span{color:#f0b92f}
+.small{color:#91a1b8;font-size:13px}
+.card{background:#111f34;border:1px solid #203451;border-radius:16px;padding:16px;margin-bottom:14px}
+.login{max-width:430px;margin:70px auto;text-align:center}
+input,select{width:100%;padding:12px;border:1px solid #304763;border-radius:10px;background:#0b1628;color:#fff;outline:0}
+input:focus,select:focus{border-color:#f0b92f}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{border:0;border-radius:10px;padding:11px 15px;font-weight:700}
+.gold{background:#f0b92f;color:#08111f}
+.blue{background:#246bdb;color:#fff}
+.red{background:#c93c4d;color:#fff}
+.gray{background:#26364d;color:#fff}
+.green{background:#1e9b68;color:#fff}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.actions .btn{flex:1}
+.user{display:grid;grid-template-columns:1fr auto;gap:12px}
+.name{font-size:17px;font-weight:800}
+.email{color:#91a1b8;font-size:13px;word-break:break-all;margin-top:3px}
+.badge,.withdrawStatus{display:inline-block;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:800;margin-top:7px}
+.premium{background:#f0b92f;color:#111}
+.free{background:#293a51;color:#cbd6e6}
+.expired,.rejected{background:#8d3442;color:#fff}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.stat{background:#0b1628;border-radius:10px;padding:9px}
+.stat b{display:block;font-size:15px}
+.stat span{color:#91a1b8;font-size:11px}
+.ref,.direct,.bankbox{margin-top:10px;padding:10px;border-radius:9px;font-size:12px;line-height:1.7}
+.ref{background:#0d2630;color:#8fe0bb}
+.direct{background:#17263b;color:#91a1b8}
+.bankbox{background:#0b1628;border:1px solid #263c58;font-size:13px}
+#app{display:none}
+#withdrawals{display:none}
+.loading{text-align:center;color:#91a1b8;padding:20px}
+.modal{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modalbox{width:100%;max-width:430px;background:#111f34;border:1px solid #304763;border-radius:16px;padding:18px}
+label{display:block;color:#aab8cb;font-size:12px;margin:10px 0 5px}
+.message{margin-top:10px;padding:10px;border-radius:9px;display:none;font-size:13px}
+.ok{background:#123c2e;color:#8fe0bb}
+.err{background:#431f29;color:#ff9eaa}
+.menuBtn{border:0;background:#26364d;color:#fff;border-radius:10px;padding:10px 13px;font-size:20px}
+.menu{position:fixed;top:0;right:-300px;width:290px;height:100%;background:#111f34;border-left:1px solid #304763;z-index:50;padding:20px;transition:.25s}
+.menu.show{right:0}
+.menu h3{margin:0 0 20px;color:#f0b92f}
+.menuItem{width:100%;border:0;background:#17263b;color:#fff;padding:13px;border-radius:10px;text-align:left;margin-bottom:9px;font-weight:700}
+.overlay{position:fixed;inset:0;background:#0009;z-index:40;display:none}
+.overlay.show{display:block}
+.withdrawHead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.withdrawCard{border-left:4px solid #f0b92f}
+.withdrawAmount{font-size:25px;font-weight:800;color:#f0b92f}
+.pending{background:#f0b92f;color:#111}
+.processing{background:#246bdb;color:#fff}
+.paid{background:#1e9b68;color:#fff}
+.copyBtn{width:100%;margin-top:10px}
+@media(max-width:650px){
+ .row{grid-template-columns:1fr}
+ .user{grid-template-columns:1fr}
+ .meta{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="wrap">
+ <div class="card login">
+  <div class="logo">CreateLK <span>English Admin</span></div>
+  <p class="small">Administrator access</p>
+
+  <button class="btn gold" style="width:100%;margin-top:10px" onclick="googleLogin()">
+   Continue with Google
+  </button>
+
+  <div class="small" style="margin:15px">or</div>
+
+  <input id="password" type="password" placeholder="Admin password">
+
+  <button class="btn blue" style="width:100%;margin-top:10px" onclick="passwordLogin()">
+   Login with Password
+  </button>
+
+  <div id="loginMsg" class="message"></div>
+ </div>
+</div>
+
+<div id="app" class="wrap">
+
+<header>
+ <div>
+  <div class="logo">CreateLK <span>English Admin</span></div>
+  <div id="adminEmail" class="small"></div>
+ </div>
+ <button class="menuBtn" onclick="openMenu()">☰</button>
+</header>
+
+<div id="overlay" class="overlay" onclick="closeMenu()"></div>
+
+<div id="menu" class="menu">
+ <h3>CreateLK Admin</h3>
+
+ <button class="menuItem" onclick="showStudents()">
+  👨‍🎓 Students
+ </button>
+
+ <button class="menuItem" onclick="showWithdrawals()">
+  💵 Withdrawal Requests
+ </button>
+
+ <button class="menuItem" onclick="loadWithdrawals()">
+  🔄 Refresh Withdrawals
+ </button>
+
+ <button class="menuItem" onclick="logout()">
+  🚪 Logout
+ </button>
+</div>
+
+<div id="studentsSection">
+
+ <div class="card">
+  <div class="row">
+
+   <div>
+    <label>Search student</label>
+    <input id="search" placeholder="Name, email or ID"
+     onkeydown="if(event.key==='Enter')loadUsers()">
+   </div>
+
+   <div>
+    <label>Membership</label>
+    <select id="membership" onchange="loadUsers()">
+     <option value="">All students</option>
+     <option value="free">Free</option>
+     <option value="premium">Premium</option>
+    </select>
+   </div>
+
+  </div>
+
+  <div class="actions">
+   <button class="btn blue" onclick="loadUsers()">Search</button>
+   <button class="btn gray" onclick="loadUsers()">Refresh</button>
+  </div>
+ </div>
+
+ <div id="users"></div>
+
+</div>
+
+<div id="withdrawals">
+
+ <div class="card withdrawHead">
+  <div>
+   <h3 style="margin:0">💵 Withdrawal Requests</h3>
+   <div class="small">Affiliate commission withdrawals</div>
+  </div>
+
+  <button class="btn gray" onclick="loadWithdrawals()">
+   🔄 Refresh
+  </button>
+ </div>
+
+ <div id="withdrawalList">
+  <div class="card loading">Loading...</div>
+ </div>
+
+</div>
+
+</div>
+
+<div id="premiumModal" class="modal">
+ <div class="modalbox">
+
+  <h3>Activate Premium</h3>
+  <div id="premiumStudent" class="small"></div>
+
+  <label>Premium days</label>
+  <input id="premiumDays" type="number" min="1" max="3650" value="30">
+
+  <div id="premiumMsg" class="message"></div>
+
+  <div class="actions">
+   <button class="btn gold" onclick="activatePremium()">Activate</button>
+   <button class="btn gray" onclick="closeModal()">Cancel</button>
+  </div>
+
+ </div>
+</div>
+
+<div id="expiryModal" class="modal">
+ <div class="modalbox">
+
+  <h3>Add Premium Days</h3>
+  <div id="expiryStudent" class="small"></div>
+
+  <label>Additional Premium days</label>
+  <input id="expiryDays" type="number" min="1" max="3650" value="30">
+
+  <div id="expiryMsg" class="message"></div>
+
+  <div class="actions">
+   <button class="btn gold" onclick="saveExpiry()">Add Days</button>
+   <button class="btn gray" onclick="closeExpiry()">Cancel</button>
+  </div>
+
+ </div>
+</div>
+
+<script>
+const API="https://admin-v2.createlk.workers.dev";
+let selectedUser=null;
+
+async function req(path,opt={}){
+ opt.credentials="include";
+ opt.headers={
+  "Content-Type":"application/json",
+  ...(opt.headers||{})
+ };
+
+ const r=await fetch(API+path,opt);
+ const d=await r.json().catch(()=>({}));
+
+ if(!r.ok)throw Error(d.error||"Request failed");
+
+ return d;
+}
+
+const api=(p,o)=>req(p,o);
+
+function googleLogin(){
+ location.href=API+"/auth/google";
+}
+
+async function passwordLogin(){
+ try{
+  await api("/api/admin/login",{
+   method:"POST",
+   body:JSON.stringify({
+    password:password.value
+   })
+  });
+
+  showApp();
+ }catch(e){
+  msg("loginMsg",e.message,1);
+ }
+}
+
+async function checkLogin(){
+ try{
+  let d=await api("/api/admin/status");
+
+  d.logged_in?showApp(d):showLogin();
+
+ }catch{
+  showLogin();
+ }
+}
+
+function showLogin(){
+ loginBox.style.display="block";
+ app.style.display="none";
+}
+
+function showApp(d){
+ loginBox.style.display="none";
+ app.style.display="block";
+
+ if(d?.admin_email)
+  adminEmail.textContent=d.admin_email;
+
+ loadUsers();
+}
+
+async function logout(){
+ try{
+  await api("/api/admin/logout",{method:"POST"});
+ }catch{}
+
+ location.reload();
+}
+
+function openMenu(){
+ menu.classList.add("show");
+ overlay.classList.add("show");
+}
+
+function closeMenu(){
+ menu.classList.remove("show");
+ overlay.classList.remove("show");
+}
+
+function showStudents(){
+ closeMenu();
+ studentsSection.style.display="block";
+ withdrawals.style.display="none";
+ loadUsers();
+}
+
+function showWithdrawals(){
+ closeMenu();
+ studentsSection.style.display="none";
+ withdrawals.style.display="block";
+ loadWithdrawals();
+}
+
+async function loadUsers(){
+
+ users.innerHTML='<div class="card loading">Loading students...</div>';
+
+ try{
+
+  let s=encodeURIComponent(search.value.trim());
+  let m=encodeURIComponent(membership.value);
+
+  let d=await api(
+   `/api/admin/users?search=${s}&membership=${m}`
+  );
+
+  renderUsers(d.users||[]);
+
+ }catch(e){
+
+  users.innerHTML=
+   `<div class="card message err" style="display:block">
+    ${esc(e.message)}
+   </div>`;
+
+ }
+}
+
+function renderUsers(list){
+
+ if(!list.length){
+  users.innerHTML=
+   '<div class="card loading">No students found.</div>';
+  return;
+ }
+
+ users.innerHTML=list.map(u=>{
+
+  let p=String(u.membership||"").toLowerCase()=="premium";
+  let x=u.membership_expiry?
+   new Date(u.membership_expiry):null;
+
+  let a=p&&x&&x>Date.now();
+
+  let badge=a?"premium":p?"expired":"free";
+  let bt=a?"PREMIUM":p?"EXPIRED":"FREE";
+
+  let rc=u.referred_by||u.referrer_code||"";
+  let re=u.referred_by_email||u.referrer_email||"";
+
+  return `
+  <div class="card">
+
+   <div class="user">
+
+    <div>
+     <div class="name">${esc(u.name||"No name")}</div>
+     <div class="email">${esc(u.email||"")}</div>
+     <span class="badge ${badge}">${bt}</span>
+
+     ${x?
+      `<div class="small">
+       Expiry: ${fmt(u.membership_expiry)}
+      </div>`:""}
+
+    </div>
+
+    <div class="small">
+     ID: ${esc(u.id)}
+    </div>
+
+   </div>
+
+   <div class="meta">
+    ${stat(u.xp,"XP")}
+    ${stat(u.coins,"Coins")}
+    ${stat(u.questions_answered,"Questions")}
+    ${stat(u.correct_answers,"Correct")}
+    ${stat(u.lessons_completed,"Lessons")}
+    ${stat(u.affiliate_code||"-","Affiliate Code")}
+   </div>
+
+   ${
+    rc||re?
+    `<div class="ref">
+     <b>Referrer</b><br>
+     Code: <b>${esc(rc||"-")}</b><br>
+     Email: <b>${esc(re||"-")}</b>
+    </div>`
+    :
+    `<div class="direct">
+     <b>Direct</b> — No referrer
+    </div>`
+   }
+
+   <div class="actions">
+
+    ${
+     a?
+     `<button class="btn blue"
+       onclick='openExpiry(${JSON.stringify(u)})'>
+       Add Premium Days
+      </button>
+
+      <button class="btn red"
+       onclick='removePremium("${escAttr(u.id)}")'>
+       Remove Premium
+      </button>`
+     :
+     `<button class="btn gold"
+       onclick='openPremium(${JSON.stringify(u)})'>
+       Activate Premium
+      </button>`
+    }
+
+   </div>
+
+  </div>`;
+
+ }).join("");
+}
+
+function stat(v,t){
+ return `
+ <div class="stat">
+  <b>${Number(v||0)}</b>
+  <span>${t}</span>
+ </div>`;
+}
+
+/* WITHDRAWALS */
+
+async function loadWithdrawals(){
+
+ withdrawalList.innerHTML=
+  '<div class="card loading">Loading withdrawals...</div>';
+
+ try{
+
+  /*
+   Admin requests now go through admin-v2.
+   This keeps admin authentication on the admin Worker.
+  */
+
+  let d=await api("/api/admin/withdrawals");
+
+  renderWithdrawals(
+   d.requests||d.withdrawals||[]
+  );
+
+ }catch(e){
+
+  withdrawalList.innerHTML=
+   `<div class="card message err" style="display:block">
+    ${esc(e.message)}
+   </div>`;
+
+ }
+}
+
+function renderWithdrawals(list){
+
+ if(!list.length){
+
+  withdrawalList.innerHTML=
+   '<div class="card loading">No withdrawal requests.</div>';
+
+  return;
+ }
+
+ withdrawalList.innerHTML=list.map(w=>{
+
+  let s=String(
+   w.status||"PENDING"
+  ).toUpperCase();
+
+  let c=
+   s=="PAID"?"paid":
+   s=="PROCESSING"?"processing":
+   s=="REJECTED"?"rejected":
+   "pending";
+
+  let details=
+`Account Name: ${w.account_name||""}
+Bank: ${w.bank||""}
+Branch: ${w.branch||""}
+Account Number: ${w.account_number||""}`;
+
+  return `
+  <div class="card withdrawCard">
+
+   <div class="withdrawHead">
+
+    <div>
+     <div class="name">
+      ${esc(w.name||w.user_name||"Affiliate")}
+     </div>
+
+     <div class="email">
+      ${esc(w.email||w.user_email||"")}
+     </div>
+
+     <span class="withdrawStatus ${c}">
+      ${s}
+     </span>
+    </div>
+
+    <div class="withdrawAmount">
+     LKR ${Number(w.amount||0).toLocaleString()}
+    </div>
+
+   </div>
+
+   <div class="bankbox">
+
+    <b>🏦 Bank Details</b><br>
+
+    Account Name:
+    <b>${esc(w.account_name||"-")}</b><br>
+
+    Bank:
+    <b>${esc(w.bank||"-")}</b><br>
+
+    Branch:
+    <b>${esc(w.branch||"-")}</b><br>
+
+    Account Number:
+    <b>${esc(w.account_number||"-")}</b>
+
+    <button
+     class="btn blue copyBtn"
+     onclick='copyBank(${JSON.stringify(details)})'>
+     📋 Copy Bank Details
+    </button>
+
+   </div>
+
+   <div class="small" style="margin-top:10px">
+    Request ID: ${esc(w.id||"-")}<br>
+    Submitted: ${fmt(w.created_at)}
+   </div>
+
+   ${
+    s=="PENDING"?
+
+    `<div class="actions">
+
+     <button class="btn blue"
+      onclick="updateW(${w.id},'PROCESSING')">
+      🔄 Processing
+     </button>
+
+     <button class="btn green"
+      onclick="updateW(${w.id},'PAID')">
+      ✅ Mark Paid
+     </button>
+
+     <button class="btn red"
+      onclick="updateW(${w.id},'REJECTED')">
+      ❌ Reject
+     </button>
+
+    </div>`
+
+    :
+
+    s=="PROCESSING"?
+
+    `<div class="actions">
+
+     <button class="btn green"
+      onclick="updateW(${w.id},'PAID')">
+      ✅ Mark Paid
+     </button>
+
+     <button class="btn red"
+      onclick="updateW(${w.id},'REJECTED')">
+      ❌ Reject
+     </button>
+
+    </div>`
+
+    :""
+   }
+
+  </div>`;
+
+ }).join("");
+}
+
+async function copyBank(t){
+
+ try{
+  await navigator.clipboard.writeText(t);
+  alert("Bank details copied!");
+ }catch{
+  alert("Copy failed.");
+ }
+
+}
+
+async function updateW(id,status){
+
+ let q=
+  status=="PAID"?
+  "Mark this withdrawal as PAID?":
+  status=="REJECTED"?
+  "Reject this withdrawal?":
+  "Move to PROCESSING?";
+
+ if(!confirm(q))return;
+
+ try{
+
+  await api(
+   `/api/admin/withdrawals/${id}`,
+   {
+    method:"POST",
+    body:JSON.stringify({status})
+   }
+  );
+
+  loadWithdrawals();
+
+ }catch(e){
+
+  alert(e.message);
+
+ }
+}
+
+/* PREMIUM */
+
+function openPremium(u){
+
+ selectedUser=u;
+
+ premiumStudent.textContent=
+  `${u.name||""} — ${u.email||""}`;
+
+ premiumDays.value=30;
+ premiumMsg.style.display="none";
+ premiumModal.style.display="flex";
+}
+
+function closeModal(){
+ premiumModal.style.display="none";
+}
+
+async function activatePremium(){
+
+ if(!selectedUser)return;
+
+ try{
+
+  let days=Math.max(
+   1,
+   Math.min(
+    3650,
+    Number(premiumDays.value)||30
+   )
+  );
+
+  await api(
+   "/api/admin/premium",
+   {
+    method:"POST",
+    body:JSON.stringify({
+     user_id:selectedUser.id,
+     days
+    })
+   }
+  );
+
+  msg(
+   "premiumMsg",
+   "Premium activated for "+days+" days."
+  );
+
+  setTimeout(()=>{
+   closeModal();
+   loadUsers();
+  },700);
+
+ }catch(e){
+
+  msg("premiumMsg",e.message,1);
+
+ }
+}
+
+function openExpiry(u){
+
+ selectedUser=u;
+
+ expiryStudent.textContent=
+  `${u.name||""} — ${u.email||""}`;
+
+ expiryDays.value=30;
+ expiryMsg.style.display="none";
+ expiryModal.style.display="flex";
+}
+
+function closeExpiry(){
+ expiryModal.style.display="none";
+}
+
+async function saveExpiry(){
+
+ if(!selectedUser)return;
+
+ try{
+
+  let days=Math.max(
+   1,
+   Math.min(
+    3650,
+    Number(expiryDays.value)||30
+   )
+  );
+
+  await api(
+   "/api/admin/premium/expiry",
+   {
+    method:"POST",
+    body:JSON.stringify({
+     user_id:selectedUser.id,
+     days
+    })
+   }
+  );
+
+  msg(
+   "expiryMsg",
+   days+" Premium days added."
+  );
+
+  setTimeout(()=>{
+   closeExpiry();
+   loadUsers();
+  },700);
+
+ }catch(e){
+
+  msg("expiryMsg",e.message,1);
+
+ }
+}
+
+async function removePremium(id){
+
+ if(!confirm("Remove Premium from this student?"))
+  return;
+
+ try{
+
+  await api(
+   "/api/admin/premium/remove",
+   {
+    method:"POST",
+    body:JSON.stringify({
+     user_id:id
+    })
+   }
+  );
+
+  loadUsers();
+
+ }catch(e){
+
+  alert(e.message);
+
+ }
+}
+
+/* HELPERS */
+
+function msg(id,t,e=0){
+
+ let x=document.getElementById(id);
+
+ x.className=
+  "message "+(e?"err":"ok");
+
+ x.textContent=t;
+ x.style.display="block";
+}
+
+function fmt(x){
+
+ let d=new Date(x);
+
+ return isNaN(d)?"-":d.toLocaleString();
+}
+
+function esc(x){
+
+ return String(x??"").replace(
+  /[&<>"']/g,
+  m=>({
+   "&":"&amp;",
+   "<":"&lt;",
+   ">":"&gt;",
+   '"':"&quot;",
+   "'":"&#039;"
+  }[m])
+ );
+}
+
+function escAttr(x){
+
+ return String(x??"")
+  .replace(/\\/g,"\\\\")
+  .replace(/"/g,'\\"');
+}
+
+premiumModal.onclick=e=>{
+ if(e.target==premiumModal)
+  closeModal();
+};
+
+expiryModal.onclick=e=>{
+ if(e.target==expiryModal)
+  closeExpiry();
+};
+
+checkLogin();
+</script>
+
+</body>
+</html>
+
