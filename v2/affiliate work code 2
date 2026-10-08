@@ -38,7 +38,8 @@ async function auth(r,e){
    new TextDecoder().decode(unb64u(p[0]))
   );
 
-  if(!d.user_id||Date.now()>Number(d.exp))return null;
+  if(!d.user_id||Date.now()>Number(d.exp))
+   return null;
 
   const k=await crypto.subtle.importKey(
    "raw",
@@ -68,6 +69,7 @@ async function auth(r,e){
 }
 
 async function setup(e){
+
  await e.DB.prepare(`
   CREATE TABLE IF NOT EXISTS affiliate_clicks(
    id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,9 +109,16 @@ async function setup(e){
  `).run();
 }
 
+/*
+ Sync referral records.
+
+ IMPORTANT:
+ - referrals = actual registrations
+ - affiliate_referrals = commission tracking
+ - repeated clicks NEVER create referrals
+*/
 async function sync(e){
 
- /* Existing referrals */
  const r=await e.DB.prepare(`
   SELECT
    r.referrer_id,
@@ -123,11 +132,19 @@ async function sync(e){
  `).all();
 
  for(const x of r.results||[]){
+
   if(!x.code)continue;
 
   await e.DB.prepare(`
    INSERT OR IGNORE INTO affiliate_referrals
-   (affiliate_code,student_id,status,sale_amount,commission,created_at)
+   (
+    affiliate_code,
+    student_id,
+    status,
+    sale_amount,
+    commission,
+    created_at
+   )
    VALUES(?,?,'PENDING',0,0,?)
   `).bind(
    x.code,
@@ -137,8 +154,8 @@ async function sync(e){
  }
 
  /*
-  Repair users where referred_by exists
-  but referrals row is missing.
+  Repair users that have referred_by
+  but are missing a referrals row.
  */
  const u=await e.DB.prepare(`
   SELECT
@@ -155,11 +172,20 @@ async function sync(e){
  `).all();
 
  for(const x of u.results||[]){
+
   if(!x.code)continue;
 
+  /*
+   UNIQUE(referred_user_id) prevents
+   the same student becoming a referral twice.
+  */
   await e.DB.prepare(`
    INSERT OR IGNORE INTO referrals
-   (referrer_id,referred_user_id,affiliate_code)
+   (
+    referrer_id,
+    referred_user_id,
+    affiliate_code
+   )
    VALUES(?,?,?)
   `).bind(
    x.referrer_id,
@@ -169,7 +195,14 @@ async function sync(e){
 
   await e.DB.prepare(`
    INSERT OR IGNORE INTO affiliate_referrals
-   (affiliate_code,student_id,status,sale_amount,commission,created_at)
+   (
+    affiliate_code,
+    student_id,
+    status,
+    sale_amount,
+    commission,
+    created_at
+   )
    VALUES(?,?,'PENDING',0,0,CURRENT_TIMESTAMP)
   `).bind(
    x.code,
@@ -179,6 +212,7 @@ async function sync(e){
 }
 
 async function available(e,code){
+
  const a=await e.DB.prepare(`
   SELECT COALESCE(SUM(commission),0) n
   FROM affiliate_referrals
@@ -200,6 +234,7 @@ async function available(e,code){
 }
 
 export default{
+
  async fetch(request,env){
 
   if(request.method==="OPTIONS")
@@ -226,12 +261,13 @@ export default{
      "CreateLK Affiliate V2 API is running ✅"
     );
 
-   /* CLICK */
+   /* ================= CLICK ================= */
 
    if(
     url.pathname==="/api/click"&&
     request.method==="POST"
    ){
+
     const b=await request.json();
 
     const code=String(
@@ -251,15 +287,22 @@ export default{
       error:"Affiliate not found"
      },404,request);
 
+    /*
+     This ONLY records a click.
+     It NEVER creates a referral.
+    */
     await env.DB.prepare(`
-     INSERT INTO affiliate_clicks(affiliate_code)
+     INSERT INTO affiliate_clicks
+     (affiliate_code)
      VALUES(?)
     `).bind(code).run();
 
-    return json({success:true},200,request);
+    return json({
+     success:true
+    },200,request);
    }
 
-   /* DASHBOARD */
+   /* ================= DASHBOARD ================= */
 
    if(url.pathname==="/api/dashboard"){
 
@@ -277,20 +320,55 @@ export default{
      u.affiliate_code||""
     ).trim().toUpperCase();
 
+    /*
+     REFERRALS:
+     Count UNIQUE registered students from
+     the real referrals table.
+
+     1 student = 1 referral.
+     Repeated clicks do not affect this.
+    */
     const r=await env.DB.prepare(`
      SELECT
-      COUNT(*) referrals,
+      COUNT(DISTINCT referred_user_id) referrals
+     FROM referrals
+     WHERE referrer_id=?
+    `).bind(u.id).first();
+
+    /*
+     APPROVED SALES + COMMISSION
+     come from affiliate_referrals.
+    */
+    const sales=await env.DB.prepare(`
+     SELECT
       COALESCE(
-       SUM(CASE WHEN status='APPROVED'
-       THEN 1 ELSE 0 END),0
+       SUM(
+        CASE
+         WHEN status='APPROVED'
+         THEN 1
+         ELSE 0
+        END
+       ),0
       ) approved,
+
       COALESCE(
-       SUM(CASE WHEN status='APPROVED'
-       THEN commission ELSE 0 END),0
+       SUM(
+        CASE
+         WHEN status='APPROVED'
+         THEN commission
+         ELSE 0
+        END
+       ),0
       ) earned,
+
       COALESCE(
-       SUM(CASE WHEN status='PENDING'
-       THEN commission ELSE 0 END),0
+       SUM(
+        CASE
+         WHEN status='PENDING'
+         THEN commission
+         ELSE 0
+        END
+       ),0
       ) pending
      FROM affiliate_referrals
      WHERE affiliate_code=?
@@ -305,22 +383,39 @@ export default{
     const w=await env.DB.prepare(`
      SELECT
       COALESCE(
-       SUM(CASE WHEN status='PENDING'
-       THEN amount ELSE 0 END),0
+       SUM(
+        CASE
+         WHEN status='PENDING'
+         THEN amount
+         ELSE 0
+        END
+       ),0
       ) pending,
+
       COALESCE(
-       SUM(CASE WHEN status='PAID'
-       THEN amount ELSE 0 END),0
+       SUM(
+        CASE
+         WHEN status='PAID'
+         THEN amount
+         ELSE 0
+        END
+       ),0
       ) paid
      FROM affiliate_withdrawals
      WHERE user_id=?
     `).bind(u.id).first();
 
-    const earned=Number(r?.earned||0);
-    const pendingW=Number(w?.pending||0);
-    const paidW=Number(w?.paid||0);
+    const earned=
+     Number(sales?.earned||0);
+
+    const pendingW=
+     Number(w?.pending||0);
+
+    const paidW=
+     Number(w?.paid||0);
 
     return json({
+
      success:true,
 
      user:{
@@ -333,24 +428,35 @@ export default{
      referral_link:
       `https://createlk.com/v2/?ref=${code}`,
 
-     clicks:Number(c?.n||0),
+     /*
+      Clicks are separate from referrals.
+     */
+     clicks:
+      Number(c?.n||0),
 
+     /*
+      EXACTLY:
+      1 registered student = 1 referral
+     */
      referrals:
       Number(r?.referrals||0),
 
      approved_sales:
-      Number(r?.approved||0),
+      Number(sales?.approved||0),
 
      commission_rate:20,
 
-     total_earned:earned,
+     total_earned:
+      earned,
 
      pending_commission:
-      Number(r?.pending||0),
+      Number(sales?.pending||0),
 
-     withdrawal_pending:pendingW,
+     withdrawal_pending:
+      pendingW,
 
-     withdrawal_paid:paidW,
+     withdrawal_paid:
+      paidW,
 
      available_commission:
       Math.max(
@@ -358,11 +464,13 @@ export default{
        earned-pendingW-paidW
       ),
 
-     minimum_withdrawal:MIN
+     minimum_withdrawal:
+      MIN
+
     },200,request);
    }
 
-   /* WITHDRAW */
+   /* ================= WITHDRAW ================= */
 
    if(
     url.pathname==="/api/withdraw"&&
@@ -418,10 +526,8 @@ export default{
      u.affiliate_code||""
     ).trim().toUpperCase();
 
-    const avail=await available(
-     env,
-     code
-    );
+    const avail=
+     await available(env,code);
 
     if(amount>avail)
      return json({
@@ -473,7 +579,7 @@ export default{
     },200,request);
    }
 
-   /* WITHDRAWAL HISTORY */
+   /* ================= WITHDRAWAL HISTORY ================= */
 
    if(url.pathname==="/api/withdrawals"){
 
