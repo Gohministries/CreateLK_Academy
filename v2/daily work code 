@@ -1,0 +1,299 @@
+const cors = request => {
+  const origin = request.headers.get("Origin") || "*";
+
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
+  };
+};
+
+const json = (data, status, request) =>
+  new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      ...cors(request)
+    }
+  });
+
+/* =========================================
+   BASE64URL DECODER
+========================================= */
+
+function base64urlDecode(value) {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("Invalid token encoding");
+  }
+
+  const base64 = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+
+  const padded =
+    base64 + "=".repeat((4 - base64.length % 4) % 4);
+
+  return Uint8Array.from(
+    atob(padded),
+    character => character.charCodeAt(0)
+  );
+}
+
+/* =========================================
+   VERIFY AFFILIATE TOKEN
+========================================= */
+
+async function verifyAffiliateToken(token, secret) {
+  if (!token || !secret) {
+    return null;
+  }
+
+  const parts = token.split(".");
+
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [payload, signature] = parts;
+
+  try {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      {
+        name: "HMAC",
+        hash: "SHA-256"
+      },
+      false,
+      ["verify"]
+    );
+
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      base64urlDecode(signature),
+      new TextEncoder().encode(payload)
+    );
+
+    if (!valid) {
+      return null;
+    }
+
+    const data = JSON.parse(
+      new TextDecoder().decode(
+        base64urlDecode(payload)
+      )
+    );
+
+    if (
+      !data.user_id ||
+      !Number.isFinite(data.exp) ||
+      data.exp <= Date.now()
+    ) {
+      return null;
+    }
+
+    return data;
+
+  } catch {
+    return null;
+  }
+}
+
+/* =========================================
+   AUTHENTICATE AFFILIATE
+========================================= */
+
+async function authenticate(request, env) {
+  const authorization =
+    request.headers.get("Authorization") || "";
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return verifyAffiliateToken(
+    match[1],
+    env.AFFILIATE_SECRET
+  );
+}
+
+/* =========================================
+   LOAD RANDOM QUESTION
+========================================= */
+
+async function loadRandomQuestion(request, env, affiliate) {
+  /*
+   * Confirm the affiliate account exists.
+   */
+  const user = await env.DB.prepare(`
+    SELECT id, affiliate_code, membership
+    FROM users
+    WHERE id = ?
+    LIMIT 1
+  `).bind(affiliate.user_id).first();
+
+  if (!user) {
+    return json({
+      success: false,
+      error: "Affiliate account not found"
+    }, 404, request);
+  }
+
+  if (!user.affiliate_code) {
+    return json({
+      success: false,
+      error: "Affiliate referral code not found"
+    }, 400, request);
+  }
+
+  /*
+   * Every request selects a random question.
+   * No daily question is saved in the database.
+   */
+  const question = await env.DB.prepare(`
+    SELECT
+      q.id,
+      q.lesson_id,
+      q.question_number,
+      q.question,
+      q.option_a,
+      q.option_b,
+      q.option_c,
+      q.option_d,
+      q.correct_answer,
+      l.title AS lesson_title
+    FROM questions q
+    JOIN lessons l
+      ON l.id = q.lesson_id
+    ORDER BY RANDOM()
+    LIMIT 1
+  `).first();
+
+  if (!question) {
+    return json({
+      success: false,
+      error: "No questions found in the database"
+    }, 404, request);
+  }
+
+  /*
+   * Build the authenticated affiliate's referral link.
+   */
+  const referralLink =
+    "https://createlk.com/v2/?ref=" +
+    encodeURIComponent(user.affiliate_code);
+
+  return json({
+    success: true,
+
+    question: {
+      id: question.id,
+      lesson_id: question.lesson_id,
+      lesson_title: question.lesson_title,
+      question_number: question.question_number,
+      question: question.question,
+
+      options: {
+        A: question.option_a,
+        B: question.option_b,
+        C: question.option_c,
+        D: question.option_d
+      },
+
+      correct_answer: question.correct_answer
+    },
+
+    affiliate: {
+      code: user.affiliate_code,
+      referral_link: referralLink
+    }
+  }, 200, request);
+}
+
+/* =========================================
+   WORKER ENTRY POINT
+========================================= */
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: cors(request)
+      });
+    }
+
+    if (url.pathname === "/") {
+      return json({
+        success: true,
+        service: "CreateLK English Daily Questions",
+        version: "1.0"
+      }, 200, request);
+    }
+
+    if (
+      url.pathname !== "/api/daily-question" &&
+      url.pathname !== "/api/question"
+    ) {
+      return json({
+        success: false,
+        error: "Endpoint not found"
+      }, 404, request);
+    }
+
+    if (request.method !== "GET") {
+      return json({
+        success: false,
+        error: "Method not allowed"
+      }, 405, request);
+    }
+
+    if (!env.DB) {
+      return json({
+        success: false,
+        error: "D1 database binding DB is missing"
+      }, 500, request);
+    }
+
+    if (!env.AFFILIATE_SECRET) {
+      return json({
+        success: false,
+        error: "AFFILIATE_SECRET is missing"
+      }, 500, request);
+    }
+
+    try {
+      const affiliate = await authenticate(
+        request,
+        env
+      );
+
+      if (!affiliate) {
+        return json({
+          success: false,
+          error: "Invalid or expired affiliate token. Refresh the dashboard and try again."
+        }, 401, request);
+      }
+
+      return await loadRandomQuestion(
+        request,
+        env,
+        affiliate
+      );
+
+    } catch (error) {
+      return json({
+        success: false,
+        error: error.message || "Unable to load question"
+      }, 500, request);
+    }
+  }
+};
