@@ -1,0 +1,443 @@
+
+const cors = origin => ({
+  "Access-Control-Allow-Origin": origin,
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Vary": "Origin"
+});
+
+const json = (data, status = 200, headers = {}) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
+  });
+
+const slugify = value =>
+  String(value || "").trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+const safeFileName = name =>
+  String(name || "document.pdf").replace(/[^a-zA-Z0-9._-]/g, "_");
+
+async function authenticate(request, env) {
+  const authorization = request.headers.get("Authorization") || "";
+  const token = authorization.startsWith("Bearer ")
+    ? authorization.slice(7) : "";
+
+  if (!token) throw new Error("Please sign in with the authorized Google account.");
+
+  const response = await fetch(
+    "https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(token)
+  );
+
+  if (!response.ok) throw new Error("Google sign-in verification failed.");
+
+  const data = await response.json();
+  const issuerOK = [
+    "accounts.google.com",
+    "https://accounts.google.com"
+  ].includes(data.iss);
+
+  if (
+    data.aud !== env.GOOGLE_CLIENT_ID ||
+    !issuerOK ||
+    Number(data.exp) <= Math.floor(Date.now() / 1000) ||
+    String(data.email_verified) !== "true" ||
+    String(data.email || "").toLowerCase() !==
+      String(env.ADMIN_EMAIL || "").toLowerCase()
+  ) {
+    throw new Error("This Google account is not authorized as an administrator.");
+  }
+
+  return data.email;
+}
+
+async function readJSON(request) {
+  try {
+    return await request.json();
+  } catch {
+    throw new Error("Invalid JSON request.");
+  }
+}
+
+async function handler(request, env) {
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const origin = request.headers.get("Origin") || "";
+  const allowed = [
+    env.ALLOWED_ORIGIN || "https://createlk.com",
+    "https://www.createlk.com"
+  ];
+
+  const headers = cors(allowed.includes(origin) ? origin : (allowed[0]));
+
+  if (request.method === "OPTIONS") {
+    if (origin && !allowed.includes(origin)) {
+      return json({ error: "Origin not allowed." }, 403, headers);
+    }
+    return new Response(null, { status: 204, headers });
+  }
+
+  if (origin && !allowed.includes(origin)) {
+    return json({ error: "Origin not allowed." }, 403, headers);
+  }
+
+  try {
+    await authenticate(request, env);
+
+    if (!env.DB) throw new Error("The D1 binding DB is missing.");
+
+    // Dashboard: subjects, lessons, and mapping information.
+    if (path === "/api/bootstrap" && request.method === "GET") {
+      const subjects = await env.DB.prepare(
+        "SELECT id,name,slug,is_active FROM subjects ORDER BY id"
+      ).all();
+
+      const lessons = await env.DB.prepare(`
+        SELECT l.id,l.title,l.description,l.sort_order,l.is_free,
+               l.status,m.subject_id,m.display_order
+        FROM lessons l
+        JOIN subject_lesson_map m ON m.lesson_id=l.id
+        ORDER BY m.subject_id,m.display_order,l.id
+      `).all();
+
+      return json({
+        subjects: subjects.results || [],
+        lessons: lessons.results || []
+      }, 200, headers);
+    }
+
+    // Add a subject.
+    if (path === "/api/subjects" && request.method === "POST") {
+      const b = await readJSON(request);
+      const name = String(b.name || "").trim();
+      const slug = slugify(b.slug || name);
+
+      if (!name || !slug) throw new Error("Subject name is required.");
+
+      const result = await env.DB.prepare(
+        "INSERT INTO subjects (name,slug,is_active) VALUES (?,?,1)"
+      ).bind(name, slug).run();
+
+      return json({ ok: true, id: result.meta.last_row_id }, 201, headers);
+    }
+
+    // Edit or delete a subject.
+    let match = path.match(/^\/api\/subjects\/(\d+)$/);
+    if (match && request.method === "PUT") {
+      const id = Number(match[1]);
+      const b = await readJSON(request);
+      const name = String(b.name || "").trim();
+      const slug = slugify(b.slug || name);
+
+      if (!name || !slug) throw new Error("Subject name is required.");
+
+      await env.DB.prepare(
+        "UPDATE subjects SET name=?,slug=?,is_active=? WHERE id=?"
+      ).bind(name, slug, b.is_active === false ? 0 : 1, id).run();
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    if (match && request.method === "DELETE") {
+      const id = Number(match[1]);
+      await env.DB.prepare(
+        "DELETE FROM subject_lesson_map WHERE subject_id=?"
+      ).bind(id).run();
+      await env.DB.prepare("DELETE FROM subjects WHERE id=?").bind(id).run();
+      return json({ ok: true }, 200, headers);
+    }
+
+    // Add a lesson and link it to a subject.
+    if (path === "/api/lessons" && request.method === "POST") {
+      const b = await readJSON(request);
+      const title = String(b.title || "").trim();
+      const subjectId = Number(b.subject_id);
+
+      if (!title || !subjectId) {
+        throw new Error("Lesson title and subject are required.");
+      }
+
+      const max = await env.DB.prepare(
+        "SELECT COALESCE(MAX(sort_order),0)+1 AS n FROM lessons"
+      ).first();
+
+      const status = ["PUBLISHED", "DRAFT", "COMING_SOON"].includes(b.status)
+        ? b.status : "PUBLISHED";
+
+      const lesson = await env.DB.prepare(`
+        INSERT INTO lessons (title,description,sort_order,is_free,status)
+        VALUES (?,?,?,?,?)
+      `).bind(
+        title,
+        String(b.description || ""),
+        Number(max.n),
+        b.is_free ? 1 : 0,
+        status
+      ).run();
+
+      const lessonId = lesson.meta.last_row_id;
+
+      await env.DB.prepare(`
+        INSERT INTO subject_lesson_map (lesson_id,subject_id,display_order)
+        VALUES (?,?,?)
+      `).bind(
+        lessonId,
+        subjectId,
+        Number(b.display_order || max.n)
+      ).run();
+
+      return json({ ok: true, id: lessonId }, 201, headers);
+    }
+
+    // Edit or delete a lesson.
+    match = path.match(/^\/api\/lessons\/(\d+)$/);
+    if (match && request.method === "PUT") {
+      const id = Number(match[1]);
+      const b = await readJSON(request);
+      const title = String(b.title || "").trim();
+
+      if (!title) throw new Error("Lesson title is required.");
+
+      const status = ["PUBLISHED", "DRAFT", "COMING_SOON"].includes(b.status)
+        ? b.status : "PUBLISHED";
+
+      await env.DB.prepare(`
+        UPDATE lessons
+        SET title=?,description=?,sort_order=?,is_free=?,status=?
+        WHERE id=?
+      `).bind(
+        title,
+        String(b.description || ""),
+        Number(b.sort_order || 1),
+        b.is_free ? 1 : 0,
+        status,
+        id
+      ).run();
+
+      if (b.subject_id) {
+        await env.DB.prepare(`
+          UPDATE subject_lesson_map
+          SET subject_id=?,display_order=?
+          WHERE lesson_id=?
+        `).bind(
+          Number(b.subject_id),
+          Number(b.display_order || b.sort_order || 1),
+          id
+        ).run();
+      }
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    if (match && request.method === "DELETE") {
+      const id = Number(match[1]);
+
+      const resources = await env.DB.prepare(
+        "SELECT file_key FROM lesson_resources WHERE lesson_id=?"
+      ).bind(id).all();
+
+      for (const r of resources.results || []) {
+        if (env.FILES && r.file_key) {
+          await env.FILES.delete(r.file_key);
+        }
+      }
+
+      await env.DB.prepare("DELETE FROM questions WHERE lesson_id=?")
+        .bind(id).run();
+      await env.DB.prepare("DELETE FROM lesson_notes WHERE lesson_id=?")
+        .bind(id).run();
+      await env.DB.prepare("DELETE FROM lesson_resources WHERE lesson_id=?")
+        .bind(id).run();
+      await env.DB.prepare("DELETE FROM subject_lesson_map WHERE lesson_id=?")
+        .bind(id).run();
+      await env.DB.prepare("DELETE FROM lessons WHERE id=?")
+        .bind(id).run();
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    // List questions for a lesson.
+    match = path.match(/^\/api\/questions\/lesson\/(\d+)$/);
+    if (match && request.method === "GET") {
+      const result = await env.DB.prepare(`
+        SELECT id,lesson_id,question_number,question,option_a,option_b,
+               option_c,option_d,correct_answer,explanation
+        FROM questions WHERE lesson_id=?
+        ORDER BY question_number,id
+      `).bind(Number(match[1])).all();
+
+      return json({ questions: result.results || [] }, 200, headers);
+    }
+
+    // Add a question.
+    if (path === "/api/questions" && request.method === "POST") {
+      const b = await readJSON(request);
+      const lessonId = Number(b.lesson_id);
+      const question = String(b.question || "").trim();
+      const answer = String(b.correct_answer || "").toUpperCase();
+
+      if (!lessonId || !question || !["A", "B", "C", "D"].includes(answer)) {
+        throw new Error("Lesson, question, and correct answer A/B/C/D are required.");
+      }
+
+      const next = await env.DB.prepare(
+        "SELECT COALESCE(MAX(question_number),0)+1 AS n FROM questions WHERE lesson_id=?"
+      ).bind(lessonId).first();
+
+      const result = await env.DB.prepare(`
+        INSERT INTO questions
+        (lesson_id,question_number,question,option_a,option_b,option_c,option_d,correct_answer,explanation)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).bind(
+        lessonId,
+        Number(b.question_number || next.n),
+        question,
+        String(b.option_a || ""),
+        String(b.option_b || ""),
+        String(b.option_c || ""),
+        String(b.option_d || ""),
+        answer,
+        String(b.explanation || "")
+      ).run();
+
+      return json({ ok: true, id: result.meta.last_row_id }, 201, headers);
+    }
+
+    // Edit or delete a question.
+    match = path.match(/^\/api\/questions\/(\d+)$/);
+    if (match && request.method === "PUT") {
+      const id = Number(match[1]);
+      const b = await readJSON(request);
+      const answer = String(b.correct_answer || "").toUpperCase();
+
+      if (!String(b.question || "").trim() ||
+          !["A", "B", "C", "D"].includes(answer)) {
+        throw new Error("Question and valid answer A/B/C/D are required.");
+      }
+
+      await env.DB.prepare(`
+        UPDATE questions SET question_number=?,question=?,option_a=?,option_b=?,
+          option_c=?,option_d=?,correct_answer=?,explanation=? WHERE id=?
+      `).bind(
+        Number(b.question_number || 1),
+        String(b.question),
+        String(b.option_a || ""),
+        String(b.option_b || ""),
+        String(b.option_c || ""),
+        String(b.option_d || ""),
+        answer,
+        String(b.explanation || ""),
+        id
+      ).run();
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    if (match && request.method === "DELETE") {
+      await env.DB.prepare("DELETE FROM questions WHERE id=?")
+        .bind(Number(match[1])).run();
+      return json({ ok: true }, 200, headers);
+    }
+
+    // Read and save lesson notes.
+    match = path.match(/^\/api\/notes\/(\d+)$/);
+    if (match && request.method === "GET") {
+      const note = await env.DB.prepare(
+        "SELECT content FROM lesson_notes WHERE lesson_id=?"
+      ).bind(Number(match[1])).first();
+
+      return json({ content: note?.content || "" }, 200, headers);
+    }
+
+    if (match && request.method === "PUT") {
+      const b = await readJSON(request);
+      await env.DB.prepare(`
+        INSERT INTO lesson_notes (lesson_id,content,updated_at)
+        VALUES (?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(lesson_id) DO UPDATE SET
+          content=excluded.content,updated_at=CURRENT_TIMESTAMP
+      `).bind(Number(match[1]), String(b.content || "")).run();
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    // List PDF resources for a lesson.
+    match = path.match(/^\/api\/resources\/lesson\/(\d+)$/);
+    if (match && request.method === "GET") {
+      const result = await env.DB.prepare(`
+        SELECT id,lesson_id,title,file_name,mime_type,created_at
+        FROM lesson_resources WHERE lesson_id=? ORDER BY id DESC
+      `).bind(Number(match[1])).all();
+
+      return json({ resources: result.results || [] }, 200, headers);
+    }
+
+    // Upload a PDF to R2 and save its metadata.
+    if (path === "/api/resources" && request.method === "POST") {
+      if (!env.FILES) throw new Error("The R2 binding FILES is missing.");
+
+      const form = await request.formData();
+      const lessonId = Number(form.get("lesson_id"));
+      const title = String(form.get("title") || "").trim();
+      const file = form.get("file");
+
+      if (!lessonId || !title || !file || typeof file.arrayBuffer !== "function") {
+        throw new Error("Lesson, resource title, and PDF file are required.");
+      }
+
+      if (file.type !== "application/pdf" ||
+          !safeFileName(file.name).toLowerCase().endsWith(".pdf")) {
+        throw new Error("Only PDF files are allowed.");
+      }
+
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error("PDF must be 20 MB or smaller.");
+      }
+
+      const key = `lesson-${lessonId}/${crypto.randomUUID()}-${safeFileName(file.name)}`;
+
+      await env.FILES.put(key, await file.arrayBuffer(), {
+        httpMetadata: { contentType: "application/pdf" }
+      });
+
+      const result = await env.DB.prepare(`
+        INSERT INTO lesson_resources (lesson_id,title,file_key,file_name,mime_type)
+        VALUES (?,?,?,?,?)
+      `).bind(lessonId, title, key, safeFileName(file.name), "application/pdf").run();
+
+      return json({ ok: true, id: result.meta.last_row_id }, 201, headers);
+    }
+
+    // Delete a PDF resource.
+    match = path.match(/^\/api\/resources\/(\d+)$/);
+    if (match && request.method === "DELETE") {
+      const id = Number(match[1]);
+      const resource = await env.DB.prepare(
+        "SELECT file_key FROM lesson_resources WHERE id=?"
+      ).bind(id).first();
+
+      if (resource?.file_key && env.FILES) {
+        await env.FILES.delete(resource.file_key);
+      }
+
+      await env.DB.prepare("DELETE FROM lesson_resources WHERE id=?")
+        .bind(id).run();
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    return json({ error: "Endpoint not found." }, 404, headers);
+
+  } catch (error) {
+    const message = error?.message || "Unexpected server error.";
+    const status = /authorized|sign in|Google/i.test(message) ? 401 : 400;
+    return json({ error: message }, status, headers);
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    return handler(request, env);
+  }
+};
