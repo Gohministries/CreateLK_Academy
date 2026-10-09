@@ -22,7 +22,7 @@ h2{margin:0 0 14px;font-size:18px}
 .link{background:#0b1628;border:1px solid #29415f;border-radius:10px;padding:13px;word-break:break-all;color:#f0b92f;font-size:14px}
 button{width:100%;border:0;border-radius:10px;padding:12px;margin-top:10px;font-weight:700;cursor:pointer;font-size:14px}
 button:disabled{opacity:.55;cursor:not-allowed}
-.copy,.submit,.quiz-next{background:#f0b92f;color:#08111f}
+.copy,.submit{background:#f0b92f;color:#08111f}
 .share,.close,.quiz-close,.home,.guide{background:#29415f;color:#fff}
 .withdraw{background:#19a974;color:#fff}
 .signin{background:#f0b92f;color:#08111f;margin-top:12px}
@@ -52,9 +52,17 @@ input{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #2
 .quiz-ref{background:#0b1628;border:1px solid #29415f;padding:12px;border-radius:10px;margin-top:14px}
 .quiz-ref small{display:block;color:#91a3b8;margin-bottom:7px}
 .quiz-ref div{font-size:12px;color:#f0b92f;overflow-wrap:anywhere}
-@media(max-width:420px){.wrap{padding:10px 10px 40px}.card{padding:15px}.num{font-size:21px}.money{font-size:27px}.box{padding:16px}.quiz-question{font-size:16px}}
+@media(max-width:420px){
+ .wrap{padding:10px 10px 40px}
+ .card{padding:15px}
+ .num{font-size:21px}
+ .money{font-size:27px}
+ .box{padding:16px}
+ .quiz-question{font-size:16px}
+}
 </style>
 </head>
+
 <body>
 
 <div class="wrap">
@@ -65,7 +73,9 @@ input{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #2
 </header>
 
 <div id="app">
-<div class="card"><div class="note">Loading affiliate dashboard...</div></div>
+<div class="card">
+<div class="note">Loading affiliate dashboard...</div>
+</div>
 </div>
 
 <div class="card">
@@ -77,13 +87,21 @@ input{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #2
 <div class="modal" id="withdrawModal">
 <div class="box">
 <h2>💵 Withdraw Commission</h2>
-<div class="note">Minimum withdrawal is LKR 2,000. Your request will be sent to the admin for approval.</div>
+
+<div class="note">
+Minimum withdrawal is LKR 2,000. Your request will be sent to the admin for approval.
+</div>
+
 <input id="accountName" placeholder="Customer / Account Name" autocomplete="name">
 <input id="bank" placeholder="Bank">
 <input id="branch" placeholder="Branch">
 <input id="accountNumber" inputmode="numeric" placeholder="Account Number">
 <input id="amount" type="number" min="2000" placeholder="Withdrawal Amount">
-<button class="submit" id="submitBtn" onclick="submitWithdrawal()">Submit Withdrawal Request</button>
+
+<button class="submit" id="submitBtn" onclick="submitWithdrawal()">
+Submit Withdrawal Request
+</button>
+
 <button class="close" onclick="closeWithdraw()">Cancel</button>
 </div>
 </div>
@@ -91,23 +109,32 @@ input{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #2
 <!-- SHARE AND EARN MODAL -->
 <div class="modal" id="quizModal" role="dialog" aria-modal="true">
 <div class="box">
+
 <div class="quiz-heading">
 <div class="quiz-icon">📚</div>
 <h2>Share and Earn</h2>
-<div class="quiz-subtitle">Share an English quiz with friends using your affiliate referral link.</div>
+<div class="quiz-subtitle">
+Share an English quiz with friends using your affiliate referral link.
+</div>
 </div>
 
-<div id="quizContent"><div class="quiz-status">Loading quiz...</div></div>
+<div id="quizContent">
+<div class="quiz-status">Loading today's quiz...</div>
+</div>
+
 <div class="quiz-status" id="quizStatus" aria-live="polite"></div>
 
-<button class="quiz-next" id="nextQuizBtn" onclick="loadQuiz()">🔄 Next Quiz</button>
-<button class="quiz-share" id="shareQuizBtn" onclick="shareQuiz()" disabled>📤 Share Quiz</button>
+<button class="quiz-share" id="shareQuizBtn" onclick="shareQuiz()" disabled>
+📤 Share and Earn
+</button>
+
 <button class="quiz-close" onclick="closeQuiz()">✕ Close</button>
 
 <div class="quiz-ref">
 <small>Your affiliate referral link</small>
 <div id="quizReferralLink">Loading...</div>
 </div>
+
 </div>
 </div>
 
@@ -122,16 +149,22 @@ let authToken="",referralLink="",availableCommission=0;
 let minimumWithdrawal=MINIMUM,currentQuestion=null;
 let quizReferralLink="",quizLoading=false;
 
+/* LOGIN */
+
 function login(){
  location.href=ENGLISH_API+"/auth/google?return="+encodeURIComponent("/v2/aff.html");
 }
 
 async function getToken(){
  const r=await fetch(ENGLISH_API+"/api/affiliate/token",{
-  credentials:"include",cache:"no-store"
+  credentials:"include",
+  cache:"no-store"
  });
+
  const d=await r.json().catch(()=>({}));
+
  if(!r.ok||!d.success||!d.token)return null;
+
  authToken=d.token;
  return authToken;
 }
@@ -147,52 +180,86 @@ function showSignIn(){
  </div>`;
 }
 
+/* WITHDRAWAL DATA */
+
 async function getWithdrawals(){
  try{
   const r=await fetch(WITHDRAWAL_API+"/api/withdrawals",{
-   headers:{Authorization:"Bearer "+authToken},cache:"no-store"
+   headers:{Authorization:"Bearer "+authToken},
+   cache:"no-store"
   });
+
   const d=await r.json();
+
   if(!r.ok||!d.success)return {pending:0,paid:0};
-  const list=Array.isArray(d.withdrawals)?d.withdrawals:
-   Array.isArray(d.requests)?d.requests:[];
+
+  const list=Array.isArray(d.withdrawals)
+   ?d.withdrawals
+   :Array.isArray(d.requests)
+    ?d.requests
+    :[];
+
   let pending=0,paid=0;
+
   for(const x of list){
    const n=Number(x.amount||0);
    const s=String(x.status||"").toUpperCase();
+
    if(s==="PENDING")pending+=n;
    if(s==="PAID")paid+=n;
   }
+
   return {pending,paid};
- }catch{return {pending:0,paid:0};}
+ }catch{
+  return {pending:0,paid:0};
+ }
 }
+
+/* DASHBOARD */
 
 async function load(){
  try{
-  if(!await getToken()){showSignIn();return;}
+  if(!await getToken()){
+   showSignIn();
+   return;
+  }
 
   const r=await fetch(AFFILIATE_API+"/api/dashboard",{
-   headers:{Authorization:"Bearer "+authToken},cache:"no-store"
+   headers:{Authorization:"Bearer "+authToken},
+   cache:"no-store"
   });
+
   const d=await r.json().catch(()=>({}));
 
   if(!r.ok||!d.success){
-   if(r.status===401||r.status===403){showSignIn();return;}
+   if(r.status===401||r.status===403){
+    showSignIn();
+    return;
+   }
+
    throw new Error(d.error||"Unable to load affiliate dashboard.");
   }
 
   referralLink=d.referral_link||"";
+
   const referrals=Number(d.referrals||0);
   const sales=Number(d.approved_sales||0);
   const rate=Number(d.commission_rate||20);
+
   minimumWithdrawal=Number(d.minimum_withdrawal||MINIMUM);
+
   const totalEarned=Number(d.total_earned||0);
   const pendingCommission=Number(d.pending_commission||0);
+
   const wd=await getWithdrawals();
+
   const withdrawalPending=wd.pending;
   const withdrawalPaid=wd.paid;
 
-  availableCommission=Math.max(0,totalEarned-withdrawalPending-withdrawalPaid);
+  availableCommission=Math.max(
+   0,
+   totalEarned-withdrawalPending-withdrawalPaid
+  );
 
   document.getElementById("app").innerHTML=`
   <div class="card">
@@ -205,10 +272,22 @@ async function load(){
   <div class="card">
    <h2>📊 Performance</h2>
    <div class="grid">
-    <div class="stat"><div class="num">${referrals.toLocaleString()}</div><div class="label">Referrals</div></div>
-    <div class="stat"><div class="num">${sales.toLocaleString()}</div><div class="label">Approved Sales</div></div>
-    <div class="stat"><div class="num">${rate}%</div><div class="label">Commission</div></div>
-    <div class="stat"><div class="num">LKR ${minimumWithdrawal.toLocaleString()}</div><div class="label">Minimum Withdrawal</div></div>
+    <div class="stat">
+     <div class="num">${referrals.toLocaleString()}</div>
+     <div class="label">Referrals</div>
+    </div>
+    <div class="stat">
+     <div class="num">${sales.toLocaleString()}</div>
+     <div class="label">Approved Sales</div>
+    </div>
+    <div class="stat">
+     <div class="num">${rate}%</div>
+     <div class="label">Commission</div>
+    </div>
+    <div class="stat">
+     <div class="num">LKR ${minimumWithdrawal.toLocaleString()}</div>
+     <div class="label">Minimum Withdrawal</div>
+    </div>
    </div>
   </div>
 
@@ -216,15 +295,26 @@ async function load(){
    <h2>💵 Earnings</h2>
    <div class="money">LKR ${availableCommission.toLocaleString()}</div>
    <div class="note">Available Commission</div>
+
    <button class="withdraw" onclick="openWithdraw()" ${availableCommission<minimumWithdrawal?"disabled":""}>
     ${availableCommission>=minimumWithdrawal?"💵 Withdraw Commission":"🔒 Withdraw Commission"}
    </button>
+
    <div class="note" style="margin-top:10px">
-    ${availableCommission>=minimumWithdrawal?"You can submit a withdrawal request now.":"Available when your commission reaches LKR "+minimumWithdrawal.toLocaleString()+"."}
+    ${availableCommission>=minimumWithdrawal
+      ?"You can submit a withdrawal request now."
+      :"Available when your commission reaches LKR "+minimumWithdrawal.toLocaleString()+"."}
    </div>
+
    <div class="grid" style="margin-top:12px">
-    <div class="stat"><div class="num">LKR ${withdrawalPending.toLocaleString()}</div><div class="label">Pending</div></div>
-    <div class="stat"><div class="num">LKR ${withdrawalPaid.toLocaleString()}</div><div class="label">Paid</div></div>
+    <div class="stat">
+     <div class="num">LKR ${withdrawalPending.toLocaleString()}</div>
+     <div class="label">Pending</div>
+    </div>
+    <div class="stat">
+     <div class="num">LKR ${withdrawalPaid.toLocaleString()}</div>
+     <div class="label">Paid</div>
+    </div>
    </div>
   </div>
 
@@ -238,27 +328,52 @@ async function load(){
   </div>`;
  }catch(e){
   document.getElementById("app").innerHTML=`
-  <div class="card error">${esc(e.message)}
-  <button class="copy" onclick="location.reload()">🔄 Try Again</button></div>`;
+  <div class="card error">
+   ${esc(e.message)}
+   <button class="copy" onclick="location.reload()">🔄 Try Again</button>
+  </div>`;
  }
 }
 
+/* COPY REFERRAL LINK */
+
 async function copyLink(){
- if(!referralLink){alert("Referral link unavailable.");return;}
+ if(!referralLink){
+  alert("Referral link unavailable.");
+  return;
+ }
+
  try{
   await navigator.clipboard.writeText(referralLink);
   alert("Referral link copied!");
- }catch{prompt("Copy your referral link:",referralLink);}
+ }catch{
+  prompt("Copy your referral link:",referralLink);
+ }
 }
 
-/* QUIZ POPUP */
+/* DAILY QUIZ */
+
+function getTodayKey(){
+ const now=new Date();
+
+ return "createlk_daily_quiz_"+
+  now.getFullYear()+"-"+
+  String(now.getMonth()+1).padStart(2,"0")+"-"+
+  String(now.getDate()).padStart(2,"0");
+}
 
 async function openQuiz(){
- if(!authToken){alert("Please sign in again.");return;}
+ if(!authToken){
+  alert("Please sign in again.");
+  return;
+ }
+
  document.getElementById("quizModal").classList.add("show");
  document.body.classList.add("modal-open");
- document.getElementById("quizReferralLink").textContent=referralLink||"";
- currentQuestion=null;
+
+ document.getElementById("quizReferralLink").textContent=
+  referralLink||"";
+
  await loadQuiz();
 }
 
@@ -269,56 +384,97 @@ function closeQuiz(){
 
 async function loadQuiz(){
  if(quizLoading)return;
- if(!authToken){setQuizError("Please sign in again.");return;}
+
+ if(!authToken){
+  setQuizError("Please sign in again.");
+  return;
+ }
 
  quizLoading=true;
- const next=document.getElementById("nextQuizBtn");
+
  const share=document.getElementById("shareQuizBtn");
- next.disabled=true;
+ const todayKey=getTodayKey();
+
  share.disabled=true;
- next.textContent="Loading...";
+
  document.getElementById("quizStatus").textContent="";
  document.getElementById("quizContent").innerHTML=
-  '<div class="quiz-status">Loading a random question...</div>';
+  '<div class="quiz-status">Loading today’s quiz...</div>';
 
  try{
+  /* Load the already-saved question for today. */
+  const saved=localStorage.getItem(todayKey);
+
+  if(saved){
+   const cached=JSON.parse(saved);
+
+   if(cached&&cached.question){
+    currentQuestion=cached.question;
+    quizReferralLink=cached.referralLink||referralLink;
+
+    document.getElementById("quizReferralLink").textContent=
+     quizReferralLink;
+
+    renderQuiz(currentQuestion);
+    share.disabled=false;
+    return;
+   }
+  }
+
+  /* No question saved for today: request one from the API. */
   const r=await fetch(DAILY_API+"/api/daily-question",{
    method:"GET",
    headers:{Authorization:"Bearer "+authToken},
    cache:"no-store"
   });
+
   const d=await r.json().catch(()=>({}));
 
   if(!r.ok||!d.success){
-   throw new Error(d.error||"Unable to load a quiz. Please try again.");
+   throw new Error(d.error||"Unable to load today's quiz. Please try again.");
   }
-  if(!d.question)throw new Error("No question was returned.");
+
+  if(!d.question){
+   throw new Error("No question was returned.");
+  }
 
   currentQuestion=d.question;
   quizReferralLink=d.affiliate?.referral_link||referralLink;
-  document.getElementById("quizReferralLink").textContent=quizReferralLink;
+
+  /* Save the question so it cannot be replaced by another request today. */
+  localStorage.setItem(todayKey,JSON.stringify({
+   question:currentQuestion,
+   referralLink:quizReferralLink
+  }));
+
+  document.getElementById("quizReferralLink").textContent=
+   quizReferralLink;
+
   renderQuiz(currentQuestion);
+
  }catch(e){
   currentQuestion=null;
-  setQuizError(e.message||"Unable to load quiz.");
+  setQuizError(e.message||"Unable to load today's quiz.");
  }finally{
   quizLoading=false;
-  next.disabled=false;
   share.disabled=!currentQuestion;
-  next.textContent="🔄 Next Quiz";
  }
 }
 
 function renderQuiz(q){
  const opts=q.options||{};
  const letters=["A","B","C","D"];
+
  const optionsHTML=letters.map(letter=>{
   const value=opts[letter];
+
   if(value===null||value===undefined||value==="")return "";
-  return `<div class="quiz-option">
-   <div class="option-letter">${letter}</div>
-   <div class="option-text">${esc(value)}</div>
-  </div>`;
+
+  return `
+   <div class="quiz-option">
+    <div class="option-letter">${letter}</div>
+    <div class="option-text">${esc(value)}</div>
+   </div>`;
  }).join("");
 
  document.getElementById("quizContent").innerHTML=`
@@ -329,26 +485,34 @@ function renderQuiz(q){
   <div class="quiz-options">${optionsHTML}</div>`;
 
  document.getElementById("quizStatus").textContent=
-  "Share this question with friends and invite them to learn English.";
+  "Today's quiz is ready. Share it with friends and invite them to learn English.";
 }
 
 function setQuizError(message){
  document.getElementById("quizContent").innerHTML=
   `<div class="quiz-status error-text">${esc(message)}</div>`;
+
  document.getElementById("quizStatus").textContent="Please try again.";
  document.getElementById("shareQuizBtn").disabled=true;
 }
 
+/* SHARE QUIZ */
+
 async function shareQuiz(){
- if(!currentQuestion){alert("Load a quiz first.");return;}
+ if(!currentQuestion){
+  alert("Today's quiz is not available yet.");
+  return;
+ }
 
  const q=currentQuestion;
  const opts=q.options||{};
+
  const optionLines=["A","B","C","D"]
   .filter(k=>opts[k]!==null&&opts[k]!==undefined&&opts[k]!=="")
   .map(k=>k+") "+opts[k]);
 
  const link=quizReferralLink||referralLink||"https://createlk.com/v2/";
+
  const text=[
   "📚 CREATE LK ENGLISH QUIZ",
   "",
@@ -366,13 +530,17 @@ async function shareQuiz(){
 
  try{
   if(navigator.share){
-   await navigator.share({title:"CreateLK English Quiz",text});
+   await navigator.share({
+    title:"CreateLK English Quiz",
+    text:text
+   });
   }else{
    await copyText(text);
    alert("Quiz copied! Share it with your friends.");
   }
  }catch(e){
   if(e?.name==="AbortError")return;
+
   try{
    await copyText(text);
    alert("Quiz copied! Share it with your friends.");
@@ -387,14 +555,20 @@ async function copyText(text){
   await navigator.clipboard.writeText(text);
   return;
  }
+
  const el=document.createElement("textarea");
+
  el.value=text;
  el.style.position="fixed";
  el.style.left="-9999px";
+
  document.body.appendChild(el);
  el.select();
+
  const ok=document.execCommand("copy");
+
  el.remove();
+
  if(!ok)throw new Error("Copy failed");
 }
 
@@ -405,6 +579,7 @@ function openWithdraw(){
   alert("Minimum withdrawal is LKR "+minimumWithdrawal.toLocaleString()+".");
   return;
  }
+
  document.getElementById("amount").value=availableCommission;
  document.getElementById("withdrawModal").classList.add("show");
  document.body.classList.add("modal-open");
@@ -426,16 +601,19 @@ async function submitWithdrawal(){
   alert("Please complete all bank details.");
   return;
  }
+
  if(!Number.isFinite(amount)||amount<minimumWithdrawal){
   alert("Minimum withdrawal is LKR "+minimumWithdrawal.toLocaleString()+".");
   return;
  }
+
  if(amount>availableCommission){
   alert("Withdrawal amount cannot exceed your available commission.");
   return;
  }
 
  const btn=document.getElementById("submitBtn");
+
  btn.disabled=true;
  btn.textContent="Submitting...";
 
@@ -454,10 +632,17 @@ async function submitWithdrawal(){
     account_number:accountNumber
    })
   });
-  const d=await r.json().catch(()=>({}));
-  if(!r.ok||!d.success)throw new Error(d.error||"Withdrawal request failed.");
 
-  alert("Withdrawal request submitted successfully!\n\nAmount: LKR "+Number(d.amount||amount).toLocaleString());
+  const d=await r.json().catch(()=>({}));
+
+  if(!r.ok||!d.success){
+   throw new Error(d.error||"Withdrawal request failed.");
+  }
+
+  alert(
+   "Withdrawal request submitted successfully!\n\nAmount: LKR "+
+   Number(d.amount||amount).toLocaleString()
+  );
 
   ["accountName","bank","branch","accountNumber","amount"].forEach(id=>{
    document.getElementById(id).value="";
@@ -465,6 +650,7 @@ async function submitWithdrawal(){
 
   closeWithdraw();
   await load();
+
  }catch(e){
   alert(e.message||"Unable to submit withdrawal request.");
  }finally{
@@ -487,7 +673,9 @@ function esc(value){
 document.querySelectorAll(".modal").forEach(modal=>{
  modal.addEventListener("click",event=>{
   if(event.target!==modal)return;
+
   modal.classList.remove("show");
+
   if(!document.querySelector(".modal.show")){
    document.body.classList.remove("modal-open");
   }
