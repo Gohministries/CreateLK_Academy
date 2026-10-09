@@ -1,0 +1,418 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
+<title>CreateLK Academy — Admin V2</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--n:#102a56;--b:#155eef;--g:#d69b16;--bg:#f3f6fb;--bd:#dfe6f0;--t:#17243a}
+*{box-sizing:border-box}
+body{margin:0;font:15px Arial,sans-serif;background:var(--bg);color:var(--t)}
+header{background:var(--n);color:white;padding:20px 15px}
+.wrap,main{max-width:1050px;margin:auto}
+h1{margin:0;font-size:26px}header p{color:#dce6ff;margin:8px 0 0}
+main{padding:18px 12px}.card{background:white;border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:15px}
+h2{font-size:19px;margin:0 0 13px}
+label{display:block;font-weight:bold;font-size:13px;margin:9px 0 4px}
+input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;margin:4px 0 8px;background:white;color:var(--t)}
+textarea{min-height:85px;resize:vertical}
+button{border:0;border-radius:7px;padding:10px 12px;margin:3px;background:var(--b);color:white;font-weight:bold;cursor:pointer}
+.secondary{background:#eaf0fa;color:var(--n)}.danger{background:#b42318}.gold{background:var(--g);color:var(--n)}
+button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.item{border:1px solid var(--bd);border-radius:9px;padding:11px;margin:9px 0;overflow-wrap:anywhere}
+.item strong{display:block;margin-bottom:6px}.meta,.small{font-size:12px;color:#64748b;line-height:1.5}
+.pill{display:inline-block;background:#edf2fa;padding:4px 8px;border-radius:20px;font-size:11px;margin:3px}
+#login{max-width:500px;margin:30px auto;text-align:center}
+#googleButton{display:flex;justify-content:center;margin:18px 0}
+#app{display:none}#status{padding:11px;background:#eaf2ff;border-radius:8px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#status.error{background:#fff0ee;color:#a32118}#status.ok{background:#e7f8ed;color:#146c37}
+hr{border:0;border-top:1px solid var(--bd);margin:17px 0}
+footer{text-align:center;padding:20px;color:#64748b;font-size:12px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}h1{font-size:22px}.card{padding:12px}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+<h1>CreateLK Academy</h1>
+<p>Admin V2 · Subjects · Lessons · MCQs · Notes · PDF Resources</p>
+</div></header>
+
+<main>
+<section id="login" class="card">
+<h2>Administrator Sign In</h2>
+<p>Sign in using your authorized Google account.</p>
+<div id="googleButton">Loading Google sign-in…</div>
+<p class="small">Administrator: gateofheavensl1@gmail.com</p>
+</section>
+
+<div id="app">
+<div class="row">
+<div><strong id="signedIn"></strong><div class="small">Administrator access</div></div>
+<div><button class="secondary" onclick="loadAll()">Refresh</button><button class="danger" onclick="logout()">Sign Out</button></div>
+</div>
+<div id="status">Ready</div>
+
+<section class="card">
+<h2>1. Subjects</h2>
+<form id="subjectForm">
+<label>Subject name</label><input id="subjectName" required placeholder="Mathematics">
+<label>Slug (optional)</label><input id="subjectSlug" placeholder="mathematics">
+<button>Add Subject</button>
+</form>
+<div id="subjectList"></div>
+</section>
+
+<section class="card">
+<h2>2. Lessons</h2>
+<form id="lessonForm">
+<label>Subject</label><select id="lessonSubject" required></select>
+<label>Lesson title</label><input id="lessonTitle" required>
+<label>Description</label><textarea id="lessonDescription"></textarea>
+<div class="grid">
+<div><label>Access</label><select id="lessonFree"><option value="1">Free</option><option value="0">Premium</option></select></div>
+<div><label>Status</label><select id="lessonStatus"><option value="PUBLISHED">Published</option><option value="DRAFT">Draft</option><option value="COMING_SOON">Coming Soon</option></select></div>
+</div>
+<button>Add Lesson</button>
+</form>
+<hr>
+<label>Filter subject</label><select id="filterSubject"></select>
+<div id="lessonList"></div>
+</section>
+
+<section class="card">
+<h2>3. MCQ Questions</h2>
+<label>Lesson</label><select id="questionLesson"></select>
+<button type="button" onclick="loadQuestions()">Load Questions</button>
+<span id="questionCount" class="small"></span>
+<form id="questionForm">
+<input id="questionId" type="hidden">
+<label>Question</label><textarea id="qText" required></textarea>
+<div class="grid">
+<div><label>Option A</label><input id="qA" required></div>
+<div><label>Option B</label><input id="qB" required></div>
+<div><label>Option C</label><input id="qC" required></div>
+<div><label>Option D</label><input id="qD" required></div>
+</div>
+<label>Correct answer</label><select id="qAnswer"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+<label>Explanation</label><textarea id="qExplanation"></textarea>
+<button id="questionSave">Add Question</button>
+<button type="button" class="secondary" onclick="clearQuestionForm()">Clear</button>
+</form>
+<div id="questionList"></div>
+</section>
+
+<section class="card">
+<h2>4. Lesson Notes</h2>
+<label>Lesson</label><select id="notesLesson"></select>
+<button type="button" onclick="loadNotes()">Load Notes</button>
+<label>Notes content</label><textarea id="notesContent" style="min-height:200px"></textarea>
+<button type="button" onclick="saveNotes()">Save Notes</button>
+</section>
+
+<section class="card">
+<h2>5. PDF Resources</h2>
+<label>Lesson</label><select id="pdfLesson"></select>
+<form id="pdfForm">
+<label>Resource title</label><input id="pdfTitle" required placeholder="Lesson Notes PDF">
+<label>PDF file (maximum 20 MB)</label><input id="pdfFile" type="file" accept=".pdf,application/pdf" required>
+<button id="pdfSave">Upload PDF</button>
+</form>
+<button type="button" class="secondary" onclick="loadResources()">Refresh Resources</button>
+<div id="resourceList"></div>
+<p class="small">PDF uploads require the Worker R2 binding named FILES. Student download links need separate integration.</p>
+</section>
+</div>
+</main>
+<footer>CreateLK Academy · Admin V2</footer>
+
+<script>
+"use strict";
+const API="https://update-v2.createlk.workers.dev";
+const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const ADMIN="gateofheavensl1@gmail.com";
+const $=id=>document.getElementById(id);
+let token="",subjects=[],lessons=[],questions=[],resources=[];
+
+function esc(v){
+ return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function msg(t,type=""){
+ $("status").textContent=t;
+ $("status").className=type;
+}
+async function api(path,opts={}){
+ const headers=new Headers(opts.headers||{});
+ headers.set("Authorization","Bearer "+token);
+ if(opts.body&&!(opts.body instanceof FormData))headers.set("Content-Type","application/json");
+ const r=await fetch(API+path,{...opts,headers});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok)throw Error(d.error||"Request failed: "+r.status);
+ return d;
+}
+function signInCallback(r){
+ try{
+  const p=JSON.parse(atob(r.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+  if(p.email?.toLowerCase()!==ADMIN||p.email_verified!==true)throw Error("Use the authorized administrator Google account.");
+  token=r.credential;
+  $("login").style.display="none";
+  $("app").style.display="block";
+  $("signedIn").textContent=p.email;
+  loadAll();
+ }catch(e){token="";alert(e.message||"Sign-in failed.");}
+}
+function setupGoogle(){
+ if(!window.google?.accounts?.id){setTimeout(setupGoogle,500);return;}
+ $("googleButton").innerHTML="";
+ google.accounts.id.initialize({client_id:CLIENT,callback:signInCallback});
+ google.accounts.id.renderButton($("googleButton"),{theme:"outline",size:"large",shape:"rectangular",text:"signin_with"});
+}
+function logout(){
+ token="";subjects=[];lessons=[];questions=[];resources=[];
+ $("app").style.display="none";$("login").style.display="block";
+ $("subjectList").innerHTML=$("lessonList").innerHTML=$("questionList").innerHTML=$("resourceList").innerHTML="";
+ $("notesContent").value="";
+ setupGoogle();
+}
+setupGoogle();
+
+async function loadAll(){
+ try{
+  msg("Loading academy data…");
+  const d=await api("/api/bootstrap");
+  subjects=d.subjects||[];lessons=d.lessons||[];
+  renderSubjects();renderSubjectOptions();renderLessons();renderLessonOptions();
+  msg(`Loaded ${subjects.length} subjects and ${lessons.length} lessons.`,"ok");
+ }catch(e){msg(e.message,"error");}
+}
+function renderSubjects(){
+ $("subjectList").innerHTML=subjects.map(s=>`<div class="item">
+ <strong>${esc(s.name)}</strong>
+ <div class="meta">ID ${+s.id} · ${esc(s.slug)} · ${Number(s.is_active)?"Active":"Hidden"}</div>
+ <button type="button" class="secondary" onclick="editSubject(${+s.id})">Edit</button>
+ <button type="button" class="secondary" onclick="toggleSubject(${+s.id})">${Number(s.is_active)?"Hide":"Show"}</button>
+ <button type="button" class="danger" onclick="deleteSubject(${+s.id})">Delete</button>
+ </div>`).join("")||'<p class="small">No subjects.</p>';
+}
+function renderSubjectOptions(){
+ const o=subjects.map(s=>`<option value="${+s.id}">${esc(s.name)}</option>`).join("");
+ $("lessonSubject").innerHTML=o;
+ $("filterSubject").innerHTML='<option value="all">All subjects</option>'+o;
+ $("filterSubject").onchange=renderLessons;
+}
+function renderLessonOptions(){
+ const o=lessons.map(l=>{
+  const s=subjects.find(x=>+x.id===+l.subject_id);
+  return `<option value="${+l.id}">${esc(s?.name||"Subject")} — ${esc(l.title)} (#${+l.id})</option>`;
+ }).join("");
+ ["questionLesson","notesLesson","pdfLesson"].forEach(id=>{
+  const old=$(id).value;$(id).innerHTML=o;
+  if([...$(id).options].some(x=>x.value===old))$(id).value=old;
+ });
+}
+function renderLessons(){
+ const f=$("filterSubject").value||"all";
+ $("lessonList").innerHTML=lessons.filter(l=>f==="all"||String(l.subject_id)===f).map(l=>{
+  const s=subjects.find(x=>+x.id===+l.subject_id);
+  return `<div class="item"><strong>${esc(l.title)}</strong>
+  <div class="meta">${esc(s?.name||"Unknown")} · ID ${+l.id} · Order ${l.display_order??l.sort_order??1}</div>
+  <span class="pill">${Number(l.is_free)?"FREE":"PREMIUM"}</span>
+  <span class="pill">${esc(l.status||"PUBLISHED")}</span><div>
+  <button type="button" class="secondary" onclick="editLesson(${+l.id})">Edit</button>
+  <button type="button" class="secondary" onclick="pickLesson(${+l.id},'questionLesson');loadQuestions()">MCQs</button>
+  <button type="button" class="secondary" onclick="pickLesson(${+l.id},'notesLesson');loadNotes()">Notes</button>
+  <button type="button" class="secondary" onclick="pickLesson(${+l.id},'pdfLesson');loadResources()">PDFs</button>
+  <button type="button" class="danger" onclick="deleteLesson(${+l.id})">Delete</button></div></div>`;
+ }).join("")||'<p class="small">No lessons.</p>';
+}
+function pickLesson(id,field){$(field).value=String(id);}
+
+$("subjectForm").onsubmit=async e=>{
+ e.preventDefault();
+ try{
+  await api("/api/subjects",{method:"POST",body:JSON.stringify({
+   name:$("subjectName").value.trim(),slug:$("subjectSlug").value.trim()
+  })});
+  e.target.reset();await loadAll();msg("Subject added.","ok");
+ }catch(x){msg(x.message,"error");}
+};
+async function editSubject(id){
+ const s=subjects.find(x=>+x.id===id);if(!s)return;
+ const name=prompt("Subject name:",s.name);if(name===null)return;
+ const slug=prompt("Subject slug:",s.slug);if(slug===null)return;
+ try{
+  await api("/api/subjects/"+id,{method:"PUT",body:JSON.stringify({
+   name:name.trim(),slug:slug.trim(),is_active:!!Number(s.is_active)
+  })});
+  await loadAll();msg("Subject updated.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function toggleSubject(id){
+ const s=subjects.find(x=>+x.id===id);if(!s)return;
+ try{
+  await api("/api/subjects/"+id,{method:"PUT",body:JSON.stringify({
+   name:s.name,slug:s.slug,is_active:!Number(s.is_active)
+  })});
+  await loadAll();msg("Subject visibility updated.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function deleteSubject(id){
+ const s=subjects.find(x=>+x.id===id);
+ if(!s||!confirm(`Delete "${s.name}" and its mappings? Lessons are not deleted.`))return;
+ try{
+  await api("/api/subjects/"+id,{method:"DELETE"});
+  await loadAll();msg("Subject deleted.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+
+$("lessonForm").onsubmit=async e=>{
+ e.preventDefault();
+ try{
+  await api("/api/lessons",{method:"POST",body:JSON.stringify({
+   subject_id:+$("lessonSubject").value,title:$("lessonTitle").value.trim(),
+   description:$("lessonDescription").value,is_free:$("lessonFree").value==="1",
+   status:$("lessonStatus").value
+  })});
+  e.target.reset();await loadAll();msg("Lesson added.","ok");
+ }catch(x){msg(x.message,"error");}
+};
+async function editLesson(id){
+ const l=lessons.find(x=>+x.id===id);if(!l)return;
+ const title=prompt("Lesson title:",l.title);if(title===null)return;
+ const description=prompt("Description:",l.description||"");if(description===null)return;
+ const subject=prompt("Subject ID:",l.subject_id);if(subject===null)return;
+ const order=prompt("Display order:",l.display_order??l.sort_order??1);if(order===null)return;
+ const free=confirm("OK = FREE. Cancel = PREMIUM.");
+ const status=prompt("Status: PUBLISHED, DRAFT, or COMING_SOON",l.status||"PUBLISHED");if(status===null)return;
+ if(!title.trim()||!Number.isInteger(Number(subject))||!Number.isInteger(Number(order))||+order<1){
+  msg("Enter a valid title, subject ID, and display order.","error");return;
+ }
+ try{
+  await api("/api/lessons/"+id,{method:"PUT",body:JSON.stringify({
+   title,description,subject_id:+subject,sort_order:+order,display_order:+order,
+   is_free:free,status:status.toUpperCase()
+  })});
+  await loadAll();msg("Lesson updated.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function deleteLesson(id){
+ const l=lessons.find(x=>+x.id===id);
+ if(!l||!confirm(`Permanently delete "${l.title}" and its linked questions, notes, mappings and PDFs?`))return;
+ try{
+  await api("/api/lessons/"+id,{method:"DELETE"});
+  await loadAll();msg("Lesson deleted.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+
+async function loadQuestions(){
+ const id=$("questionLesson").value;if(!id)return;
+ try{
+  const d=await api("/api/questions/lesson/"+id);questions=d.questions||[];
+  $("questionCount").textContent=questions.length+" questions";
+  $("questionList").innerHTML=questions.map(q=>`<div class="item">
+  <strong>${esc(q.question_number??"")} ${esc(q.question)}</strong>
+  <div class="meta">A: ${esc(q.option_a)} · B: ${esc(q.option_b)} · C: ${esc(q.option_c)} · D: ${esc(q.option_d)}</div>
+  <span class="pill">Answer: ${esc(q.correct_answer)}</span>
+  <div class="meta">${esc(q.explanation)}</div>
+  <button type="button" class="secondary" onclick="editQuestion(${+q.id})">Edit</button>
+  <button type="button" class="danger" onclick="deleteQuestion(${+q.id})">Delete</button>
+  </div>`).join("")||'<p class="small">No questions.</p>';
+ }catch(e){msg(e.message,"error");}
+}
+function clearQuestionForm(){
+ $("questionForm").reset();$("questionId").value="";$("questionSave").textContent="Add Question";
+}
+function editQuestion(id){
+ const q=questions.find(x=>+x.id===id);if(!q)return;
+ $("questionId").value=q.id;$("qText").value=q.question||"";
+ $("qA").value=q.option_a||"";$("qB").value=q.option_b||"";
+ $("qC").value=q.option_c||"";$("qD").value=q.option_d||"";
+ $("qAnswer").value=q.correct_answer||"A";$("qExplanation").value=q.explanation||"";
+ $("questionSave").textContent="Save Changes";
+ $("questionForm").scrollIntoView({behavior:"smooth"});
+}
+$("questionForm").onsubmit=async e=>{
+ e.preventDefault();
+ const id=$("questionId").value,lessonId=$("questionLesson").value;
+ if(!lessonId){msg("Choose a lesson first.","error");return;}
+ const data={
+  lesson_id:+lessonId,question:$("qText").value.trim(),
+  option_a:$("qA").value.trim(),option_b:$("qB").value.trim(),
+  option_c:$("qC").value.trim(),option_d:$("qD").value.trim(),
+  correct_answer:$("qAnswer").value,explanation:$("qExplanation").value.trim()
+ };
+ try{
+  await api(id?"/api/questions/"+id:"/api/questions",{
+   method:id?"PUT":"POST",body:JSON.stringify(data)
+  });
+  clearQuestionForm();await loadQuestions();msg(id?"Question updated.":"Question added.","ok");
+ }catch(e){msg(e.message,"error");}
+};
+async function deleteQuestion(id){
+ if(!confirm("Delete this question permanently?"))return;
+ try{
+  await api("/api/questions/"+id,{method:"DELETE"});
+  await loadQuestions();msg("Question deleted.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+
+async function loadNotes(){
+ const id=$("notesLesson").value;if(!id)return msg("Choose a lesson first.","error");
+ try{
+  const d=await api("/api/notes/"+id);
+  $("notesContent").value=d.content||"";msg("Notes loaded.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function saveNotes(){
+ const id=$("notesLesson").value;if(!id)return msg("Choose a lesson first.","error");
+ try{
+  await api("/api/notes/"+id,{method:"PUT",body:JSON.stringify({content:$("notesContent").value})});
+  msg("Notes saved.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+
+async function loadResources(){
+ const id=$("pdfLesson").value;if(!id)return msg("Choose a lesson first.","error");
+ try{
+  const d=await api("/api/resources/lesson/"+id);resources=d.resources||[];
+  $("resourceList").innerHTML=resources.map(r=>`<div class="item">
+  <strong>${esc(r.title)}</strong><div class="meta">${esc(r.file_name)} · ID ${+r.id}</div>
+  <button type="button" class="danger" onclick="deleteResource(${+r.id})">Delete PDF</button>
+  </div>`).join("")||'<p class="small">No PDF resources.</p>';
+  msg("Resources loaded.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+$("pdfForm").onsubmit=async e=>{
+ e.preventDefault();
+ const file=$("pdfFile").files[0],lessonId=$("pdfLesson").value;
+ if(!lessonId)return msg("Choose a lesson first.","error");
+ if(!file)return msg("Choose a PDF file.","error");
+ if(file.size>20*1024*1024)return msg("PDF must be 20 MB or smaller.","error");
+ if(file.type!=="application/pdf"&&!file.name.toLowerCase().endsWith(".pdf"))return msg("Choose a PDF file.","error");
+ const button=$("pdfSave");button.disabled=true;button.textContent="Uploading…";
+ try{
+  const form=new FormData();
+  form.append("lesson_id",lessonId);
+  form.append("title",$("pdfTitle").value.trim());
+  form.append("file",file);
+  await api("/api/resources",{method:"POST",body:form});
+  e.target.reset();await loadResources();msg("PDF uploaded.","ok");
+ }catch(e){msg(e.message,"error");}
+ finally{button.disabled=false;button.textContent="Upload PDF";}
+};
+
+["questionLesson","notesLesson","pdfLesson"].forEach(id=>{
+ $(id).addEventListener("change",()=>{
+  if(id==="questionLesson")loadQuestions();
+  if(id==="notesLesson")loadNotes();
+  if(id==="pdfLesson")loadResources();
+ });
+});
+</script>
+</body>
+</html>
