@@ -57,7 +57,6 @@ input{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #2
 </head>
 
 <body>
-
 <div class="wrap">
 <header>
 <a class="back" href="/v2/">← Back</a>
@@ -80,7 +79,6 @@ input{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #2
 <div class="modal" id="withdrawModal">
 <div class="box">
 <h2>💵 Withdraw Commission</h2>
-
 <div class="note">
 Minimum withdrawal is LKR 2,000. Your request will be sent to the admin for approval.
 </div>
@@ -91,23 +89,19 @@ Minimum withdrawal is LKR 2,000. Your request will be sent to the admin for appr
 <input id="accountNumber" inputmode="numeric" placeholder="Account Number">
 <input id="amount" type="number" min="2000" placeholder="Withdrawal Amount">
 
-<button class="submit" id="submitBtn" onclick="submitWithdrawal()">
-Submit Withdrawal Request
-</button>
-
+<button class="submit" id="submitBtn" onclick="submitWithdrawal()">Submit Withdrawal Request</button>
 <button class="close" onclick="closeWithdraw()">Cancel</button>
 </div>
 </div>
 
-<!-- PREFILLED AFFILIATE SHARE MODAL -->
+<!-- AFFILIATE SHARE MODAL -->
 <div class="modal" id="quizModal" role="dialog" aria-modal="true">
 <div class="box">
-
 <div class="share-heading">
-<div class="share-icon">🚀</div>
-<h2>Share and Earn</h2>
+<div class="share-icon">🇱🇰</div>
+<h2>Share CreateLK Academy</h2>
 <div class="share-subtitle">
-Invite friends to learn English with CreateLK English. Share your referral link on WhatsApp or any social media platform.
+Invite Sri Lankan students and learners to explore 20 subjects and develop new skills.
 </div>
 </div>
 
@@ -119,11 +113,8 @@ Invite friends to learn English with CreateLK English. Share your referral link 
 </div>
 
 <button class="copy" onclick="copyAffiliateMessage()">📋 Copy Message</button>
-
 <button class="share-whatsapp" onclick="shareAffiliateMessage()">📤 Share Message</button>
-
 <button class="quiz-close" onclick="closeQuiz()">✕ Close</button>
-
 </div>
 </div>
 
@@ -136,22 +127,16 @@ const MINIMUM=2000;
 let authToken="",referralLink="",availableCommission=0;
 let minimumWithdrawal=MINIMUM;
 
-/* LOGIN */
-
 function login(){
  location.href=ENGLISH_API+"/auth/google?return="+encodeURIComponent("/v2/aff.html");
 }
 
 async function getToken(){
  const r=await fetch(ENGLISH_API+"/api/affiliate/token",{
-  credentials:"include",
-  cache:"no-store"
+  credentials:"include",cache:"no-store"
  });
-
  const d=await r.json().catch(()=>({}));
-
  if(!r.ok||!d.success||!d.token)return null;
-
  authToken=d.token;
  return authToken;
 }
@@ -163,11 +148,9 @@ function showSignIn(){
  <h2>Sign in to your account</h2>
  <div class="note">Sign in to access your affiliate link, commissions and withdrawals.</div>
  <a class="signin" href="#" onclick="login();return false">🔐 Sign in</a>
- <a class="home" href="/v2/" style="margin-top:10px">← Back to CreateLK English</a>
+ <a class="home" href="/v2/" style="margin-top:10px">← Back to CreateLK Academy</a>
  </div>`;
 }
-
-/* WITHDRAWAL DATA */
 
 async function getWithdrawals(){
  try{
@@ -175,34 +158,24 @@ async function getWithdrawals(){
    headers:{Authorization:"Bearer "+authToken},
    cache:"no-store"
   });
-
   const d=await r.json();
-
   if(!r.ok||!d.success)return {pending:0,paid:0};
 
-  const list=Array.isArray(d.withdrawals)
-   ?d.withdrawals
-   :Array.isArray(d.requests)
-    ?d.requests
-    :[];
+  const list=Array.isArray(d.withdrawals)?d.withdrawals:
+   Array.isArray(d.requests)?d.requests:[];
 
   let pending=0,paid=0;
-
   for(const x of list){
    const n=Number(x.amount||0);
    const s=String(x.status||"").toUpperCase();
-
    if(s==="PENDING")pending+=n;
    if(s==="PAID")paid+=n;
   }
-
   return {pending,paid};
  }catch{
   return {pending:0,paid:0};
  }
 }
-
-/* DASHBOARD */
 
 async function load(){
  try{
@@ -215,7 +188,6 @@ async function load(){
    headers:{Authorization:"Bearer "+authToken},
    cache:"no-store"
   });
-
   const d=await r.json().catch(()=>({}));
 
   if(!r.ok||!d.success){
@@ -223,30 +195,22 @@ async function load(){
     showSignIn();
     return;
    }
-
    throw new Error(d.error||"Unable to load affiliate dashboard.");
   }
 
   referralLink=d.referral_link||"";
-
   const referrals=Number(d.referrals||0);
   const sales=Number(d.approved_sales||0);
   const rate=Number(d.commission_rate||20);
-
   minimumWithdrawal=Number(d.minimum_withdrawal||MINIMUM);
-
   const totalEarned=Number(d.total_earned||0);
   const pendingCommission=Number(d.pending_commission||0);
 
   const wd=await getWithdrawals();
-
   const withdrawalPending=wd.pending;
   const withdrawalPaid=wd.paid;
 
-  availableCommission=Math.max(
-   0,
-   totalEarned-withdrawalPending-withdrawalPaid
-  );
+  availableCommission=Math.max(0,totalEarned-withdrawalPending-withdrawalPaid);
 
   document.getElementById("app").innerHTML=`
   <div class="card">
@@ -259,22 +223,10 @@ async function load(){
   <div class="card">
    <h2>📊 Performance</h2>
    <div class="grid">
-    <div class="stat">
-     <div class="num">${referrals.toLocaleString()}</div>
-     <div class="label">Referrals</div>
-    </div>
-    <div class="stat">
-     <div class="num">${sales.toLocaleString()}</div>
-     <div class="label">Approved Sales</div>
-    </div>
-    <div class="stat">
-     <div class="num">${rate}%</div>
-     <div class="label">Commission</div>
-    </div>
-    <div class="stat">
-     <div class="num">LKR ${minimumWithdrawal.toLocaleString()}</div>
-     <div class="label">Minimum Withdrawal</div>
-    </div>
+    <div class="stat"><div class="num">${referrals.toLocaleString()}</div><div class="label">Referrals</div></div>
+    <div class="stat"><div class="num">${sales.toLocaleString()}</div><div class="label">Approved Sales</div></div>
+    <div class="stat"><div class="num">${rate}%</div><div class="label">Commission</div></div>
+    <div class="stat"><div class="num">LKR ${minimumWithdrawal.toLocaleString()}</div><div class="label">Minimum Withdrawal</div></div>
    </div>
   </div>
 
@@ -282,26 +234,17 @@ async function load(){
    <h2>💵 Earnings</h2>
    <div class="money">LKR ${availableCommission.toLocaleString()}</div>
    <div class="note">Available Commission</div>
-
    <button class="withdraw" onclick="openWithdraw()" ${availableCommission<minimumWithdrawal?"disabled":""}>
     ${availableCommission>=minimumWithdrawal?"💵 Withdraw Commission":"🔒 Withdraw Commission"}
    </button>
-
    <div class="note" style="margin-top:10px">
     ${availableCommission>=minimumWithdrawal
-      ?"You can submit a withdrawal request now."
-      :"Available when your commission reaches LKR "+minimumWithdrawal.toLocaleString()+"."}
+     ?"You can submit a withdrawal request now."
+     :"Available when your commission reaches LKR "+minimumWithdrawal.toLocaleString()+"."}
    </div>
-
    <div class="grid" style="margin-top:12px">
-    <div class="stat">
-     <div class="num">LKR ${withdrawalPending.toLocaleString()}</div>
-     <div class="label">Pending</div>
-    </div>
-    <div class="stat">
-     <div class="num">LKR ${withdrawalPaid.toLocaleString()}</div>
-     <div class="label">Paid</div>
-    </div>
+    <div class="stat"><div class="num">LKR ${withdrawalPending.toLocaleString()}</div><div class="label">Pending</div></div>
+    <div class="stat"><div class="num">LKR ${withdrawalPaid.toLocaleString()}</div><div class="label">Paid</div></div>
    </div>
   </div>
 
@@ -322,14 +265,11 @@ async function load(){
  }
 }
 
-/* COPY REFERRAL LINK */
-
 async function copyLink(){
  if(!referralLink){
   alert("Referral link unavailable.");
   return;
  }
-
  try{
   await copyText(referralLink);
   alert("Referral link copied!");
@@ -338,26 +278,28 @@ async function copyLink(){
  }
 }
 
-/* PREFILLED AFFILIATE MESSAGE */
+/* PREFILLED MESSAGE FOR SRI LANKAN STUDENTS */
 
 function makeAffiliateMessage(){
- const link=referralLink||"";
-
  return [
-  "📚 Learn English with CreateLK English!",
+  "🇱🇰🎓 Sri Lankan Students! This Is for You!",
   "",
-  "Want to improve your English step by step? Join CreateLK English and start learning today.",
+  "📚 Discover CreateLK Academy and explore learning opportunities across 20 subjects!",
   "",
-  "✅ English learning practice",
-  "✅ Improve your English skills",
-  "✅ Learn at your own pace",
+  "✨ Learn new skills from home",
+  "📱 Learn using your mobile phone",
+  "🎯 Improve your knowledge step by step",
+  "🌟 Explore practical learning opportunities",
   "",
-  "👉 Start learning here:",
-  link,
+  "Whether you are a student, school leaver, or someone who wants to learn new skills, start exploring today!",
   "",
-  "📲 You can open and share this link on WhatsApp or any social media platform.",
+  "👉 Join CreateLK Academy:",
+  referralLink||"",
   "",
-  "Learn. Create. Grow. 🚀"
+  "📲 Share this link with your friends, classmates, WhatsApp groups, or on any social media platform.",
+  "",
+  "🚀 Learn. Create. Grow.",
+  "CreateLK Academy 🇱🇰"
  ].join("\n");
 }
 
@@ -366,25 +308,18 @@ function openQuiz(){
   alert("Please sign in again.");
   return;
  }
-
  if(!referralLink){
   alert("Your referral link is not available. Please reload the page.");
   return;
  }
-
- document.getElementById("shareMessage").textContent=
-  makeAffiliateMessage();
-
- document.getElementById("quizReferralLink").textContent=
-  referralLink;
-
+ document.getElementById("shareMessage").textContent=makeAffiliateMessage();
+ document.getElementById("quizReferralLink").textContent=referralLink;
  document.getElementById("quizModal").classList.add("show");
  document.body.classList.add("modal-open");
 }
 
 function closeQuiz(){
  document.getElementById("quizModal").classList.remove("show");
-
  if(!document.querySelector(".modal.show")){
   document.body.classList.remove("modal-open");
  }
@@ -392,7 +327,6 @@ function closeQuiz(){
 
 async function copyAffiliateMessage(){
  const message=makeAffiliateMessage();
-
  try{
   await copyText(message);
   alert("Message copied! Share it with your friends.");
@@ -403,20 +337,18 @@ async function copyAffiliateMessage(){
 
 async function shareAffiliateMessage(){
  const message=makeAffiliateMessage();
-
  try{
   if(navigator.share){
    await navigator.share({
-    title:"Learn English with CreateLK English",
+    title:"CreateLK Academy - 20 Subjects",
     text:message
    });
   }else{
    await copyText(message);
-   alert("Message copied! You can now share it on WhatsApp or any social media.");
+   alert("Message copied! Share it on WhatsApp or any social media.");
   }
  }catch(e){
   if(e&&e.name==="AbortError")return;
-
   try{
    await copyText(message);
    alert("Message copied! You can now share it with your friends.");
@@ -426,36 +358,27 @@ async function shareAffiliateMessage(){
  }
 }
 
-/* COPY TEXT FALLBACK */
-
 async function copyText(text){
  if(navigator.clipboard&&navigator.clipboard.writeText){
   await navigator.clipboard.writeText(text);
   return;
  }
-
  const el=document.createElement("textarea");
  el.value=text;
  el.style.position="fixed";
  el.style.left="-9999px";
-
  document.body.appendChild(el);
  el.select();
-
  const ok=document.execCommand("copy");
  el.remove();
-
  if(!ok)throw new Error("Copy failed");
 }
-
-/* WITHDRAWALS */
 
 function openWithdraw(){
  if(availableCommission<minimumWithdrawal){
   alert("Minimum withdrawal is LKR "+minimumWithdrawal.toLocaleString()+".");
   return;
  }
-
  document.getElementById("amount").value=availableCommission;
  document.getElementById("withdrawModal").classList.add("show");
  document.body.classList.add("modal-open");
@@ -463,7 +386,6 @@ function openWithdraw(){
 
 function closeWithdraw(){
  document.getElementById("withdrawModal").classList.remove("show");
-
  if(!document.querySelector(".modal.show")){
   document.body.classList.remove("modal-open");
  }
@@ -480,19 +402,16 @@ async function submitWithdrawal(){
   alert("Please complete all bank details.");
   return;
  }
-
  if(!Number.isFinite(amount)||amount<minimumWithdrawal){
   alert("Minimum withdrawal is LKR "+minimumWithdrawal.toLocaleString()+".");
   return;
  }
-
  if(amount>availableCommission){
   alert("Withdrawal amount cannot exceed your available commission.");
   return;
  }
 
  const btn=document.getElementById("submitBtn");
-
  btn.disabled=true;
  btn.textContent="Submitting...";
 
@@ -513,15 +432,12 @@ async function submitWithdrawal(){
   });
 
   const d=await r.json().catch(()=>({}));
-
   if(!r.ok||!d.success){
    throw new Error(d.error||"Withdrawal request failed.");
   }
 
-  alert(
-   "Withdrawal request submitted successfully!\n\nAmount: LKR "+
-   Number(d.amount||amount).toLocaleString()
-  );
+  alert("Withdrawal request submitted successfully!\n\nAmount: LKR "+
+   Number(d.amount||amount).toLocaleString());
 
   ["accountName","bank","branch","accountNumber","amount"].forEach(id=>{
    document.getElementById(id).value="";
@@ -529,7 +445,6 @@ async function submitWithdrawal(){
 
   closeWithdraw();
   await load();
-
  }catch(e){
   alert(e.message||"Unable to submit withdrawal request.");
  }finally{
@@ -537,8 +452,6 @@ async function submitWithdrawal(){
   btn.textContent="Submit Withdrawal Request";
  }
 }
-
-/* HELPERS */
 
 function esc(value){
  return String(value??"")
@@ -552,9 +465,7 @@ function esc(value){
 document.querySelectorAll(".modal").forEach(modal=>{
  modal.addEventListener("click",event=>{
   if(event.target!==modal)return;
-
   modal.classList.remove("show");
-
   if(!document.querySelector(".modal.show")){
    document.body.classList.remove("modal-open");
   }
