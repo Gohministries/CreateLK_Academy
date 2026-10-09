@@ -1,380 +1,418 @@
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CreateLK Admin Dashboard</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Identity Services (GIS) -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
+<title>CreateLK Academy — Admin V2</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--n:#102a56;--b:#155eef;--g:#d69b16;--bg:#f3f6fb;--bd:#dfe6f0;--t:#17243a}
+*{box-sizing:border-box}
+body{margin:0;font:15px Arial,sans-serif;background:var(--bg);color:var(--t)}
+header{background:var(--n);color:white;padding:20px 15px}
+.wrap,main{max-width:1050px;margin:auto}
+h1{margin:0;font-size:26px}header p{color:#dce6ff;margin:8px 0 0}
+main{padding:18px 12px}.card{background:white;border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:15px}
+h2{font-size:19px;margin:0 0 13px}
+label{display:block;font-weight:bold;font-size:13px;margin:9px 0 4px}
+input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;margin:4px 0 8px;background:white;color:var(--t)}
+textarea{min-height:85px;resize:vertical}
+button{border:0;border-radius:7px;padding:10px 12px;margin:3px;background:var(--b);color:white;font-weight:bold;cursor:pointer}
+.secondary{background:#eaf0fa;color:var(--n)}.danger{background:#b42318}.gold{background:var(--g);color:var(--n)}
+button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.item{border:1px solid var(--bd);border-radius:9px;padding:11px;margin:9px 0;overflow-wrap:anywhere}
+.item strong{display:block;margin-bottom:6px}.meta,.small{font-size:12px;color:#64748b;line-height:1.5}
+.pill{display:inline-block;background:#edf2fa;padding:4px 8px;border-radius:20px;font-size:11px;margin:3px}
+#login{max-width:500px;margin:30px auto;text-align:center}
+#googleButton{display:flex;justify-content:center;margin:18px 0}
+#app{display:none}#status{padding:11px;background:#eaf2ff;border-radius:8px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#status.error{background:#fff0ee;color:#a32118}#status.ok{background:#e7f8ed;color:#146c37}
+hr{border:0;border-top:1px solid var(--bd);margin:17px 0}
+footer{text-align:center;padding:20px;color:#64748b;font-size:12px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}h1{font-size:22px}.card{padding:12px}}
+</style>
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+<body>
+<header><div class="wrap">
+<h1>CreateLK Academy</h1>
+<p>Admin V2 · Subjects · Lessons · MCQs · Notes · PDF Resources</p>
+</div></header>
 
-  <!-- TOP BAR -->
-  <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
-    <div class="flex items-center space-x-3">
-      <h1 class="text-xl font-bold text-blue-600">CreateLK Admin</h1>
-    </div>
-    <div id="auth-section" class="flex items-center space-x-4">
-      <!-- Google Sign-In Button container -->
-      <div id="g_id_onload"
-           data-client_id="YOUR_GOOGLE_CLIENT_ID"
-           data-callback="handleCredentialResponse"
-           data-auto_prompt="false">
-      </div>
-      <div class="g_id_signin" data-type="standard"></div>
-    </div>
-  </header>
+<main>
+<section id="login" class="card">
+<h2>Administrator Sign In</h2>
+<p>Sign in using your authorized Google account.</p>
+<div id="googleButton">Loading Google sign-in…</div>
+<p class="small">Administrator: gateofheavensl1@gmail.com</p>
+</section>
 
-  <!-- MAIN APP CONTAINER (Hidden until logged in) -->
-  <main id="app-container" class="hidden flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
-    
-    <!-- SIDEBAR: Subjects & Lessons Tree -->
-    <aside class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col h-[calc(100vh-8rem)] sticky top-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="font-semibold text-gray-700">Subjects & Lessons</h2>
-        <button onclick="openSubjectModal()" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded font-medium hover:bg-blue-100">+ Subject</button>
-      </div>
-      
-      <div id="sidebar-list" class="flex-1 overflow-y-auto space-y-3 pr-1 text-sm">
-        <!-- Dynamically populated -->
-      </div>
-    </aside>
+<div id="app">
+<div class="row">
+<div><strong id="signedIn"></strong><div class="small">Administrator access</div></div>
+<div><button class="secondary" onclick="loadAll()">Refresh</button><button class="danger" onclick="logout()">Sign Out</button></div>
+</div>
+<div id="status">Ready</div>
 
-    <!-- CONTENT PANEL -->
-    <section id="content-panel" class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col">
-      <div class="text-center text-gray-400 my-auto">
-        <p class="text-lg">Select a lesson from the sidebar to manage notes, questions, and resources.</p>
-      </div>
-    </section>
+<section class="card">
+<h2>1. Subjects</h2>
+<form id="subjectForm">
+<label>Subject name</label><input id="subjectName" required placeholder="Mathematics">
+<label>Slug (optional)</label><input id="subjectSlug" placeholder="mathematics">
+<button>Add Subject</button>
+</form>
+<div id="subjectList"></div>
+</section>
 
-  </main>
+<section class="card">
+<h2>2. Lessons</h2>
+<form id="lessonForm">
+<label>Subject</label><select id="lessonSubject" required></select>
+<label>Lesson title</label><input id="lessonTitle" required>
+<label>Description</label><textarea id="lessonDescription"></textarea>
+<div class="grid">
+<div><label>Access</label><select id="lessonFree"><option value="1">Free</option><option value="0">Premium</option></select></div>
+<div><label>Status</label><select id="lessonStatus"><option value="PUBLISHED">Published</option><option value="DRAFT">Draft</option><option value="COMING_SOON">Coming Soon</option></select></div>
+</div>
+<button>Add Lesson</button>
+</form>
+<hr>
+<label>Filter subject</label><select id="filterSubject"></select>
+<div id="lessonList"></div>
+</section>
 
-  <!-- MODALS CONTAINER -->
-  <div id="modal-root"></div>
+<section class="card">
+<h2>3. MCQ Questions</h2>
+<label>Lesson</label><select id="questionLesson"></select>
+<button type="button" onclick="loadQuestions()">Load Questions</button>
+<span id="questionCount" class="small"></span>
+<form id="questionForm">
+<input id="questionId" type="hidden">
+<label>Question</label><textarea id="qText" required></textarea>
+<div class="grid">
+<div><label>Option A</label><input id="qA" required></div>
+<div><label>Option B</label><input id="qB" required></div>
+<div><label>Option C</label><input id="qC" required></div>
+<div><label>Option D</label><input id="qD" required></div>
+</div>
+<label>Correct answer</label><select id="qAnswer"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+<label>Explanation</label><textarea id="qExplanation"></textarea>
+<button id="questionSave">Add Question</button>
+<button type="button" class="secondary" onclick="clearQuestionForm()">Clear</button>
+</form>
+<div id="questionList"></div>
+</section>
 
-  <!-- JAVASCRIPT LOGIC -->
-  <script>
-    // Configuration - Point to your Worker API base URL
-    const API_BASE = window.location.origin; // Update if frontend and worker are hosted separately
-    let authToken = localStorage.getItem("auth_token") || "";
-    let bootstrapData = { subjects: [], lessons: [] };
-    let currentLessonId = null;
+<section class="card">
+<h2>4. Lesson Notes</h2>
+<label>Lesson</label><select id="notesLesson"></select>
+<button type="button" onclick="loadNotes()">Load Notes</button>
+<label>Notes content</label><textarea id="notesContent" style="min-height:200px"></textarea>
+<button type="button" onclick="saveNotes()">Save Notes</button>
+</section>
 
-    // Initialize UI on load
-    window.addEventListener("DOMContentLoaded", () => {
-      if (authToken) {
-        verifyAndLoad();
-      }
-    });
+<section class="card">
+<h2>5. PDF Resources</h2>
+<label>Lesson</label><select id="pdfLesson"></select>
+<form id="pdfForm">
+<label>Resource title</label><input id="pdfTitle" required placeholder="Lesson Notes PDF">
+<label>PDF file (maximum 20 MB)</label><input id="pdfFile" type="file" accept=".pdf,application/pdf" required>
+<button id="pdfSave">Upload PDF</button>
+</form>
+<button type="button" class="secondary" onclick="loadResources()">Refresh Resources</button>
+<div id="resourceList"></div>
+<p class="small">PDF uploads require the Worker R2 binding named FILES. Student download links need separate integration.</p>
+</section>
+</div>
+</main>
+<footer>CreateLK Academy · Admin V2</footer>
 
-    function handleCredentialResponse(response) {
-      authToken = response.credential;
-      localStorage.setItem("auth_token", authToken);
-      verifyAndLoad();
-    }
+<script>
+"use strict";
+const API="https://update-v2.createlk.workers.dev";
+const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const ADMIN="gateofheavensl1@gmail.com";
+const $=id=>document.getElementById(id);
+let token="",subjects=[],lessons=[],questions=[],resources=[];
 
-    async function apiRequest(endpoint, method = "GET", body = null, isFormData = false) {
-      const headers = { "Authorization": `Bearer ${authToken}` };
-      if (!isFormData && body) headers["Content-Type"] = "application/json";
+function esc(v){
+ return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function msg(t,type=""){
+ $("status").textContent=t;
+ $("status").className=type;
+}
+async function api(path,opts={}){
+ const headers=new Headers(opts.headers||{});
+ headers.set("Authorization","Bearer "+token);
+ if(opts.body&&!(opts.body instanceof FormData))headers.set("Content-Type","application/json");
+ const r=await fetch(API+path,{...opts,headers});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok)throw Error(d.error||"Request failed: "+r.status);
+ return d;
+}
+function signInCallback(r){
+ try{
+  const p=JSON.parse(atob(r.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+  if(p.email?.toLowerCase()!==ADMIN||p.email_verified!==true)throw Error("Use the authorized administrator Google account.");
+  token=r.credential;
+  $("login").style.display="none";
+  $("app").style.display="block";
+  $("signedIn").textContent=p.email;
+  loadAll();
+ }catch(e){token="";alert(e.message||"Sign-in failed.");}
+}
+function setupGoogle(){
+ if(!window.google?.accounts?.id){setTimeout(setupGoogle,500);return;}
+ $("googleButton").innerHTML="";
+ google.accounts.id.initialize({client_id:CLIENT,callback:signInCallback});
+ google.accounts.id.renderButton($("googleButton"),{theme:"outline",size:"large",shape:"rectangular",text:"signin_with"});
+}
+function logout(){
+ token="";subjects=[];lessons=[];questions=[];resources=[];
+ $("app").style.display="none";$("login").style.display="block";
+ $("subjectList").innerHTML=$("lessonList").innerHTML=$("questionList").innerHTML=$("resourceList").innerHTML="";
+ $("notesContent").value="";
+ setupGoogle();
+}
+setupGoogle();
 
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        method,
-        headers,
-        body: isFormData ? body : (body ? JSON.stringify(body) : null)
-      });
+async function loadAll(){
+ try{
+  msg("Loading academy data…");
+  const d=await api("/api/bootstrap");
+  subjects=d.subjects||[];lessons=d.lessons||[];
+  renderSubjects();renderSubjectOptions();renderLessons();renderLessonOptions();
+  msg(`Loaded ${subjects.length} subjects and ${lessons.length} lessons.`,"ok");
+ }catch(e){msg(e.message,"error");}
+}
+function renderSubjects(){
+ $("subjectList").innerHTML=subjects.map(s=>`<div class="item">
+ <strong>${esc(s.name)}</strong>
+ <div class="meta">ID ${+s.id} · ${esc(s.slug)} · ${Number(s.is_active)?"Active":"Hidden"}</div>
+ <button type="button" class="secondary" onclick="editSubject(${+s.id})">Edit</button>
+ <button type="button" class="secondary" onclick="toggleSubject(${+s.id})">${Number(s.is_active)?"Hide":"Show"}</button>
+ <button type="button" class="danger" onclick="deleteSubject(${+s.id})">Delete</button>
+ </div>`).join("")||'<p class="small">No subjects.</p>';
+}
+function renderSubjectOptions(){
+ const o=subjects.map(s=>`<option value="${+s.id}">${esc(s.name)}</option>`).join("");
+ $("lessonSubject").innerHTML=o;
+ $("filterSubject").innerHTML='<option value="all">All subjects</option>'+o;
+ $("filterSubject").onchange=renderLessons;
+}
+function renderLessonOptions(){
+ const o=lessons.map(l=>{
+  const s=subjects.find(x=>+x.id===+l.subject_id);
+  return `<option value="${+l.id}">${esc(s?.name||"Subject")} — ${esc(l.title)} (#${+l.id})</option>`;
+ }).join("");
+ ["questionLesson","notesLesson","pdfLesson"].forEach(id=>{
+  const old=$(id).value;$(id).innerHTML=o;
+  if([...$(id).options].some(x=>x.value===old))$(id).value=old;
+ });
+}
+function renderLessons(){
+ const f=$("filterSubject").value||"all";
+ $("lessonList").innerHTML=lessons.filter(l=>f==="all"||String(l.subject_id)===f).map(l=>{
+  const s=subjects.find(x=>+x.id===+l.subject_id);
+  return `<div class="item"><strong>${esc(l.title)}</strong>
+  <div class="meta">${esc(s?.name||"Unknown")} · ID ${+l.id} · Order ${l.display_order??l.sort_order??1}</div>
+  <span class="pill">${Number(l.is_free)?"FREE":"PREMIUM"}</span>
+  <span class="pill">${esc(l.status||"PUBLISHED")}</span><div>
+  <button type="button" class="secondary" onclick="editLesson(${+l.id})">Edit</button>
+  <button type="button" class="secondary" onclick="pickLesson(${+l.id},'questionLesson');loadQuestions()">MCQs</button>
+  <button type="button" class="secondary" onclick="pickLesson(${+l.id},'notesLesson');loadNotes()">Notes</button>
+  <button type="button" class="secondary" onclick="pickLesson(${+l.id},'pdfLesson');loadResources()">PDFs</button>
+  <button type="button" class="danger" onclick="deleteLesson(${+l.id})">Delete</button></div></div>`;
+ }).join("")||'<p class="small">No lessons.</p>';
+}
+function pickLesson(id,field){$(field).value=String(id);}
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed.");
-      return data;
-    }
+$("subjectForm").onsubmit=async e=>{
+ e.preventDefault();
+ try{
+  await api("/api/subjects",{method:"POST",body:JSON.stringify({
+   name:$("subjectName").value.trim(),slug:$("subjectSlug").value.trim()
+  })});
+  e.target.reset();await loadAll();msg("Subject added.","ok");
+ }catch(x){msg(x.message,"error");}
+};
+async function editSubject(id){
+ const s=subjects.find(x=>+x.id===id);if(!s)return;
+ const name=prompt("Subject name:",s.name);if(name===null)return;
+ const slug=prompt("Subject slug:",s.slug);if(slug===null)return;
+ try{
+  await api("/api/subjects/"+id,{method:"PUT",body:JSON.stringify({
+   name:name.trim(),slug:slug.trim(),is_active:!!Number(s.is_active)
+  })});
+  await loadAll();msg("Subject updated.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function toggleSubject(id){
+ const s=subjects.find(x=>+x.id===id);if(!s)return;
+ try{
+  await api("/api/subjects/"+id,{method:"PUT",body:JSON.stringify({
+   name:s.name,slug:s.slug,is_active:!Number(s.is_active)
+  })});
+  await loadAll();msg("Subject visibility updated.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function deleteSubject(id){
+ const s=subjects.find(x=>+x.id===id);
+ if(!s||!confirm(`Delete "${s.name}" and its mappings? Lessons are not deleted.`))return;
+ try{
+  await api("/api/subjects/"+id,{method:"DELETE"});
+  await loadAll();msg("Subject deleted.","ok");
+ }catch(e){msg(e.message,"error");}
+}
 
-    async function verifyAndLoad() {
-      try {
-        const data = await apiRequest("/api/bootstrap");
-        bootstrapData = data;
-        document.getElementById("auth-section").innerHTML = `
-          <span class="text-sm text-green-600 font-medium">Signed In</span>
-          <button onclick="logout()" class="text-xs bg-gray-100 px-3 py-1.5 rounded hover:bg-gray-200">Sign Out</button>
-        `;
-        document.getElementById("app-container").classList.remove("hidden");
-        renderSidebar();
-      } catch (err) {
-        alert(err.message);
-        logout();
-      }
-    }
+$("lessonForm").onsubmit=async e=>{
+ e.preventDefault();
+ try{
+  await api("/api/lessons",{method:"POST",body:JSON.stringify({
+   subject_id:+$("lessonSubject").value,title:$("lessonTitle").value.trim(),
+   description:$("lessonDescription").value,is_free:$("lessonFree").value==="1",
+   status:$("lessonStatus").value
+  })});
+  e.target.reset();await loadAll();msg("Lesson added.","ok");
+ }catch(x){msg(x.message,"error");}
+};
+async function editLesson(id){
+ const l=lessons.find(x=>+x.id===id);if(!l)return;
+ const title=prompt("Lesson title:",l.title);if(title===null)return;
+ const description=prompt("Description:",l.description||"");if(description===null)return;
+ const subject=prompt("Subject ID:",l.subject_id);if(subject===null)return;
+ const order=prompt("Display order:",l.display_order??l.sort_order??1);if(order===null)return;
+ const free=confirm("OK = FREE. Cancel = PREMIUM.");
+ const status=prompt("Status: PUBLISHED, DRAFT, or COMING_SOON",l.status||"PUBLISHED");if(status===null)return;
+ if(!title.trim()||!Number.isInteger(Number(subject))||!Number.isInteger(Number(order))||+order<1){
+  msg("Enter a valid title, subject ID, and display order.","error");return;
+ }
+ try{
+  await api("/api/lessons/"+id,{method:"PUT",body:JSON.stringify({
+   title,description,subject_id:+subject,sort_order:+order,display_order:+order,
+   is_free:free,status:status.toUpperCase()
+  })});
+  await loadAll();msg("Lesson updated.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function deleteLesson(id){
+ const l=lessons.find(x=>+x.id===id);
+ if(!l||!confirm(`Permanently delete "${l.title}" and its linked questions, notes, mappings and PDFs?`))return;
+ try{
+  await api("/api/lessons/"+id,{method:"DELETE"});
+  await loadAll();msg("Lesson deleted.","ok");
+ }catch(e){msg(e.message,"error");}
+}
 
-    function logout() {
-      localStorage.removeItem("auth_token");
-      authToken = "";
-      window.location.reload();
-    }
+async function loadQuestions(){
+ const id=$("questionLesson").value;if(!id)return;
+ try{
+  const d=await api("/api/questions/lesson/"+id);questions=d.questions||[];
+  $("questionCount").textContent=questions.length+" questions";
+  $("questionList").innerHTML=questions.map(q=>`<div class="item">
+  <strong>${esc(q.question_number??"")} ${esc(q.question)}</strong>
+  <div class="meta">A: ${esc(q.option_a)} · B: ${esc(q.option_b)} · C: ${esc(q.option_c)} · D: ${esc(q.option_d)}</div>
+  <span class="pill">Answer: ${esc(q.correct_answer)}</span>
+  <div class="meta">${esc(q.explanation)}</div>
+  <button type="button" class="secondary" onclick="editQuestion(${+q.id})">Edit</button>
+  <button type="button" class="danger" onclick="deleteQuestion(${+q.id})">Delete</button>
+  </div>`).join("")||'<p class="small">No questions.</p>';
+ }catch(e){msg(e.message,"error");}
+}
+function clearQuestionForm(){
+ $("questionForm").reset();$("questionId").value="";$("questionSave").textContent="Add Question";
+}
+function editQuestion(id){
+ const q=questions.find(x=>+x.id===id);if(!q)return;
+ $("questionId").value=q.id;$("qText").value=q.question||"";
+ $("qA").value=q.option_a||"";$("qB").value=q.option_b||"";
+ $("qC").value=q.option_c||"";$("qD").value=q.option_d||"";
+ $("qAnswer").value=q.correct_answer||"A";$("qExplanation").value=q.explanation||"";
+ $("questionSave").textContent="Save Changes";
+ $("questionForm").scrollIntoView({behavior:"smooth"});
+}
+$("questionForm").onsubmit=async e=>{
+ e.preventDefault();
+ const id=$("questionId").value,lessonId=$("questionLesson").value;
+ if(!lessonId){msg("Choose a lesson first.","error");return;}
+ const data={
+  lesson_id:+lessonId,question:$("qText").value.trim(),
+  option_a:$("qA").value.trim(),option_b:$("qB").value.trim(),
+  option_c:$("qC").value.trim(),option_d:$("qD").value.trim(),
+  correct_answer:$("qAnswer").value,explanation:$("qExplanation").value.trim()
+ };
+ try{
+  await api(id?"/api/questions/"+id:"/api/questions",{
+   method:id?"PUT":"POST",body:JSON.stringify(data)
+  });
+  clearQuestionForm();await loadQuestions();msg(id?"Question updated.":"Question added.","ok");
+ }catch(e){msg(e.message,"error");}
+};
+async function deleteQuestion(id){
+ if(!confirm("Delete this question permanently?"))return;
+ try{
+  await api("/api/questions/"+id,{method:"DELETE"});
+  await loadQuestions();msg("Question deleted.","ok");
+ }catch(e){msg(e.message,"error");}
+}
 
-    // Render Sidebar Tree
-    function renderSidebar() {
-      const container = document.getElementById("sidebar-list");
-      container.innerHTML = "";
+async function loadNotes(){
+ const id=$("notesLesson").value;if(!id)return msg("Choose a lesson first.","error");
+ try{
+  const d=await api("/api/notes/"+id);
+  $("notesContent").value=d.content||"";msg("Notes loaded.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+async function saveNotes(){
+ const id=$("notesLesson").value;if(!id)return msg("Choose a lesson first.","error");
+ try{
+  await api("/api/notes/"+id,{method:"PUT",body:JSON.stringify({content:$("notesContent").value})});
+  msg("Notes saved.","ok");
+ }catch(e){msg(e.message,"error");}
+}
 
-      bootstrapData.subjects.forEach(subject => {
-        const subjectLessons = bootstrapData.lessons.filter(l => l.subject_id === subject.id);
-        
-        const subDiv = document.createElement("div");
-        subDiv.className = "border-b border-gray-100 pb-2";
-        subDiv.innerHTML = `
-          <div class="flex items-center justify-between font-medium text-gray-800 py-1">
-            <span>${subject.name}</span>
-            <div class="space-x-1">
-              <button onclick="openLessonModal(${subject.id})" class="text-xs text-blue-600 hover:underline">+ Lesson</button>
-            </div>
-          </div>
-          <div class="pl-3 space-y-1 mt-1">
-            ${subjectLessons.length === 0 ? '<p class="text-xs text-gray-400 italic">No lessons</p>' : ''}
-            ${subjectLessons.map(lesson => `
-              <div onclick="selectLesson(${lesson.id})" class="cursor-pointer text-xs p-1.5 rounded hover:bg-blue-50 transition ${currentLessonId === lesson.id ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-600'}">
-                ${lesson.title}
-              </div>
-            `).join('')}
-          </div>
-        `;
-        container.appendChild(subDiv);
-      });
-    }
+async function loadResources(){
+ const id=$("pdfLesson").value;if(!id)return msg("Choose a lesson first.","error");
+ try{
+  const d=await api("/api/resources/lesson/"+id);resources=d.resources||[];
+  $("resourceList").innerHTML=resources.map(r=>`<div class="item">
+  <strong>${esc(r.title)}</strong><div class="meta">${esc(r.file_name)} · ID ${+r.id}</div>
+  <button type="button" class="danger" onclick="deleteResource(${+r.id})">Delete PDF</button>
+  </div>`).join("")||'<p class="small">No PDF resources.</p>';
+  msg("Resources loaded.","ok");
+ }catch(e){msg(e.message,"error");}
+}
+$("pdfForm").onsubmit=async e=>{
+ e.preventDefault();
+ const file=$("pdfFile").files[0],lessonId=$("pdfLesson").value;
+ if(!lessonId)return msg("Choose a lesson first.","error");
+ if(!file)return msg("Choose a PDF file.","error");
+ if(file.size>20*1024*1024)return msg("PDF must be 20 MB or smaller.","error");
+ if(file.type!=="application/pdf"&&!file.name.toLowerCase().endsWith(".pdf"))return msg("Choose a PDF file.","error");
+ const button=$("pdfSave");button.disabled=true;button.textContent="Uploading…";
+ try{
+  const form=new FormData();
+  form.append("lesson_id",lessonId);
+  form.append("title",$("pdfTitle").value.trim());
+  form.append("file",file);
+  await api("/api/resources",{method:"POST",body:form});
+  e.target.reset();await loadResources();msg("PDF uploaded.","ok");
+ }catch(e){msg(e.message,"error");}
+ finally{button.disabled=false;button.textContent="Upload PDF";}
+};
 
-    async function selectLesson(id) {
-      currentLessonId = id;
-      renderSidebar();
-      const lesson = bootstrapData.lessons.find(l => l.id === id);
-      const panel = document.getElementById("content-panel");
-
-      panel.innerHTML = `
-        <div class="flex justify-between items-center border-b pb-4 mb-4">
-          <div>
-            <h2 class="text-xl font-bold text-gray-800">${lesson.title}</h2>
-            <p class="text-xs text-gray-500">${lesson.description || 'No description'}</p>
-          </div>
-          <button onclick="deleteLesson(${lesson.id})" class="text-xs text-red-600 hover:bg-red-50 px-3 py-1.5 rounded border border-red-200">Delete Lesson</button>
-        </div>
-
-        <!-- TABS -->
-        <div class="flex space-x-2 border-b border-gray-200 mb-4 text-sm">
-          <button onclick="switchTab('notes')" id="tab-notes" class="pb-2 px-3 border-b-2 font-medium border-blue-600 text-blue-600">Notes</button>
-          <button onclick="switchTab('questions')" id="tab-questions" class="pb-2 px-3 border-b-2 font-medium border-transparent text-gray-500">Questions (MCQ)</button>
-          <button onclick="switchTab('resources')" id="tab-resources" class="pb-2 px-3 border-b-2 font-medium border-transparent text-gray-500">PDF Resources</button>
-        </div>
-
-        <div id="tab-content" class="flex-1 overflow-y-auto">
-          <!-- Loaded dynamically -->
-        </div>
-      `;
-
-      loadTab("notes");
-    }
-
-    async function switchTab(tabName) {
-      ["notes", "questions", "resources"].forEach(t => {
-        document.getElementById(`tab-${t}`).className = t === tabName 
-          ? "pb-2 px-3 border-b-2 font-medium border-blue-600 text-blue-600" 
-          : "pb-2 px-3 border-b-2 font-medium border-transparent text-gray-500";
-      });
-      loadTab(tabName);
-    }
-
-    async function loadTab(tabName) {
-      const container = document.getElementById("tab-content");
-      container.innerHTML = `<p class="text-gray-400 text-sm">Loading...</p>`;
-
-      if (tabName === "notes") {
-        const data = await apiRequest(`/api/notes/${currentLessonId}`);
-        container.innerHTML = `
-          <div class="flex flex-col h-full space-y-3">
-            <textarea id="note-content" class="w-full h-96 p-3 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">${data.content || ""}</textarea>
-            <button onclick="saveNotes()" class="self-end bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">Save Notes</button>
-          </div>
-        `;
-      } else if (tabName === "questions") {
-        const data = await apiRequest(`/api/questions/lesson/${currentLessonId}`);
-        container.innerHTML = `
-          <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <h3 class="font-semibold text-gray-700">MCQ Questions</h3>
-              <button onclick="openQuestionModal()" class="bg-blue-600 text-white text-xs px-3 py-1.5 rounded">+ Add Question</button>
-            </div>
-            <div class="space-y-3">
-              ${data.questions.map((q, idx) => `
-                <div class="p-3 border rounded bg-gray-50 text-sm flex justify-between items-start">
-                  <div>
-                    <span class="font-bold">Q${idx+1}:</span>${q.question}
-                    <div class="text-xs text-gray-500 mt-1">Correct: <strong>${q.correct_answer}</strong></div>
-                  </div>
-                  <button onclick="deleteQuestion(${q.id})" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      } else if (tabName === "resources") {
-        const data = await apiRequest(`/api/resources/lesson/${currentLessonId}`);
-        container.innerHTML = `
-          <div class="space-y-4">
-            <div class="flex justify-between items-center">
-              <h3 class="font-semibold text-gray-700">PDF Files</h3>
-              <button onclick="openResourceModal()" class="bg-blue-600 text-white text-xs px-3 py-1.5 rounded">+ Upload PDF</button>
-            </div>
-            <div class="space-y-2">
-              ${data.resources.map(r => `
-                <div class="p-3 border rounded bg-gray-50 text-sm flex justify-between items-center">
-                  <span>${r.title} (${r.file_name})</span>
-                  <button onclick="deleteResource(${r.id})" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }
-    }
-
-    async function saveNotes() {
-      const content = document.getElementById("note-content").value;
-      await apiRequest(`/api/notes/${currentLessonId}`, "PUT", { content });
-      alert("Notes saved successfully!");
-    }
-
-    async function deleteLesson(id) {
-      if (!confirm("Are you sure you want to delete this lesson?")) return;
-      await apiRequest(`/api/lessons/${id}`, "DELETE");
-      currentLessonId = null;
-      await verifyAndLoad();
-      document.getElementById("content-panel").innerHTML = `<div class="text-center text-gray-400 my-auto"><p class="text-lg">Select a lesson from the sidebar.</p></div>`;
-    }
-
-    async function deleteQuestion(id) {
-      if (!confirm("Delete question?")) return;
-      await apiRequest(`/api/questions/${id}`, "DELETE");
-      loadTab("questions");
-    }
-
-    async function deleteResource(id) {
-      if (!confirm("Delete resource?")) return;
-      await apiRequest(`/api/resources/${id}`, "DELETE");
-      loadTab("resources");
-    }
-
-    // Modal Helpers for Adding Subjects / Lessons / Questions / Resources
-    function openSubjectModal() {
-      showModal(`
-        <h3 class="font-bold text-lg mb-3">Add Subject</h3>
-        <input id="sub-name" type="text" placeholder="Subject Name" class="w-full p-2 border rounded mb-3 text-sm">
-        <div class="flex justify-end space-x-2">
-          <button onclick="closeModal()" class="px-3 py-1.5 border rounded text-sm">Cancel</button>
-          <button onclick="submitSubject()" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Create</button>
-        </div>
-      `);
-    }
-
-    async function submitSubject() {
-      const name = document.getElementById("sub-name").value;
-      await apiRequest("/api/subjects", "POST", { name });
-      closeModal();
-      verifyAndLoad();
-    }
-
-    function openLessonModal(subjectId) {
-      showModal(`
-        <h3 class="font-bold text-lg mb-3">Add Lesson</h3>
-        <input id="less-title" type="text" placeholder="Lesson Title" class="w-full p-2 border rounded mb-3 text-sm">
-        <textarea id="less-desc" placeholder="Description" class="w-full p-2 border rounded mb-3 text-sm"></textarea>
-        <div class="flex justify-end space-x-2">
-          <button onclick="closeModal()" class="px-3 py-1.5 border rounded text-sm">Cancel</button>
-          <button onclick="submitLesson(${subjectId})" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Create</button>
-        </div>
-      `);
-    }
-
-    async function submitLesson(subjectId) {
-      const title = document.getElementById("less-title").value;
-      const description = document.getElementById("less-desc").value;
-      await apiRequest("/api/lessons", "POST", { title, description, subject_id: subjectId });
-      closeModal();
-      verifyAndLoad();
-    }
-
-    function openQuestionModal() {
-      showModal(`
-        <h3 class="font-bold text-lg mb-3">Add MCQ Question</h3>
-        <textarea id="q-text" placeholder="Question text" class="w-full p-2 border rounded mb-2 text-sm"></textarea>
-        <input id="q-a" type="text" placeholder="Option A" class="w-full p-2 border rounded mb-2 text-sm">
-        <input id="q-b" type="text" placeholder="Option B" class="w-full p-2 border rounded mb-2 text-sm">
-        <input id="q-c" type="text" placeholder="Option C" class="w-full p-2 border rounded mb-2 text-sm">
-        <input id="q-d" type="text" placeholder="Option D" class="w-full p-2 border rounded mb-2 text-sm">
-        <select id="q-ans" class="w-full p-2 border rounded mb-3 text-sm">
-          <option value="A">Correct: A</option>
-          <option value="B">Correct: B</option>
-          <option value="C">Correct: C</option>
-          <option value="D">Correct: D</option>
-        </select>
-        <div class="flex justify-end space-x-2">
-          <button onclick="closeModal()" class="px-3 py-1.5 border rounded text-sm">Cancel</button>
-          <button onclick="submitQuestion()" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Save</button>
-        </div>
-      `);
-    }
-
-    async function submitQuestion() {
-      const body = {
-        lesson_id: currentLessonId,
-        question: document.getElementById("q-text").value,
-        option_a: document.getElementById("q-a").value,
-        option_b: document.getElementById("q-b").value,
-        option_c: document.getElementById("q-c").value,
-        option_d: document.getElementById("q-d").value,
-        correct_answer: document.getElementById("q-ans").value
-      };
-      await apiRequest("/api/questions", "POST", body);
-      closeModal();
-      loadTab("questions");
-    }
-
-    function openResourceModal() {
-      showModal(`
-        <h3 class="font-bold text-lg mb-3">Upload PDF Resource</h3>
-        <input id="res-title" type="text" placeholder="Resource Title" class="w-full p-2 border rounded mb-2 text-sm">
-        <input id="res-file" type="file" accept="application/pdf" class="w-full p-2 border rounded mb-3 text-sm">
-        <div class="flex justify-end space-x-2">
-          <button onclick="closeModal()" class="px-3 py-1.5 border rounded text-sm">Cancel</button>
-          <button onclick="submitResource()" class="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Upload</button>
-        </div>
-      `);
-    }
-
-    async function submitResource() {
-      const title = document.getElementById("res-title").value;
-      const fileInput = document.getElementById("res-file").files[0];
-      const formData = new FormData();
-      formData.append("lesson_id", currentLessonId);
-      formData.append("title", title);
-      formData.append("file", fileInput);
-
-      await apiRequest("/api/resources", "POST", formData, true);
-      closeModal();
-      loadTab("resources");
-    }
-
-    function showModal(html) {
-      const root = document.getElementById("modal-root");
-      root.innerHTML = `
-        <div class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4">
-          <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
-            ${html}
-          </div>
-        </div>
-      `;
-    }
-
-    function closeModal() {
-      document.getElementById("modal-root").innerHTML = "";
-    }
-  </script>
+["questionLesson","notesLesson","pdfLesson"].forEach(id=>{
+ $(id).addEventListener("change",()=>{
+  if(id==="questionLesson")loadQuestions();
+  if(id==="notesLesson")loadNotes();
+  if(id==="pdfLesson")loadResources();
+ });
+});
+</script>
 </body>
 </html>
