@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b1628">
-<meta name="description" content="CreateLK Academy for Sri Lankan students. Learn and practise at your own pace.">
+<meta name="description" content="CreateLK Academy for Sri Lankan students.">
 <title>CreateLK Academy</title>
 <style>
 *{box-sizing:border-box}
@@ -49,13 +49,16 @@ select:disabled{opacity:.5}
 #loadBtn{width:100%;margin-top:8px}
 .badge{display:inline-block;padding:5px 8px;border-radius:5px;font-size:11px;background:#193b32;color:#b8e4d1}
 .premium{background:#2b3444;color:#d9b85c}
-.notice{display:none;padding:12px;margin:10px 0;background:#49262b;border-radius:8px;line-height:1.5}
+.notice{display:none;padding:12px;margin:10px 0;background:#49262b;border-radius:8px;line-height:1.5;white-space:pre-wrap}
 .notice.show{display:block}
 .lesson{padding:17px;margin-top:13px;overflow-wrap:anywhere}
 .lesson h2{margin-top:8px}
-.lesson img{max-width:100%;height:auto;max-height:500px;object-fit:contain;border-radius:9px;margin:10px 0}
+.lesson img{max-width:100%;height:auto;border-radius:9px;margin:10px 0}
+#lessonPhoto{width:100%;max-height:360px;object-fit:contain}
 .content{line-height:1.8;overflow-wrap:anywhere}
-.content img{max-width:100%;height:auto;display:block}
+.content img{max-width:100%;height:auto}
+.content table{max-width:100%;border-collapse:collapse}
+.content td,.content th{border:1px solid #52627a;padding:7px}
 footer{text-align:center;padding:20px;color:#8292a7;font-size:11px;border-top:1px solid #243753;margin-top:25px}
 footer a{color:#aab8cc;margin:5px;text-decoration:none}
 @media(max-width:500px){.brand{font-size:15px}.brand img{width:34px;height:34px}.hero{padding:20px 10px}.stat{min-width:70px;padding:8px}}
@@ -114,7 +117,7 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <p class="muted">First select a subject, then select a lesson and press Load Lesson.</p>
 <div class="field">
 <label for="subjectSelect">1. Select Subject</label>
-<select id="subjectSelect"><option value="">Loading subjects...</option></select>
+<select id="subjectSelect" onchange="subjectChanged()"><option value="">Loading subjects...</option></select>
 </div>
 <div class="field">
 <label for="lessonSelect">2. Select Lesson</label>
@@ -142,140 +145,253 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 </footer>
 
 <script>
+"use strict";
 const API="https://createlk-english-v2.createlk.workers.dev";
 const $=id=>document.getElementById(id);
-let referral="",subjects=[],lessons=[],userData=null,requestNo=0;
+let referral="",subjects=[],lessons=[],selectedLesson=null,userData=null,requestNo=0;
 
-function note(t){$("notice").textContent=t;$("notice").classList.add("show")}
-function clearNote(){$("notice").textContent="";$("notice").classList.remove("show")}
-function login(){location.href=API+"/auth/google"+(referral?"?ref="+encodeURIComponent(referral):"")}
-function affiliate(){$("menu").classList.remove("show");$("membership").textContent==="GUEST"?login():location.href="/v2/aff.html"}
+function note(t){
+$("notice").textContent=t;
+$("notice").classList.add("show");
+}
+function clearNote(){
+$("notice").textContent="";
+$("notice").classList.remove("show");
+}
+function login(){
+location.href=API+"/auth/google"+(referral?"?ref="+encodeURIComponent(referral):"");
+}
+function affiliate(){
+$("menu").classList.remove("show");
+if(!userData)login();
+else location.href="/v2/aff.html";
+}
+document.addEventListener("click",e=>{
+if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
+});
 
-document.addEventListener("click",e=>{if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show")});
-
-async function get(path){
-const r=await fetch(API+path,{credentials:"include",cache:"no-store"});
-let d={};try{d=await r.json()}catch{}
-return {r,d};
+async function get(path,opt={}){
+const r=await fetch(API+path,{
+credentials:"include",cache:"no-store",...opt
+});
+let d={};
+try{d=await r.json()}catch{}
+return{r,d};
+}
+function getFree(l){
+return l.is_free===true||Number(l.is_free)===1;
 }
 
 async function loadUser(){
 try{
 const {r,d}=await get("/api/me?_="+Date.now());
 if(!r.ok||!d.logged_in){
-userData=null;$("membership").textContent="GUEST";$("xp").textContent="0";$("coins").textContent="0";
-$("account").style.display="none";$("avatar").style.display="none";$("loginBtn").style.display="";
-$("logout").style.display="none";return;
+userData=null;
+$("membership").textContent="GUEST";
+$("xp").textContent="0";
+$("coins").textContent="0";
+$("account").style.display="none";
+$("avatar").style.display="none";
+$("loginBtn").style.display="";
+$("logout").style.display="none";
+return;
 }
 userData=d.user||{};
-$("membership").textContent=String(userData.membership||"free").toUpperCase();
-$("xp").textContent=userData.xp||0;$("coins").textContent=userData.coins||0;
-$("account").textContent="👤 "+(userData.name||userData.email||"Account");
-$("account").style.display="inline-block";$("loginBtn").style.display="none";$("logout").style.display="block";
-if(userData.avatar_url){$("avatar").src=userData.avatar_url;$("avatar").style.display="block"}else $("avatar").style.display="none";
-}catch(e){console.error(e)}
+const u=userData;
+$("membership").textContent=String(u.membership||"FREE").toUpperCase();
+$("xp").textContent=u.xp||0;
+$("coins").textContent=u.coins||0;
+$("account").textContent="👤 "+(u.name||u.email||"Account");
+$("account").style.display="inline-block";
+$("loginBtn").style.display="none";
+$("logout").style.display="block";
+if(u.avatar_url){
+$("avatar").src=u.avatar_url;
+$("avatar").style.display="block";
+}else $("avatar").style.display="none";
+}catch(e){console.error(e);}
 }
 
 async function loadSubjects(){
 const {r,d}=await get("/api/subjects?_="+Date.now());
 if(!r.ok||d.success===false)throw Error(d.error||"Unable to load subjects");
-subjects=d.subjects||d.data||[];$("subjectCount").textContent=subjects.length;
-const sel=$("subjectSelect");sel.innerHTML='<option value="">-- Select Subject --</option>';
-subjects.forEach((s,i)=>{const o=document.createElement("option");o.value=i;o.textContent=(s.icon?s.icon+" ":"")+(s.name||s.title||"Subject");sel.appendChild(o)});
-if(!subjects.length){sel.innerHTML='<option value="">No subjects available</option>';note("No subjects are currently available.")}
+subjects=Array.isArray(d)?d:(d.subjects||d.data||d.results||[]);
+$("subjectCount").textContent=subjects.length;
+const select=$("subjectSelect");
+select.innerHTML='<option value="">-- Select Subject --</option>';
+subjects.forEach((s,i)=>{
+const o=document.createElement("option");
+o.value=String(i);
+o.textContent=(s.icon?s.icon+" ":"")+(s.name||s.title||"Subject");
+select.appendChild(o);
+});
+if(!subjects.length)note("No subjects are currently available.");
 }
 
 async function subjectChanged(){
-const i=$("subjectSelect").value,sel=$("lessonSelect");
-lessons=[];$("lessonView").style.display="none";$("lessonInfo").textContent="";$("loadBtn").disabled=true;
-if(i===""){sel.innerHTML='<option value="">Choose a subject first</option>';sel.disabled=true;$("lessonCount").textContent="—";return}
-const s=subjects[Number(i)];if(!s)return;
-sel.disabled=true;sel.innerHTML='<option value="">Loading lessons...</option>';
+const i=$("subjectSelect").value;
+const select=$("lessonSelect");
+lessons=[];selectedLesson=null;
+$("lessonView").style.display="none";
+$("lessonInfo").textContent="";
+$("loadBtn").disabled=true;
+if(i===""){
+select.innerHTML='<option value="">Choose a subject first</option>';
+select.disabled=true;
+$("lessonCount").textContent="—";
+return;
+}
+const s=subjects[Number(i)];
+if(!s)return;
+select.disabled=true;
+select.innerHTML='<option value="">Loading lessons...</option>';
 try{
-const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(s.slug||s.id)+"&_="+Date.now());
+const key=s.slug||s.id;
+const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(key)+"&_="+Date.now());
 if(!r.ok||d.success===false)throw Error(d.error||"Unable to load lessons");
-lessons=d.lessons||d.data||[];$("lessonCount").textContent=lessons.length;
-sel.innerHTML='<option value="">-- Select Lesson --</option>';
-lessons.forEach((l,i)=>{const free=Number(l.is_free)===1||l.is_free===true;const o=document.createElement("option");o.value=i;o.textContent=(free?"🟢 FREE · ":"🔒 PREMIUM · ")+(l.title||"Lesson "+(i+1));sel.appendChild(o)});
-sel.disabled=!lessons.length;
-if(!lessons.length){sel.innerHTML='<option value="">No lessons available</option>';note("No lessons are available for this subject yet.")}else clearNote();
-}catch(e){sel.innerHTML='<option value="">Unable to load lessons</option>';sel.disabled=true;note(e.message||"Unable to load lessons")}
+lessons=Array.isArray(d)?d:(d.lessons||d.data||d.results||[]);
+$("lessonCount").textContent=lessons.length;
+select.innerHTML='<option value="">-- Select Lesson --</option>';
+lessons.forEach((l,i)=>{
+const o=document.createElement("option");
+o.value=String(i);
+o.textContent=(getFree(l)?"🟢 FREE · ":"🔒 PREMIUM · ")+(l.title||"Lesson "+(i+1));
+select.appendChild(o);
+});
+select.disabled=!lessons.length;
+if(!lessons.length)note("No lessons are available for this subject yet.");
+else clearNote();
+}catch(e){
+select.innerHTML='<option value="">Unable to load lessons</option>';
+select.disabled=true;
+note(e.message||"Unable to load lessons.");
+}
 }
 
 function lessonChanged(){
-const i=$("lessonSelect").value,l=i===""?null:lessons[Number(i)];
-$("lessonView").style.display="none";$("loadBtn").disabled=!l;$("lessonInfo").textContent="";
-if(!l)return;
-const free=Number(l.is_free)===1||l.is_free===true;
-$("lessonInfo").textContent=(free?"🟢 This lesson is marked FREE in Admin.":"🔒 This lesson is marked PREMIUM in Admin.")+(l.accessible?" You have access.":(!free?" Premium access may be required.":""));
+const i=$("lessonSelect").value;
+selectedLesson=i===""?null:lessons[Number(i)];
+$("lessonView").style.display="none";
+$("loadBtn").disabled=!selectedLesson;
+$("lessonInfo").textContent="";
+if(!selectedLesson)return;
+$("lessonInfo").textContent=getFree(selectedLesson)
+?"🟢 This lesson is marked FREE in Admin."
+:"🔒 This lesson is marked PREMIUM in Admin.";
 }
+$("lessonSelect").addEventListener("change",lessonChanged);
 
-function safeImageURL(src){
+/* Reads saved lesson explanations from the content API. */
+async function getLessonContent(id){
+const paths=[
+"/api/notes/"+encodeURIComponent(id),
+"/api/lesson-content?lesson="+encodeURIComponent(id),
+"/api/lessons/"+encodeURIComponent(id)
+];
+
+for(const path of paths){
 try{
-const u=new URL(src,location.href);
-if(u.protocol!=="https:"&&u.origin!==location.origin)return "";
-if(u.protocol!=="https:"&&u.protocol!=="http:")return "";
-return u.href;
-}catch{return ""}
-}
+const separator=path.includes("?")?"&":"?";
+const {r,d}=await get(path+separator+"_="+Date.now());
+if(!r.ok||d.success===false)continue;
 
-function showImage(src){
-const img=$("lessonPhoto"),url=safeImageURL(src);
-img.onerror=()=>{img.style.display="none";img.removeAttribute("src")};
-if(url){img.src=url;img.style.display="block"}else{img.style.display="none";img.removeAttribute("src")}
+const candidates=[
+d,d.data,d.lesson,d.notes,d.result,
+d.data?.lesson,d.data?.notes
+];
+
+for(const x of candidates){
+if(!x)continue;
+if(typeof x==="string"&&x.trim()){
+return {lesson:null,content:x};
+}
+if(typeof x==="object"){
+const content=
+x.content??x.notes??x.explanation??
+x.lesson_content??x.html??x.body??"";
+if(typeof content==="string"&&content.trim()){
+return {lesson:x,content};
+}
+}
+}
+}catch(e){
+console.error("Lesson content request failed:",path,e);
+}
+}
+return {lesson:null,content:""};
 }
 
 async function loadSelectedLesson(){
 clearNote();
-const i=$("lessonSelect").value,l=i===""?null:lessons[Number(i)];
-if(!l){note("Please select a lesson first.");return}
-const free=Number(l.is_free)===1||l.is_free===true;
-if(!userData){login();return}
-if(!free&&String(userData.membership||"").toLowerCase()!=="premium"){location.href="/v2/pay.html";return}
+const i=$("lessonSelect").value;
+const l=i===""?null:lessons[Number(i)];
+if(!l)return note("Please select a lesson first.");
+if(!userData){login();return;}
 
-const current=++requestNo,btn=$("loadBtn");
-btn.disabled=true;btn.textContent="Loading lesson...";
-$("lessonContent").innerHTML="";$("lessonView").style.display="none";
+const free=getFree(l);
+const access=l.accessible===true;
+if(!free&&!access){
+location.href="/v2/pay.html";
+return;
+}
+
+const current=++requestNo;
+$("loadBtn").disabled=true;
+$("loadBtn").textContent="Loading lesson...";
+$("lessonView").style.display="none";
+
 try{
-const {r,d}=await get("/api/lesson-content?lesson="+encodeURIComponent(l.id)+"&_="+Date.now());
+let lesson=l;
+let content=l.content||l.notes||l.explanation||l.lesson_content||"";
+
+if(!content){
+const result=await getLessonContent(l.id);
 if(current!==requestNo)return;
-if(!r.ok||d.success===false)throw Error(d.error||"Unable to load lesson content.");
-const lesson=d.lesson||l;
+if(result.lesson)lesson={...l,...result.lesson};
+content=result.content;
+}
+if(current!==requestNo)return;
+
 $("lessonTitle").textContent=lesson.title||l.title||"Lesson";
 $("lessonDescription").textContent=lesson.description||l.description||"";
 
-const content=String(d.content??lesson.content??lesson.explanation??lesson.notes??"");
-$("lessonContent").innerHTML=content||'<p class="muted">No lesson explanation has been added yet.</p>';
+const image=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
+if(image){
+$("lessonPhoto").src=image;
+$("lessonPhoto").style.display="block";
+$("lessonPhoto").onerror=()=>$("lessonPhoto").style.display="none";
+}else $("lessonPhoto").style.display="none";
 
-const firstImage=$("lessonContent").querySelector("img");
-if(firstImage){
-firstImage.loading="lazy";
-firstImage.style.maxWidth="100%";
-firstImage.style.height="auto";
-showImage(firstImage.src);
+if(content){
+$("lessonContent").innerHTML=content;
 }else{
-const img=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
-showImage(img);
+$("lessonContent").innerHTML=
+"<p class='muted'>Lesson explanation not found. The Student Worker must return the saved notes from the same D1 database used by Admin.</p>";
 }
 
-const isFree=Number(lesson.is_free??l.is_free)===1||lesson.is_free===true||l.is_free===true;
-$("lessonBadge").innerHTML='<span class="badge '+(isFree?"":"premium")+'">'+(isFree?"FREE LESSON":"PREMIUM LESSON")+'</span>';
+$("lessonBadge").innerHTML='<span class="badge '+(free?"":"premium")+'">'+(free?"FREE LESSON":"PREMIUM LESSON")+'</span>';
 $("lessonView").style.display="block";
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
-}catch(e){note(e.message||"Unable to load lesson.")}
-finally{if(current===requestNo){btn.disabled=false;btn.textContent="Load Lesson →"}}
+}catch(e){
+note(e.message||"Unable to load lesson.");
+}finally{
+if(current===requestNo){
+$("loadBtn").disabled=false;
+$("loadBtn").textContent="Load Lesson →";
+}
+}
 }
 
-$("subjectSelect").addEventListener("change",subjectChanged);
-$("lessonSelect").addEventListener("change",lessonChanged);
 $("year").textContent=new Date().getFullYear();
 referral=(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();
 
 async function init(){
 await loadUser();
-try{await loadSubjects()}catch(e){
+try{
+await loadSubjects();
+}catch(e){
 $("subjectSelect").innerHTML='<option value="">Unable to load subjects</option>';
-note((e.message||"Unable to load subjects.")+" Check that /api/subjects is available on your Worker.")
+note((e.message||"Unable to load subjects.")+" Check that /api/subjects is available.");
 }
 }
 init();
