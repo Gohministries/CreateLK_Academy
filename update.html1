@@ -125,10 +125,6 @@ button{
  background:#2563eb;color:white
 }
 
-.clear{
- background:#64748b;color:white
-}
-
 .nav{
  margin-top:7px
 }
@@ -172,6 +168,8 @@ button{
 
 <main>
 
+<!-- SEARCH -->
+
 <div class="box">
 
 <div class="search">
@@ -179,7 +177,7 @@ button{
 <input
  id="search"
  placeholder="Search verse..."
- oninput="render"
+ oninput="render()"
 >
 
 <select
@@ -207,6 +205,8 @@ Local storage
 
 </div>
 
+
+<!-- CALENDAR -->
 
 <div class="box">
 
@@ -240,6 +240,8 @@ Local storage
 
 </div>
 
+
+<!-- EDITOR -->
 
 <div class="box">
 
@@ -278,13 +280,6 @@ Day <span id="day">1</span>
  onclick="saveVerse()"
 >
 💾 Save / Update
-</button>
-
-<button
- class="clear"
- onclick="clearForm()"
->
-Clear
 </button>
 
 </div>
@@ -334,14 +329,20 @@ let month=date.getMonth();
 let current=dayOfYear(date);
 
 
+/* ELEMENT */
+
 const $=id=>document.getElementById(id);
 
+
+/* LEAP YEAR */
 
 function isLeap(y){
  return y%4===0 &&
        (y%100!==0 || y%400===0);
 }
 
+
+/* 365-DAY NUMBER */
 
 function dayOfYear(d){
 
@@ -356,12 +357,18 @@ function dayOfYear(d){
   ) / 86400000
  )+1;
 
+ /*
+   Skip February 29.
+   This keeps the Bible plan at 365 days.
+ */
  if(isLeap(d.getFullYear()) && d.getMonth()>1)
   n--;
 
  return n;
 }
 
+
+/* DAY NUMBER -> DATE */
 
 function dateFromDay(day,y){
 
@@ -374,6 +381,8 @@ function dateFromDay(day,y){
 }
 
 
+/* SAVE SELECTED DATE */
+
 function saveDate(){
 
  localStorage.setItem(
@@ -383,11 +392,15 @@ function saveDate(){
 }
 
 
+/* INITIALIZE */
+
 function init(){
 
  data=JSON.parse(
   localStorage.getItem(DATA_KEY) || "[]"
  );
+
+ /* Day list */
 
  for(let i=1;i<=365;i++){
 
@@ -396,6 +409,8 @@ function init(){
 
  }
 
+
+ /* Years */
 
  let now=new Date().getFullYear();
 
@@ -406,6 +421,10 @@ function init(){
 
  }
 
+
+ /*
+   Safety check
+ */
 
  if(current<1 || current>365){
 
@@ -424,6 +443,8 @@ function init(){
  loadCloud();
 }
 
+
+/* CALENDAR */
 
 function render(){
 
@@ -444,6 +465,8 @@ function render(){
   new Date(year,month+1,0).getDate();
 
 
+ /* Empty cells */
+
  for(let i=0;i<first;i++){
 
   calendar.innerHTML+=
@@ -458,6 +481,8 @@ function render(){
   .toLowerCase();
 
 
+ /* Dates */
+
  for(let n=1;n<=total;n++){
 
   let d=new Date(
@@ -468,6 +493,10 @@ function render(){
 
   let day=dayOfYear(d);
 
+
+  /*
+    February 29
+  */
 
   if(
    isLeap(year) &&
@@ -547,6 +576,8 @@ function render(){
 }
 
 
+/* SELECT CALENDAR DATE */
+
 function selectDate(n){
 
  date=new Date(
@@ -566,6 +597,8 @@ function selectDate(n){
  render();
 }
 
+
+/* SELECT DAY */
 
 function goDay(value){
 
@@ -589,6 +622,8 @@ function goDay(value){
 }
 
 
+/* PREVIOUS / NEXT */
+
 function moveDay(amount){
 
  let next=current+amount;
@@ -599,6 +634,8 @@ function moveDay(amount){
  goDay(next);
 }
 
+
+/* MONTH */
 
 function changeMonth(amount){
 
@@ -622,6 +659,8 @@ function changeMonth(amount){
 }
 
 
+/* YEAR */
+
 function changeYear(){
 
  year=Number(
@@ -631,6 +670,8 @@ function changeYear(){
  render();
 }
 
+
+/* LOAD SAVED VERSE */
 
 function loadVerse(){
 
@@ -655,6 +696,8 @@ function loadVerse(){
 }
 
 
+/* PROGRESS */
+
 function updateProgress(){
 
  let count=data.filter(
@@ -670,6 +713,8 @@ function updateProgress(){
 }
 
 
+/* LOCAL SAVE */
+
 function saveLocal(){
 
  localStorage.setItem(
@@ -681,6 +726,8 @@ function saveLocal(){
  render();
 }
 
+
+/* SAVE VERSE */
 
 async function saveVerse(){
 
@@ -767,13 +814,10 @@ async function saveVerse(){
 }
 
 
-function clearForm(){
+/* CLEAR REMOVED */
 
- $("english").value="";
- $("sinhala").value="";
- $("tamil").value="";
-}
 
+/* STATUS */
 
 function showStatus(text,type){
 
@@ -787,6 +831,8 @@ function showStatus(text,type){
  },3000);
 }
 
+
+/* LOAD CLOUD DATA */
 
 async function loadCloud(){
 
@@ -814,6 +860,10 @@ async function loadCloud(){
   if(!Array.isArray(cloud))
    throw new Error();
 
+
+  /*
+    Cloud verses update local data.
+  */
 
   cloud.forEach(verse=>{
 
@@ -849,6 +899,11 @@ async function loadCloud(){
   );
 
 
+  /*
+    IMPORTANT:
+    Keep the selected date.
+  */
+
   loadVerse();
 
   render();
@@ -864,6 +919,10 @@ async function loadCloud(){
 
   $("sync").textContent=
    "⚠ Offline / local data";
+
+  /*
+    Still load local saved verse.
+  */
 
   loadVerse();
  }
