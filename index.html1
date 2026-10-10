@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,7 +37,6 @@ section,.card{background:#13233b;border:1px solid #243753;border-radius:12px}
 .stat small{font-size:10px;color:#9eacc2;margin-top:4px}
 .account{display:none;margin:8px}
 .link{display:block;max-width:350px;margin:7px auto;padding:11px;border-radius:8px;text-decoration:none;font-weight:bold}
-.rank{background:#172942;color:white}
 .affiliate{background:#c5a64b;color:#101b2c}
 .panel{padding:17px;margin-top:13px}
 .panel h2{margin-top:0}
@@ -59,6 +57,10 @@ select:disabled{opacity:.5}
 .content img{max-width:100%;height:auto}
 .content table{max-width:100%;border-collapse:collapse}
 .content td,.content th{border:1px solid #52627a;padding:7px}
+.subtitle-box{margin-top:18px;padding:14px;background:#172942;border:1px solid #30435e;border-radius:10px}
+.subtitle-box h3{margin:0 0 12px;color:#d9b85c}
+#subtitleContent{line-height:1.8;overflow-wrap:anywhere;margin-top:12px}
+#subtitleContent img{max-width:100%;height:auto}
 footer{text-align:center;padding:20px;color:#8292a7;font-size:11px;border-top:1px solid #243753;margin-top:25px}
 footer a{color:#aab8cc;margin:5px;text-decoration:none}
 @media(max-width:500px){.brand{font-size:15px}.brand img{width:34px;height:34px}.hero{padding:20px 10px}.stat{min-width:70px;padding:8px}}
@@ -77,7 +79,6 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <button class="menu-btn" aria-label="Open menu" onclick="$('menu').classList.toggle('show')">☰</button>
 <div class="menu" id="menu">
 <a href="/v2/">📚 Academy Home</a>
-<a href="/v2/rank.html">🏆 Leaderboard</a>
 <a href="#" onclick="affiliate();return false">💰 Affiliate Program</a>
 <a href="/v2/about.html">About Us</a>
 <a href="/v2/contact.html">Contact Us</a>
@@ -102,11 +103,9 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <div class="stat"><strong id="subjectCount">—</strong><small>SUBJECTS</small></div>
 <div class="stat"><strong id="lessonCount">—</strong><small>LESSONS</small></div>
 <div class="stat"><strong id="xp">0</strong><small>XP</small></div>
-<div class="stat"><strong id="coins">0</strong><small>COINS</small></div>
 <div class="stat"><strong id="membership">GUEST</strong><small>MEMBERSHIP</small></div>
 </div>
 <div id="account" class="account"></div>
-<a class="link rank" href="/v2/rank.html">🏆 Leaderboard</a>
 <a class="link affiliate" href="#" onclick="affiliate();return false">💰 Affiliate Program</a>
 </section>
 
@@ -133,6 +132,15 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <p id="lessonDescription" class="muted"></p>
 <img id="lessonPhoto" style="display:none" alt="Lesson image">
 <div id="lessonContent" class="content"></div>
+
+<div id="subtitleBox" class="subtitle-box" style="display:none">
+<h3>🌐 Lesson Subtitles</h3>
+<label for="subtitleSelect">Choose language or subtitle</label>
+<select id="subtitleSelect">
+<option value="">Select subtitle</option>
+</select>
+<div id="subtitleContent" class="content"></div>
+</div>
 </section>
 </main>
 
@@ -148,7 +156,7 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 "use strict";
 const API="https://createlk-english-v2.createlk.workers.dev";
 const $=id=>document.getElementById(id);
-let referral="",subjects=[],lessons=[],selectedLesson=null,userData=null,requestNo=0;
+let referral="",subjects=[],lessons=[],selectedLesson=null,userData=null,requestNo=0,subtitles=[];
 
 function note(t){
 $("notice").textContent=t;
@@ -189,7 +197,6 @@ if(!r.ok||!d.logged_in){
 userData=null;
 $("membership").textContent="GUEST";
 $("xp").textContent="0";
-$("coins").textContent="0";
 $("account").style.display="none";
 $("avatar").style.display="none";
 $("loginBtn").style.display="";
@@ -200,7 +207,6 @@ userData=d.user||{};
 const u=userData;
 $("membership").textContent=String(u.membership||"FREE").toUpperCase();
 $("xp").textContent=u.xp||0;
-$("coins").textContent=u.coins||0;
 $("account").textContent="👤 "+(u.name||u.email||"Account");
 $("account").style.display="inline-block";
 $("loginBtn").style.display="none";
@@ -281,45 +287,78 @@ $("lessonInfo").textContent=getFree(selectedLesson)
 }
 $("lessonSelect").addEventListener("change",lessonChanged);
 
-/* Reads saved lesson explanations from the content API. */
 async function getLessonContent(id){
 const paths=[
 "/api/notes/"+encodeURIComponent(id),
 "/api/lesson-content?lesson="+encodeURIComponent(id),
 "/api/lessons/"+encodeURIComponent(id)
 ];
-
 for(const path of paths){
 try{
 const separator=path.includes("?")?"&":"?";
 const {r,d}=await get(path+separator+"_="+Date.now());
 if(!r.ok||d.success===false)continue;
-
-const candidates=[
-d,d.data,d.lesson,d.notes,d.result,
-d.data?.lesson,d.data?.notes
-];
-
+const candidates=[d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes];
 for(const x of candidates){
 if(!x)continue;
-if(typeof x==="string"&&x.trim()){
-return {lesson:null,content:x};
-}
+if(typeof x==="string"&&x.trim())return{lesson:null,content:x};
 if(typeof x==="object"){
-const content=
-x.content??x.notes??x.explanation??
-x.lesson_content??x.html??x.body??"";
-if(typeof content==="string"&&content.trim()){
-return {lesson:x,content};
+const content=x.content??x.notes??x.explanation??x.lesson_content??x.html??x.body??"";
+if(typeof content==="string"&&content.trim())return{lesson:x,content};
 }
 }
+}catch(e){console.error("Lesson content request failed:",path,e);}
+}
+return{lesson:null,content:""};
+}
+
+/* Load subtitles from the Student Worker. */
+async function loadSubtitles(id){
+const box=$("subtitleBox"),select=$("subtitleSelect"),content=$("subtitleContent");
+box.style.display="none";
+select.innerHTML='<option value="">Loading subtitles...</option>';
+content.innerHTML="";
+subtitles=[];
+
+try{
+const {r,d}=await get("/api/lesson-subtitles/lesson/"+encodeURIComponent(id)+"?_="+Date.now());
+if(!r.ok||d.success===false){
+select.innerHTML='<option value="">Subtitles unavailable</option>';
+console.warn("Subtitle API error:",r.status,d);
+return;
+}
+
+subtitles=Array.isArray(d)?d:(d.subtitles||d.data?.subtitles||[]);
+if(!subtitles.length){
+select.innerHTML='<option value="">No subtitles available</option>';
+return;
+}
+
+select.innerHTML='<option value="">-- Select subtitle --</option>';
+subtitles.forEach((s,i)=>{
+const o=document.createElement("option");
+o.value=String(i);
+o.textContent=[s.language,s.title].filter(Boolean).join(" · ")||"Subtitle "+(i+1);
+select.appendChild(o);
+});
+box.style.display="block";
+
+if(subtitles.length===1){
+select.value="0";
+showSubtitle();
 }
 }catch(e){
-console.error("Lesson content request failed:",path,e);
+console.error("Subtitle loading failed:",e);
+select.innerHTML='<option value="">Unable to load subtitles</option>';
 }
 }
-return {lesson:null,content:""};
+
+function showSubtitle(){
+const i=$("subtitleSelect").value;
+const s=i===""?null:subtitles[Number(i)];
+$("subtitleContent").innerHTML=s?(s.content||"Subtitle content is empty."):"";
 }
+$("subtitleSelect").addEventListener("change",showSubtitle);
 
 async function loadSelectedLesson(){
 clearNote();
@@ -362,15 +401,13 @@ $("lessonPhoto").style.display="block";
 $("lessonPhoto").onerror=()=>$("lessonPhoto").style.display="none";
 }else $("lessonPhoto").style.display="none";
 
-if(content){
-$("lessonContent").innerHTML=content;
-}else{
-$("lessonContent").innerHTML=
-"<p class='muted'>Lesson explanation not found. The Student Worker must return the saved notes from the same D1 database used by Admin.</p>";
-}
-
+$("lessonContent").innerHTML=content||"<p class='muted'>Lesson explanation not found. Check that Admin and Student Workers use the same D1 database.</p>";
 $("lessonBadge").innerHTML='<span class="badge '+(free?"":"premium")+'">'+(free?"FREE LESSON":"PREMIUM LESSON")+'</span>';
 $("lessonView").style.display="block";
+
+await loadSubtitles(l.id);
+if(current!==requestNo)return;
+
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
 }catch(e){
 note(e.message||"Unable to load lesson.");
