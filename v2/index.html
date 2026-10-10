@@ -7,7 +7,6 @@
 <meta name="theme-color" content="#0b1628">
 <meta name="description" content="CreateLK Academy for Sri Lankan students. Learn and practise at your own pace.">
 <title>CreateLK Academy</title>
-
 <style>
 *{box-sizing:border-box}
 body{margin:0;font:15px Arial,Helvetica,sans-serif;background:#0b1628;color:#dbe4f0}
@@ -54,20 +53,17 @@ select:disabled{opacity:.5}
 .notice.show{display:block}
 .lesson{padding:17px;margin-top:13px}
 .lesson h2{margin-top:8px}
-.lesson img{width:100%;max-height:360px;object-fit:contain;border-radius:9px;margin:10px 0}
+.lesson img{max-width:100%;height:auto;border-radius:9px;margin:10px 0}
+#lessonPhoto{width:100%;max-height:360px;object-fit:contain}
 .content{line-height:1.8;overflow-wrap:anywhere}
 .content img{max-width:100%;height:auto}
+.content table{max-width:100%;border-collapse:collapse}
+.content td,.content th{border:1px solid #52627a;padding:7px}
 footer{text-align:center;padding:20px;color:#8292a7;font-size:11px;border-top:1px solid #243753;margin-top:25px}
 footer a{color:#aab8cc;margin:5px;text-decoration:none}
-@media(max-width:500px){
-.brand{font-size:15px}
-.brand img{width:34px;height:34px}
-.hero{padding:20px 10px}
-.stat{min-width:70px;padding:8px}
-}
+@media(max-width:500px){.brand{font-size:15px}.brand img{width:34px;height:34px}.hero{padding:20px 10px}.stat{min-width:70px;padding:8px}}
 </style>
 </head>
-
 <body>
 <header>
 <nav>
@@ -75,10 +71,8 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <img src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png" alt="CreateLK Academy">
 <span>CreateLK <span class="gold">Academy</span></span>
 </a>
-
 <button class="btn" id="loginBtn" onclick="login()">Sign in</button>
 <img id="avatar" width="35" height="35" style="display:none;border-radius:50%;object-fit:cover" alt="Profile">
-
 <div class="menu-wrap">
 <button class="menu-btn" aria-label="Open menu" onclick="$('menu').classList.toggle('show')">☰</button>
 <div class="menu" id="menu">
@@ -104,7 +98,6 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <h1>CreateLK Academy</h1>
 <h2>Learn More. Practise More. Achieve More.</h2>
 <p>Choose a subject, select a lesson, and start learning from your mobile phone.</p>
-
 <div class="stats">
 <div class="stat"><strong id="subjectCount">—</strong><small>SUBJECTS</small></div>
 <div class="stat"><strong id="lessonCount">—</strong><small>LESSONS</small></div>
@@ -112,7 +105,6 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <div class="stat"><strong id="coins">0</strong><small>COINS</small></div>
 <div class="stat"><strong id="membership">GUEST</strong><small>MEMBERSHIP</small></div>
 </div>
-
 <div id="account" class="account"></div>
 <a class="link rank" href="/v2/rank.html">🏆 Leaderboard</a>
 <a class="link affiliate" href="#" onclick="affiliate();return false">💰 Affiliate Program</a>
@@ -123,21 +115,14 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <section class="panel">
 <h2>📚 Choose Your Lesson</h2>
 <p class="muted">First select a subject, then select a lesson and press Load Lesson.</p>
-
 <div class="field">
 <label for="subjectSelect">1. Select Subject</label>
-<select id="subjectSelect" onchange="subjectChanged()">
-<option value="">Loading subjects...</option>
-</select>
+<select id="subjectSelect" onchange="subjectChanged()"><option value="">Loading subjects...</option></select>
 </div>
-
 <div class="field">
 <label for="lessonSelect">2. Select Lesson</label>
-<select id="lessonSelect" disabled>
-<option value="">Choose a subject first</option>
-</select>
+<select id="lessonSelect" disabled><option value="">Choose a subject first</option></select>
 </div>
-
 <div id="lessonInfo" class="muted"></div>
 <button id="loadBtn" class="btn" onclick="loadSelectedLesson()" disabled>Load Lesson →</button>
 </section>
@@ -160,62 +145,44 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 </footer>
 
 <script>
+"use strict";
 const API="https://createlk-english-v2.createlk.workers.dev";
 const $=id=>document.getElementById(id);
-
-let referral="";
-let subjects=[];
-let lessons=[];
-let selectedLesson=null;
-let userData=null;
-let requestNo=0;
-
-function esc(v){
-return String(v??"").replace(/[&<>"']/g,c=>({
-"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-}[c]));
-}
+let referral="",subjects=[],lessons=[],selectedLesson=null,userData=null,requestNo=0;
 
 function note(t){
 $("notice").textContent=t;
 $("notice").classList.add("show");
 }
-
 function clearNote(){
 $("notice").textContent="";
 $("notice").classList.remove("show");
 }
-
 function login(){
 location.href=API+"/auth/google"+(referral?"?ref="+encodeURIComponent(referral):"");
 }
-
 function affiliate(){
 $("menu").classList.remove("show");
-$("membership").textContent==="GUEST"
-?login()
-:location.href="/v2/aff.html";
+if(!userData)login();
+else location.href="/v2/aff.html";
 }
-
 document.addEventListener("click",e=>{
 if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
 });
-
 async function get(path,opt={}){
 const r=await fetch(API+path,{
-credentials:"include",
-cache:"no-store",
-...opt
+credentials:"include",cache:"no-store",...opt
 });
 let d={};
 try{d=await r.json()}catch{}
 return{r,d};
 }
-
+function getFree(l){
+return l.is_free===true||Number(l.is_free)===1;
+}
 async function loadUser(){
 try{
 const {r,d}=await get("/api/me?_="+Date.now());
-
 if(!r.ok||!d.logged_in){
 userData=null;
 $("membership").textContent="GUEST";
@@ -227,209 +194,150 @@ $("loginBtn").style.display="";
 $("logout").style.display="none";
 return;
 }
-
 userData=d.user||{};
 const u=userData;
-const membership=String(u.membership||"free").toLowerCase();
-
-$("membership").textContent=membership.toUpperCase();
+$("membership").textContent=String(u.membership||"FREE").toUpperCase();
 $("xp").textContent=u.xp||0;
 $("coins").textContent=u.coins||0;
 $("account").textContent="👤 "+(u.name||u.email||"Account");
 $("account").style.display="inline-block";
 $("loginBtn").style.display="none";
 $("logout").style.display="block";
-
 if(u.avatar_url){
 $("avatar").src=u.avatar_url;
 $("avatar").style.display="block";
-}else{
-$("avatar").style.display="none";
+}else $("avatar").style.display="none";
+}catch(e){console.error(e);}
 }
-}catch(e){
-console.error("Account loading failed",e);
-}
-}
-
 async function loadSubjects(){
 const {r,d}=await get("/api/subjects?_="+Date.now());
-
-if(!r.ok||d.success===false){
-throw Error(d.error||"Unable to load subjects");
-}
-
+if(!r.ok||d.success===false)throw Error(d.error||"Unable to load subjects");
 subjects=d.subjects||d.data||[];
-
 $("subjectCount").textContent=subjects.length;
-
 const select=$("subjectSelect");
 select.innerHTML='<option value="">-- Select Subject --</option>';
-
 subjects.forEach((s,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
 o.textContent=(s.icon?s.icon+" ":"")+(s.name||s.title||"Subject");
 select.appendChild(o);
 });
-
-if(!subjects.length){
-select.innerHTML='<option value="">No subjects available</option>';
-note("No subjects are currently available.");
+if(!subjects.length)note("No subjects are currently available.");
 }
-}
-
 async function subjectChanged(){
-const index=$("subjectSelect").value;
+const i=$("subjectSelect").value;
 const select=$("lessonSelect");
-
-lessons=[];
-selectedLesson=null;
+lessons=[];selectedLesson=null;
 $("lessonView").style.display="none";
 $("lessonInfo").textContent="";
 $("loadBtn").disabled=true;
-
-if(index===""){
+if(i===""){
 select.innerHTML='<option value="">Choose a subject first</option>';
 select.disabled=true;
 $("lessonCount").textContent="—";
 return;
 }
-
-const s=subjects[Number(index)];
+const s=subjects[Number(i)];
 if(!s)return;
-
 select.disabled=true;
 select.innerHTML='<option value="">Loading lessons...</option>';
-
 try{
 const key=s.slug||s.id;
 const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(key)+"&_="+Date.now());
-
-if(!r.ok||d.success===false){
-throw Error(d.error||"Unable to load lessons");
-}
-
+if(!r.ok||d.success===false)throw Error(d.error||"Unable to load lessons");
 lessons=d.lessons||d.data||[];
 $("lessonCount").textContent=lessons.length;
-
 select.innerHTML='<option value="">-- Select Lesson --</option>';
-
 lessons.forEach((l,i)=>{
-const free=l.is_free===true||Number(l.is_free)===1;
 const o=document.createElement("option");
 o.value=String(i);
-o.textContent=(free?"🟢 FREE · ":"🔒 PREMIUM · ")+(l.title||"Lesson "+(i+1));
+o.textContent=(getFree(l)?"🟢 FREE · ":"🔒 PREMIUM · ")+(l.title||"Lesson "+(i+1));
 select.appendChild(o);
 });
-
 select.disabled=!lessons.length;
-
-if(!lessons.length){
-select.innerHTML='<option value="">No lessons available</option>';
-note("No lessons are available for this subject yet.");
-}else{
-clearNote();
-}
+if(!lessons.length)note("No lessons are available for this subject yet.");
+else clearNote();
 }catch(e){
 select.innerHTML='<option value="">Unable to load lessons</option>';
 select.disabled=true;
 note(e.message||"Unable to load lessons.");
 }
 }
-
 function lessonChanged(){
-const index=$("lessonSelect").value;
-selectedLesson=index===""?null:lessons[Number(index)];
-
+const i=$("lessonSelect").value;
+selectedLesson=i===""?null:lessons[Number(i)];
 $("lessonView").style.display="none";
 $("loadBtn").disabled=!selectedLesson;
 $("lessonInfo").textContent="";
-
 if(!selectedLesson)return;
-
-const free=selectedLesson.is_free===true||Number(selectedLesson.is_free)===1;
-const access=selectedLesson.accessible===true;
-
-$("lessonInfo").textContent=
-(free?"🟢 This lesson is marked FREE in Admin.":"🔒 This lesson is marked PREMIUM in Admin.")+
-(access?" You have access.":(!free?" Premium access may be required.":""));
+$("lessonInfo").textContent=getFree(selectedLesson)
+?"🟢 This lesson is marked FREE in Admin."
+:"🔒 This lesson is marked PREMIUM in Admin.";
 }
+$("lessonSelect").addEventListener("change",lessonChanged);
 
+/* Retrieve saved explanation from the existing Admin notes endpoint. */
+async function getLessonContent(id){
+const paths=[
+"/api/notes/"+encodeURIComponent(id),
+"/api/lesson-content?lesson="+encodeURIComponent(id),
+"/api/lessons/"+encodeURIComponent(id)
+];
+for(const path of paths){
+try{
+const {r,d}=await get(path+"&_="+Date.now());
+if(!r.ok||d.success===false)continue;
+const x=d.lesson||d.data||d;
+const content=x.content||x.notes||x.explanation||x.lesson_content||"";
+if(content)return {lesson:x,content};
+}catch(e){}
+}
+return {lesson:null,content:""};
+}
 async function loadSelectedLesson(){
 clearNote();
-
-const index=$("lessonSelect").value;
-const l=index===""?null:lessons[Number(index)];
-
-if(!l){
-note("Please select a lesson first.");
-return;
-}
-
-const free=l.is_free===true||Number(l.is_free)===1;
+const i=$("lessonSelect").value;
+const l=i===""?null:lessons[Number(i)];
+if(!l)return note("Please select a lesson first.");
+if(!userData){login();return;}
+const free=getFree(l);
 const access=l.accessible===true;
-
-if(!userData){
-login();
-return;
-}
-
 if(!free&&!access){
 location.href="/v2/pay.html";
 return;
 }
-
 const current=++requestNo;
 $("loadBtn").disabled=true;
 $("loadBtn").textContent="Loading lesson...";
-
 try{
-/*
-Uses the existing quiz endpoint to retrieve lesson information.
-If your Worker returns lesson content/explanation from another endpoint,
-that endpoint must be connected here.
-*/
-const {r,d}=await get("/api/quiz?lesson="+encodeURIComponent(l.id)+"&_="+Date.now());
-
+let lesson=l;
+let content=l.content||l.notes||l.explanation||l.lesson_content||"";
+if(!content){
+const result=await getLessonContent(l.id);
 if(current!==requestNo)return;
-if(!r.ok||d.success===false){
-throw Error(d.error||"Unable to load lesson.");
+if(result.lesson)lesson={...l,...result.lesson};
+content=result.content;
 }
-
-const lesson=d.lesson||l;
-
+if(current!==requestNo)return;
 $("lessonTitle").textContent=lesson.title||l.title||"Lesson";
 $("lessonDescription").textContent=lesson.description||l.description||"";
-
 const image=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
 if(image){
 $("lessonPhoto").src=image;
 $("lessonPhoto").style.display="block";
-$("lessonPhoto").onerror=()=>{$("lessonPhoto").style.display="none"};
-}else{
-$("lessonPhoto").style.display="none";
-}
-
-const content=lesson.content||lesson.explanation||lesson.notes||"";
+$("lessonPhoto").onerror=()=>$("lessonPhoto").style.display="none";
+}else $("lessonPhoto").style.display="none";
 
 if(content){
-/* Admin-created lesson content is expected to contain trusted HTML. */
 $("lessonContent").innerHTML=content;
-}else if(d.questions&&d.questions.length){
-$("lessonContent").innerHTML=
-"<p class='muted'>This lesson is available, but the current API returned quiz questions rather than lesson explanation content.</p>";
 }else{
+/* Quiz questions remain separate from lesson explanation. */
 $("lessonContent").innerHTML=
-"<p class='muted'>No lesson explanation has been added yet.</p>";
+"<p class='muted'>The lesson explanation is not available from the content API. Please check that the explanation was saved in Admin and that the student Worker can read the saved notes.</p>";
 }
-
-const isFree=lesson.is_free===true||Number(lesson.is_free)===1;
-$("lessonBadge").innerHTML=
-'<span class="badge '+(isFree?"":"premium")+'">'+(isFree?"FREE LESSON":"PREMIUM LESSON")+'</span>';
-
+$("lessonBadge").innerHTML='<span class="badge '+(free?"":"premium")+'">'+(free?"FREE LESSON":"PREMIUM LESSON")+'</span>';
 $("lessonView").style.display="block";
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
-
 }catch(e){
 note(e.message||"Unable to load lesson.");
 }finally{
@@ -439,21 +347,16 @@ $("loadBtn").textContent="Load Lesson →";
 }
 }
 }
-
-$("lessonSelect").addEventListener("change",lessonChanged);
 $("year").textContent=new Date().getFullYear();
 referral=(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();
-
 async function init(){
 await loadUser();
-try{
-await loadSubjects();
-}catch(e){
+try{await loadSubjects();}
+catch(e){
 $("subjectSelect").innerHTML='<option value="">Unable to load subjects</option>';
 note((e.message||"Unable to load subjects.")+" Check that /api/subjects is available on your Worker.");
 }
 }
-
 init();
 </script>
 </body>
