@@ -1,75 +1,74 @@
 
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-const IMAGE_PREFIX = "lesson-images/";
-const ALLOWED_TYPES = new Set(["image/jpeg","image/png","image/webp","image/gif"]);
+const COOKIE="english_v2_session",DAYS=7,AFFILIATE_TOKEN_MINUTES=2;
 
-const cors = origin => ({
-  "Access-Control-Allow-Origin": origin,
-  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
-  "Access-Control-Max-Age": "86400",
-  "Vary": "Origin"
+const cors=r=>({
+  "Access-Control-Allow-Origin":r.headers.get("Origin")||"*",
+  "Access-Control-Allow-Credentials":"true",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers":"Content-Type,Authorization",
+  "Vary":"Origin"
 });
 
-const json = (data,status=200,headers={}) =>
-  new Response(JSON.stringify(data),{
-    status,
-    headers:{"Content-Type":"application/json; charset=utf-8",...headers}
-  });
+const json=(d,s=200,r)=>new Response(JSON.stringify(d),{
+  status:s,
+  headers:{"Content-Type":"application/json; charset=utf-8",
+    "Cache-Control":"no-store",...cors(r)}
+});
 
-const slugify = v => String(v||"").trim().toLowerCase()
-  .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+const ck=(r,n)=>{
+  const x=(r.headers.get("Cookie")||"").match(
+    new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"));
+  return x?decodeURIComponent(x[1]):null;
+};
 
-const safeFileName = v => String(v||"image").replace(/[^a-zA-Z0-9._-]/g,"_");
+const rnd=(n=32)=>{
+  const a=new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return [...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+};
 
-async function authenticate(request,env){
-  const a=request.headers.get("Authorization")||"";
-  const token=a.startsWith("Bearer ")?a.slice(7):"";
-  if(!token)throw Error("Please sign in with the authorized Google account.");
+const prem=u=>String(u?.membership||"").trim().toLowerCase()==="premium";
 
-  const r=await fetch("https://oauth2.googleapis.com/tokeninfo?id_token="+encodeURIComponent(token));
-  if(!r.ok)throw Error("Google sign-in verification failed.");
-  const d=await r.json();
-
-  if(
-    d.aud!==env.GOOGLE_CLIENT_ID ||
-    !["accounts.google.com","https://accounts.google.com"].includes(d.iss) ||
-    Number(d.exp)<=Math.floor(Date.now()/1000) ||
-    String(d.email_verified)!=="true" ||
-    String(d.email||"").toLowerCase()!==String(env.ADMIN_EMAIL||"").toLowerCase()
-  )throw Error("This Google account is not authorized as an administrator.");
-
-  return d.email;
+async function me(r,e){
+  const t=ck(r,COOKIE);
+  if(!t)return null;
+  return e.DB.prepare(`
+    SELECT u.id,u.google_id,u.email,u.name,u.avatar_url,
+      u.membership,u.affiliate_code,u.referred_by
+    FROM users u JOIN sessions s ON s.user_id=u.id
+    WHERE s.token=? AND s.expires_at>? LIMIT 1
+  `).bind(t,new Date().toISOString()).first();
 }
 
-async function readJSON(request){
-  try{return await request.json()}
-  catch{throw Error("Invalid JSON request.")}
-}
+async function setup(e){
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS sessions(
+      token TEXT PRIMARY KEY,
+      user_id TEXT,
+      expires_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 
-function imagePrefix(id){return `${IMAGE_PREFIX}lesson-${id}/`}
-function validImageKey(k){
-  return typeof k==="string"&&k.startsWith(IMAGE_PREFIX)&&
-    !k.includes("..")&&!k.includes("\\")&&k.length<=500;
-}
-function imageUrl(request,key,env){
-  const base=String(env.IMAGE_BASE_URL||new URL(request.url).origin).replace(/\/+$/,"");
-  return base+"/images/"+key.split("/").map(encodeURIComponent).join("/");
-}
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS referrals(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referrer_id TEXT,
+      referred_user_id TEXT UNIQUE,
+      affiliate_code TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 
-async function deleteLessonImages(env,id){
-  if(!env.FILES)return;
-  let cursor;
-  do{
-    const r=await env.FILES.list({prefix:imagePrefix(id),limit:1000,...(cursor?{cursor}:{})});
-    await Promise.all((r.objects||[]).map(o=>env.FILES.delete(o.key)));
-    cursor=r.truncated?r.cursor:undefined;
-  }while(cursor);
-}
+  await e.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS lesson_notes(
+      lesson_id INTEGER PRIMARY KEY,
+      content TEXT NOT NULL DEFAULT '',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 
-/* Create the subtitle table automatically. */
-async function ensureSubtitleTable(DB){
-  await DB.prepare(`
+  await e.DB.prepare(`
     CREATE TABLE IF NOT EXISTS lesson_subtitles(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       lesson_id INTEGER NOT NULL,
@@ -82,325 +81,424 @@ async function ensureSubtitleTable(DB){
     )
   `).run();
 
-  await DB.prepare(`
+  await e.DB.prepare(`
     CREATE INDEX IF NOT EXISTS idx_subtitles_lesson
     ON lesson_subtitles(lesson_id,sort_order,id)
   `).run();
 }
 
-async function handler(request,env){
-  const url=new URL(request.url);
-  const path=url.pathname.replace(/\/+$/,"")||"/";
-  const origin=request.headers.get("Origin")||"";
-  const allowed=[env.ALLOWED_ORIGIN||"https://createlk.com","https://www.createlk.com"];
-  const responseOrigin=allowed.includes(origin)?origin:allowed[0];
-  const headers=cors(responseOrigin);
+async function session(e,id){
+  const t=rnd();
+  const expiry=new Date(Date.now()+DAYS*86400000).toISOString();
+  await e.DB.prepare(`
+    INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)
+  `).bind(t,id,expiry).run();
+  return t;
+}
 
-  if(origin&&!allowed.includes(origin))
-    return json({error:"Origin not allowed."},403,headers);
+function b64(a){
+  return btoa(String.fromCharCode(...new Uint8Array(a)))
+    .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
 
-  if(request.method==="OPTIONS")return new Response(null,{status:204,headers});
+async function affToken(id,secret){
+  const p=b64(new TextEncoder().encode(JSON.stringify({
+    user_id:id,exp:Date.now()+AFFILIATE_TOKEN_MINUTES*60000
+  })));
+  const k=await crypto.subtle.importKey(
+    "raw",new TextEncoder().encode(secret),
+    {name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const sig=await crypto.subtle.sign(
+    "HMAC",k,new TextEncoder().encode(p));
+  return p+"."+b64(sig);
+}
 
-  /* Public image delivery */
-  if(path.startsWith("/images/")){
-    if(request.method!=="GET")return json({error:"Method not allowed."},405,headers);
-    if(!env.FILES)return json({error:"R2 binding FILES is missing."},500,headers);
+async function gtoken(e,code,uri){
+  const r=await fetch("https://oauth2.googleapis.com/token",{
+    method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({
+      client_id:e.GOOGLE_CLIENT_ID,
+      client_secret:e.GOOGLE_CLIENT_SECRET,
+      code,grant_type:"authorization_code",redirect_uri:uri
+    })
+  });
+  if(!r.ok)throw Error("Google token failed");
+  return r.json();
+}
 
-    let key;
-    try{key=decodeURIComponent(path.slice(8))}
-    catch{return json({error:"Invalid image URL."},400,headers)}
+async function guser(t){
+  const r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{
+    headers:{Authorization:`Bearer ${t}`}
+  });
+  if(!r.ok)throw Error("Google user failed");
+  return r.json();
+}
 
-    if(!validImageKey(key)||!/^lesson-images\/lesson-\d+\/[^/]+$/.test(key))
-      return json({error:"Invalid image path."},400,headers);
+async function lessonAccess(id,r,e){
+  const lesson=await e.DB.prepare(`
+    SELECT id,title,description,is_free,status
+    FROM lessons WHERE id=?
+  `).bind(id).first();
 
-    try{
-      const o=await env.FILES.get(key);
-      if(!o)return json({error:"Image not found."},404,headers);
-      const type=o.httpMetadata?.contentType||"";
-      if(!ALLOWED_TYPES.has(type))return json({error:"Unsupported image type."},415,headers);
-      const h=new Headers(headers);
-      h.set("Content-Type",type);
-      h.set("Cache-Control","public, max-age=86400");
-      h.set("X-Content-Type-Options","nosniff");
-      return new Response(o.body,{headers:h});
-    }catch(e){return json({error:e.message||"Could not load image."},500,headers)}
+  if(!lesson)return {error:"Lesson not found",status:404};
+
+  const student=await me(r,e);
+
+  if(Number(lesson.is_free)!==1&&!prem(student)){
+    return {
+      error:student?"Premium membership required":"Login required",
+      status:student?403:401
+    };
   }
 
-  try{
-    await authenticate(request,env);
-    if(!env.DB)throw Error("D1 binding DB is missing.");
-    await ensureSubtitleTable(env.DB);
-
-    /* Dashboard */
-    if(path==="/api/bootstrap"&&request.method==="GET"){
-      const s=await env.DB.prepare(
-        "SELECT id,name,slug,is_active FROM subjects ORDER BY id"
-      ).all();
-      const l=await env.DB.prepare(`
-        SELECT l.id,l.title,l.description,l.sort_order,l.is_free,l.status,
-               m.subject_id,m.display_order
-        FROM lessons l JOIN subject_lesson_map m ON m.lesson_id=l.id
-        ORDER BY m.subject_id,m.display_order,l.id
-      `).all();
-      return json({subjects:s.results||[],lessons:l.results||[]},200,headers);
-    }
-
-    /* Subjects */
-    if(path==="/api/subjects"&&request.method==="POST"){
-      const b=await readJSON(request),name=String(b.name||"").trim();
-      const slug=slugify(b.slug||name);
-      if(!name||!slug)throw Error("Subject name is required.");
-      const r=await env.DB.prepare(
-        "INSERT INTO subjects(name,slug,is_active) VALUES(?,?,1)"
-      ).bind(name,slug).run();
-      return json({ok:true,id:r.meta.last_row_id},201,headers);
-    }
-
-    let m=path.match(/^\/api\/subjects\/(\d+)$/);
-    if(m&&request.method==="PUT"){
-      const b=await readJSON(request),name=String(b.name||"").trim(),slug=slugify(b.slug||name);
-      if(!name||!slug)throw Error("Subject name is required.");
-      await env.DB.prepare(
-        "UPDATE subjects SET name=?,slug=?,is_active=? WHERE id=?"
-      ).bind(name,slug,b.is_active===false?0:1,+m[1]).run();
-      return json({ok:true},200,headers);
-    }
-    if(m&&request.method==="DELETE"){
-      await env.DB.prepare("DELETE FROM subject_lesson_map WHERE subject_id=?").bind(+m[1]).run();
-      await env.DB.prepare("DELETE FROM subjects WHERE id=?").bind(+m[1]).run();
-      return json({ok:true},200,headers);
-    }
-
-    /* Create lesson */
-    if(path==="/api/lessons"&&request.method==="POST"){
-      const b=await readJSON(request),title=String(b.title||"").trim(),sid=Number(b.subject_id);
-      if(!title||!sid)throw Error("Lesson title and subject are required.");
-      if(!await env.DB.prepare("SELECT id FROM subjects WHERE id=?").bind(sid).first())
-        throw Error("Subject not found.");
-
-      const next=await env.DB.prepare("SELECT COALESCE(MAX(sort_order),0)+1 n FROM lessons").first();
-      const status=["PUBLISHED","DRAFT","COMING_SOON"].includes(b.status)?b.status:"PUBLISHED";
-      const r=await env.DB.prepare(`
-        INSERT INTO lessons(title,description,sort_order,is_free,status)
-        VALUES(?,?,?,?,?)
-      `).bind(title,String(b.description||""),next.n,b.is_free?1:0,status).run();
-      const id=r.meta.last_row_id;
-
-      await env.DB.prepare(`
-        INSERT INTO subject_lesson_map(lesson_id,subject_id,display_order)
-        VALUES(?,?,?)
-      `).bind(id,sid,Number(b.display_order||next.n)).run();
-      return json({ok:true,id},201,headers);
-    }
-
-    m=path.match(/^\/api\/lessons\/(\d+)$/);
-    if(m&&request.method==="PUT"){
-      const id=+m[1],b=await readJSON(request),title=String(b.title||"").trim();
-      if(!title)throw Error("Lesson title is required.");
-      const status=["PUBLISHED","DRAFT","COMING_SOON"].includes(b.status)?b.status:"PUBLISHED";
-
-      await env.DB.prepare(`
-        UPDATE lessons SET title=?,description=?,sort_order=?,is_free=?,status=? WHERE id=?
-      `).bind(title,String(b.description||""),Number(b.sort_order||1),b.is_free?1:0,status,id).run();
-
-      if(b.subject_id){
-        await env.DB.prepare(`
-          UPDATE subject_lesson_map SET subject_id=?,display_order=? WHERE lesson_id=?
-        `).bind(+b.subject_id,Number(b.display_order||b.sort_order||1),id).run();
-      }
-      return json({ok:true},200,headers);
-    }
-
-    if(m&&request.method==="DELETE"){
-      const id=+m[1];
-      await deleteLessonImages(env,id);
-      await env.DB.prepare("DELETE FROM lesson_subtitles WHERE lesson_id=?").bind(id).run();
-      await env.DB.prepare("DELETE FROM questions WHERE lesson_id=?").bind(id).run();
-      await env.DB.prepare("DELETE FROM lesson_notes WHERE lesson_id=?").bind(id).run();
-      await env.DB.prepare("DELETE FROM subject_lesson_map WHERE lesson_id=?").bind(id).run();
-      await env.DB.prepare("DELETE FROM lessons WHERE id=?").bind(id).run();
-      return json({ok:true},200,headers);
-    }
-
-    /* Multilingual subtitles: list for one lesson */
-    m=path.match(/^\/api\/lesson-subtitles\/lesson\/(\d+)$/);
-    if(m&&request.method==="GET"){
-      const id=+m[1];
-      const result=await env.DB.prepare(`
-        SELECT id,lesson_id,language,title,content,sort_order,created_at,updated_at
-        FROM lesson_subtitles WHERE lesson_id=? ORDER BY sort_order,id
-      `).bind(id).all();
-      return json({subtitles:result.results||[]},200,headers);
-    }
-
-    /* Add subtitle */
-    if(path==="/api/lesson-subtitles"&&request.method==="POST"){
-      const b=await readJSON(request);
-      const lessonId=Number(b.lesson_id);
-      const language=String(b.language||"").trim();
-      const title=String(b.title||"").trim();
-      const content=String(b.content||"");
-      const order=Math.max(1,Number(b.sort_order)||1);
-
-      if(!Number.isSafeInteger(lessonId)||lessonId<1||!language)
-        throw Error("A lesson and subtitle language are required.");
-      if(language.length>50||title.length>250||content.length>1000000)
-        throw Error("Language, title or content exceeds the allowed length.");
-      if(!await env.DB.prepare("SELECT id FROM lessons WHERE id=?").bind(lessonId).first())
-        throw Error("Lesson not found.");
-
-      const r=await env.DB.prepare(`
-        INSERT INTO lesson_subtitles(lesson_id,language,title,content,sort_order)
-        VALUES(?,?,?,?,?)
-      `).bind(lessonId,language,title,content,order).run();
-
-      return json({ok:true,id:r.meta.last_row_id},201,headers);
-    }
-
-    /* Edit subtitle */
-    m=path.match(/^\/api\/lesson-subtitles\/(\d+)$/);
-    if(m&&request.method==="PUT"){
-      const id=+m[1],b=await readJSON(request);
-      const language=String(b.language||"").trim();
-      const title=String(b.title||"").trim();
-      const content=String(b.content||"");
-      const order=Math.max(1,Number(b.sort_order)||1);
-
-      if(!language)throw Error("Subtitle language is required.");
-      if(language.length>50||title.length>250||content.length>1000000)
-        throw Error("Language, title or content exceeds the allowed length.");
-
-      const r=await env.DB.prepare(`
-        UPDATE lesson_subtitles
-        SET language=?,title=?,content=?,sort_order=?,updated_at=CURRENT_TIMESTAMP
-        WHERE id=?
-      `).bind(language,title,content,order,id).run();
-
-      if(!r.meta.changes)throw Error("Subtitle not found.");
-      return json({ok:true},200,headers);
-    }
-
-    /* Delete subtitle */
-    if(m&&request.method==="DELETE"){
-      const r=await env.DB.prepare("DELETE FROM lesson_subtitles WHERE id=?").bind(+m[1]).run();
-      if(!r.meta.changes)throw Error("Subtitle not found.");
-      return json({ok:true},200,headers);
-    }
-
-    /* Questions */
-    m=path.match(/^\/api\/questions\/lesson\/(\d+)$/);
-    if(m&&request.method==="GET"){
-      const r=await env.DB.prepare(`
-        SELECT id,lesson_id,question_number,question,option_a,option_b,
-               option_c,option_d,correct_answer,explanation
-        FROM questions WHERE lesson_id=? ORDER BY question_number,id
-      `).bind(+m[1]).all();
-      return json({questions:r.results||[]},200,headers);
-    }
-
-    if(path==="/api/questions"&&request.method==="POST"){
-      const b=await readJSON(request),lessonId=+b.lesson_id;
-      const question=String(b.question||"").trim(),answer=String(b.correct_answer||"").toUpperCase();
-      if(!lessonId||!question||!["A","B","C","D"].includes(answer))
-        throw Error("Lesson, question and correct answer A/B/C/D are required.");
-
-      const next=await env.DB.prepare(
-        "SELECT COALESCE(MAX(question_number),0)+1 n FROM questions WHERE lesson_id=?"
-      ).bind(lessonId).first();
-
-      const r=await env.DB.prepare(`
-        INSERT INTO questions
-        (lesson_id,question_number,question,option_a,option_b,option_c,option_d,correct_answer,explanation)
-        VALUES(?,?,?,?,?,?,?,?,?)
-      `).bind(lessonId,Number(b.question_number||next.n),question,
-        String(b.option_a||""),String(b.option_b||""),String(b.option_c||""),
-        String(b.option_d||""),answer,String(b.explanation||"")).run();
-      return json({ok:true,id:r.meta.last_row_id},201,headers);
-    }
-
-    m=path.match(/^\/api\/questions\/(\d+)$/);
-    if(m&&request.method==="PUT"){
-      const b=await readJSON(request),answer=String(b.correct_answer||"").toUpperCase();
-      if(!String(b.question||"").trim()||!["A","B","C","D"].includes(answer))
-        throw Error("Question and valid answer A/B/C/D are required.");
-      await env.DB.prepare(`
-        UPDATE questions SET question_number=?,question=?,option_a=?,option_b=?,
-          option_c=?,option_d=?,correct_answer=?,explanation=? WHERE id=?
-      `).bind(Number(b.question_number||1),String(b.question),String(b.option_a||""),
-        String(b.option_b||""),String(b.option_c||""),String(b.option_d||""),
-        answer,String(b.explanation||""),+m[1]).run();
-      return json({ok:true},200,headers);
-    }
-    if(m&&request.method==="DELETE"){
-      await env.DB.prepare("DELETE FROM questions WHERE id=?").bind(+m[1]).run();
-      return json({ok:true},200,headers);
-    }
-
-    /* Lesson notes */
-    m=path.match(/^\/api\/notes\/(\d+)$/);
-    if(m&&request.method==="GET"){
-      const n=await env.DB.prepare("SELECT content FROM lesson_notes WHERE lesson_id=?").bind(+m[1]).first();
-      return json({content:n?.content||""},200,headers);
-    }
-    if(m&&request.method==="PUT"){
-      const id=+m[1],b=await readJSON(request),content=String(b.content||"");
-      if(content.length>1000000)throw Error("Lesson notes must be smaller than 1 MB.");
-      if(!await env.DB.prepare("SELECT id FROM lessons WHERE id=?").bind(id).first())
-        throw Error("Lesson not found.");
-      await env.DB.prepare(`
-        INSERT INTO lesson_notes(lesson_id,content,updated_at)
-        VALUES(?,?,CURRENT_TIMESTAMP)
-        ON CONFLICT(lesson_id) DO UPDATE SET
-          content=excluded.content,updated_at=CURRENT_TIMESTAMP
-      `).bind(id,content).run();
-      return json({ok:true},200,headers);
-    }
-
-    /* Upload photo */
-    if(path==="/api/lesson-images"&&request.method==="POST"){
-      if(!env.FILES)throw Error("R2 binding FILES is missing.");
-      const f=await request.formData(),id=Number(f.get("lesson_id")),file=f.get("file");
-      if(!Number.isSafeInteger(id)||id<1||!file||typeof file.arrayBuffer!=="function")
-        throw Error("A valid lesson and image are required.");
-      if(!ALLOWED_TYPES.has(file.type))throw Error("Use JPEG, PNG, WebP or GIF.");
-      if(file.size<1||file.size>MAX_IMAGE_SIZE)throw Error("Image must be 10 MB or smaller.");
-      if(!await env.DB.prepare("SELECT id FROM lessons WHERE id=?").bind(id).first())
-        throw Error("Lesson not found.");
-
-      const ext={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}[file.type];
-      const key=`${imagePrefix(id)}${crypto.randomUUID()}-${safeFileName(file.name)}${ext}`;
-      await env.FILES.put(key,await file.arrayBuffer(),{
-        httpMetadata:{contentType:file.type,cacheControl:"public, max-age=86400"},
-        customMetadata:{lessonId:String(id)}
-      });
-      return json({ok:true,key,url:imageUrl(request,key,env),content_type:file.type,size:file.size},201,headers);
-    }
-
-    /* Delete photo */
-    if(path==="/api/lesson-images"&&request.method==="DELETE"){
-      if(!env.FILES)throw Error("R2 binding FILES is missing.");
-      const b=await readJSON(request),id=Number(b.lesson_id),key=String(b.key||"");
-      if(!Number.isSafeInteger(id)||id<1||!validImageKey(key)||
-        !key.startsWith(imagePrefix(id))||
-        key.slice(imagePrefix(id).length).includes("/"))
-        throw Error("Invalid lesson image key.");
-      await env.FILES.delete(key);
-      return json({ok:true},200,headers);
-    }
-
-    return json({error:"Endpoint not found."},404,headers);
-
-  }catch(e){
-    const message=e?.message||"Unexpected server error.";
-    const code=/authorized|sign in|Google/i.test(message)?401:
-      /not found/i.test(message)?404:
-      /exceeds the allowed length|smaller than|10 MB|valid JSON/i.test(message)?400:400;
-    return json({error:message},code,headers);
-  }
+  return {lesson,student};
 }
 
 export default {
-  async fetch(request,env){
-    return handler(request,env);
+  async fetch(r,e){
+    const u=new URL(r.url);
+
+    if(r.method==="OPTIONS"){
+      return new Response(null,{status:204,headers:cors(r)});
+    }
+
+    try{
+      if(!e.DB)return json({success:false,error:"D1 DB missing"},500,r);
+      await setup(e);
+
+      if(u.pathname==="/"){
+        return new Response("CreateLK Academy Student API");
+      }
+
+      if(u.pathname==="/api/health"){
+        return json({success:true,database:true},200,r);
+      }
+
+      /* GOOGLE LOGIN */
+      if(u.pathname==="/auth/google"){
+        const ref=(u.searchParams.get("ref")||"").trim().toUpperCase();
+        const safe=/^[A-Z0-9_-]{3,100}$/.test(ref)?ref:"";
+        const state=rnd()+(safe?"."+safe:"");
+        const redirect=`${u.origin}/auth/google/callback`;
+        const g=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+
+        Object.entries({
+          client_id:e.GOOGLE_CLIENT_ID,
+          redirect_uri:redirect,
+          response_type:"code",
+          scope:"openid email profile",
+          access_type:"online",
+          prompt:"select_account",
+          state
+        }).forEach(([k,v])=>g.searchParams.set(k,v));
+
+        return new Response(null,{
+          status:302,
+          headers:{
+            Location:g.toString(),
+            "Set-Cookie":
+              `oauth_state=${encodeURIComponent(state)};Path=/auth/google;Max-Age=600;HttpOnly;Secure;SameSite=Lax`
+          }
+        });
+      }
+
+      /* GOOGLE CALLBACK */
+      if(u.pathname==="/auth/google/callback"){
+        const code=u.searchParams.get("code");
+        const state=u.searchParams.get("state")||"";
+
+        if(!code||state!==ck(r,"oauth_state")){
+          return json({success:false,error:"Invalid login"},400,r);
+        }
+
+        const ref=state.includes(".")
+          ?state.split(".").slice(1).join(".").toUpperCase():"";
+        const safe=/^[A-Z0-9_-]{3,100}$/.test(ref)?ref:"";
+
+        const gt=await gtoken(e,code,`${u.origin}/auth/google/callback`);
+        const g=await guser(gt.access_token);
+        const gid=String(g.sub||"");
+        const email=String(g.email||"").toLowerCase();
+
+        if(!gid||!email)throw Error("Google account details missing");
+
+        let user=await e.DB.prepare(`
+          SELECT * FROM users WHERE google_id=? OR email=? LIMIT 1
+        `).bind(gid,email).first();
+
+        let id=user?.id;
+
+        if(!user){
+          id=crypto.randomUUID();
+          const affiliateCode=rnd(6).toUpperCase();
+          let referred=null,refid=null;
+
+          if(safe){
+            const a=await e.DB.prepare(`
+              SELECT id,affiliate_code,email FROM users
+              WHERE UPPER(affiliate_code)=? LIMIT 1
+            `).bind(safe).first();
+
+            if(a&&String(a.email).toLowerCase()!==email){
+              referred=a.affiliate_code;
+              refid=a.id;
+            }
+          }
+
+          await e.DB.prepare(`
+            INSERT INTO users(
+              id,google_id,email,name,avatar_url,membership,
+              xp,coins,correct_answers,questions_answered,
+              lessons_completed,affiliate_code,referred_by
+            ) VALUES(?,?,?,?,?,'free',0,0,0,0,0,?,?)
+          `).bind(
+            id,gid,email,g.name||email.split("@")[0],
+            g.picture||null,affiliateCode,referred
+          ).run();
+
+          if(refid){
+            await e.DB.prepare(`
+              INSERT OR IGNORE INTO referrals(
+                referrer_id,referred_user_id,affiliate_code
+              ) VALUES(?,?,?)
+            `).bind(refid,id,referred).run();
+          }
+        }else{
+          id=user.id;
+          await e.DB.prepare(`
+            UPDATE users SET google_id=?,name=?,avatar_url=? WHERE id=?
+          `).bind(gid,g.name||user.name,g.picture||user.avatar_url,id).run();
+
+          if(safe&&!String(user.referred_by||"").trim()){
+            const a=await e.DB.prepare(`
+              SELECT id,affiliate_code,email FROM users
+              WHERE UPPER(affiliate_code)=? LIMIT 1
+            `).bind(safe).first();
+
+            if(a&&String(a.id)!==String(id)&&
+              String(a.email).toLowerCase()!==email){
+              await e.DB.prepare(`
+                UPDATE users SET referred_by=? WHERE id=?
+              `).bind(a.affiliate_code,id).run();
+
+              await e.DB.prepare(`
+                INSERT OR IGNORE INTO referrals(
+                  referrer_id,referred_user_id,affiliate_code
+                ) VALUES(?,?,?)
+              `).bind(a.id,id,a.affiliate_code).run();
+            }
+          }
+        }
+
+        const t=await session(e,id);
+        const z=new Response(null,{
+          status:302,
+          headers:{Location:"https://createlk.com/v2/index.html"}
+        });
+
+        z.headers.append("Set-Cookie",
+          `${COOKIE}=${t};Path=/;Max-Age=${DAYS*86400};HttpOnly;Secure;SameSite=None`);
+        z.headers.append("Set-Cookie",
+          "oauth_state=;Path=/auth/google;Max-Age=0;HttpOnly;Secure;SameSite=Lax");
+        return z;
+      }
+
+      /* CURRENT STUDENT */
+      if(u.pathname==="/api/me"){
+        const x=await me(r,e);
+        if(!x)return json({success:true,logged_in:false,user:null},200,r);
+
+        const ref=await e.DB.prepare(`
+          SELECT COUNT(*) n FROM referrals WHERE referrer_id=?
+        `).bind(x.id).first();
+
+        return json({
+          success:true,
+          logged_in:true,
+          user:x,
+          referral:{
+            code:x.affiliate_code,
+            referred_by:x.referred_by||null,
+            count:Number(ref?.n)||0,
+            link:`https://createlk.com/v2/?ref=${x.affiliate_code}`
+          }
+        },200,r);
+      }
+
+      /* AFFILIATE TOKEN */
+      if(u.pathname==="/api/affiliate/token"){
+        const x=await me(r,e);
+        if(!x)return json({success:false,error:"Login required"},401,r);
+        if(!e.AFFILIATE_SECRET){
+          return json({success:false,error:"AFFILIATE_SECRET missing"},500,r);
+        }
+        return json({
+          success:true,token:await affToken(x.id,e.AFFILIATE_SECRET)
+        },200,r);
+      }
+
+      /* SUBJECT LIST */
+      if(u.pathname==="/api/subjects"&&r.method==="GET"){
+        const a=await e.DB.prepare(`
+          SELECT s.id,s.name,s.slug,s.description,s.icon,s.display_order,
+            COUNT(m.lesson_id) lesson_count
+          FROM subjects s
+          LEFT JOIN subject_lesson_map m ON m.subject_id=s.id
+          WHERE s.is_active=1
+          GROUP BY s.id,s.name,s.slug,s.description,s.icon,s.display_order
+          ORDER BY s.display_order,s.id
+        `).all();
+
+        return json({
+          success:true,
+          subjects:(a.results||[]).map(s=>({
+            ...s,lesson_count:Number(s.lesson_count)||0
+          }))
+        },200,r);
+      }
+
+      /* LESSON LIST */
+      if(u.pathname==="/api/lessons"&&r.method==="GET"){
+        const x=await me(r,e);
+        const slug=(u.searchParams.get("subject")||"").trim();
+        let a,subject=null;
+
+        if(slug){
+          subject=await e.DB.prepare(`
+            SELECT id,name,slug,description,icon FROM subjects
+            WHERE slug=? AND is_active=1 LIMIT 1
+          `).bind(slug).first();
+
+          if(!subject){
+            return json({
+              success:false,error:"Subject not found",lessons:[]
+            },404,r);
+          }
+
+          a=await e.DB.prepare(`
+            SELECT l.id,l.title,l.description,l.sort_order,
+              l.is_free,l.status,m.display_order
+            FROM subject_lesson_map m
+            JOIN lessons l ON l.id=m.lesson_id
+            JOIN subjects s ON s.id=m.subject_id
+            WHERE s.slug=? AND s.is_active=1
+            ORDER BY m.display_order,l.id
+          `).bind(slug).all();
+        }else{
+          a=await e.DB.prepare(`
+            SELECT l.id,l.title,l.description,l.sort_order,l.is_free,
+              l.status,m.subject_id,m.display_order
+            FROM lessons l
+            LEFT JOIN subject_lesson_map m ON m.lesson_id=l.id
+            ORDER BY COALESCE(m.display_order,l.sort_order),l.id
+          `).all();
+        }
+
+        return json({
+          success:true,
+          membership:x?String(x.membership||"").toLowerCase():"guest",
+          subject,
+          lessons:(a.results||[]).map(l=>({
+            ...l,
+            is_free:Number(l.is_free)===1?1:0,
+            accessible:Number(l.is_free)===1||prem(x)
+          }))
+        },200,r);
+      }
+
+      /* LESSON EXPLANATION */
+      let m=u.pathname.match(/^\/api\/notes\/(\d+)$/);
+      if(m&&r.method==="GET"){
+        const id=+m[1];
+        const access=await lessonAccess(id,r,e);
+
+        if(access.error){
+          return json({
+            success:false,error:access.error
+          },access.status,r);
+        }
+
+        const n=await e.DB.prepare(`
+          SELECT content FROM lesson_notes WHERE lesson_id=?
+        `).bind(id).first();
+
+        return json({
+          success:true,
+          lesson:access.lesson,
+          content:n?.content||""
+        },200,r);
+      }
+
+      /* SUBTITLES FOR A LESSON */
+      m=u.pathname.match(/^\/api\/lesson-subtitles\/lesson\/(\d+)$/);
+      if(m&&r.method==="GET"){
+        const id=+m[1];
+        const access=await lessonAccess(id,r,e);
+
+        if(access.error){
+          return json({
+            success:false,error:access.error
+          },access.status,r);
+        }
+
+        const a=await e.DB.prepare(`
+          SELECT id,lesson_id,language,title,content,sort_order
+          FROM lesson_subtitles
+          WHERE lesson_id=?
+          ORDER BY sort_order,id
+        `).bind(id).all();
+
+        return json({
+          success:true,subtitles:a.results||[]
+        },200,r);
+      }
+
+      /* GET ONE SUBTITLE */
+      m=u.pathname.match(/^\/api\/lesson-subtitles\/(\d+)$/);
+      if(m&&r.method==="GET"){
+        const id=+m[1];
+        const s=await e.DB.prepare(`
+          SELECT id,lesson_id,language,title,content,sort_order
+          FROM lesson_subtitles WHERE id=?
+        `).bind(id).first();
+
+        if(!s){
+          return json({success:false,error:"Subtitle not found"},404,r);
+        }
+
+        const access=await lessonAccess(s.lesson_id,r,e);
+        if(access.error){
+          return json({success:false,error:access.error},access.status,r);
+        }
+
+        return json({success:true,subtitle:s},200,r);
+      }
+
+      /* LOGOUT */
+      if(u.pathname==="/auth/logout"){
+        const t=ck(r,COOKIE);
+        if(t){
+          await e.DB.prepare("DELETE FROM sessions WHERE token=?")
+            .bind(t).run();
+        }
+
+        const z=new Response(null,{
+          status:302,
+          headers:{Location:"https://createlk.com/v2/index.html"}
+        });
+
+        z.headers.set("Set-Cookie",
+          `${COOKIE}=;Path=/;Max-Age=0;HttpOnly;Secure;SameSite=None`);
+        return z;
+      }
+
+      return json({success:false,error:"Not found"},404,r);
+
+    }catch(err){
+      return json({
+        success:false,error:err.message||"Server error"
+      },500,r);
+    }
   }
 };
