@@ -9,7 +9,7 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font:15px Arial,Helvetica,sans-serif;background:#0b1628;color:#dbe4f0}
-button,select{font:inherit;cursor:pointer}
+button,select,input{font:inherit;cursor:pointer}
 button{border:0}
 .btn{padding:11px 14px;border-radius:8px;background:#c5a64b;color:#101b2c;font-weight:bold}
 header{position:sticky;top:0;background:#0a1527;z-index:5;border-bottom:1px solid #243753}
@@ -41,7 +41,7 @@ section{background:#13233b;border:1px solid #243753;border-radius:12px}
 .panel h2{margin-top:0}
 .field{margin:15px 0;text-align:left}
 .field label{display:block;margin-bottom:7px;font-weight:bold}
-select{width:100%;padding:13px;border:1px solid #30435e;border-radius:8px;background:#172942;color:#fff}
+select,input[type=search]{width:100%;padding:13px;border:1px solid #30435e;border-radius:8px;background:#172942;color:#fff}
 select:disabled{opacity:.5}
 #loadBtn{width:100%;margin-top:8px}
 .badge{display:inline-block;padding:5px 8px;border-radius:5px;font-size:11px;background:#193b32;color:#b8e4d1}
@@ -60,6 +60,8 @@ select:disabled{opacity:.5}
 .subtitle-box h3{margin:0 0 10px;color:#d9b85c;font-size:16px}
 #subtitleContent{line-height:1.8;overflow-wrap:anywhere;margin-top:10px}
 #subtitleContent img{max-width:100%;height:auto}
+.search-result{display:block;width:100%;text-align:left;padding:12px;margin-top:7px;border-radius:8px;background:#203654;color:white;border:1px solid #30435e}
+.search-result:hover{background:#2b4568}
 footer{text-align:center;padding:20px;color:#8292a7;font-size:11px;border-top:1px solid #243753;margin-top:25px}
 footer a{color:#aab8cc;margin:5px;text-decoration:none}
 @media(max-width:500px){
@@ -118,6 +120,17 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 
 <div class="notice" id="notice"></div>
 
+<!-- Lesson Search -->
+<section class="panel">
+<h2>🔍 Search Lessons</h2>
+<p class="muted">Search lesson titles in the selected subject.</p>
+<input id="lessonSearch" type="search"
+placeholder="Search by lesson title..."
+oninput="searchLessons()"
+aria-label="Search lesson titles">
+<div id="searchResults"></div>
+</section>
+
 <section class="panel">
 <h2>📚 Choose Your Lesson</h2>
 <p class="muted">First select a subject, then select a lesson and press Load Lesson.</p>
@@ -145,7 +158,6 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <h2 id="lessonTitle"></h2>
 <p id="lessonDescription" class="muted"></p>
 
-<!-- Subtitles appear directly under the lesson title and description -->
 <div id="subtitleBox" class="subtitle-box" style="display:none">
 <h3>🌐 Lesson Subtitles</h3>
 <select id="subtitleSelect">
@@ -254,6 +266,8 @@ lessons=[];
 $("lessonView").style.display="none";
 $("lessonInfo").textContent="";
 $("loadBtn").disabled=true;
+$("lessonSearch").value="";
+$("searchResults").innerHTML="";
 
 if(i===""){
 select.innerHTML='<option value="">Choose a subject first</option>';
@@ -279,7 +293,7 @@ select.innerHTML='<option value="">-- Select Lesson --</option>';
 lessons.forEach((l,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
-o.textContent=(getFree(l)?"🟢 FREE · ":"🔒 PREMIUM · ")+(l.title||"Lesson "+(i+1));
+o.textContent=(getFree(l)?"🆓 FREE · ":"👑 PREMIUM · ")+(l.title||"Lesson "+(i+1));
 select.appendChild(o);
 });
 
@@ -293,6 +307,38 @@ note(e.message||"Unable to load lessons.");
 }
 }
 
+function searchLessons(){
+const q=$("lessonSearch").value.trim().toLowerCase();
+const box=$("searchResults");
+box.innerHTML="";
+if(!q)return;
+
+const matches=lessons
+.map((l,i)=>({...l,_index:i}))
+.filter(l=>(l.title||"").toLowerCase().includes(q));
+
+if(!matches.length){
+const p=document.createElement("p");
+p.className="muted";
+p.textContent="No matching lessons in the selected subject.";
+box.appendChild(p);
+return;
+}
+
+matches.forEach(l=>{
+const b=document.createElement("button");
+b.type="button";
+b.className="search-result";
+b.textContent=(getFree(l)?"🆓 FREE · ":"👑 PREMIUM · ")+(l.title||"Lesson");
+b.onclick=()=>{
+$("lessonSelect").value=String(l._index);
+lessonChanged();
+$("lessonSelect").scrollIntoView({behavior:"smooth",block:"center"});
+};
+box.appendChild(b);
+});
+}
+
 function lessonChanged(){
 const i=$("lessonSelect").value;
 const l=i===""?null:lessons[Number(i)];
@@ -302,8 +348,8 @@ $("lessonInfo").textContent="";
 if(!l)return;
 
 $("lessonInfo").textContent=getFree(l)
-?"🟢 This lesson is marked FREE in Admin."
-:"🔒 This lesson is marked PREMIUM in Admin.";
+?"🆓 This lesson is marked FREE in Admin."
+:"👑 This lesson is marked PREMIUM in Admin.";
 }
 $("lessonSelect").addEventListener("change",lessonChanged);
 
@@ -434,11 +480,9 @@ $("lessonPhoto").style.display="none";
 $("lessonContent").innerHTML=content||
 "<p class='muted'>Lesson explanation not found. Check that Admin and Student Workers use the same D1 database.</p>";
 
-$("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+(getFree(l)?"FREE LESSON":"PREMIUM LESSON")+'</span>';
+$("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+(getFree(l)?"🆓 FREE LESSON":"👑 PREMIUM LESSON")+'</span>';
 
 $("lessonView").style.display="block";
-
-/* Load subtitles for this lesson; dropdown sits under the title. */
 await loadSubtitles(l.id);
 if(current!==requestNo)return;
 
