@@ -9,8 +9,8 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font:15px Arial,Helvetica,sans-serif;background:#0b1628;color:#dbe4f0}
-button,select,input{font:inherit;cursor:pointer}
-button{border:0}
+button,select,input{font:inherit}
+button{cursor:pointer;border:0}
 .btn{padding:11px 14px;border-radius:8px;background:#c5a64b;color:#101b2c;font-weight:bold}
 header{position:sticky;top:0;background:#0a1527;z-index:5;border-bottom:1px solid #243753}
 nav{max-width:950px;min-height:66px;margin:auto;padding:8px 14px;display:flex;align-items:center;gap:10px}
@@ -29,7 +29,7 @@ section{background:#13233b;border:1px solid #243753;border-radius:12px}
 .hero h1{margin:12px 0;font-size:clamp(30px,5vw,42px)}
 .hero h2{font-size:20px;color:#d9b85c}
 .hero p,.muted{color:#aab8cc;line-height:1.6}
-.stats{display:flex;justify-content:center;align-items:stretch;gap:6px;flex-wrap:nowrap;margin:15px 0}
+.stats{display:flex;justify-content:center;gap:6px;flex-wrap:nowrap;margin:15px 0}
 .stat{flex:1;min-width:0;background:#172942;padding:9px 4px;border-radius:8px}
 .stat strong,.stat small{display:block}
 .stat strong{color:#d9b85c;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -51,9 +51,10 @@ select:disabled{opacity:.5}
 .lesson{padding:17px;margin-top:13px;overflow-wrap:anywhere}
 .lesson h2{margin-top:8px}
 .lesson img{max-width:100%;height:auto;border-radius:9px;margin:10px 0}
-#lessonPhoto{width:100%;max-height:360px;object-fit:contain}
+#lessonPhoto{display:block;width:100%;max-height:400px;object-fit:contain}
 .content{line-height:1.8;overflow-wrap:anywhere}
-.content img{max-width:100%;height:auto}
+.content img{display:block;max-width:100%;height:auto;object-fit:contain}
+.content video,.content iframe{max-width:100%}
 .content table{max-width:100%;border-collapse:collapse}
 .content td,.content th{border:1px solid #52627a;padding:7px}
 .subtitle-box{margin:14px 0;padding:13px;background:#172942;border:1px solid #30435e;border-radius:10px}
@@ -156,12 +157,10 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <div id="lessonBadge"></div>
 <h2 id="lessonTitle"></h2>
 <p id="lessonDescription" class="muted"></p>
-
 <div id="subtitleBox" class="subtitle-box" style="display:none">
 <h3 id="subtitleHeading">🌐 Lesson Subtitles</h3>
 <div id="subtitleContent" class="content"></div>
 </div>
-
 <img id="lessonPhoto" style="display:none" alt="Lesson image">
 <div id="lessonContent" class="content"></div>
 </section>
@@ -177,10 +176,8 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 
 <script>
 "use strict";
-
 const API="https://createlk-english-v2.createlk.workers.dev";
 const $=id=>document.getElementById(id);
-
 let referral="",subjects=[],lessons=[],userData=null;
 let requestNo=0,subtitleRequestNo=0,subtitles=[],currentLesson=null;
 
@@ -200,30 +197,38 @@ $("menu").classList.remove("show");
 if(!userData)login();
 else location.href="/v2/aff.html";
 }
-
 document.addEventListener("click",e=>{
 if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
 });
 
 async function get(path,opt={}){
 const r=await fetch(API+path,{
-credentials:"include",
-cache:"no-store",
-...opt
+credentials:"include",cache:"no-store",...opt
 });
 let d={};
 try{d=await r.json()}catch{}
 return{r,d};
 }
-
 function getFree(l){
 return l.is_free===true||Number(l.is_free)===1;
+}
+function pick(obj,keys){
+for(const k of keys){
+if(obj&&obj[k]!==undefined&&obj[k]!==null&&String(obj[k]).trim()!=="")return obj[k];
+}
+return "";
+}
+function getHtml(value){
+if(typeof value==="string")return value;
+if(value&&typeof value==="object")return String(pick(value,[
+"content","notes","explanation","lesson_content","html","body","text"
+])||"");
+return "";
 }
 
 async function loadUser(){
 try{
 const {r,d}=await get("/api/me?_="+Date.now());
-
 if(!r.ok||!d.logged_in){
 userData=null;
 $("membership").textContent="GUEST";
@@ -233,7 +238,6 @@ $("loginBtn").style.display="";
 $("logout").style.display="none";
 return;
 }
-
 userData=d.user||{};
 const u=userData;
 $("membership").textContent=String(u.membership||"FREE").toUpperCase();
@@ -241,38 +245,26 @@ $("account").textContent="👤 "+(u.name||u.email||"Account");
 $("account").style.display="inline-block";
 $("loginBtn").style.display="none";
 $("logout").style.display="block";
-
 if(u.avatar_url){
 $("avatar").src=u.avatar_url;
 $("avatar").style.display="block";
-}else{
-$("avatar").style.display="none";
-}
-}catch(e){
-console.error(e);
-}
+}else $("avatar").style.display="none";
+}catch(e){console.error(e)}
 }
 
 async function loadSubjects(){
 const {r,d}=await get("/api/subjects?_="+Date.now());
-
-if(!r.ok||d.success===false){
-throw Error(d.error||"Unable to load subjects");
-}
-
+if(!r.ok||d.success===false)throw Error(d.error||"Unable to load subjects");
 subjects=Array.isArray(d)?d:(d.subjects||d.data||d.results||[]);
 $("subjectCount").textContent=subjects.length;
-
 const select=$("subjectSelect");
 select.innerHTML='<option value="">-- Select Subject --</option>';
-
 subjects.forEach((s,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
 o.textContent=(s.icon?s.icon+" ":"")+(s.name||s.title||"Subject");
 select.appendChild(o);
 });
-
 if(!subjects.length)note("No subjects are currently available.");
 }
 
@@ -287,55 +279,38 @@ $("subtitleContent").innerHTML="";
 }
 
 async function subjectChanged(){
-const i=$("subjectSelect").value;
-const select=$("lessonSelect");
-
-lessons=[];
-currentLesson=null;
-resetSubtitles();
-
+const i=$("subjectSelect").value,select=$("lessonSelect");
+lessons=[];currentLesson=null;resetSubtitles();
 $("lessonView").style.display="none";
 $("lessonInfo").textContent="";
 $("loadBtn").disabled=true;
 $("lessonSearch").value="";
 $("searchResults").innerHTML="";
-
 if(i===""){
 select.innerHTML='<option value="">Choose a subject first</option>';
 select.disabled=true;
 $("lessonCount").textContent="—";
 return;
 }
-
 const s=subjects[Number(i)];
 if(!s)return;
-
 select.disabled=true;
 select.innerHTML='<option value="">Loading lessons...</option>';
-
 try{
-const key=s.slug||s.id;
-const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(key)+"&_="+Date.now());
-
-if(!r.ok||d.success===false){
-throw Error(d.error||"Unable to load lessons");
-}
-
+const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(s.slug||s.id)+"&_="+Date.now());
+if(!r.ok||d.success===false)throw Error(d.error||"Unable to load lessons");
 lessons=Array.isArray(d)?d:(d.lessons||d.data||d.results||[]);
 $("lessonCount").textContent=lessons.length;
 select.innerHTML='<option value="">-- Select Lesson --</option>';
-
 lessons.forEach((l,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
 o.textContent=(getFree(l)?"🆓 FREE · ":"👑 PREMIUM · ")+(l.title||"Lesson "+(i+1));
 select.appendChild(o);
 });
-
 select.disabled=!lessons.length;
 if(!lessons.length)note("No lessons are available for this subject yet.");
 else clearNote();
-
 }catch(e){
 select.innerHTML='<option value="">Unable to load lessons</option>';
 select.disabled=true;
@@ -344,123 +319,78 @@ note(e.message||"Unable to load lessons.");
 }
 
 function searchLessons(){
-const q=$("lessonSearch").value.trim().toLowerCase();
-const box=$("searchResults");
+const q=$("lessonSearch").value.trim().toLowerCase(),box=$("searchResults");
 box.innerHTML="";
 if(!q)return;
-
 const matches=lessons.map((l,i)=>({...l,_index:i}))
 .filter(l=>(l.title||"").toLowerCase().includes(q));
-
 if(!matches.length){
 const p=document.createElement("p");
-p.className="muted";
-p.textContent="No matching lessons in the selected subject.";
-box.appendChild(p);
-return;
+p.className="muted";p.textContent="No matching lessons in the selected subject.";
+box.appendChild(p);return;
 }
-
 matches.forEach(l=>{
 const b=document.createElement("button");
-b.type="button";
-b.className="search-result";
+b.type="button";b.className="search-result";
 b.textContent=(getFree(l)?"🆓 FREE · ":"👑 PREMIUM · ")+(l.title||"Lesson");
-
 b.onclick=()=>{
 $("lessonSelect").value=String(l._index);
 lessonChanged();
 $("lessonSelect").scrollIntoView({behavior:"smooth",block:"center"});
 };
-
 box.appendChild(b);
 });
 }
 
 function lessonChanged(){
-const i=$("lessonSelect").value;
-const l=i===""?null:lessons[Number(i)];
-
+const i=$("lessonSelect").value,l=i===""?null:lessons[Number(i)];
 currentLesson=l;
 $("lessonView").style.display="none";
 $("loadBtn").disabled=!l;
 $("lessonInfo").textContent="";
 resetSubtitles();
-
 if(!l)return;
-
 $("lessonInfo").textContent=getFree(l)
 ?"🆓 This lesson is marked FREE in Admin."
 :"👑 This lesson is marked PREMIUM in Admin.";
-
 loadSubtitleOptions(l.id);
 }
-
 $("lessonSelect").addEventListener("change",lessonChanged);
 
 async function loadSubtitleOptions(id){
-const myRequest=++subtitleRequestNo;
-const field=$("subtitleField");
-const select=$("languageSelect");
-
-field.hidden=true;
-select.disabled=true;
-select.innerHTML="";
-subtitles=[];
-
+const myRequest=++subtitleRequestNo,field=$("subtitleField"),select=$("languageSelect");
+field.hidden=true;select.disabled=true;select.innerHTML="";subtitles=[];
 try{
-const {r,d}=await get(
-"/api/lesson-subtitles/lesson/"+encodeURIComponent(id)+"?_="+Date.now()
-);
-
-if(myRequest!==subtitleRequestNo)return;
-if(!r.ok||d.success===false)return;
-
-let list=Array.isArray(d)?d:
+const {r,d}=await get("/api/lesson-subtitles/lesson/"+encodeURIComponent(id)+"?_="+Date.now());
+if(myRequest!==subtitleRequestNo||!r.ok||d.success===false)return;
+const list=Array.isArray(d)?d:
 Array.isArray(d.subtitles)?d.subtitles:
 Array.isArray(d.data)?d.data:
 Array.isArray(d.data?.subtitles)?d.data.subtitles:
 Array.isArray(d.results)?d.results:[];
-
 if(!list.length)return;
-
 subtitles=list;
 select.innerHTML='<option value="">-- Select Subtitle --</option>';
-
 subtitles.forEach((s,i)=>{
-const option=document.createElement("option");
-option.value=String(i);
-option.textContent=[
-s.language_name||s.language||s.subtitle_language||"",
-s.title||s.name||""
-].filter(Boolean).join(" · ")||"Subtitle "+(i+1);
-select.appendChild(option);
+const o=document.createElement("option");
+o.value=String(i);
+o.textContent=[s.language_name||s.language||s.subtitle_language||"",s.title||s.name||""].filter(Boolean).join(" · ")||"Subtitle "+(i+1);
+select.appendChild(o);
 });
-
-field.hidden=false;
-select.disabled=false;
-}catch(e){
-console.error("Subtitle loading failed:",e);
-if(myRequest===subtitleRequestNo)field.hidden=true;
-}
+field.hidden=false;select.disabled=false;
+}catch(e){console.error(e)}
 }
 
 function subtitleChanged(){
-const i=$("languageSelect").value;
-const s=i===""?null:subtitles[Number(i)];
-
-$("subtitleBox").style.display="none";
-$("subtitleContent").innerHTML="";
-
+const i=$("languageSelect").value,s=i===""?null:subtitles[Number(i)];
+$("subtitleBox").style.display="none";$("subtitleContent").innerHTML="";
 if(!s||$("lessonView").style.display==="none")return;
 renderSubtitle(s);
 }
-
 function renderSubtitle(s){
-const content=s.content??s.subtitle_content??s.text??s.html??"";
-if(!String(content).trim())return;
-
-$("subtitleHeading").textContent="🌐 "+
-(s.language_name||s.language||s.subtitle_language||s.title||"Lesson Subtitles");
+const content=getHtml(s);
+if(!content.trim())return;
+$("subtitleHeading").textContent="🌐 "+(s.language_name||s.language||s.subtitle_language||s.title||"Lesson Subtitles");
 $("subtitleContent").innerHTML=content;
 $("subtitleBox").style.display="block";
 }
@@ -471,57 +401,59 @@ const paths=[
 "/api/lesson-content?lesson="+encodeURIComponent(id),
 "/api/lessons/"+encodeURIComponent(id)
 ];
-
 for(const path of paths){
 try{
-const separator=path.includes("?")?"&":"?";
-const {r,d}=await get(path+separator+"_="+Date.now());
+const {r,d}=await get(path+(path.includes("?")?"&":"?")+"_="+Date.now());
 if(!r.ok||d.success===false)continue;
-
 const candidates=[d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes];
-
 for(const x of candidates){
 if(!x)continue;
 if(typeof x==="string"&&x.trim())return{lesson:null,content:x};
-
 if(typeof x==="object"){
-const content=x.content??x.notes??x.explanation??x.lesson_content??x.html??x.body??"";
-if(typeof content==="string"&&content.trim())return{lesson:x,content};
+const content=getHtml(x);
+if(content.trim())return{lesson:x,content};
 }
 }
-}catch(e){
-console.error("Lesson content request failed:",path,e);
-}
+}catch(e){console.error("Content request failed:",path,e)}
 }
 return{lesson:null,content:""};
 }
 
-async function loadSelectedLesson(){
-clearNote();
-
-const i=$("lessonSelect").value;
-const l=i===""?null:lessons[Number(i)];
-
-if(!l)return note("Please select a lesson first.");
-if(!userData){login();return;}
-
-if(!getFree(l)&&l.accessible!==true){
-location.href="/v2/pay.html";
-return;
+function findImage(html){
+const doc=new DOMParser().parseFromString(html||"","text/html");
+const img=doc.querySelector("img[src]");
+return img?img.getAttribute("src"):"";
+}
+function imageFrom(lesson,content){
+return pick(lesson,["photo_url","image_url","photo","image","thumbnail_url","cover_image"])||findImage(content);
+}
+function safeImageUrl(url){
+try{
+const u=new URL(url,location.href);
+return ["https:","http:"].includes(u.protocol)?u.href:"";
+}catch{return ""}
 }
 
+async function loadSelectedLesson(){
+clearNote();
+const i=$("lessonSelect").value,l=i===""?null:lessons[Number(i)];
+if(!l)return note("Please select a lesson first.");
+if(!userData){login();return}
+if(!getFree(l)&&l.accessible!==true){
+location.href="/v2/pay.html";return;
+}
 const current=++requestNo;
 $("loadBtn").disabled=true;
 $("loadBtn").textContent="Loading lesson...";
 $("lessonView").style.display="none";
 $("subtitleBox").style.display="none";
 $("subtitleContent").innerHTML="";
+$("lessonPhoto").style.display="none";
+$("lessonPhoto").removeAttribute("src");
 
 try{
-let lesson=l;
-let content=l.content||l.notes||l.explanation||l.lesson_content||"";
-
-if(!content){
+let lesson=l,content=getHtml(l);
+if(!content.trim()){
 const result=await getLessonContent(l.id);
 if(current!==requestNo)return;
 if(result.lesson)lesson={...l,...result.lesson};
@@ -532,27 +464,25 @@ if(current!==requestNo)return;
 $("lessonTitle").textContent=lesson.title||l.title||"Lesson";
 $("lessonDescription").textContent=lesson.description||l.description||"";
 
-const image=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
+const image=safeImageUrl(imageFrom(lesson,content));
 if(image){
 $("lessonPhoto").src=image;
 $("lessonPhoto").style.display="block";
-$("lessonPhoto").onerror=()=>$("lessonPhoto").style.display="none";
-}else{
+$("lessonPhoto").onerror=()=>{
 $("lessonPhoto").style.display="none";
+console.error("Lesson image could not load:",image);
+};
 }
 
 $("lessonContent").innerHTML=content||
-"<p class='muted'>Lesson explanation not found. Check that Admin and Student Workers use the same D1 database.</p>";
+"<p class='muted'>Lesson content was not found. Check the Admin and Student Worker database bindings.</p>";
 
 $("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+
 (getFree(l)?"🆓 FREE LESSON":"👑 PREMIUM LESSON")+'</span>';
-
 $("lessonView").style.display="block";
 
 const selected=$("languageSelect").value;
-if(selected!==""&&subtitles[Number(selected)]){
-renderSubtitle(subtitles[Number(selected)]);
-}
+if(selected!==""&&subtitles[Number(selected)])renderSubtitle(subtitles[Number(selected)]);
 
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
 }catch(e){
@@ -570,9 +500,8 @@ referral=(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCas
 
 async function init(){
 await loadUser();
-try{
-await loadSubjects();
-}catch(e){
+try{await loadSubjects()}
+catch(e){
 $("subjectSelect").innerHTML='<option value="">Unable to load subjects</option>';
 note((e.message||"Unable to load subjects.")+" Check that /api/subjects is available.");
 }
