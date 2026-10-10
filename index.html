@@ -127,7 +127,7 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 
 <section class="panel">
 <h2>📚 Choose Your Lesson</h2>
-<p class="muted">Select a subject, lesson, and preferred language.</p>
+<p class="muted">Select a subject, lesson, and available subtitles.</p>
 
 <div class="field">
 <label for="subjectSelect">1. Select Subject</label>
@@ -143,14 +143,10 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 </select>
 </div>
 
-<div class="field">
-<label for="languageSelect">3. 🌐 Select Language</label>
-<select id="languageSelect" onchange="languageChanged()" disabled>
-<option value="en">🇬🇧 English</option>
-<option value="ta">🇱🇰 தமிழ் (Tamil)</option>
-<option value="si">🇱🇰 සිංහල (Sinhala)</option>
-</select>
-<p class="muted" id="languageInfo">Choose a lesson first.</p>
+<div class="field" id="subtitleField" hidden>
+<label for="languageSelect">3. 🌐 Select Subtitles</label>
+<select id="languageSelect" onchange="subtitleChanged()" disabled></select>
+<p class="muted" id="languageInfo"></p>
 </div>
 
 <div id="lessonInfo" class="muted"></div>
@@ -163,10 +159,7 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <p id="lessonDescription" class="muted"></p>
 
 <div id="subtitleBox" class="subtitle-box" style="display:none">
-<h3>🌐 Lesson Subtitles</h3>
-<select id="subtitleSelect">
-<option value="">Select subtitle</option>
-</select>
+<h3 id="subtitleHeading">🌐 Lesson Subtitles</h3>
 <div id="subtitleContent" class="content"></div>
 </div>
 
@@ -185,9 +178,12 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 
 <script>
 "use strict";
+
 const API="https://createlk-english-v2.createlk.workers.dev";
 const $=id=>document.getElementById(id);
-let referral="",subjects=[],lessons=[],userData=null,requestNo=0,subtitles=[],currentLesson=null;
+
+let referral="",subjects=[],lessons=[],userData=null;
+let requestNo=0,subtitleRequestNo=0,subtitles=[],currentLesson=null;
 
 function note(t){
 $("notice").textContent=t;
@@ -205,18 +201,22 @@ $("menu").classList.remove("show");
 if(!userData)login();
 else location.href="/v2/aff.html";
 }
+
 document.addEventListener("click",e=>{
 if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
 });
 
 async function get(path,opt={}){
 const r=await fetch(API+path,{
-credentials:"include",cache:"no-store",...opt
+credentials:"include",
+cache:"no-store",
+...opt
 });
 let d={};
 try{d=await r.json()}catch{}
 return{r,d};
 }
+
 function getFree(l){
 return l.is_free===true||Number(l.is_free)===1;
 }
@@ -224,6 +224,7 @@ return l.is_free===true||Number(l.is_free)===1;
 async function loadUser(){
 try{
 const {r,d}=await get("/api/me?_="+Date.now());
+
 if(!r.ok||!d.logged_in){
 userData=null;
 $("membership").textContent="GUEST";
@@ -233,6 +234,7 @@ $("loginBtn").style.display="";
 $("logout").style.display="none";
 return;
 }
+
 userData=d.user||{};
 const u=userData;
 $("membership").textContent=String(u.membership||"FREE").toUpperCase();
@@ -240,41 +242,65 @@ $("account").textContent="👤 "+(u.name||u.email||"Account");
 $("account").style.display="inline-block";
 $("loginBtn").style.display="none";
 $("logout").style.display="block";
+
 if(u.avatar_url){
 $("avatar").src=u.avatar_url;
 $("avatar").style.display="block";
-}else $("avatar").style.display="none";
-}catch(e){console.error(e);}
+}else{
+$("avatar").style.display="none";
+}
+}catch(e){
+console.error(e);
+}
 }
 
 async function loadSubjects(){
 const {r,d}=await get("/api/subjects?_="+Date.now());
-if(!r.ok||d.success===false)throw Error(d.error||"Unable to load subjects");
+
+if(!r.ok||d.success===false){
+throw Error(d.error||"Unable to load subjects");
+}
+
 subjects=Array.isArray(d)?d:(d.subjects||d.data||d.results||[]);
 $("subjectCount").textContent=subjects.length;
+
 const select=$("subjectSelect");
 select.innerHTML='<option value="">-- Select Subject --</option>';
+
 subjects.forEach((s,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
 o.textContent=(s.icon?s.icon+" ":"")+(s.name||s.title||"Subject");
 select.appendChild(o);
 });
+
 if(!subjects.length)note("No subjects are currently available.");
+}
+
+function resetSubtitles(){
+subtitleRequestNo++;
+subtitles=[];
+$("subtitleField").hidden=true;
+$("languageSelect").innerHTML="";
+$("languageSelect").disabled=true;
+$("languageInfo").textContent="";
+$("subtitleBox").style.display="none";
+$("subtitleContent").innerHTML="";
 }
 
 async function subjectChanged(){
 const i=$("subjectSelect").value;
 const select=$("lessonSelect");
+
 lessons=[];
 currentLesson=null;
+resetSubtitles();
+
 $("lessonView").style.display="none";
 $("lessonInfo").textContent="";
 $("loadBtn").disabled=true;
 $("lessonSearch").value="";
 $("searchResults").innerHTML="";
-$("languageSelect").disabled=true;
-$("languageInfo").textContent="Choose a lesson first.";
 
 if(i===""){
 select.innerHTML='<option value="">Choose a subject first</option>';
@@ -285,13 +311,17 @@ return;
 
 const s=subjects[Number(i)];
 if(!s)return;
+
 select.disabled=true;
 select.innerHTML='<option value="">Loading lessons...</option>';
 
 try{
 const key=s.slug||s.id;
 const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(key)+"&_="+Date.now());
-if(!r.ok||d.success===false)throw Error(d.error||"Unable to load lessons");
+
+if(!r.ok||d.success===false){
+throw Error(d.error||"Unable to load lessons");
+}
 
 lessons=Array.isArray(d)?d:(d.lessons||d.data||d.results||[]);
 $("lessonCount").textContent=lessons.length;
@@ -307,6 +337,7 @@ select.appendChild(o);
 select.disabled=!lessons.length;
 if(!lessons.length)note("No lessons are available for this subject yet.");
 else clearNote();
+
 }catch(e){
 select.innerHTML='<option value="">Unable to load lessons</option>';
 select.disabled=true;
@@ -336,11 +367,13 @@ const b=document.createElement("button");
 b.type="button";
 b.className="search-result";
 b.textContent=(getFree(l)?"🆓 FREE · ":"👑 PREMIUM · ")+(l.title||"Lesson");
+
 b.onclick=()=>{
 $("lessonSelect").value=String(l._index);
 lessonChanged();
 $("lessonSelect").scrollIntoView({behavior:"smooth",block:"center"});
 };
+
 box.appendChild(b);
 });
 }
@@ -348,32 +381,102 @@ box.appendChild(b);
 function lessonChanged(){
 const i=$("lessonSelect").value;
 const l=i===""?null:lessons[Number(i)];
+
 currentLesson=l;
 $("lessonView").style.display="none";
 $("loadBtn").disabled=!l;
 $("lessonInfo").textContent="";
-$("languageSelect").disabled=!l;
-$("languageSelect").value="en";
-$("languageInfo").textContent=l
-?"English is selected. Tamil or Sinhala requires available translated subtitle content."
-:"Choose a lesson first.";
+resetSubtitles();
 
-if(!l)return;
+if(!l){
+$("languageInfo").textContent="";
+return;
+}
+
 $("lessonInfo").textContent=getFree(l)
 ?"🆓 This lesson is marked FREE in Admin."
 :"👑 This lesson is marked PREMIUM in Admin.";
+
+loadSubtitleOptions(l.id);
 }
+
 $("lessonSelect").addEventListener("change",lessonChanged);
 
-function languageChanged(){
-const lang=$("languageSelect").value;
-const names={en:"English",ta:"Tamil",si:"Sinhala"};
-$("languageInfo").textContent=lang==="en"
-?"English lesson content selected."
-:"Selected "+names[lang]+". This language will display if a matching translation is available for this lesson.";
-if(currentLesson&&$("lessonView").style.display!=="none"){
-loadSelectedLesson();
+async function loadSubtitleOptions(id){
+const myRequest=++subtitleRequestNo;
+const field=$("subtitleField");
+const select=$("languageSelect");
+
+field.hidden=true;
+select.disabled=true;
+select.innerHTML="";
+subtitles=[];
+
+try{
+const {r,d}=await get(
+"/api/lesson-subtitles/lesson/"+encodeURIComponent(id)+"?_="+Date.now()
+);
+
+if(myRequest!==subtitleRequestNo)return;
+if(!r.ok||d.success===false)return;
+
+let list=Array.isArray(d)?d:
+Array.isArray(d.subtitles)?d.subtitles:
+Array.isArray(d.data)?d.data:
+Array.isArray(d.data?.subtitles)?d.data.subtitles:
+Array.isArray(d.results)?d.results:[];
+
+list=list.filter(s=>s&&typeof s==="object"&&
+(s.content||s.subtitle_content||s.text||s.html));
+
+if(!list.length)return;
+
+subtitles=list;
+select.innerHTML='<option value="">-- Select Subtitle --</option>';
+
+subtitles.forEach((s,i)=>{
+const option=document.createElement("option");
+option.value=String(i);
+option.textContent=[
+s.language_name||s.language||s.subtitle_language||"",
+s.title||s.name||""
+].filter(Boolean).join(" · ")||"Subtitle "+(i+1);
+select.appendChild(option);
+});
+
+field.hidden=false;
+select.disabled=false;
+$("languageInfo").textContent="Choose an available subtitle.";
+}catch(e){
+console.error("Subtitle loading failed:",e);
+if(myRequest===subtitleRequestNo){
+field.hidden=true;
 }
+}
+}
+
+function subtitleChanged(){
+const i=$("languageSelect").value;
+const s=i===""?null:subtitles[Number(i)];
+
+if(!s){
+$("subtitleBox").style.display="none";
+$("subtitleContent").innerHTML="";
+return;
+}
+
+if($("lessonView").style.display!=="none"){
+renderSubtitle(s);
+}
+}
+
+function renderSubtitle(s){
+const content=s.content??s.subtitle_content??s.text??s.html??"";
+
+$("subtitleHeading").textContent="🌐 "+
+(s.language_name||s.language||s.subtitle_language||s.title||"Lesson Subtitles");
+$("subtitleContent").innerHTML=content||"";
+$("subtitleBox").style.display=content?"block":"none";
 }
 
 async function getLessonContent(id){
@@ -387,93 +490,45 @@ for(const path of paths){
 try{
 const separator=path.includes("?")?"&":"?";
 const {r,d}=await get(path+separator+"_="+Date.now());
+
 if(!r.ok||d.success===false)continue;
 
-const candidates=[d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes];
+const candidates=[
+d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes
+];
 
 for(const x of candidates){
 if(!x)continue;
-if(typeof x==="string"&&x.trim())return{lesson:null,content:x};
+
+if(typeof x==="string"&&x.trim()){
+return{lesson:null,content:x};
+}
+
 if(typeof x==="object"){
-const content=x.content??x.notes??x.explanation??x.lesson_content??x.html??x.body??"";
-if(typeof content==="string"&&content.trim())return{lesson:x,content};
+const content=x.content??x.notes??x.explanation??
+x.lesson_content??x.html??x.body??"";
+
+if(typeof content==="string"&&content.trim()){
+return{lesson:x,content};
 }
 }
-}catch(e){console.error("Lesson content request failed:",path,e);}
+}
+}catch(e){
+console.error("Lesson content request failed:",path,e);
+}
 }
 return{lesson:null,content:""};
 }
 
-async function loadSubtitles(id){
-const box=$("subtitleBox"),select=$("subtitleSelect");
-box.style.display="none";
-select.innerHTML='<option value="">Loading translations...</option>';
-$("subtitleContent").innerHTML="";
-subtitles=[];
-
-try{
-const {r,d}=await get("/api/lesson-subtitles/lesson/"+encodeURIComponent(id)+"?_="+Date.now());
-if(!r.ok||d.success===false){
-select.innerHTML='<option value="">Translations unavailable</option>';
-return;
-}
-subtitles=Array.isArray(d)?d:(d.subtitles||d.data?.subtitles||[]);
-if(!subtitles.length){
-select.innerHTML='<option value="">No translations available</option>';
-return;
-}
-
-select.innerHTML='<option value="">-- Select subtitle --</option>';
-subtitles.forEach((s,i)=>{
-const o=document.createElement("option");
-o.value=String(i);
-o.textContent=[s.language,s.title].filter(Boolean).join(" · ")||"Translation "+(i+1);
-select.appendChild(o);
-});
-box.style.display="block";
-
-const wanted=$("languageSelect").value;
-const match=subtitles.findIndex(s=>{
-const v=String(s.language||"").toLowerCase();
-return wanted==="ta"?(v==="ta"||v.includes("tamil")||v.includes("தமிழ்")):
-wanted==="si"?(v==="si"||v.includes("sinhala")||v.includes("සිංහල")):
-(v==="en"||v.includes("english"));
-});
-
-if(match>=0){
-select.value=String(match);
-showSubtitle();
-}else{
-select.value="";
-$("subtitleContent").textContent=wanted==="en"
-?"English lesson content is shown above. No English subtitle is available."
-:"A translation for this language is not available yet. Ask the Academy administrator to add it.";
-}
-}catch(e){
-console.error("Subtitle loading failed:",e);
-select.innerHTML='<option value="">Unable to load translations</option>';
-}
-}
-
-function showSubtitle(){
-const i=$("subtitleSelect").value;
-const s=i===""?null:subtitles[Number(i)];
-$("subtitleContent").innerHTML=s?(s.content||"Translation content is empty."):"";
-if(s){
-const lang=String(s.language||"").toLowerCase();
-if(lang.includes("tamil")||lang==="ta"||lang.includes("தமிழ்"))$("languageSelect").value="ta";
-else if(lang.includes("sinhala")||lang==="si"||lang.includes("සිංහල"))$("languageSelect").value="si";
-else if(lang.includes("english")||lang==="en")$("languageSelect").value="en";
-}
-}
-$("subtitleSelect").addEventListener("change",showSubtitle);
-
 async function loadSelectedLesson(){
 clearNote();
+
 const i=$("lessonSelect").value;
 const l=i===""?null:lessons[Number(i)];
+
 if(!l)return note("Please select a lesson first.");
 if(!userData){login();return;}
+
 if(!getFree(l)&&l.accessible!==true){
 location.href="/v2/pay.html";
 return;
@@ -487,33 +542,47 @@ $("lessonView").style.display="none";
 try{
 let lesson=l;
 let content=l.content||l.notes||l.explanation||l.lesson_content||"";
+
 if(!content){
 const result=await getLessonContent(l.id);
 if(current!==requestNo)return;
 if(result.lesson)lesson={...l,...result.lesson};
 content=result.content;
 }
+
 if(current!==requestNo)return;
 
 $("lessonTitle").textContent=lesson.title||l.title||"Lesson";
 $("lessonDescription").textContent=lesson.description||l.description||"";
 
 const image=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
+
 if(image){
 $("lessonPhoto").src=image;
 $("lessonPhoto").style.display="block";
 $("lessonPhoto").onerror=()=>$("lessonPhoto").style.display="none";
-}else $("lessonPhoto").style.display="none";
+}else{
+$("lessonPhoto").style.display="none";
+}
 
 $("lessonContent").innerHTML=content||
 "<p class='muted'>Lesson explanation not found. Check that Admin and Student Workers use the same D1 database.</p>";
 
-$("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+(getFree(l)?"🆓 FREE LESSON":"👑 PREMIUM LESSON")+'</span>';
+$("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+
+(getFree(l)?"🆓 FREE LESSON":"👑 PREMIUM LESSON")+'</span>';
+
 $("lessonView").style.display="block";
 
-await loadSubtitles(l.id);
-if(current!==requestNo)return;
+const selected=$("languageSelect").value;
+if(selected!==""&&subtitles[Number(selected)]){
+renderSubtitle(subtitles[Number(selected)]);
+}else{
+$("subtitleBox").style.display="none";
+$("subtitleContent").innerHTML="";
+}
+
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
+
 }catch(e){
 note(e.message||"Unable to load lesson.");
 }finally{
@@ -529,12 +598,14 @@ referral=(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCas
 
 async function init(){
 await loadUser();
-try{await loadSubjects();}
-catch(e){
+try{
+await loadSubjects();
+}catch(e){
 $("subjectSelect").innerHTML='<option value="">Unable to load subjects</option>';
 note((e.message||"Unable to load subjects.")+" Check that /api/subjects is available.");
 }
 }
+
 init();
 </script>
 </body>
