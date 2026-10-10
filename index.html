@@ -56,9 +56,9 @@ select:disabled{opacity:.5}
 .content img{max-width:100%;height:auto}
 .content table{max-width:100%;border-collapse:collapse}
 .content td,.content th{border:1px solid #52627a;padding:7px}
-.subtitle-box{margin-top:18px;padding:14px;background:#172942;border:1px solid #30435e;border-radius:10px}
-.subtitle-box h3{margin:0 0 12px;color:#d9b85c}
-#subtitleContent{line-height:1.8;overflow-wrap:anywhere;margin-top:12px}
+.subtitle-box{margin:14px 0;padding:13px;background:#172942;border:1px solid #30435e;border-radius:10px}
+.subtitle-box h3{margin:0 0 10px;color:#d9b85c;font-size:16px}
+#subtitleContent{line-height:1.8;overflow-wrap:anywhere;margin-top:10px}
 #subtitleContent img{max-width:100%;height:auto}
 footer{text-align:center;padding:20px;color:#8292a7;font-size:11px;border-top:1px solid #243753;margin-top:25px}
 footer a{color:#aab8cc;margin:5px;text-decoration:none}
@@ -144,17 +144,18 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <div id="lessonBadge"></div>
 <h2 id="lessonTitle"></h2>
 <p id="lessonDescription" class="muted"></p>
-<img id="lessonPhoto" style="display:none" alt="Lesson image">
-<div id="lessonContent" class="content"></div>
 
+<!-- Subtitles appear directly under the lesson title and description -->
 <div id="subtitleBox" class="subtitle-box" style="display:none">
 <h3>🌐 Lesson Subtitles</h3>
-<label for="subtitleSelect">Choose language or subtitle</label>
 <select id="subtitleSelect">
 <option value="">Select subtitle</option>
 </select>
 <div id="subtitleContent" class="content"></div>
 </div>
+
+<img id="lessonPhoto" style="display:none" alt="Lesson image">
+<div id="lessonContent" class="content"></div>
 </section>
 </main>
 
@@ -253,29 +254,35 @@ lessons=[];
 $("lessonView").style.display="none";
 $("lessonInfo").textContent="";
 $("loadBtn").disabled=true;
+
 if(i===""){
 select.innerHTML='<option value="">Choose a subject first</option>';
 select.disabled=true;
 $("lessonCount").textContent="—";
 return;
 }
+
 const s=subjects[Number(i)];
 if(!s)return;
 select.disabled=true;
 select.innerHTML='<option value="">Loading lessons...</option>';
+
 try{
 const key=s.slug||s.id;
 const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(key)+"&_="+Date.now());
 if(!r.ok||d.success===false)throw Error(d.error||"Unable to load lessons");
+
 lessons=Array.isArray(d)?d:(d.lessons||d.data||d.results||[]);
 $("lessonCount").textContent=lessons.length;
 select.innerHTML='<option value="">-- Select Lesson --</option>';
+
 lessons.forEach((l,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
 o.textContent=(getFree(l)?"🟢 FREE · ":"🔒 PREMIUM · ")+(l.title||"Lesson "+(i+1));
 select.appendChild(o);
 });
+
 select.disabled=!lessons.length;
 if(!lessons.length)note("No lessons are available for this subject yet.");
 else clearNote();
@@ -293,6 +300,7 @@ $("lessonView").style.display="none";
 $("loadBtn").disabled=!l;
 $("lessonInfo").textContent="";
 if(!l)return;
+
 $("lessonInfo").textContent=getFree(l)
 ?"🟢 This lesson is marked FREE in Admin."
 :"🔒 This lesson is marked PREMIUM in Admin.";
@@ -305,21 +313,27 @@ const paths=[
 "/api/lesson-content?lesson="+encodeURIComponent(id),
 "/api/lessons/"+encodeURIComponent(id)
 ];
+
 for(const path of paths){
 try{
 const separator=path.includes("?")?"&":"?";
 const {r,d}=await get(path+separator+"_="+Date.now());
 if(!r.ok||d.success===false)continue;
+
 const candidates=[d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes];
+
 for(const x of candidates){
 if(!x)continue;
 if(typeof x==="string"&&x.trim())return{lesson:null,content:x};
+
 if(typeof x==="object"){
 const content=x.content??x.notes??x.explanation??x.lesson_content??x.html??x.body??"";
 if(typeof content==="string"&&content.trim())return{lesson:x,content};
 }
 }
-}catch(e){console.error("Lesson content request failed:",path,e);}
+}catch(e){
+console.error("Lesson content request failed:",path,e);
+}
 }
 return{lesson:null,content:""};
 }
@@ -333,24 +347,31 @@ subtitles=[];
 
 try{
 const {r,d}=await get("/api/lesson-subtitles/lesson/"+encodeURIComponent(id)+"?_="+Date.now());
+
 if(!r.ok||d.success===false){
 select.innerHTML='<option value="">Subtitles unavailable</option>';
 console.warn("Subtitle API error:",r.status,d);
 return;
 }
+
 subtitles=Array.isArray(d)?d:(d.subtitles||d.data?.subtitles||[]);
+
 if(!subtitles.length){
 select.innerHTML='<option value="">No subtitles available</option>';
 return;
 }
+
 select.innerHTML='<option value="">-- Select subtitle --</option>';
+
 subtitles.forEach((s,i)=>{
 const o=document.createElement("option");
 o.value=String(i);
 o.textContent=[s.language,s.title].filter(Boolean).join(" · ")||"Subtitle "+(i+1);
 select.appendChild(o);
 });
+
 box.style.display="block";
+
 if(subtitles.length===1){
 select.value="0";
 showSubtitle();
@@ -372,6 +393,7 @@ async function loadSelectedLesson(){
 clearNote();
 const i=$("lessonSelect").value;
 const l=i===""?null:lessons[Number(i)];
+
 if(!l)return note("Please select a lesson first.");
 if(!userData){login();return;}
 
@@ -388,6 +410,7 @@ $("lessonView").style.display="none";
 try{
 let lesson=l;
 let content=l.content||l.notes||l.explanation||l.lesson_content||"";
+
 if(!content){
 const result=await getLessonContent(l.id);
 if(current!==requestNo)return;
@@ -398,19 +421,27 @@ if(current!==requestNo)return;
 
 $("lessonTitle").textContent=lesson.title||l.title||"Lesson";
 $("lessonDescription").textContent=lesson.description||l.description||"";
+
 const image=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
 if(image){
 $("lessonPhoto").src=image;
 $("lessonPhoto").style.display="block";
 $("lessonPhoto").onerror=()=>$("lessonPhoto").style.display="none";
-}else $("lessonPhoto").style.display="none";
+}else{
+$("lessonPhoto").style.display="none";
+}
 
-$("lessonContent").innerHTML=content||"<p class='muted'>Lesson explanation not found. Check that Admin and Student Workers use the same D1 database.</p>";
+$("lessonContent").innerHTML=content||
+"<p class='muted'>Lesson explanation not found. Check that Admin and Student Workers use the same D1 database.</p>";
+
 $("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+(getFree(l)?"FREE LESSON":"PREMIUM LESSON")+'</span>';
+
 $("lessonView").style.display="block";
 
+/* Load subtitles for this lesson; dropdown sits under the title. */
 await loadSubtitles(l.id);
 if(current!==requestNo)return;
+
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
 }catch(e){
 note(e.message||"Unable to load lesson.");
