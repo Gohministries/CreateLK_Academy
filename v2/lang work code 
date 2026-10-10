@@ -1,0 +1,218 @@
+
+const ADMIN_EMAIL = "gateofheavensl1@gmail.com";
+const ORIGIN = "https://createlk.com";
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    const method = request.method;
+
+    const headers = {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": ORIGIN,
+      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    };
+
+    const json = (data, status = 200) =>
+      new Response(JSON.stringify(data), { status, headers });
+
+    if (method === "OPTIONS") {
+      return new Response(null, { status: 204, headers });
+    }
+
+    if (!["GET", "POST", "PUT"].includes(method)) {
+      return json({ error: "Method not allowed" }, 405);
+    }
+
+    try {
+      // Verify Google sign-in and admin email.
+      const token = request.headers
+        .get("Authorization")?.replace(/^Bearer\s+/i, "");
+
+      if (!token || !env.GOOGLE_CLIENT_ID) {
+        return json({ error: "Admin login required" }, 401);
+      }
+
+      const verify = await fetch(
+        "https://oauth2.googleapis.com/tokeninfo?id_token=" +
+          encodeURIComponent(token)
+      );
+
+      if (!verify.ok) {
+        return json({ error: "Invalid Google login" }, 401);
+      }
+
+      const user = await verify.json();
+
+      if (
+        user.email !== ADMIN_EMAIL ||
+        user.email_verified !== "true" ||
+        user.aud !== env.GOOGLE_CLIENT_ID
+      ) {
+        return json({ error: "Admin access denied" }, 403);
+      }
+
+      const body = ["POST", "PUT"].includes(method)
+        ? await request.json()
+        : {};
+
+      const language = String(
+        body.language || url.searchParams.get("language") || "English"
+      );
+
+      if (!["English", "Tamil", "Sinhala"].includes(language)) {
+        return json({ error: "Invalid language" }, 400);
+      }
+
+      // SUBJECT LIST
+      if (path === "/api/subjects" && method === "GET") {
+        const result = await env.DB.prepare(`
+          SELECT id, name, slug, is_active, language
+          FROM subjects
+          WHERE language = ? AND is_active = 1
+          ORDER BY name
+        `).bind(language).all();
+
+        return json({ subjects: result.results });
+      }
+
+      // CREATE SUBJECT
+      if (path === "/api/subjects" && method === "POST") {
+        const name = String(body.name || "").trim();
+        const slug = String(body.slug || "").trim();
+
+        if (!name || !slug) {
+          return json({ error: "Subject name and slug required" }, 400);
+        }
+
+        const result = await env.DB.prepare(`
+          INSERT INTO subjects (name, slug, is_active, language)
+          VALUES (?, ?, 1, ?)
+        `).bind(name, slug, language).run();
+
+        return json({
+          success: true,
+          id: result.meta.last_row_id
+        }, 201);
+      }
+
+      // EDIT SUBJECT — PUT /api/subjects/:id
+      const subjectMatch = path.match(/^\/api\/subjects\/(\d+)$/);
+
+      if (subjectMatch && method === "PUT") {
+        const id = Number(subjectMatch[1]);
+        const name = String(body.name || "").trim();
+        const slug = String(body.slug || "").trim();
+
+        if (!name || !slug) {
+          return json({ error: "Subject name and slug required" }, 400);
+        }
+
+        const result = await env.DB.prepare(`
+          UPDATE subjects
+          SET name = ?, slug = ?, language = ?
+          WHERE id = ?
+        `).bind(name, slug, language, id).run();
+
+        if (!result.meta.changes) {
+          return json({ error: "Subject not found" }, 404);
+        }
+
+        return json({ success: true, message: "Subject updated" });
+      }
+
+      // LIST LESSONS
+      if (path === "/api/lessons" && method === "GET") {
+        const result = await env.DB.prepare(`
+          SELECT l.id, l.title, l.description, l.sort_order,
+                 l.is_free, l.status, l.language,
+                 m.subject_id
+          FROM lessons l
+          LEFT JOIN subject_lesson_map m ON m.lesson_id = l.id
+          WHERE l.language = ?
+          ORDER BY l.sort_order, l.id
+        `).bind(language).all();
+
+        return json({ lessons: result.results });
+      }
+
+      // CREATE LESSON
+      if (path === "/api/lessons" && method === "POST") {
+        const title = String(body.title || "").trim();
+        const description = String(body.description || "");
+        const subjectId = Number(body.subject_id || body.subjectId);
+        const access = String(body.access || "Free");
+        const status = String(body.status || "PUBLISHED");
+
+        if (!title || !Number.isInteger(subjectId) || subjectId < 1) {
+          return json({
+            error: "Lesson title and subject are required"
+          }, 400);
+        }
+
+        if (!["Free", "Premium"].includes(access)) {
+          return json({ error: "Invalid access type" }, 400);
+        }
+
+        if (!["PUBLISHED", "DRAFT"].includes(status)) {
+          return json({ error: "Invalid lesson status" }, 400);
+        }
+
+        const subject = await env.DB.prepare(`
+          SELECT id FROM subjects
+          WHERE id = ? AND language = ? AND is_active = 1
+        `).bind(subjectId, language).first();
+
+        if (!subject) {
+          return json({ error: "Subject not found for this language" }, 400);
+        }
+
+        const order = await env.DB.prepare(`
+          SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+          FROM lessons
+        `).first();
+
+        const result = await env.DB.prepare(`
+          INSERT INTO lessons
+            (title, description, sort_order, is_free, status, language)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          title,
+          description,
+          order.next_order,
+          access === "Free" ? 1 : 0,
+          status,
+          language
+        ).run();
+
+        const lessonId = result.meta.last_row_id;
+
+        await env.DB.prepare(`
+          INSERT INTO subject_lesson_map
+            (lesson_id, subject_id, display_order)
+          VALUES (?, ?, ?)
+        `).bind(lessonId, subjectId, order.next_order).run();
+
+        return json({
+          success: true,
+          id: lessonId,
+          message: "Lesson created"
+        }, 201);
+      }
+
+      return json({
+        error: "Endpoint not found",
+        path,
+        method
+      }, 404);
+
+    } catch (error) {
+      return json({
+        error: "Server error",
+        message: error.message
+      }, 500);
+    }
+  }
+};
