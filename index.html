@@ -146,7 +146,6 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <div class="field" id="subtitleField" hidden>
 <label for="languageSelect">3. 🌐 Select Subtitles</label>
 <select id="languageSelect" onchange="subtitleChanged()" disabled></select>
-<p class="muted" id="languageInfo"></p>
 </div>
 
 <div id="lessonInfo" class="muted"></div>
@@ -283,7 +282,6 @@ subtitles=[];
 $("subtitleField").hidden=true;
 $("languageSelect").innerHTML="";
 $("languageSelect").disabled=true;
-$("languageInfo").textContent="";
 $("subtitleBox").style.display="none";
 $("subtitleContent").innerHTML="";
 }
@@ -388,10 +386,7 @@ $("loadBtn").disabled=!l;
 $("lessonInfo").textContent="";
 resetSubtitles();
 
-if(!l){
-$("languageInfo").textContent="";
-return;
-}
+if(!l)return;
 
 $("lessonInfo").textContent=getFree(l)
 ?"🆓 This lesson is marked FREE in Admin."
@@ -426,9 +421,6 @@ Array.isArray(d.data)?d.data:
 Array.isArray(d.data?.subtitles)?d.data.subtitles:
 Array.isArray(d.results)?d.results:[];
 
-list=list.filter(s=>s&&typeof s==="object"&&
-(s.content||s.subtitle_content||s.text||s.html));
-
 if(!list.length)return;
 
 subtitles=list;
@@ -446,12 +438,9 @@ select.appendChild(option);
 
 field.hidden=false;
 select.disabled=false;
-$("languageInfo").textContent="Choose an available subtitle.";
 }catch(e){
 console.error("Subtitle loading failed:",e);
-if(myRequest===subtitleRequestNo){
-field.hidden=true;
-}
+if(myRequest===subtitleRequestNo)field.hidden=true;
 }
 }
 
@@ -459,24 +448,21 @@ function subtitleChanged(){
 const i=$("languageSelect").value;
 const s=i===""?null:subtitles[Number(i)];
 
-if(!s){
 $("subtitleBox").style.display="none";
 $("subtitleContent").innerHTML="";
-return;
-}
 
-if($("lessonView").style.display!=="none"){
+if(!s||$("lessonView").style.display==="none")return;
 renderSubtitle(s);
-}
 }
 
 function renderSubtitle(s){
 const content=s.content??s.subtitle_content??s.text??s.html??"";
+if(!String(content).trim())return;
 
 $("subtitleHeading").textContent="🌐 "+
 (s.language_name||s.language||s.subtitle_language||s.title||"Lesson Subtitles");
-$("subtitleContent").innerHTML=content||"";
-$("subtitleBox").style.display=content?"block":"none";
+$("subtitleContent").innerHTML=content;
+$("subtitleBox").style.display="block";
 }
 
 async function getLessonContent(id){
@@ -490,27 +476,17 @@ for(const path of paths){
 try{
 const separator=path.includes("?")?"&":"?";
 const {r,d}=await get(path+separator+"_="+Date.now());
-
 if(!r.ok||d.success===false)continue;
 
-const candidates=[
-d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes
-];
+const candidates=[d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes];
 
 for(const x of candidates){
 if(!x)continue;
-
-if(typeof x==="string"&&x.trim()){
-return{lesson:null,content:x};
-}
+if(typeof x==="string"&&x.trim())return{lesson:null,content:x};
 
 if(typeof x==="object"){
-const content=x.content??x.notes??x.explanation??
-x.lesson_content??x.html??x.body??"";
-
-if(typeof content==="string"&&content.trim()){
-return{lesson:x,content};
-}
+const content=x.content??x.notes??x.explanation??x.lesson_content??x.html??x.body??"";
+if(typeof content==="string"&&content.trim())return{lesson:x,content};
 }
 }
 }catch(e){
@@ -538,6 +514,8 @@ const current=++requestNo;
 $("loadBtn").disabled=true;
 $("loadBtn").textContent="Loading lesson...";
 $("lessonView").style.display="none";
+$("subtitleBox").style.display="none";
+$("subtitleContent").innerHTML="";
 
 try{
 let lesson=l;
@@ -549,14 +527,12 @@ if(current!==requestNo)return;
 if(result.lesson)lesson={...l,...result.lesson};
 content=result.content;
 }
-
 if(current!==requestNo)return;
 
 $("lessonTitle").textContent=lesson.title||l.title||"Lesson";
 $("lessonDescription").textContent=lesson.description||l.description||"";
 
 const image=lesson.photo_url||lesson.image_url||lesson.photo||lesson.image||"";
-
 if(image){
 $("lessonPhoto").src=image;
 $("lessonPhoto").style.display="block";
@@ -576,13 +552,9 @@ $("lessonView").style.display="block";
 const selected=$("languageSelect").value;
 if(selected!==""&&subtitles[Number(selected)]){
 renderSubtitle(subtitles[Number(selected)]);
-}else{
-$("subtitleBox").style.display="none";
-$("subtitleContent").innerHTML="";
 }
 
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
-
 }catch(e){
 note(e.message||"Unable to load lesson.");
 }finally{
@@ -605,7 +577,6 @@ $("subjectSelect").innerHTML='<option value="">Unable to load subjects</option>'
 note((e.message||"Unable to load subjects.")+" Check that /api/subjects is available.");
 }
 }
-
 init();
 </script>
 </body>
