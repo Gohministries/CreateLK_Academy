@@ -1,491 +1,502 @@
 
 const ADMIN_EMAIL = "gateofheavensl1@gmail.com";
-const GOOGLE_CLIENT_ID = "582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
-const LANGUAGES = ["en", "ta", "si"];
+const GOOGLE_CLIENT_ID =
+  "582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
 
-const HEADERS = {
-  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization"
-};
-
-function json(data, status = 200, origin = "*") {
-  return new Response(JSON.stringify(data), {
+const json = (data, status = 200, headers = {}) =>
+  new Response(JSON.stringify(data), {
     status,
-    headers: {
-      ...HEADERS,
-      "Access-Control-Allow-Origin": origin,
-      "Content-Type": "application/json; charset=utf-8"
-    }
+    headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
   });
+
+function cors(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const configured = (env.ALLOWED_ORIGIN || "")
+    .split(",").map(x => x.trim()).filter(Boolean);
+  const allowed = !configured.length || configured.includes("*")
+    || configured.includes(origin);
+
+  return {
+    "Access-Control-Allow-Origin": allowed ? (origin || "*") : configured[0],
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
+  };
 }
 
-function fail(message, status = 400) {
-  const e = new Error(message);
-  e.status = status;
-  return e;
+async function bodyJSON(request) {
+  try { return await request.json(); }
+  catch { return {}; }
+}
+
+async function hasColumn(db, table, column) {
+  const result = await db.prepare(`PRAGMA table_info(${table})`).all();
+  return (result.results || []).some(c => c.name === column);
+}
+
+async function addColumn(db, table, column, definition) {
+  if (!(await hasColumn(db, table, column))) {
+    await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
 }
 
 async function ensureTables(db) {
-  const sql = [
-    `CREATE TABLE IF NOT EXISTS subjects (
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS subjects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      sort_order INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )`,
-    `CREATE TABLE IF NOT EXISTS lessons (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      sort_order INTEGER DEFAULT 0,
-      is_free INTEGER DEFAULT 0,
-      subject_id INTEGER,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )`,
-    `CREATE TABLE IF NOT EXISTS subject_lesson_map (
-      subject_id INTEGER NOT NULL,
-      lesson_id INTEGER NOT NULL,
-      sort_order INTEGER DEFAULT 0,
-      PRIMARY KEY(subject_id, lesson_id)
-    )`,
-    `CREATE TABLE IF NOT EXISTS subject_courses (
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS lessons (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       subject_id INTEGER,
-      title TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      sort_order INTEGER DEFAULT 0
-    )`,
-    `CREATE TABLE IF NOT EXISTS lesson_notes (
-      lesson_id INTEGER PRIMARY KEY,
-      content TEXT DEFAULT '',
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )`,
-    `CREATE TABLE IF NOT EXISTS lesson_subtitles (
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_free INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'PUBLISHED'
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS lesson_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      lesson_id INTEGER NOT NULL,
-      language TEXT DEFAULT 'en',
-      title TEXT DEFAULT '',
-      content TEXT DEFAULT '',
-      sort_order INTEGER DEFAULT 0,
+      lesson_id INTEGER NOT NULL UNIQUE,
+      content TEXT NOT NULL DEFAULT '',
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )`,
-    `CREATE TABLE IF NOT EXISTS lesson_translations (
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS lesson_translations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       lesson_id INTEGER NOT NULL,
       language TEXT NOT NULL,
-      title TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      introduction TEXT DEFAULT '',
-      explanation TEXT DEFAULT '',
-      content TEXT DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (lesson_id, language)
-    )`
-  ];
+      UNIQUE(lesson_id, language)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS lesson_subtitles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_id INTEGER NOT NULL,
+      language TEXT NOT NULL DEFAULT 'en',
+      title TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )`)
+  ]);
 
-  for (const statement of sql) {
-    await db.prepare(statement).run();
+  // Add missing columns safely without deleting existing records.
+  await addColumn(db, "subjects", "slug", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "subjects", "description", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "subjects", "sort_order", "INTEGER NOT NULL DEFAULT 0");
+
+  await addColumn(db, "lessons", "subject_id", "INTEGER");
+  await addColumn(db, "lessons", "description", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "lessons", "sort_order", "INTEGER NOT NULL DEFAULT 0");
+  await addColumn(db, "lessons", "is_free", "INTEGER NOT NULL DEFAULT 0");
+  await addColumn(db, "lessons", "status", "TEXT NOT NULL DEFAULT 'PUBLISHED'");
+
+  await addColumn(db, "lesson_notes", "content", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "lesson_translations", "title", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "lesson_translations", "description", "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, "lesson_translations", "content", "TEXT NOT NULL DEFAULT ''");
+}
+
+function slugify(value) {
+  return String(value || "")
+    .trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function validStatus(value) {
+  const status = String(value || "PUBLISHED").toUpperCase();
+  return ["PUBLISHED", "DRAFT", "COMING_SOON"].includes(status)
+    ? status : "PUBLISHED";
+}
+
+async function authenticate(request, env) {
+  const header = request.headers.get("Authorization") || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) return false;
+
+  try {
+    const response = await fetch(
+      "https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(token)
+    );
+    if (!response.ok) return false;
+
+    const info = await response.json();
+    const clientId = env.GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID;
+    const admin = (env.ADMIN_EMAIL || ADMIN_EMAIL).toLowerCase();
+
+    return info.aud === clientId
+      && String(info.email || "").toLowerCase() === admin
+      && String(info.email_verified) === "true"
+      && Number(info.exp) > Math.floor(Date.now() / 1000);
+  } catch {
+    return false;
   }
 }
 
-async function authenticate(request) {
-  const header = request.headers.get("Authorization") || "";
-  const token = header.replace(/^Bearer\s+/i, "").trim();
+function subjectRow(row) {
+  return {
+    ...row,
+    name: row.title || "",
+    slug: row.slug || slugify(row.title || ""),
+    sort_order: Number(row.sort_order || 0)
+  };
+}
 
-  if (!token) throw fail("Please sign in with the administrator Google account.", 401);
+async function readSubjects(db) {
+  const r = await db.prepare(
+    "SELECT * FROM subjects ORDER BY sort_order ASC, id ASC"
+  ).all();
+  return (r.results || []).map(subjectRow);
+}
 
-  let result;
-  try {
-    const response = await fetch(
-      "https://oauth2.googleapis.com/tokeninfo?id_token=" +
-      encodeURIComponent(token)
-    );
-    result = await response.json();
-    if (!response.ok) throw new Error("Invalid token");
-  } catch {
-    throw fail("Google authentication failed.", 401);
+async function readLessons(db) {
+  const r = await db.prepare(
+    "SELECT * FROM lessons ORDER BY subject_id ASC, sort_order ASC, id ASC"
+  ).all();
+  return (r.results || []).map(l => ({
+    ...l,
+    is_free: Number(l.is_free || 0),
+    status: validStatus(l.status)
+  }));
+}
+
+async function handle(request, env) {
+  const headers = cors(request, env);
+  const url = new URL(request.url);
+  const path = decodeURI(url.pathname);
+  const method = request.method.toUpperCase();
+
+  if (method === "OPTIONS") return new Response(null, { status: 204, headers });
+
+  if (path === "/api/health" && method === "GET") {
+    return json({ ok: true, service: "CreateLK Academy Admin V2" }, 200, headers);
   }
 
-  if (
-    result.aud !== GOOGLE_CLIENT_ID ||
-    result.email !== ADMIN_EMAIL ||
-    result.email_verified !== "true" ||
-    Number(result.exp) <= Math.floor(Date.now() / 1000)
-  ) {
-    throw fail("Administrator access denied.", 403);
+  // Public lesson images served from R2.
+  if (path.startsWith("/images/") && method === "GET") {
+    if (!env.FILES) return json({ error: "R2 binding FILES is missing" }, 500, headers);
+
+    let key;
+    try {
+      key = path.slice("/images/".length)
+        .split("/").map(decodeURIComponent).join("/");
+    } catch {
+      return json({ error: "Invalid image path" }, 400, headers);
+    }
+
+    const object = await env.FILES.get(key);
+    if (!object) return json({ error: "Image not found" }, 404, headers);
+
+    const outHeaders = new Headers(headers);
+    outHeaders.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+    outHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
+    if (object.httpMetadata?.contentDisposition) {
+      outHeaders.set("Content-Disposition", object.httpMetadata.contentDisposition);
+    }
+    return new Response(object.body, { headers: outHeaders });
+  }
+
+  if (!path.startsWith("/api/")) {
+    return json({ error: "Not found" }, 404, headers);
+  }
+
+  if (!(await authenticate(request, env))) {
+    return json({ error: "Unauthorized. Sign in with the approved Google administrator account." }, 401, headers);
+  }
+
+  if (!env.DB) return json({ error: "D1 binding DB is missing" }, 500, headers);
+
+  const db = env.DB;
+  try {
+    await ensureTables(db);
+
+    // Initial dashboard data.
+    if (path === "/api/bootstrap" && method === "GET") {
+      const [subjects, lessons] = await Promise.all([
+        readSubjects(db), readLessons(db)
+      ]);
+      return json({ ok: true, subjects, lessons }, 200, headers);
+    }
+
+    // SUBJECTS: list, create, edit, delete.
+    if (path === "/api/subjects" && method === "GET") {
+      return json({ ok: true, subjects: await readSubjects(db) }, 200, headers);
+    }
+
+    if (path === "/api/subjects" && method === "POST") {
+      const d = await bodyJSON(request);
+      const title = String(d.title || d.name || "").trim();
+      if (!title) return json({ error: "Subject name is required" }, 400, headers);
+
+      const slug = String(d.slug || slugify(title)).trim();
+      const max = await db.prepare(
+        "SELECT COALESCE(MAX(sort_order),0) AS n FROM subjects"
+      ).first();
+
+      const result = await db.prepare(
+        "INSERT INTO subjects (title, slug, description, sort_order) VALUES (?, ?, ?, ?)"
+      ).bind(title, slug, String(d.description || ""), Number(d.sort_order ?? (Number(max?.n || 0) + 1))).run();
+
+      return json({ ok: true, id: result.meta.last_row_id, subject: {
+        id: result.meta.last_row_id, title, name: title, slug
+      } }, 201, headers);
+    }
+
+    const subjectMatch = path.match(/^\/api\/subjects\/(\d+)$/);
+    if (subjectMatch && method === "PUT") {
+      const id = Number(subjectMatch[1]);
+      const d = await bodyJSON(request);
+      const title = String(d.title || d.name || "").trim();
+      if (!title) return json({ error: "Subject name is required" }, 400, headers);
+
+      await db.prepare(
+        "UPDATE subjects SET title=?, slug=?, description=?, sort_order=? WHERE id=?"
+      ).bind(
+        title,
+        String(d.slug || slugify(title)).trim(),
+        String(d.description || ""),
+        Number(d.sort_order || 0),
+        id
+      ).run();
+
+      return json({ ok: true, id, title, name: title, slug: d.slug || slugify(title) }, 200, headers);
+    }
+
+    if (subjectMatch && method === "DELETE") {
+      const id = Number(subjectMatch[1]);
+      const used = await db.prepare(
+        "SELECT COUNT(*) AS n FROM lessons WHERE subject_id=?"
+      ).bind(id).first();
+
+      if (Number(used?.n || 0) > 0) {
+        return json({ error: "This subject has lessons. Move or delete those lessons first." }, 409, headers);
+      }
+      await db.prepare("DELETE FROM subjects WHERE id=?").bind(id).run();
+      return json({ ok: true }, 200, headers);
+    }
+
+    // LESSONS: list, create, edit, delete.
+    if (path === "/api/lessons" && method === "GET") {
+      return json({ ok: true, lessons: await readLessons(db) }, 200, headers);
+    }
+
+    if (path === "/api/lessons" && method === "POST") {
+      const d = await bodyJSON(request);
+      const title = String(d.title || "").trim();
+      if (!title) return json({ error: "Lesson title is required" }, 400, headers);
+
+      const subjectId = d.subject_id ? Number(d.subject_id) : null;
+      const max = await db.prepare(
+        "SELECT COALESCE(MAX(sort_order),0) AS n FROM lessons WHERE subject_id IS ?"
+      ).bind(subjectId).first();
+
+      const result = await db.prepare(
+        `INSERT INTO lessons
+         (subject_id,title,description,sort_order,is_free,status)
+         VALUES (?,?,?,?,?,?)`
+      ).bind(
+        subjectId,
+        title,
+        String(d.description || ""),
+        Number(d.sort_order ?? (Number(max?.n || 0) + 1)),
+        d.is_free ? 1 : 0,
+        validStatus(d.status)
+      ).run();
+
+      return json({ ok: true, id: result.meta.last_row_id }, 201, headers);
+    }
+
+    const lessonMatch = path.match(/^\/api\/lessons\/(\d+)$/);
+    if (lessonMatch && method === "PUT") {
+      const id = Number(lessonMatch[1]);
+      const d = await bodyJSON(request);
+      const title = String(d.title || "").trim();
+      if (!title) return json({ error: "Lesson title is required" }, 400, headers);
+
+      await db.prepare(
+        `UPDATE lessons SET title=?, description=?, subject_id=?, is_free=?,
+         status=?, sort_order=? WHERE id=?`
+      ).bind(
+        title,
+        String(d.description || ""),
+        d.subject_id ? Number(d.subject_id) : null,
+        d.is_free ? 1 : 0,
+        validStatus(d.status),
+        Number(d.sort_order || 0),
+        id
+      ).run();
+
+      return json({ ok: true, id }, 200, headers);
+    }
+
+    if (lessonMatch && method === "DELETE") {
+      const id = Number(lessonMatch[1]);
+      await db.batch([
+        db.prepare("DELETE FROM lesson_notes WHERE lesson_id=?").bind(id),
+        db.prepare("DELETE FROM lesson_translations WHERE lesson_id=?").bind(id),
+        db.prepare("DELETE FROM lesson_subtitles WHERE lesson_id=?").bind(id),
+        db.prepare("DELETE FROM lessons WHERE id=?").bind(id)
+      ]);
+      return json({ ok: true }, 200, headers);
+    }
+
+    // LESSON NOTES.
+    const noteMatch = path.match(/^\/api\/notes\/(\d+)$/);
+    if (noteMatch && method === "GET") {
+      const lessonId = Number(noteMatch[1]);
+      const note = await db.prepare(
+        "SELECT * FROM lesson_notes WHERE lesson_id=?"
+      ).bind(lessonId).first();
+      return json({ ok: true, content: note?.content || "", note: note || null }, 200, headers);
+    }
+
+    if (noteMatch && (method === "PUT" || method === "POST")) {
+      const lessonId = Number(noteMatch[1]);
+      const d = await bodyJSON(request);
+      const content = String(d.content ?? "");
+      await db.prepare(
+        `INSERT INTO lesson_notes (lesson_id,content,updated_at)
+         VALUES (?,?,CURRENT_TIMESTAMP)
+         ON CONFLICT(lesson_id) DO UPDATE SET
+         content=excluded.content, updated_at=CURRENT_TIMESTAMP`
+      ).bind(lessonId, content).run();
+      return json({ ok: true }, 200, headers);
+    }
+
+    // TRANSLATIONS: one saved record per lesson and language.
+    const translationMatch = path.match(/^\/api\/translations\/lesson\/(\d+)$/);
+    if (translationMatch && method === "GET") {
+      const lessonId = Number(translationMatch[1]);
+      const r = await db.prepare(
+        "SELECT * FROM lesson_translations WHERE lesson_id=? ORDER BY language"
+      ).bind(lessonId).all();
+      return json({ ok: true, translations: r.results || [] }, 200, headers);
+    }
+
+    if (path === "/api/translations" && (method === "POST" || method === "PUT")) {
+      const d = await bodyJSON(request);
+      const lessonId = Number(d.lesson_id || 0);
+      const language = String(d.language || "").toLowerCase();
+      if (!lessonId || !["en", "ta", "si"].includes(language)) {
+        return json({ error: "Valid lesson_id and language (en, ta, si) are required" }, 400, headers);
+      }
+
+      await db.prepare(
+        `INSERT INTO lesson_translations
+         (lesson_id,language,title,description,content,updated_at)
+         VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
+         ON CONFLICT(lesson_id,language) DO UPDATE SET
+         title=excluded.title, description=excluded.description,
+         content=excluded.content, updated_at=CURRENT_TIMESTAMP`
+      ).bind(
+        lessonId, language,
+        String(d.title || ""),
+        String(d.description || ""),
+        String(d.content || "")
+      ).run();
+
+      return json({ ok: true }, 200, headers);
+    }
+
+    // SUBTITLES.
+    const subtitleListMatch = path.match(/^\/api\/lesson-subtitles\/lesson\/(\d+)$/);
+    if (subtitleListMatch && method === "GET") {
+      const r = await db.prepare(
+        "SELECT * FROM lesson_subtitles WHERE lesson_id=? ORDER BY sort_order ASC,id ASC"
+      ).bind(Number(subtitleListMatch[1])).all();
+      return json({ ok: true, subtitles: r.results || [], items: r.results || [] }, 200, headers);
+    }
+
+    if (path === "/api/lesson-subtitles" && method === "POST") {
+      const d = await bodyJSON(request);
+      if (!d.lesson_id || !String(d.title || "").trim()) {
+        return json({ error: "Lesson and subtitle title are required" }, 400, headers);
+      }
+      const result = await db.prepare(
+        "INSERT INTO lesson_subtitles (lesson_id,language,title,content,sort_order) VALUES (?,?,?,?,?)"
+      ).bind(
+        Number(d.lesson_id),
+        ["en", "ta", "si"].includes(String(d.language || "en").toLowerCase())
+          ? String(d.language || "en").toLowerCase() : "en",
+        String(d.title || ""),
+        String(d.content || ""),
+        Number(d.sort_order || 0)
+      ).run();
+      return json({ ok: true, id: result.meta.last_row_id }, 201, headers);
+    }
+
+    const subtitleMatch = path.match(/^\/api\/lesson-subtitles\/(\d+)$/);
+    if (subtitleMatch && method === "PUT") {
+      const d = await bodyJSON(request);
+      await db.prepare(
+        "UPDATE lesson_subtitles SET title=?,language=?,content=?,sort_order=? WHERE id=?"
+      ).bind(
+        String(d.title || ""),
+        ["en", "ta", "si"].includes(String(d.language || "en").toLowerCase())
+          ? String(d.language || "en").toLowerCase() : "en",
+        String(d.content || ""),
+        Number(d.sort_order || 0),
+        Number(subtitleMatch[1])
+      ).run();
+      return json({ ok: true }, 200, headers);
+    }
+
+    if (subtitleMatch && method === "DELETE") {
+      await db.prepare("DELETE FROM lesson_subtitles WHERE id=?")
+        .bind(Number(subtitleMatch[1])).run();
+      return json({ ok: true }, 200, headers);
+    }
+
+    // IMAGE UPLOAD TO R2.
+    if (path === "/api/lesson-images" && method === "POST") {
+      if (!env.FILES) return json({ error: "R2 binding FILES is missing" }, 500, headers);
+
+      const form = await request.formData();
+      const file = form.get("file");
+      const lessonId = String(form.get("lesson_id") || "general");
+
+      if (!file || typeof file.arrayBuffer !== "function") {
+        return json({ error: "Choose an image file first" }, 400, headers);
+      }
+      if (!String(file.type || "").startsWith("image/")) {
+        return json({ error: "Only image files are allowed" }, 400, headers);
+      }
+      if (file.size > 8 * 1024 * 1024) {
+        return json({ error: "Image must be 8 MB or smaller" }, 400, headers);
+      }
+
+      const ext = (String(file.name || "image").split(".").pop() || "jpg")
+        .toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "jpg";
+      const key = `academy/${lessonId}/${crypto.randomUUID()}.${ext}`;
+
+      await env.FILES.put(key, await file.arrayBuffer(), {
+        httpMetadata: { contentType: file.type || "application/octet-stream" }
+      });
+
+      const imagePath = "/images/" + key.split("/").map(encodeURIComponent).join("/");
+      return json({ ok: true, key, url: url.origin + imagePath }, 201, headers);
+    }
+
+    return json({ error: "API route not found", path, method }, 404, headers);
+  } catch (error) {
+    return json({
+      error: "Server error",
+      detail: String(error?.message || error)
+    }, 500, headers);
   }
 }
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    const method = request.method;
-    const origin = request.headers.get("Origin") || "*";
-
-    if (method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          ...HEADERS,
-          "Access-Control-Allow-Origin": origin
-        }
-      });
-    }
-
-    if (method === "GET" && path.startsWith("/images/")) {
-      const key = decodeURIComponent(path.slice("/images/".length));
-      const object = await env.FILES.get(key);
-      if (!object) return new Response("Image not found", { status: 404 });
-
-      const headers = new Headers({
-        "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
-        "Cache-Control": "public, max-age=86400",
-        "Access-Control-Allow-Origin": origin
-      });
-      return new Response(object.body, { headers });
-    }
-
     try {
-      await authenticate(request);
-      await ensureTables(env.DB);
-
-      if (method === "GET" && path === "/api/bootstrap") {
-        const subjects = await env.DB.prepare(
-          "SELECT * FROM subjects ORDER BY sort_order,id"
-        ).all();
-        const lessons = await env.DB.prepare(
-          "SELECT * FROM lessons ORDER BY sort_order,id"
-        ).all();
-
-        return json({
-          ok: true,
-          subjects: subjects.results,
-          lessons: lessons.results
-        }, 200, origin);
-      }
-
-      if (method === "GET" && path === "/api/subjects") {
-        const rows = await env.DB.prepare(
-          "SELECT * FROM subjects ORDER BY sort_order,id"
-        ).all();
-        return json({ ok: true, subjects: rows.results }, 200, origin);
-      }
-
-      if (method === "POST" && path === "/api/subjects") {
-        const data = await request.json();
-        if (!String(data.title || "").trim()) throw fail("Subject title is required.");
-
-        const result = await env.DB.prepare(
-          "INSERT INTO subjects(title,description,sort_order) VALUES(?,?,?)"
-        ).bind(
-          String(data.title).trim(),
-          data.description || "",
-          Number(data.sort_order || 0)
-        ).run();
-
-        return json({ ok: true, id: result.meta.last_row_id }, 201, origin);
-      }
-
-      const subjectMatch = path.match(/^\/api\/subjects\/(\d+)$/);
-
-      if (subjectMatch && method === "PUT") {
-        const id = Number(subjectMatch[1]);
-        const data = await request.json();
-        const old = await env.DB.prepare(
-          "SELECT * FROM subjects WHERE id=?"
-        ).bind(id).first();
-
-        if (!old) throw fail("Subject not found.", 404);
-
-        await env.DB.prepare(
-          "UPDATE subjects SET title=?,description=?,sort_order=? WHERE id=?"
-        ).bind(
-          data.title ?? old.title,
-          data.description ?? old.description,
-          data.sort_order === undefined ? old.sort_order : Number(data.sort_order),
-          id
-        ).run();
-
-        return json({ ok: true }, 200, origin);
-      }
-
-      if (subjectMatch && method === "DELETE") {
-        const id = Number(subjectMatch[1]);
-        await env.DB.prepare("DELETE FROM subject_lesson_map WHERE subject_id=?").bind(id).run();
-        await env.DB.prepare("DELETE FROM subject_courses WHERE subject_id=?").bind(id).run();
-        await env.DB.prepare("DELETE FROM subjects WHERE id=?").bind(id).run();
-        return json({ ok: true }, 200, origin);
-      }
-
-      if (method === "POST" && path === "/api/lessons") {
-        const data = await request.json();
-        const title = String(data.title || "").trim();
-        if (!title) throw fail("Lesson title is required.");
-
-        const result = await env.DB.prepare(
-          `INSERT INTO lessons(title,description,sort_order,is_free,subject_id)
-           VALUES(?,?,?,?,?)`
-        ).bind(
-          title,
-          data.description || "",
-          Number(data.sort_order || 0),
-          data.is_free ? 1 : 0,
-          data.subject_id ? Number(data.subject_id) : null
-        ).run();
-
-        const id = result.meta.last_row_id;
-        const content = data.content || "";
-
-        await env.DB.prepare(
-          "INSERT OR REPLACE INTO lesson_notes(lesson_id,content) VALUES(?,?)"
-        ).bind(id, content).run();
-
-        await env.DB.prepare(
-          `INSERT OR REPLACE INTO lesson_translations
-           (lesson_id,language,title,description,introduction,explanation,content)
-           VALUES(?,?,?,?,?,?,?)`
-        ).bind(
-          id, "en", title, data.description || "",
-          data.introduction || "", data.explanation || "", content
-        ).run();
-
-        if (data.subject_id) {
-          await env.DB.prepare(
-            `INSERT OR REPLACE INTO subject_lesson_map
-             (subject_id,lesson_id,sort_order) VALUES(?,?,?)`
-          ).bind(Number(data.subject_id), id, Number(data.sort_order || 0)).run();
-        }
-
-        return json({ ok: true, id }, 201, origin);
-      }
-
-      const lessonMatch = path.match(/^\/api\/lessons\/(\d+)$/);
-
-      if (lessonMatch && method === "PUT") {
-        const id = Number(lessonMatch[1]);
-        const data = await request.json();
-        const old = await env.DB.prepare(
-          "SELECT * FROM lessons WHERE id=?"
-        ).bind(id).first();
-
-        if (!old) throw fail("Lesson not found.", 404);
-
-        await env.DB.prepare(
-          `UPDATE lessons SET title=?,description=?,sort_order=?,is_free=?,subject_id=?
-           WHERE id=?`
-        ).bind(
-          data.title ?? old.title,
-          data.description ?? old.description,
-          data.sort_order === undefined ? old.sort_order : Number(data.sort_order),
-          data.is_free === undefined ? old.is_free : (data.is_free ? 1 : 0),
-          data.subject_id === undefined ? old.subject_id : (data.subject_id ? Number(data.subject_id) : null),
-          id
-        ).run();
-
-        if (data.content !== undefined) {
-          await env.DB.prepare(
-            `INSERT INTO lesson_notes(lesson_id,content) VALUES(?,?)
-             ON CONFLICT(lesson_id) DO UPDATE SET content=excluded.content,
-             updated_at=CURRENT_TIMESTAMP`
-          ).bind(id, data.content).run();
-        }
-
-        return json({ ok: true }, 200, origin);
-      }
-
-      if (lessonMatch && method === "DELETE") {
-        const id = Number(lessonMatch[1]);
-
-        await env.DB.prepare("DELETE FROM lesson_translations WHERE lesson_id=?").bind(id).run();
-        await env.DB.prepare("DELETE FROM lesson_notes WHERE lesson_id=?").bind(id).run();
-        await env.DB.prepare("DELETE FROM lesson_subtitles WHERE lesson_id=?").bind(id).run();
-        await env.DB.prepare("DELETE FROM subject_lesson_map WHERE lesson_id=?").bind(id).run();
-        await env.DB.prepare("DELETE FROM lessons WHERE id=?").bind(id).run();
-
-        return json({ ok: true }, 200, origin);
-      }
-
-      const translationsMatch = path.match(/^\/api\/lessons\/(\d+)\/translations$/);
-
-      if (translationsMatch && method === "GET") {
-        const id = Number(translationsMatch[1]);
-        const rows = await env.DB.prepare(
-          "SELECT * FROM lesson_translations WHERE lesson_id=? ORDER BY language"
-        ).bind(id).all();
-
-        return json({ ok: true, translations: rows.results }, 200, origin);
-      }
-
-      const translationMatch = path.match(
-        /^\/api\/lessons\/(\d+)\/translations\/([a-z]{2})$/
-      );
-
-      if (translationMatch && method === "PUT") {
-        const id = Number(translationMatch[1]);
-        const language = translationMatch[2];
-
-        if (!LANGUAGES.includes(language)) {
-          throw fail("Language must be en, ta or si.");
-        }
-
-        const data = await request.json();
-        const lesson = await env.DB.prepare(
-          "SELECT id FROM lessons WHERE id=?"
-        ).bind(id).first();
-
-        if (!lesson) throw fail("Lesson not found.", 404);
-
-        const fields = ["title", "description", "introduction", "explanation", "content"];
-        const values = fields.map(key => String(data[key] ?? ""));
-
-        await env.DB.prepare(
-          `INSERT INTO lesson_translations
-           (lesson_id,language,title,description,introduction,explanation,content)
-           VALUES(?,?,?,?,?,?,?)
-           ON CONFLICT(lesson_id,language) DO UPDATE SET
-           title=excluded.title,description=excluded.description,
-           introduction=excluded.introduction,explanation=excluded.explanation,
-           content=excluded.content,updated_at=CURRENT_TIMESTAMP`
-        ).bind(id, language, ...values).run();
-
-        if (language === "en") {
-          await env.DB.prepare(
-            "UPDATE lessons SET title=?,description=? WHERE id=?"
-          ).bind(values[0], values[1], id).run();
-
-          await env.DB.prepare(
-            `INSERT INTO lesson_notes(lesson_id,content) VALUES(?,?)
-             ON CONFLICT(lesson_id) DO UPDATE SET content=excluded.content,
-             updated_at=CURRENT_TIMESTAMP`
-          ).bind(id, values[4]).run();
-        }
-
-        return json({ ok: true, lesson_id: id, language }, 200, origin);
-      }
-
-      if (method === "GET" && path.startsWith("/api/notes/")) {
-        const id = Number(path.split("/").pop());
-        const note = await env.DB.prepare(
-          "SELECT * FROM lesson_notes WHERE lesson_id=?"
-        ).bind(id).first();
-
-        return json({ ok: true, note: note || { lesson_id: id, content: "" } }, 200, origin);
-      }
-
-      const noteMatch = path.match(/^\/api\/notes\/(\d+)$/);
-
-      if (noteMatch && method === "PUT") {
-        const id = Number(noteMatch[1]);
-        const data = await request.json();
-
-        await env.DB.prepare(
-          `INSERT INTO lesson_notes(lesson_id,content) VALUES(?,?)
-           ON CONFLICT(lesson_id) DO UPDATE SET content=excluded.content,
-           updated_at=CURRENT_TIMESTAMP`
-        ).bind(id, data.content || "").run();
-
-        return json({ ok: true }, 200, origin);
-      }
-
-      if (method === "POST" && path === "/api/lesson-images") {
-        const form = await request.formData();
-        const file = form.get("file");
-        const lessonId = Number(form.get("lesson_id"));
-
-        if (!file || typeof file.arrayBuffer !== "function") {
-          throw fail("Please select an image.");
-        }
-        if (!lessonId) throw fail("Lesson ID is required.");
-        if (!file.type.startsWith("image/")) throw fail("Only image files are allowed.");
-        if (file.size > 10 * 1024 * 1024) throw fail("Maximum image size is 10 MB.");
-
-        const key = `lessons/${lessonId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-
-        await env.FILES.put(key, await file.arrayBuffer(), {
-          httpMetadata: { contentType: file.type }
-        });
-
-        const imageHtml = `<img src="/images/${encodeURIComponent(key)}" alt="" style="max-width:100%;height:auto">`;
-        const old = await env.DB.prepare(
-          "SELECT content FROM lesson_notes WHERE lesson_id=?"
-        ).bind(lessonId).first();
-
-        await env.DB.prepare(
-          `INSERT INTO lesson_notes(lesson_id,content) VALUES(?,?)
-           ON CONFLICT(lesson_id) DO UPDATE SET content=excluded.content,
-           updated_at=CURRENT_TIMESTAMP`
-        ).bind(lessonId, `${old?.content || ""}\n${imageHtml}`).run();
-
-        return json({ ok: true, key, url: `/images/${encodeURIComponent(key)}` }, 201, origin);
-      }
-
-      if (method === "GET" && path.startsWith("/api/lesson-subtitles/lesson/")) {
-        const id = Number(path.split("/").pop());
-        const rows = await env.DB.prepare(
-          "SELECT * FROM lesson_subtitles WHERE lesson_id=? ORDER BY sort_order,id"
-        ).bind(id).all();
-
-        return json({ ok: true, subtitles: rows.results }, 200, origin);
-      }
-
-      if (method === "POST" && path === "/api/lesson-subtitles") {
-        const data = await request.json();
-        if (!data.lesson_id) throw fail("Lesson ID is required.");
-
-        const result = await env.DB.prepare(
-          `INSERT INTO lesson_subtitles(lesson_id,language,title,content,sort_order)
-           VALUES(?,?,?,?,?)`
-        ).bind(
-          Number(data.lesson_id),
-          data.language || "en",
-          data.title || "",
-          data.content || "",
-          Number(data.sort_order || 0)
-        ).run();
-
-        return json({ ok: true, id: result.meta.last_row_id }, 201, origin);
-      }
-
-      const subtitleMatch = path.match(/^\/api\/lesson-subtitles\/(\d+)$/);
-
-      if (subtitleMatch && method === "PUT") {
-        const id = Number(subtitleMatch[1]);
-        const data = await request.json();
-        const old = await env.DB.prepare(
-          "SELECT * FROM lesson_subtitles WHERE id=?"
-        ).bind(id).first();
-
-        if (!old) throw fail("Subtitle not found.", 404);
-
-        await env.DB.prepare(
-          `UPDATE lesson_subtitles SET language=?,title=?,content=?,sort_order=?,
-           updated_at=CURRENT_TIMESTAMP WHERE id=?`
-        ).bind(
-          data.language ?? old.language,
-          data.title ?? old.title,
-          data.content ?? old.content,
-          data.sort_order === undefined ? old.sort_order : Number(data.sort_order),
-          id
-        ).run();
-
-        return json({ ok: true }, 200, origin);
-      }
-
-      if (subtitleMatch && method === "DELETE") {
-        await env.DB.prepare(
-          "DELETE FROM lesson_subtitles WHERE id=?"
-        ).bind(Number(subtitleMatch[1])).run();
-
-        return json({ ok: true }, 200, origin);
-      }
-
-      return json({ error: "Endpoint not found." }, 404, origin);
-
+      return await handle(request, env);
     } catch (error) {
-      return json({
-        error: error.message || "Server error."
-      }, error.status || 500, origin);
+      return json({ error: String(error?.message || error) }, 500, cors(request, env));
     }
   }
 };
