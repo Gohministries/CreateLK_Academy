@@ -1,6 +1,5 @@
 
 const ORIGIN = "https://createlk.com";
-
 const CORS = {
   "Access-Control-Allow-Origin": ORIGIN,
   "Access-Control-Allow-Credentials": "true",
@@ -9,629 +8,319 @@ const CORS = {
   "Vary": "Origin"
 };
 
-const json = (d, s = 200) => new Response(JSON.stringify(d), {
-  status: s,
-  headers: { ...CORS, "Content-Type": "application/json" }
+const json = (data, status = 200) => new Response(JSON.stringify(data), {
+  status, headers: {...CORS, "Content-Type":"application/json"}
 });
-
-const fail = (e, s = 400) => json({ error: e }, s);
-
-const slug = s => String(s || "").toLowerCase().trim()
-  .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-
-const pick = (c, n) => n.find(x => c.includes(x)) || null;
-
-const getId = (p, prefix) => {
-  const m = p.match(new RegExp("^" + prefix + "/(\\d+)$"));
-  return m ? +m[1] : null;
+const fail = (error, status = 400) => json({error}, status);
+const slug = s => String(s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+const pick = (c,n) => n.find(x => c.includes(x)) || null;
+const getId = (p,prefix) => {
+  const m = p.match(new RegExp("^"+prefix+"/(\\d+)$"));
+  return m ? Number(m[1]) : null;
 };
 
-async function cols(db, t) {
-  return (await db.prepare(`PRAGMA table_info("${t}")`).all())
-    .results.map(x => x.name);
+async function cols(db,t) {
+  return (await db.prepare(`PRAGMA table_info("${t}")`).all()).results.map(x=>x.name);
 }
-
-async function exists(db, t) {
-  return !!await db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
-  ).bind(t).first();
+async function exists(db,t) {
+  return !!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").bind(t).first();
 }
-
-/* Create required tables and safely add missing lesson columns. */
 async function ensure(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS lesson_translations(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lesson_id INTEGER NOT NULL,
-    language TEXT NOT NULL,
-    title TEXT DEFAULT '',
-    description TEXT DEFAULT '',
-    content TEXT DEFAULT '',
-    UNIQUE(lesson_id,language)
-  )`).run();
+    id INTEGER PRIMARY KEY AUTOINCREMENT,lesson_id INTEGER NOT NULL,
+    language TEXT NOT NULL,title TEXT DEFAULT '',description TEXT DEFAULT '',
+    content TEXT DEFAULT '',UNIQUE(lesson_id,language))`).run();
 
   await db.prepare(`CREATE TABLE IF NOT EXISTS lesson_notes(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lesson_id INTEGER NOT NULL UNIQUE,
-    content TEXT DEFAULT ''
-  )`).run();
+    id INTEGER PRIMARY KEY AUTOINCREMENT,lesson_id INTEGER NOT NULL UNIQUE,
+    content TEXT DEFAULT '')`).run();
 
   await db.prepare(`CREATE TABLE IF NOT EXISTS subject_lesson_map(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lesson_id INTEGER NOT NULL,
-    subject_id INTEGER NOT NULL,
-    course_id INTEGER,
-    display_order INTEGER DEFAULT 0,
-    UNIQUE(lesson_id,subject_id)
-  )`).run();
+    id INTEGER PRIMARY KEY AUTOINCREMENT,lesson_id INTEGER NOT NULL,
+    subject_id INTEGER NOT NULL,course_id INTEGER,display_order INTEGER DEFAULT 0,
+    UNIQUE(lesson_id,subject_id))`).run();
 
-  let lc = await cols(db, "lessons");
+  let sc = await cols(db,"subjects");
+  const hadStatus = sc.includes("status");
 
-  if (!pick(lc, ["image_url", "photo_url", "image", "photo"])) {
-    await db.prepare(
-      "ALTER TABLE lessons ADD COLUMN image_url TEXT DEFAULT ''"
-    ).run();
+  for (const [name,definition] of [
+    ["subtitle","TEXT DEFAULT ''"],
+    ["image_url","TEXT DEFAULT ''"],
+    ["content","TEXT DEFAULT ''"],
+    ["status","TEXT DEFAULT 'PUBLISHED'"]
+  ]) {
+    if (!sc.includes(name)) {
+      await db.prepare(`ALTER TABLE subjects ADD COLUMN "${name}" ${definition}`).run();
+      sc = await cols(db,"subjects");
+    }
   }
 
-  lc = await cols(db, "lessons");
-
-  if (!lc.includes("main_title")) {
-    await db.prepare(
-      "ALTER TABLE lessons ADD COLUMN main_title TEXT DEFAULT ''"
-    ).run();
+  if (!hadStatus) {
+    await db.prepare(`UPDATE subjects SET status =
+      CASE WHEN is_active=0 THEN 'DRAFT' ELSE 'PUBLISHED' END`).run();
   }
+  await db.prepare(`UPDATE subjects SET status='PUBLISHED'
+    WHERE status IS NULL OR TRIM(status)=''`).run();
 
-  lc = await cols(db, "lessons");
-
-  if (!lc.includes("subtitle")) {
-    await db.prepare(
-      "ALTER TABLE lessons ADD COLUMN subtitle TEXT DEFAULT ''"
-    ).run();
+  let lc = await cols(db,"lessons");
+  if (!pick(lc,["image_url","photo_url","image","photo"])) {
+    await db.prepare("ALTER TABLE lessons ADD COLUMN image_url TEXT DEFAULT ''").run();
   }
+  lc = await cols(db,"lessons");
+  if (!lc.includes("main_title")) await db.prepare("ALTER TABLE lessons ADD COLUMN main_title TEXT DEFAULT ''").run();
+  lc = await cols(db,"lessons");
+  if (!lc.includes("subtitle")) await db.prepare("ALTER TABLE lessons ADD COLUMN subtitle TEXT DEFAULT ''").run();
 }
 
-/* Google administrator authentication. */
-async function admin(req, env) {
-  const token = (req.headers.get("Authorization") || "")
-    .replace(/^Bearer\s+/i, "");
-
+async function admin(req,env) {
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i,"");
   if (!token) throw Error("Please sign in with Google.");
-
-  const r = await fetch(
-    "https://oauth2.googleapis.com/tokeninfo?id_token=" +
-    encodeURIComponent(token)
-  );
-
+  const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token="+encodeURIComponent(token));
   if (!r.ok) throw Error("Google login expired. Sign in again.");
-
   const u = await r.json();
-
-  if (
-    u.aud !== env.GOOGLE_CLIENT_ID ||
-    u.email_verified !== "true" ||
-    String(u.email || "").toLowerCase() !==
-      String(env.ADMIN_EMAIL || "").toLowerCase() ||
-    +u.exp * 1000 < Date.now()
-  ) {
-    throw Error("Administrator access denied.");
-  }
+  if (u.aud!==env.GOOGLE_CLIENT_ID || u.email_verified!=="true" ||
+      String(u.email||"").toLowerCase()!==String(env.ADMIN_EMAIL||"").toLowerCase() ||
+      Number(u.exp)*1000<Date.now()) throw Error("Administrator access denied.");
 }
 
-/* Save only fields supported by the current database table. */
-async function save(db, t, id, values) {
-  const c = await cols(db, t);
-  const o = {};
-
-  for (const [names, v] of values) {
-    const k = pick(c, names);
-    if (k) o[k] = v;
+async function save(db,t,id,values) {
+  const c = await cols(db,t), data = {};
+  for (const [names,value] of values) {
+    const k = pick(c,names);
+    if (k) data[k]=value;
   }
-
-  const e = Object.entries(o);
-
-  if (!e.length) throw Error("No compatible columns in " + t);
-
+  const entries = Object.entries(data);
+  if (!entries.length) throw Error("No compatible columns in "+t);
   if (id) {
-    await db.prepare(
-      `UPDATE "${t}" SET ${
-        e.map(([k]) => `"${k}"=?`).join(",")
-      } WHERE id=?`
-    ).bind(...e.map(x => x[1]), id).run();
-
+    await db.prepare(`UPDATE "${t}" SET ${entries.map(([k])=>`"${k}"=?`).join(",")} WHERE id=?`)
+      .bind(...entries.map(x=>x[1]),id).run();
     return id;
   }
+  const r = await db.prepare(`INSERT INTO "${t}" (${entries.map(([k])=>`"${k}"`).join(",")})
+    VALUES (${entries.map(()=>"?").join(",")})`).bind(...entries.map(x=>x[1])).run();
+  return r.meta.last_row_id;
+}
 
-  const r = await db.prepare(
-    `INSERT INTO "${t}" (${
-      e.map(([k]) => `"${k}"`).join(",")
-    }) VALUES (${e.map(() => "?").join(",")})`
-  ).bind(...e.map(x => x[1])).run();
-
+async function saveSubject(db,id,b) {
+  const title = String(b.title || b.name || "").trim();
+  if (!title) throw Error("Subject title required.");
+  const status = String(b.status || "PUBLISHED").toUpperCase();
+  if (!["PUBLISHED","DRAFT","COMING_SOON"].includes(status)) throw Error("Invalid subject status.");
+  const order = Number(b.display_order ?? b.sort_order ?? 0);
+  const c = await cols(db,"subjects");
+  const values = {
+    name:title, title, slug:String(b.slug || slug(title)),
+    description:String(b.description || ""),
+    subtitle:String(b.subtitle || ""),
+    image_url:String(b.image_url || ""),
+    content:String(b.content || ""),
+    status, display_order:Number.isFinite(order)?order:0,
+    sort_order:Number.isFinite(order)?order:0,
+    is_active:status==="DRAFT"?0:1
+  };
+  const entries = Object.entries(values).filter(([k])=>c.includes(k));
+  if (id) {
+    if (!await db.prepare("SELECT id FROM subjects WHERE id=?").bind(id).first()) throw Error("Subject not found.");
+    await db.prepare(`UPDATE subjects SET ${entries.map(([k])=>`"${k}"=?`).join(",")} WHERE id=?`)
+      .bind(...entries.map(x=>x[1]),id).run();
+    return id;
+  }
+  const r = await db.prepare(`INSERT INTO subjects (${entries.map(([k])=>`"${k}"`).join(",")})
+    VALUES (${entries.map(()=>"?").join(",")})`).bind(...entries.map(x=>x[1])).run();
   return r.meta.last_row_id;
 }
 
 async function subjects(db) {
-  const c = await cols(db, "subjects");
-  const n = pick(c, ["name", "title"]);
-  const o = pick(c, ["display_order", "sort_order", "position"]);
-  const sg = pick(c, ["slug"]);
-  const ds = pick(c, ["description"]);
-
-  if (!n) throw Error("Subjects table needs a name or title column.");
-
-  return (await db.prepare(
-    `SELECT *, "${n}" AS title,
-      ${sg ? `"${sg}"` : "''"} AS slug,
-      ${ds ? `"${ds}"` : "''"} AS description,
-      ${o ? `"${o}"` : "0"} AS sort_order
-     FROM subjects
-     ORDER BY ${o ? `"${o}"` : "id"}`
-  ).all()).results;
+  const c = await cols(db,"subjects");
+  const n = pick(c,["name","title"]);
+  const o = pick(c,["display_order","sort_order","position"]);
+  if (!n) throw Error("Subjects table needs name or title.");
+  const f = (k,alias,defaultValue="''") =>
+    `${c.includes(k)?`"${k}"`:defaultValue} AS "${alias}"`;
+  return (await db.prepare(`SELECT *,
+    "${n}" AS title,
+    ${f("slug","slug")},${f("description","description")},
+    ${f("subtitle","subtitle")},${f("image_url","image_url")},
+    ${f("content","content")},${f("status","status","'PUBLISHED'")},
+    ${f("icon","icon","'📚'")},${f("is_active","is_active","1")},
+    ${f("display_order","display_order","0")},${f("sort_order","sort_order","0")}
+    FROM subjects ORDER BY ${o?`"${o}"`:"id"},id`).all()).results || [];
 }
 
 async function lessons(db) {
-  const c = await cols(db, "lessons");
-  const n = pick(c, ["title", "name"]);
-  const ord = pick(c, ["sort_order", "display_order", "position"]);
-
-  if (!n) throw Error("Lessons table needs a title or name column.");
-
-  const map = await exists(db, "subject_lesson_map");
-
+  const c = await cols(db,"lessons"), n = pick(c,["title","name"]);
+  const o = pick(c,["sort_order","display_order","position"]);
+  if (!n) throw Error("Lessons table needs title or name.");
+  const map = await exists(db,"subject_lesson_map");
   const sub = map
     ? "(SELECT subject_id FROM subject_lesson_map WHERE lesson_id=lessons.id ORDER BY id DESC LIMIT 1) AS subject_id"
-    : c.includes("subject_id") ? "subject_id" : "NULL AS subject_id";
-
-  return (await db.prepare(
-    `SELECT *, "${n}" AS title, ${sub}
-     FROM lessons
-     ORDER BY ${ord ? `"${ord}"` : "id"}, id`
-  ).all()).results;
+    : c.includes("subject_id")?"subject_id":"NULL AS subject_id";
+  return (await db.prepare(`SELECT *,"${n}" AS title,${sub} FROM lessons ORDER BY ${o?`"${o}"`:"id"},id`).all()).results || [];
 }
 
 async function nextOrder(db) {
-  const c = await cols(db, "lessons");
-  const o = pick(c, ["sort_order", "display_order", "position"]);
-
-  if (!o) return 1;
-
-  const r = await db.prepare(
-    `SELECT COALESCE(MAX("${o}"),0)+1 AS n FROM lessons`
-  ).first();
-
-  return Number(r?.n) || 1;
+  const c=await cols(db,"lessons"),o=pick(c,["sort_order","display_order","position"]);
+  if(!o)return 1;
+  return Number((await db.prepare(`SELECT COALESCE(MAX("${o}"),0)+1 AS n FROM lessons`).first())?.n)||1;
 }
-
-async function setSubject(db, lid, sid, order) {
-  if (!sid) throw Error("Select a subject.");
-
-  if (!await db.prepare("SELECT id FROM subjects WHERE id=?")
-    .bind(sid).first()) {
-    throw Error("Subject not found.");
-  }
-
-  await db.prepare(
-    "DELETE FROM subject_lesson_map WHERE lesson_id=?"
-  ).bind(lid).run();
-
-  await db.prepare(
-    "INSERT INTO subject_lesson_map(lesson_id,subject_id,display_order) VALUES(?,?,?)"
-  ).bind(lid, sid, order).run();
+async function setSubject(db,lid,sid,order) {
+  if(!sid || !await db.prepare("SELECT id FROM subjects WHERE id=?").bind(sid).first()) throw Error("Select a valid subject.");
+  await db.prepare("DELETE FROM subject_lesson_map WHERE lesson_id=?").bind(lid).run();
+  await db.prepare("INSERT INTO subject_lesson_map(lesson_id,subject_id,display_order) VALUES(?,?,?)").bind(lid,sid,order).run();
 }
-
-/* Save lesson title, main title, optional subtitle and existing fields. */
-async function saveLesson(db, id, b) {
-  const title = String(b.title || "").trim();
-  const mainTitle = String(b.main_title ?? b.mainTitle ?? "").trim();
-  const subtitle = String(b.subtitle ?? "").trim();
-  const sid = Number(b.subject_id);
-
-  if (!title) throw Error("Lesson title required.");
-  if (!sid) throw Error("Select a subject.");
-
-  const old = id
-    ? await db.prepare("SELECT * FROM lessons WHERE id=?").bind(id).first()
-    : null;
-
-  if (id && !old) throw Error("Lesson not found.");
-
-  const c = await cols(db, "lessons");
-  const ord = pick(c, ["sort_order", "display_order", "position"]);
-  const order = old && ord ? Number(old[ord]) : await nextOrder(db);
-
-  const lid = await save(db, "lessons", id, [
-    [["title", "name"], title],
-    [["main_title"], mainTitle],
-    [["subtitle"], subtitle],
-    [["description"], String(b.description || "")],
-    [["sort_order", "display_order", "position"], order],
-    [["is_free"], Number(b.is_free) ? 1 : 0],
-    [["status"], b.status === "DRAFT" ? "DRAFT" : "PUBLISHED"]
+async function saveLesson(db,id,b) {
+  const title=String(b.title||"").trim(),sid=Number(b.subject_id);
+  if(!title)throw Error("Lesson title required.");
+  if(!sid)throw Error("Select a subject.");
+  const old=id?await db.prepare("SELECT * FROM lessons WHERE id=?").bind(id).first():null;
+  if(id&&!old)throw Error("Lesson not found.");
+  const c=await cols(db,"lessons"),o=pick(c,["sort_order","display_order","position"]);
+  const order=old&&o?Number(old[o]):await nextOrder(db);
+  const status=["DRAFT","COMING_SOON"].includes(String(b.status||"").toUpperCase())?String(b.status).toUpperCase():"PUBLISHED";
+  const lid=await save(db,"lessons",id,[
+    [["title","name"],title],[["main_title"],String(b.main_title??b.mainTitle??"")],
+    [["subtitle"],String(b.subtitle||"")],[["description"],String(b.description||"")],
+    [["sort_order","display_order","position"],order],[["is_free"],Number(b.is_free)?1:0],
+    [["status"],status]
   ]);
-
-  await setSubject(db, lid, sid, order);
-
+  await setSubject(db,lid,sid,order);
   return lid;
 }
 
-async function remove(db, t, id) {
-  return db.prepare(`DELETE FROM "${t}" WHERE id=?`).bind(id).run();
-}
-
-/* Student session helpers. */
-function cookie(req, name) {
-  const raw = req.headers.get("Cookie") || "";
-
-  for (const part of raw.split(";")) {
-    const i = part.indexOf("=");
-
-    if (i < 0) continue;
-
-    if (part.slice(0, i).trim() === name) {
-      return decodeURIComponent(part.slice(i + 1).trim());
-    }
+function cookie(req,name) {
+  for(const p of (req.headers.get("Cookie")||"").split(";")){
+    const i=p.indexOf("=");
+    if(i>=0&&p.slice(0,i).trim()===name)return decodeURIComponent(p.slice(i+1).trim());
   }
-
   return "";
 }
-
-function expired(value) {
-  if (value === null || value === undefined || value === "") return false;
-
-  let n = typeof value === "number" ? value : Number(value);
-
-  if (Number.isFinite(n) && n > 0) {
-    if (n < 1e12) n *= 1000;
-    return n <= Date.now();
-  }
-
-  const t = Date.parse(value);
-  return Number.isFinite(t) && t <= Date.now();
+function expired(v) {
+  if(v===null||v===undefined||v==="")return false;
+  let n=typeof v==="number"?v:Number(v);
+  if(Number.isFinite(n)&&n>0){if(n<1e12)n*=1000;return n<=Date.now();}
+  const t=Date.parse(v);return Number.isFinite(t)&&t<=Date.now();
 }
-
-async function student(db, req) {
-  const token = cookie(req, "english_v2_session");
-
-  if (!token || !await exists(db, "sessions") ||
-      !await exists(db, "users")) return null;
-
-  const sc = await cols(db, "sessions");
-  const tc = pick(sc, ["token", "session_token", "session_id"]);
-  const uc = pick(sc, ["user_id", "student_id"]);
-  const ec = pick(sc, ["expires_at", "expires", "expiry", "expires_at_ms"]);
-
-  if (!tc || !uc) return null;
-
-  const session = await db.prepare(
-    `SELECT * FROM sessions WHERE "${tc}"=? LIMIT 1`
-  ).bind(token).first();
-
-  if (!session || (ec && expired(session[ec]))) return null;
-
-  const usersCols = await cols(db, "users");
-  const userIdCol = pick(usersCols, ["id", "user_id"]);
-
-  if (!userIdCol) return null;
-
-  const user = await db.prepare(
-    `SELECT * FROM users WHERE "${userIdCol}"=? LIMIT 1`
-  ).bind(session[uc]).first();
-
-  if (!user) return null;
-
-  const membershipCol = pick(usersCols, ["membership", "membership_status"]);
-  const expiryCol = pick(usersCols, [
-    "membership_expiry", "membership_expires_at", "premium_expiry"
-  ]);
-
-  const premium = membershipCol &&
-    String(user[membershipCol] || "").toLowerCase() === "premium" &&
-    !(expiryCol && expired(user[expiryCol]));
-
-  return { user, premium: !!premium };
+async function student(db,req) {
+  const token=cookie(req,"english_v2_session");
+  if(!token||!await exists(db,"sessions")||!await exists(db,"users"))return null;
+  const sc=await cols(db,"sessions"),tc=pick(sc,["token","session_token","session_id"]),uc=pick(sc,["user_id","student_id"]),ec=pick(sc,["expires_at","expires","expiry","expires_at_ms"]);
+  if(!tc||!uc)return null;
+  const s=await db.prepare(`SELECT * FROM sessions WHERE "${tc}"=? LIMIT 1`).bind(token).first();
+  if(!s||(ec&&expired(s[ec])))return null;
+  const c=await cols(db,"users"),uid=pick(c,["id","user_id"]);
+  if(!uid)return null;
+  const u=await db.prepare(`SELECT * FROM users WHERE "${uid}"=? LIMIT 1`).bind(s[uc]).first();
+  if(!u)return null;
+  const mc=pick(c,["membership","membership_status"]),ecol=pick(c,["membership_expiry","membership_expires_at","premium_expiry"]);
+  return {user:u,premium:!!(mc&&String(u[mc]||"").toLowerCase()==="premium"&&!(ecol&&expired(u[ecol])))};
 }
-
-/* Public lesson response includes the new fields. */
-async function publicLesson(db, lid) {
-  const lc = await cols(db, "lessons");
-  const titleCol = pick(lc, ["title", "name"]);
-  const photoCol = pick(lc, ["image_url", "photo_url", "image", "photo"]);
-
-  const row = await db.prepare(
-    "SELECT * FROM lessons WHERE id=?"
-  ).bind(lid).first();
-
-  if (!row) return null;
-
-  const title = titleCol ? row[titleCol] || "" : "";
-  const mainTitle = String(row.main_title || "").trim();
-
-  return {
-    id: row.id,
-    title,
-    main_title: mainTitle || title,
-    subtitle: String(row.subtitle || "").trim(),
-    description: row.description || "",
-    image_url: photoCol ? row[photoCol] || "" : "",
-    is_free: Number(row.is_free) === 1
-  };
+async function publicLesson(db,id) {
+  const c=await cols(db,"lessons"),tc=pick(c,["title","name"]),pc=pick(c,["image_url","photo_url","image","photo"]);
+  const r=await db.prepare("SELECT * FROM lessons WHERE id=?").bind(id).first();
+  if(!r)return null;
+  const title=tc?r[tc]||"":"";
+  return {id:r.id,title,main_title:String(r.main_title||"").trim()||title,subtitle:String(r.subtitle||"").trim(),description:r.description||"",image_url:pc?r[pc]||"":"",is_free:Number(r.is_free)===1};
 }
 
 export default {
-  async fetch(req, env) {
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS });
+ async fetch(req,env) {
+  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
+  const url=new URL(req.url),p=url.pathname.replace(/\/+$/,"")||"/",m=req.method;
+  try {
+   if(p.startsWith("/images/")&&m==="GET"){
+    const key=decodeURIComponent(p.slice(8));
+    if(!key||key.includes(".."))return fail("Invalid image key");
+    const obj=await env.FILES.get(key);if(!obj)return fail("Image not found",404);
+    const h=new Headers(CORS);h.set("Content-Type",obj.httpMetadata?.contentType||"application/octet-stream");h.set("Cache-Control","public,max-age=86400");
+    return new Response(obj.body,{headers:h});
+   }
+
+   const pm=p.match(/^\/api\/public\/lessons\/(\d+)$/);
+   const pt=p.match(/^\/api\/public\/translations\/lesson\/(\d+)$/);
+   if(m==="GET"&&(pm||pt)){
+    const db=env.DB;await ensure(db);
+    const lid=Number((pm||pt)[1]),lesson=await publicLesson(db,lid);
+    if(!lesson)return fail("Lesson not found",404);
+    if(pm)return json({lesson});
+    if(!lesson.is_free){
+     const access=await student(db,req);
+     if(!access)return fail("Please sign in to access this lesson.",401);
+     if(!access.premium)return fail("Premium membership is required.",403);
     }
-
-    const url = new URL(req.url);
-    const p = url.pathname.replace(/\/+$/, "") || "/";
-    const m = req.method;
-
-    try {
-      /* Public R2 image files. */
-      if (p.startsWith("/images/") && m === "GET") {
-        const key = decodeURIComponent(p.slice(8));
-
-        if (!key || key.includes("..")) return fail("Invalid image key");
-
-        const obj = await env.FILES.get(key);
-
-        if (!obj) return fail("Image not found", 404);
-
-        const h = new Headers(CORS);
-
-        h.set("Content-Type",
-          obj.httpMetadata?.contentType || "application/octet-stream");
-
-        h.set("Cache-Control", "public,max-age=86400");
-
-        return new Response(obj.body, { headers: h });
-      }
-
-      const db = env.DB;
-
-      /* Public student endpoints. */
-      const publicPhoto = p.match(/^\/api\/public\/lessons\/(\d+)$/);
-      const publicTranslations = p.match(
-        /^\/api\/public\/translations\/lesson\/(\d+)$/
-      );
-
-      if (m === "GET" && (publicPhoto || publicTranslations)) {
-        await ensure(db);
-
-        const lid = Number((publicPhoto || publicTranslations)[1]);
-        const lesson = await publicLesson(db, lid);
-
-        if (!lesson) return fail("Lesson not found", 404);
-
-        if (publicPhoto) {
-          return json({ lesson });
-        }
-
-        if (!lesson.is_free) {
-          const access = await student(db, req);
-
-          if (!access) {
-            return fail("Please sign in to access this lesson.", 401);
-          }
-
-          if (!access.premium) {
-            return fail("Premium membership is required.", 403);
-          }
-        }
-
-        const result = await db.prepare(
-          `SELECT language,title,description,content
-           FROM lesson_translations
-           WHERE lesson_id=?
-           ORDER BY language`
-        ).bind(lid).all();
-
-        return json({ translations: result.results || [] });
-      }
-
-      /* All remaining API routes require administrator Google login. */
-      await admin(req, env);
-      await ensure(db);
-
-      if (p === "/api/bootstrap" && m === "GET") {
-        const [s, l] = await Promise.all([subjects(db), lessons(db)]);
-        return json({ subjects: s, lessons: l });
-      }
-
-      if (p === "/api/subjects" && m === "GET") {
-        return json({ subjects: await subjects(db) });
-      }
-
-      if (p === "/api/subjects" && m === "POST") {
-        const b = await req.json();
-        const name = String(b.title || b.name || "").trim();
-
-        if (!name) return fail("Subject name required");
-
-        const id = await save(db, "subjects", null, [
-          [["name", "title"], name],
-          [["slug"], b.slug || slug(name)],
-          [["description"], b.description || ""],
-          [["display_order", "sort_order", "position"],
-            Number(b.sort_order) || 0]
-        ]);
-
-        return json({ success: true, id });
-      }
-
-      let id = getId(p, "/api/subjects");
-
-      if (id && m === "PUT") {
-        const b = await req.json();
-        const name = String(b.title || b.name || "").trim();
-
-        if (!name) return fail("Subject name required");
-
-        await save(db, "subjects", id, [
-          [["name", "title"], name],
-          [["slug"], b.slug || slug(name)],
-          [["description"], b.description || ""],
-          [["display_order", "sort_order", "position"],
-            Number(b.sort_order) || 0]
-        ]);
-
-        return json({ success: true });
-      }
-
-      if (id && m === "DELETE") {
-        if (await db.prepare(
-          "SELECT 1 FROM subject_lesson_map WHERE subject_id=? LIMIT 1"
-        ).bind(id).first()) {
-          return fail("Reassign or delete this subject's lessons first.");
-        }
-
-        await remove(db, "subjects", id);
-
-        return json({ success: true });
-      }
-
-      if (p === "/api/lessons" && m === "POST") {
-        const lid = await saveLesson(db, null, await req.json());
-
-        return json({ success: true, id: lid });
-      }
-
-      id = getId(p, "/api/lessons");
-
-      if (id && m === "PUT") {
-        await saveLesson(db, id, await req.json());
-
-        return json({ success: true });
-      }
-
-      if (id && m === "DELETE") {
-        for (const t of [
-          "lesson_translations", "lesson_notes", "subject_lesson_map"
-        ]) {
-          if (await exists(db, t)) {
-            await db.prepare(
-              `DELETE FROM "${t}" WHERE lesson_id=?`
-            ).bind(id).run();
-          }
-        }
-
-        await remove(db, "lessons", id);
-
-        return json({ success: true });
-      }
-
-      const noteMatch = p.match(/^\/api\/notes\/(\d+)$/);
-
-      if (noteMatch && m === "GET") {
-        const n = await db.prepare(
-          "SELECT content FROM lesson_notes WHERE lesson_id=?"
-        ).bind(+noteMatch[1]).first();
-
-        return json({ content: n?.content || "" });
-      }
-
-      if (noteMatch && m === "PUT") {
-        const b = await req.json();
-
-        await db.prepare(`INSERT INTO lesson_notes(lesson_id,content)
-          VALUES(?,?) ON CONFLICT(lesson_id)
-          DO UPDATE SET content=excluded.content`)
-          .bind(+noteMatch[1], String(b.content || "")).run();
-
-        return json({ success: true });
-      }
-
-      if (p === "/api/translations" && m === "POST") {
-        const b = await req.json();
-
-        if (!b.lesson_id ||
-            !["ta", "si", "en"].includes(b.language)) {
-          return fail("Choose a lesson and valid language.");
-        }
-
-        await db.prepare(`INSERT INTO lesson_translations
-          (lesson_id,language,title,description,content)
-          VALUES(?,?,?,?,?)
-          ON CONFLICT(lesson_id,language) DO UPDATE SET
-          title=excluded.title,
-          description=excluded.description,
-          content=excluded.content`)
-          .bind(
-            +b.lesson_id, b.language, b.title || "",
-            b.description || "", b.content || ""
-          ).run();
-
-        return json({ success: true });
-      }
-
-      const translationMatch = p.match(
-        /^\/api\/translations\/lesson\/(\d+)$/
-      );
-
-      if (translationMatch && m === "GET") {
-        const r = await db.prepare(
-          "SELECT * FROM lesson_translations WHERE lesson_id=? ORDER BY language"
-        ).bind(+translationMatch[1]).all();
-
-        return json({ translations: r.results || [] });
-      }
-
-      if (p === "/api/lesson-images" && m === "POST") {
-        const f = await req.formData();
-        const file = f.get("file");
-        const lid = Number(f.get("lesson_id"));
-
-        if (!file || typeof file === "string") {
-          return fail("Choose an image.");
-        }
-
-        if (!lid) return fail("Lesson ID required.");
-        if (!file.type.startsWith("image/")) {
-          return fail("Only images are allowed.");
-        }
-
-        if (file.size > 5 * 1024 * 1024) {
-          return fail("Image must be 5 MB or smaller.");
-        }
-
-        if (!await db.prepare("SELECT id FROM lessons WHERE id=?")
-          .bind(lid).first()) {
-          return fail("Lesson not found.");
-        }
-
-        const ext = (file.name.split(".").pop() || "img")
-          .replace(/[^a-z0-9]/gi, "").slice(0, 8) || "img";
-
-        const key = `lessons/${lid}/${crypto.randomUUID()}.${ext}`;
-
-        await env.FILES.put(key, file.stream(), {
-          httpMetadata: { contentType: file.type }
-        });
-
-        const imageUrl =
-          `${url.origin}/images/${encodeURIComponent(key)}`;
-
-        const lc = await cols(db, "lessons");
-        const photo = pick(lc, ["image_url", "photo_url", "image", "photo"]);
-
-        if (photo) {
-          await db.prepare(
-            `UPDATE lessons SET "${photo}"=? WHERE id=?`
-          ).bind(imageUrl, lid).run();
-        }
-
-        return json({ success: true, key, url: imageUrl });
-      }
-
-      return fail("Endpoint not found: " + m + " " + p, 404);
-    } catch (e) {
-      const msg = e.message || "Worker error";
-
-      return json(
-        { error: msg },
-        /sign in|login expired|access denied|administrator/i.test(msg)
-          ? 401 : 500
-      );
-    }
+    const r=await db.prepare("SELECT language,title,description,content FROM lesson_translations WHERE lesson_id=? ORDER BY language").bind(lid).all();
+    return json({translations:r.results||[]});
+   }
+
+   await admin(req,env);
+   const db=env.DB;await ensure(db);
+
+   if(p==="/api/bootstrap"&&m==="GET"){
+    const [s,l]=await Promise.all([subjects(db),lessons(db)]);
+    return json({subjects:s,lessons:l});
+   }
+   if(p==="/api/subjects"&&m==="GET")return json({subjects:await subjects(db)});
+   if(p==="/api/subjects"&&m==="POST")return json({success:true,id:await saveSubject(db,null,await req.json())});
+
+   let id=getId(p,"/api/subjects");
+   if(id&&m==="PUT"){await saveSubject(db,id,await req.json());return json({success:true,id});}
+   if(id&&m==="DELETE"){
+    if(await db.prepare("SELECT 1 FROM subject_lesson_map WHERE subject_id=? LIMIT 1").bind(id).first())return fail("Reassign or delete this subject's lessons first.");
+    await db.prepare("DELETE FROM subjects WHERE id=?").bind(id).run();
+    return json({success:true});
+   }
+
+   if(p==="/api/lessons"&&m==="POST")return json({success:true,id:await saveLesson(db,null,await req.json())});
+   id=getId(p,"/api/lessons");
+   if(id&&m==="PUT"){await saveLesson(db,id,await req.json());return json({success:true});}
+   if(id&&m==="DELETE"){
+    for(const t of ["lesson_translations","lesson_notes","subject_lesson_map"])if(await exists(db,t))await db.prepare(`DELETE FROM "${t}" WHERE lesson_id=?`).bind(id).run();
+    await db.prepare("DELETE FROM lessons WHERE id=?").bind(id).run();
+    return json({success:true});
+   }
+
+   const nm=p.match(/^\/api\/notes\/(\d+)$/);
+   if(nm&&m==="GET"){
+    const n=await db.prepare("SELECT content FROM lesson_notes WHERE lesson_id=?").bind(+nm[1]).first();
+    return json({content:n?.content||""});
+   }
+   if(nm&&m==="PUT"){
+    const b=await req.json();
+    await db.prepare(`INSERT INTO lesson_notes(lesson_id,content) VALUES(?,?) ON CONFLICT(lesson_id) DO UPDATE SET content=excluded.content`).bind(+nm[1],String(b.content||"")).run();
+    return json({success:true});
+   }
+
+   if(p==="/api/translations"&&m==="POST"){
+    const b=await req.json();
+    if(!b.lesson_id||!["ta","si","en"].includes(b.language))return fail("Choose a lesson and valid language.");
+    await db.prepare(`INSERT INTO lesson_translations(lesson_id,language,title,description,content) VALUES(?,?,?,?,?) ON CONFLICT(lesson_id,language) DO UPDATE SET title=excluded.title,description=excluded.description,content=excluded.content`).bind(+b.lesson_id,b.language,b.title||"",b.description||"",b.content||"").run();
+    return json({success:true});
+   }
+   const tm=p.match(/^\/api\/translations\/lesson\/(\d+)$/);
+   if(tm&&m==="GET"){
+    const r=await db.prepare("SELECT * FROM lesson_translations WHERE lesson_id=? ORDER BY language").bind(+tm[1]).all();
+    return json({translations:r.results||[]});
+   }
+
+   if(p==="/api/lesson-images"&&m==="POST"){
+    const f=await req.formData(),file=f.get("file"),lid=Number(f.get("lesson_id"));
+    if(!file||typeof file==="string")return fail("Choose an image.");
+    if(!lid)return fail("Lesson ID required.");
+    if(!file.type.startsWith("image/"))return fail("Only images are allowed.");
+    if(file.size>5*1024*1024)return fail("Image must be 5 MB or smaller.");
+    if(!await db.prepare("SELECT id FROM lessons WHERE id=?").bind(lid).first())return fail("Lesson not found.");
+    const ext=(file.name.split(".").pop()||"img").replace(/[^a-z0-9]/gi,"").slice(0,8)||"img";
+    const key=`lessons/${lid}/${crypto.randomUUID()}.${ext}`;
+    await env.FILES.put(key,file.stream(),{httpMetadata:{contentType:file.type}});
+    const imageUrl=`${url.origin}/images/${encodeURIComponent(key)}`;
+    const c=await cols(db,"lessons"),pc=pick(c,["image_url","photo_url","image","photo"]);
+    if(pc)await db.prepare(`UPDATE lessons SET "${pc}"=? WHERE id=?`).bind(imageUrl,lid).run();
+    return json({success:true,key,url:imageUrl});
+   }
+
+   return fail("Endpoint not found: "+m+" "+p,404);
+  } catch(e) {
+   const msg=e?.message||"Worker error";
+   return json({error:msg},/sign in|login expired|access denied|administrator/i.test(msg)?401:500);
   }
+ }
 };
