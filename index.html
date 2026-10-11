@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,7 +50,8 @@ select:disabled{opacity:.5}
 .premium{background:#2b3444;color:#d9b85c}
 .language-box{margin:14px 0;padding:13px;background:#172942;border:1px solid #30435e;border-radius:10px}
 .language-box h3{margin:0 0 10px;color:#d9b85c;font-size:16px}
-#lessonPhoto{display:none;width:100%;max-height:360px;object-fit:contain;border-radius:9px;margin:10px 0}
+#lessonPhoto{display:none;width:100%;max-height:360px;object-fit:contain;border-radius:9px;margin:0 0 16px;background:#0b1628}
+#lessonTitle{margin-top:14px}
 .content{line-height:1.8;overflow-wrap:anywhere}
 .content img{max-width:100%;height:auto}
 .content table{max-width:100%;border-collapse:collapse}
@@ -62,7 +62,9 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 </style>
 </head>
 <body>
-<header><nav>
+
+<header>
+<nav>
 <a class="brand" href="/v2/">
 <img src="https://assets.createlk.com/file_00000000f97082119cf85b0ae761f096.png" alt="CreateLK Academy">
 <span>CreateLK <span class="gold">Academy</span></span>
@@ -84,7 +86,8 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <a id="logout" hidden href="#" onclick="location.href=API+'/auth/logout';return false">Logout</a>
 </div>
 </div>
-</nav></header>
+</nav>
+</header>
 
 <main>
 <section class="hero">
@@ -94,11 +97,13 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <p>Explore courses, develop new skills and learn at your own pace.</p>
 <p>📚 Step-by-step lessons<br>🌐 English, Tamil and Sinhala<br>🎯 Beginner-friendly learning<br>🔓 Free and Premium lessons</p>
 <p><strong>Choose a course and start learning today.</strong></p>
+
 <div class="stats">
 <div class="stat"><strong id="subjectCount">0</strong><small>COURSES</small></div>
 <div class="stat"><strong id="lessonCount">—</strong><small>LESSONS</small></div>
 <div class="stat"><strong id="membership">GUEST</strong><small>MEMBERSHIP</small></div>
 </div>
+
 <div id="account" class="account"></div>
 <a class="link affiliate" href="#" onclick="affiliate();return false">💰 Affiliate Program</a>
 </section>
@@ -114,27 +119,35 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 <section class="panel">
 <h2>📚 Explore Courses and Lessons</h2>
 <p class="muted">Choose a course, select a lesson, and press Load Lesson.</p>
+
 <div class="field">
 <label for="subjectSelect">Course</label>
 <select id="subjectSelect"><option value="">Loading courses...</option></select>
 </div>
+
 <div class="field">
 <label for="lessonSelect">Select Lesson</label>
 <select id="lessonSelect" disabled><option value="">Choose course first</option></select>
 </div>
+
 <div id="lessonInfo" class="muted"></div>
 <button id="loadBtn" class="btn" disabled>Load Lesson →</button>
 </section>
 
 <section id="lessonView" class="lesson" style="display:none">
+<!-- Photo always appears at the top -->
+<img id="lessonPhoto" alt="Lesson image">
+
+<!-- Language navigation appears below the photo -->
+<div id="languageBox" class="language-box">
+<h3>🌐 Lesson Language / மொழி / භාෂාව</h3>
+<select id="languageSelect" aria-label="Select lesson language"></select>
+<p id="languageMessage" class="muted" style="margin-bottom:0"></p>
+</div>
+
 <div id="lessonBadge"></div>
 <h2 id="lessonTitle"></h2>
 <p id="lessonDescription" class="muted"></p>
-<div id="languageBox" class="language-box" style="display:none">
-<h3>🌐 Lesson Language</h3>
-<select id="languageSelect"></select>
-</div>
-<img id="lessonPhoto" alt="Lesson image">
 <div id="lessonContent" class="content"></div>
 </section>
 </main>
@@ -149,9 +162,11 @@ footer a{color:#aab8cc;margin:5px;text-decoration:none}
 
 <script>
 "use strict";
+
 const API="https://createlk-english-v2.createlk.workers.dev";
 const TRANSLATION_API="https://update-v2.createlk.workers.dev";
 const $=id=>document.getElementById(id);
+
 let referral="",subjects=[],lessons=[],userData=null,requestNo=0;
 let searchIndex=[],originalLesson=null,originalContent="";
 
@@ -159,13 +174,16 @@ function note(message){
 $("notice").textContent=message;
 $("notice").classList.add("show");
 }
+
 function clearNote(){
 $("notice").textContent="";
 $("notice").classList.remove("show");
 }
+
 function login(){
 location.href=API+"/auth/google"+(referral?"?ref="+encodeURIComponent(referral):"");
 }
+
 function affiliate(){
 $("menu").classList.remove("show");
 if(!userData)login();
@@ -177,7 +195,10 @@ if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
 });
 
 async function get(path){
-const r=await fetch(API+path,{credentials:"include",cache:"no-store"});
+const r=await fetch(API+path,{
+credentials:"include",
+cache:"no-store"
+});
 let d={};
 try{d=await r.json()}catch{}
 return{r,d};
@@ -190,6 +211,7 @@ return l.is_free===true||Number(l.is_free)===1;
 async function loadUser(){
 try{
 const {r,d}=await get("/api/me");
+
 if(!r.ok||!d.logged_in){
 userData=null;
 $("membership").textContent="GUEST";
@@ -199,24 +221,32 @@ $("loginBtn").hidden=false;
 $("logout").hidden=true;
 return;
 }
+
 userData=d.user||{};
 $("membership").textContent=String(userData.membership||"FREE").toUpperCase();
 $("account").textContent="👤 "+(userData.name||userData.email||"Account");
 $("account").style.display="inline-block";
 $("loginBtn").hidden=true;
 $("logout").hidden=false;
+
 if(userData.avatar_url){
 $("avatar").src=userData.avatar_url;
 $("avatar").hidden=false;
-}else $("avatar").hidden=true;
-}catch(e){console.error(e)}
+}else{
+$("avatar").hidden=true;
+}
+}catch(e){
+console.error(e);
+}
 }
 
 async function loadSubjects(){
 const {r,d}=await get("/api/subjects");
-if(!r.ok||d.success===false)throw Error(d.error||"Unable to load courses.");
-const all=Array.isArray(d)?d:(d.subjects||d.data||d.results||[]);
-subjects=all;
+
+if(!r.ok||d.success===false)
+throw Error(d.error||"Unable to load courses.");
+
+subjects=Array.isArray(d)?d:(d.subjects||d.data||d.results||[]);
 $("subjectCount").textContent=subjects.length;
 $("subjectSelect").innerHTML='<option value="">-- Select Course --</option>';
 
@@ -232,12 +262,15 @@ $("subjectSelect").innerHTML='<option value="">No courses available</option>';
 note("No courses are currently available. Please try again later.");
 return;
 }
+
 await buildSearchIndex();
 }
 
 async function fetchLessons(s){
 const {r,d}=await get("/api/lessons?subject="+encodeURIComponent(s.slug||s.id));
+
 if(!r.ok||d.success===false)return[];
+
 return Array.isArray(d)?d:(d.lessons||d.data||d.results||[]);
 }
 
@@ -251,6 +284,7 @@ lesson,
 lessonTitle:lesson.title||"Lesson"
 }));
 }));
+
 searchIndex=results.flatMap(x=>x.status==="fulfilled"?x.value:[]);
 renderSearch();
 }
@@ -259,39 +293,49 @@ function renderSearch(){
 const q=$("searchInput").value.trim().toLowerCase();
 const box=$("searchResults");
 box.replaceChildren();
+
 if(!q)return;
 
 const matches=searchIndex.filter(x=>
-x.lessonTitle.toLowerCase().includes(q)||
-x.subjectTitle.toLowerCase().includes(q)
+String(x.lessonTitle).toLowerCase().includes(q)||
+String(x.subjectTitle).toLowerCase().includes(q)
 ).slice(0,30);
 
 matches.forEach(x=>{
 const b=document.createElement("button");
 b.className="search-result";
 b.textContent="📚 "+x.subjectTitle+" — "+x.lessonTitle;
+
 b.onclick=async()=>{
 $("subjectSelect").value=String(x.subjectIndex);
 await subjectChanged();
+
 const i=lessons.findIndex(l=>String(l.id)===String(x.lesson.id));
+
 if(i>=0){
 $("lessonSelect").value=String(i);
 lessonChanged();
 $("loadBtn").scrollIntoView({behavior:"smooth",block:"center"});
 }
 };
+
 box.appendChild(b);
 });
 
 if(!matches.length){
-box.innerHTML='<p class="muted">No matching courses or lessons found.</p>';
+const p=document.createElement("p");
+p.className="muted";
+p.textContent="No matching courses or lessons found.";
+box.appendChild(p);
 }
 }
+
 $("searchInput").addEventListener("input",renderSearch);
 
 async function subjectChanged(){
 const i=$("subjectSelect").value;
 const select=$("lessonSelect");
+
 lessons=[];
 $("lessonView").style.display="none";
 $("lessonInfo").textContent="";
@@ -320,8 +364,10 @@ select.appendChild(o);
 });
 
 select.disabled=!lessons.length;
+
 if(!lessons.length)note("No published lessons found for this course.");
 else clearNote();
+
 }catch(e){
 select.innerHTML='<option value="">Unable to load lessons</option>';
 select.disabled=true;
@@ -332,8 +378,10 @@ note(e.message||"Unable to load lessons.");
 function lessonChanged(){
 const i=$("lessonSelect").value;
 const l=i===""?null:lessons[Number(i)];
+
 $("lessonView").style.display="none";
 $("loadBtn").disabled=!l;
+
 $("lessonInfo").textContent=l?
 (getFree(l)?"🟢 This lesson is FREE.":"🔒 This lesson is PREMIUM."):"";
 }
@@ -351,93 +399,165 @@ for(const path of [
 try{
 const url=path+(path.includes("?")?"&":"?")+"_="+Date.now();
 const {r,d}=await get(url);
+
 if(!r.ok||d.success===false)continue;
 
 for(const x of [d,d.data,d.lesson,d.notes,d.result,d.data?.lesson,d.data?.notes]){
-if(typeof x==="string"&&x.trim())return{lesson:null,content:x};
+if(typeof x==="string"&&x.trim())
+return{lesson:null,content:x};
+
 if(x&&typeof x==="object"){
 const content=x.content??x.notes??x.explanation??x.lesson_content??x.html??x.body??"";
-if(typeof content==="string"&&content.trim())return{lesson:x,content};
+
+if(typeof content==="string"&&content.trim())
+return{lesson:x,content};
 }
 }
-}catch(e){console.warn(e)}
+}catch(e){
+console.warn(e);
+}
 }
 return{lesson:null,content:""};
 }
 
+/* All lesson translations come from update-v2 only. */
 async function loadLanguages(id){
 const box=$("languageBox");
 const select=$("languageSelect");
-box.style.display="none";
+const message=$("languageMessage");
+
+box.style.display="block";
 select.replaceChildren();
 select._translations=[];
+message.textContent="Loading available translations...";
+
+const names={
+en:"🇬🇧 English",
+ta:"🇱🇰 தமிழ் (Tamil)",
+si:"🇱🇰 සිංහල (Sinhala)"
+};
+
+let valid=[];
 
 try{
 const r=await fetch(
 TRANSLATION_API+"/api/public/translations/lesson/"+encodeURIComponent(id),
 {credentials:"include",cache:"no-store"}
 );
-if(!r.ok)return;
 
+if(r.ok){
 const d=await r.json();
 const rows=Array.isArray(d)?d:(d.translations||d.data?.translations||[]);
-const valid=rows.filter(t=>["en","ta","si"].includes(String(t.language||"").toLowerCase()));
-if(!valid.length)return;
 
-const names={en:"English",ta:"தமிழ் (Tamil)",si:"සිංහල (Sinhala)"};
+valid=rows.filter(t=>
+["en","ta","si"].includes(String(t.language||"").toLowerCase())
+);
+}else{
+message.textContent=r.status===401||r.status===403
+?"Some translations require the appropriate account access."
+:"Translations could not be loaded. Showing the default lesson.";
+}
+}catch(e){
+console.warn("Translations unavailable",e);
+message.textContent="Translations could not be loaded. Showing the default lesson.";
+}
+
+const translations={};
+
 valid.forEach(t=>{
-const o=document.createElement("option");
-o.value=String(t.language).toLowerCase();
-o.textContent=names[o.value];
-select.appendChild(o);
+translations[String(t.language).toLowerCase()]=t;
 });
 
 select._translations=valid;
-select.value=valid.some(t=>String(t.language).toLowerCase()==="en")?"en":String(valid[0].language).toLowerCase();
+
+["en","ta","si"].forEach(lang=>{
+const o=document.createElement("option");
+o.value=lang;
+o.textContent=names[lang]+(translations[lang]?"":" · Not available");
+o.disabled=!translations[lang];
+select.appendChild(o);
+});
+
+const firstAvailable=["en","ta","si"].find(lang=>translations[lang]);
+
+if(firstAvailable){
+select.value=translations.en?"en":firstAvailable;
+message.textContent="Choose an available language to switch the lesson.";
+}else{
+select.value="en";
+message.textContent="No saved translations found. Showing the default lesson.";
+}
+
 select.onchange=applyLanguage;
-box.style.display="block";
 applyLanguage();
-}catch(e){console.warn("Translations unavailable",e)}
 }
 
+/* Change title, description and content without reloading the page. */
 function applyLanguage(){
+const lang=$("languageSelect").value;
+
 const t=($("languageSelect")._translations||[]).find(
-x=>String(x.language).toLowerCase()===$("languageSelect").value
+x=>String(x.language).toLowerCase()===lang
 );
-$("lessonTitle").textContent=t?.title||originalLesson?.title||"Lesson";
-$("lessonDescription").textContent=t?.description||originalLesson?.description||"";
-$("lessonContent").innerHTML=t?.content||originalContent||"<p class='muted'>Lesson content not found.</p>";
+
+$("lessonTitle").textContent=
+t?.title||originalLesson?.title||"Lesson";
+
+$("lessonDescription").textContent=
+t?.description||originalLesson?.description||"";
+
+const content=t?.content||(
+lang==="en"?originalContent:""
+);
+
+$("lessonContent").innerHTML=content||
+"<p class='muted'>Content for this language has not been added yet.</p>";
 }
 
+/* Lesson photo is retrieved from update-v2 and displayed above everything else. */
 async function loadLessonPhoto(id){
 const img=$("lessonPhoto");
+
 img.style.display="none";
 img.removeAttribute("src");
+img.alt="Lesson image";
 
 try{
 const r=await fetch(
 TRANSLATION_API+"/api/public/lessons/"+encodeURIComponent(id),
-{cache:"no-store"}
+{credentials:"include",cache:"no-store"}
 );
+
 if(!r.ok)return;
 
 const d=await r.json();
 const l=d.lesson||d.data?.lesson||d;
 const url=l.image_url||l.photo_url||l.image||l.photo||"";
+
 if(!url)return;
 
-img.onload=()=>img.style.display="block";
-img.onerror=()=>img.style.display="none";
+img.onload=()=>{img.style.display="block"};
+img.onerror=()=>{img.style.display="none"};
 img.src=url;
-}catch(e){console.warn("Photo unavailable",e)}
+
+}catch(e){
+console.warn("Photo unavailable",e);
+}
 }
 
 async function loadSelectedLesson(){
 clearNote();
+
 const i=$("lessonSelect").value;
 const l=i===""?null:lessons[Number(i)];
+
 if(!l)return note("Please select a lesson first.");
-if(!userData){login();return}
+
+if(!userData){
+login();
+return;
+}
+
 if(!getFree(l)&&l.accessible!==true){
 location.href="/v2/pay.html";
 return;
@@ -445,6 +565,7 @@ return;
 
 const current=++requestNo;
 const btn=$("loadBtn");
+
 btn.disabled=true;
 btn.textContent="Loading lesson...";
 $("lessonView").style.display="none";
@@ -456,6 +577,7 @@ let content=l.content||l.notes||l.explanation||l.lesson_content||"";
 if(!content){
 const result=await getLessonContent(l.id);
 if(current!==requestNo)return;
+
 if(result.lesson)lesson={...l,...result.lesson};
 content=result.content;
 }
@@ -466,26 +588,33 @@ originalLesson={
 title:lesson.title||l.title||"Lesson",
 description:lesson.description||l.description||""
 };
+
 originalContent=content;
 
 $("lessonTitle").textContent=originalLesson.title;
 $("lessonDescription").textContent=originalLesson.description;
+
 $("lessonContent").innerHTML=content||
 "<p class='muted'>Lesson content not found. Check your saved lesson content.</p>";
 
-$("lessonBadge").innerHTML='<span class="badge '+(getFree(l)?"":"premium")+'">'+
-(getFree(l)?"FREE LESSON":"PREMIUM LESSON")+'</span>';
+$("lessonBadge").innerHTML=
+'<span class="badge '+(getFree(l)?"":"premium")+'">'+
+(getFree(l)?"FREE LESSON":"PREMIUM LESSON")+
+'</span>';
 
+$("lessonPhoto").style.display="none";
 $("lessonView").style.display="block";
 
+/* Load the photo and translations using update-v2. */
 await Promise.all([
-loadLanguages(l.id),
-loadLessonPhoto(l.id)
+loadLessonPhoto(l.id),
+loadLanguages(l.id)
 ]);
 
 if(current===requestNo){
 $("lessonView").scrollIntoView({behavior:"smooth",block:"start"});
 }
+
 }catch(e){
 note(e.message||"Unable to load lesson.");
 }finally{
@@ -497,12 +626,15 @@ btn.textContent="Load Lesson →";
 }
 
 $("year").textContent=new Date().getFullYear();
+
 referral=(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();
 
 async function init(){
 await loadUser();
+
 try{
 await loadSubjects();
+
 if(subjects.length===1){
 $("subjectSelect").value="0";
 await subjectChanged();
@@ -512,6 +644,7 @@ note("Unable to load courses. Check your API connection.");
 console.error(e);
 }
 }
+
 init();
 </script>
 </body>
