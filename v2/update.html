@@ -4,469 +4,247 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#102a56">
 <title>CreateLK Academy Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-:root{--n:#102a56;--b:#155eef;--g:#d69b16}
+:root{--n:#102a56;--g:#d69b16}
 *{box-sizing:border-box}
-body{margin:0;font:15px Arial,sans-serif;background:#f3f6fb;color:#172033}
-header{background:var(--n);color:white;padding:18px}
-main{max-width:950px;margin:20px auto;padding:15px}
-.card{background:white;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 3px 14px #102a5612}
-input,select,textarea,button{font:inherit;padding:11px;border-radius:7px;border:1px solid #ccd3df;width:100%;margin:5px 0}
-button{background:var(--n);color:white;border:0;cursor:pointer;font-weight:bold}
-button:hover{opacity:.9}
-button.gold{background:var(--g);color:#111}
-button.red{background:#c62828}
-button.gray{background:#596579}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.row>*{flex:1;min-width:120px}
-.lesson{border:1px solid #e0e5ee;border-radius:9px;padding:12px;margin:10px 0}
+body{margin:0;font:15px Arial;background:#f3f6fb;color:#172033}
+header{background:var(--n);color:white;padding:14px;display:flex;gap:12px;align-items:center;position:sticky;top:0;z-index:5}
+header h2{margin:0;font-size:19px}
+button,input,select,textarea{font:inherit;padding:11px;border:1px solid #ccd3df;border-radius:7px;width:100%;margin:5px 0}
+button{background:var(--n);color:white;border:0;font-weight:bold;cursor:pointer}
+.gold{background:var(--g);color:#111}.red{background:#c62828}.gray{background:#596579}
+main{max-width:900px;margin:auto;padding:12px}
+.card{background:white;padding:16px;border-radius:12px;margin:12px 0;box-shadow:0 3px 14px #102a5612}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+label{display:block;font-weight:bold;margin-top:10px}
 .small{font-size:13px;color:#647084}
-#status{padding:10px;border-radius:7px;margin:10px 0;display:none}
-.ok{background:#e4f8eb;color:#176b37}
-.err{background:#ffebeb;color:#a21d1d}
-.hidden{display:none}
-h2{font-size:19px}
-label{display:block;margin-top:12px;font-weight:bold}
-.access{display:inline-block;padding:5px 9px;border-radius:6px;font-size:12px;font-weight:bold;margin:8px 0}
-.free{background:#e4f8eb;color:#176b37}
-.premium{background:#fff1cc;color:#825600}
-#photoPreview img{max-width:160px;max-height:120px;object-fit:cover;border-radius:8px;margin-top:8px}
+.lesson,.subject{border:1px solid #ddd;padding:12px;border-radius:8px;margin:8px 0}
+.hidden{display:none!important}
+#status{padding:10px;border-radius:7px;display:none}
+.ok{background:#e4f8eb;color:#176b37}.err{background:#ffebeb;color:#a21d1d}
+.tag{display:inline-block;padding:5px 8px;border-radius:5px;font-size:12px;font-weight:bold}
+.free{background:#e4f8eb;color:#176b37}.premium{background:#fff1cc;color:#825600}
+#menu{display:none;position:fixed;inset:0;background:#0007;z-index:10}
+#menu.open{display:block}
+.menuBox{background:white;width:280px;max-width:85%;height:100%;padding:16px}
+#photoPreview img{max-width:130px;max-height:100px}
 </style>
 </head>
 <body>
 <header>
-<h2>CreateLK Academy Admin</h2>
-<div>Manage lessons, translations, access and photos</div>
+<button style="width:45px;font-size:22px;margin:0" onclick="menu(true)">☰</button>
+<div><h2>CreateLK Academy Admin</h2><div class="small" style="color:white">Manage Academy</div></div>
 </header>
 
+<div id="menu" onclick="if(event.target===this)menu(false)">
+<div class="menuBox">
+<h3>☰ Admin Menu</h3>
+<button class="gray" onclick="menu(false)">Close Menu ✕</button>
+<button onclick="go('dashboard')">🏠 Dashboard</button>
+<button onclick="go('subjects')">📚 Add Subjects</button>
+<button onclick="go('addLesson')">➕ Add Lesson</button>
+<button onclick="go('lessons')">📝 Manage Lessons</button>
+<button onclick="go('editor')">🌐 Edit / Translate</button>
+<button class="red" onclick="signOut()">Sign Out</button>
+</div>
+</div>
+
 <main>
-<div class="card" id="loginBox">
-<h2>Administrator Login</h2>
-<p class="small">Sign in with your authorized Google administrator account.</p>
+<div class="card" id="login">
+<h3>Administrator Login</h3>
+<p class="small">Sign in using your authorized Google account.</p>
 <div id="googleButton"></div>
 </div>
 
 <div id="app" class="hidden">
-<div class="card">
-<div class="row">
-<div>
-<h2>Lessons</h2>
-<div class="small" id="lessonCount">Loading lessons...</div>
-</div>
-<div><button class="gray" onclick="loadLessons()">Refresh Lessons</button></div>
-</div>
+<div class="card" id="dashboard">
+<h3>Dashboard</h3>
+<div class="row"><div>Subjects: <b id="sc">0</b></div><div>Lessons: <b id="lc">0</b></div></div>
 <div id="status"></div>
+<div class="row">
+<button onclick="go('subjects')">+ Subject</button>
+<button class="gold" onclick="go('addLesson')">+ Lesson</button>
+<button class="gray" onclick="load()">Refresh</button>
+</div>
+</div>
+
+<div class="card" id="subjects">
+<h3>Add Subject</h3>
+<input id="st" placeholder="Subject name">
+<textarea id="sd" placeholder="Subject description"></textarea>
+<button onclick="addSubject()">Save Subject</button>
+<div id="subjectList"></div>
+</div>
+
+<div class="card" id="addLesson">
+<h3>Add New Lesson</h3>
+<label>Subject</label><select id="ns"></select>
+<label>Lesson Title</label><input id="nt" placeholder="Lesson title">
+<label>Description</label><textarea id="nd" placeholder="Description"></textarea>
+<label>Access</label>
+<select id="na"><option value="1">Free Lesson</option><option value="0">Premium Lesson</option></select>
+<label>Status</label>
+<select id="nst"><option value="PUBLISHED">Published</option><option value="DRAFT">Draft</option></select>
+<button onclick="addLesson()">Create Lesson</button>
+</div>
+
+<div class="card" id="lessons">
+<h3>Manage Lessons</h3>
 <div id="lessonList"></div>
 </div>
 
 <div class="card" id="editor">
-<h2 id="editorHeading">Edit Lesson</h2>
-<input type="hidden" id="lessonId">
-
-<label for="language">Language</label>
-<select id="language">
-<option value="en">English</option>
-<option value="ta">Tamil</option>
-<option value="si">Sinhala</option>
-</select>
-
-<label for="title">Lesson Title</label>
-<input id="title" placeholder="Enter lesson title">
-
-<label for="description">Description / Explanation</label>
-<textarea id="description" rows="5" placeholder="Enter lesson description"></textarea>
-
-<label for="lessonAccess">Lesson Access</label>
-<select id="lessonAccess">
-<option value="1">Free Lesson</option>
-<option value="0">Premium Lesson</option>
-</select>
-<div class="small">Free lessons are available without premium membership. Premium lessons require active premium membership.</div>
-
-<label for="photo">Lesson Photo</label>
-<input id="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+<h3 id="eh">Edit Lesson</h3>
+<input type="hidden" id="id">
+<label>Language</label>
+<select id="lang"><option value="en">English</option><option value="ta">Tamil</option><option value="si">Sinhala</option></select>
+<label>Title</label><input id="title" placeholder="Lesson title">
+<label>Description</label><textarea id="desc" rows="4"></textarea>
+<label>Access</label>
+<select id="access"><option value="1">Free Lesson</option><option value="0">Premium Lesson</option></select>
+<label>Subject</label><select id="es"></select>
+<label>Status</label>
+<select id="statusSelect"><option value="PUBLISHED">Published</option><option value="DRAFT">Draft</option></select>
+<label>Photo (max 5 MB)</label><input id="photo" type="file" accept="image/*">
 <div id="photoPreview" class="small"></div>
-
-<div class="row">
-<button id="saveButton" onclick="saveLesson()">Save Changes</button>
-<button class="gray" onclick="clearEditor()">Cancel</button>
-</div>
+<div class="row"><button onclick="save()">Save Changes</button><button class="gray" onclick="clearEditor()">Cancel</button></div>
 </div>
 </div>
 </main>
 
 <script>
 const API="https://update-v2.createlk.workers.dev";
-const GOOGLE_CLIENT_ID="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+let token=localStorage.getItem("createlk_admin_token")||"",lessons=[],subjects=[];
 
-let token=localStorage.getItem("createlk_admin_token")||"";
-let lessons=[];
-let editingLesson=null;
+function menu(v){document.getElementById("menu").classList.toggle("open",v)}
+function go(id){menu(false);document.getElementById(id).scrollIntoView({behavior:"smooth"})}
+function popup(t,e=false){alert((e?"Error: ":"Success: ")+t)}
+function msg(t,e=false){let x=document.getElementById("status");x.textContent=t;x.className=e?"err":"ok";x.style.display="block"}
+function free(l){return l.is_free===true||Number(l.is_free)===1}
 
-function message(text,error=false){
- const el=document.getElementById("status");
- el.textContent=text;
- el.className=error?"err":"ok";
- el.style.display="block";
- window.scrollTo({top:0,behavior:"smooth"});
+async function req(path,opt={}){
+ let r=await fetch(API+path,{...opt,headers:{"Authorization":"Bearer "+token,...(opt.body instanceof FormData?{}:{"Content-Type":"application/json"}),...(opt.headers||{})}});
+ let d={};try{d=await r.json()}catch{}
+ if(!r.ok)throw Error(d.error||"Request failed ("+r.status+")");
+ return d;
 }
 
-function popup(text,error=false){
- alert((error?"Error: ":"Success: ")+text);
-}
-
-async function request(path,options={}){
- const response=await fetch(API+path,{
-  ...options,
-  headers:{
-   "Authorization":"Bearer "+token,
-   ...(options.body instanceof FormData?{}:{"Content-Type":"application/json"}),
-   ...(options.headers||{})
-  }
- });
-
- const text=await response.text();
- let data={};
-
- try{
-  data=text?JSON.parse(text):{};
- }catch{
-  data={message:text};
- }
-
- if(!response.ok){
-  throw new Error(data.error||data.message||"Request failed ("+response.status+")");
- }
-
- return data;
-}
-
-function showApp(){
- document.getElementById("loginBox").classList.add("hidden");
- document.getElementById("app").classList.remove("hidden");
- loadLessons();
-}
-
-function handleCredential(response){
- token=response.credential;
- localStorage.setItem("createlk_admin_token",token);
- showApp();
-}
-
+function signin(r){token=r.credential;localStorage.setItem("createlk_admin_token",token);show()}
+function show(){document.getElementById("login").classList.add("hidden");document.getElementById("app").classList.remove("hidden");load()}
+function signOut(){token="";localStorage.removeItem("createlk_admin_token");location.reload()}
 window.addEventListener("load",()=>{
- if(window.google){
-  google.accounts.id.initialize({
-   client_id:GOOGLE_CLIENT_ID,
-   callback:handleCredential
-  });
-
-  google.accounts.id.renderButton(
-   document.getElementById("googleButton"),
-   {theme:"outline",size:"large",text:"signin_with"}
-  );
- }
-
- if(token)showApp();
+ if(window.google){google.accounts.id.initialize({client_id:CLIENT,callback:signin});google.accounts.id.renderButton(document.getElementById("googleButton"),{theme:"outline",size:"large"})}
+ if(token)show();
 });
 
-async function loadLessons(){
- const list=document.getElementById("lessonList");
- list.innerHTML="Loading...";
-
+async function load(){
  try{
-  const data=await request("/api/bootstrap");
-  lessons=data.lessons||data.data?.lessons||[];
-  renderLessons();
- }catch(error){
-  list.innerHTML="";
-  message("Could not load lessons: "+error.message,true);
- }
+  let d=await req("/api/bootstrap");subjects=d.subjects||[];lessons=d.lessons||[];
+  document.getElementById("sc").textContent=subjects.length;document.getElementById("lc").textContent=lessons.length;
+  renderSubjects();renderLessons();subjectOptions();
+ }catch(e){msg(e.message,true)}
 }
-
-function isFree(lesson){
- return lesson.is_free===true||Number(lesson.is_free)===1;
-}
-
-function renderLessons(){
- document.getElementById("lessonCount").textContent=lessons.length+" lessons";
- const list=document.getElementById("lessonList");
- list.innerHTML="";
-
- if(!lessons.length){
-  list.innerHTML='<p class="small">No lessons found.</p>';
-  return;
- }
-
- lessons.forEach(lesson=>{
-  const item=document.createElement("div");
-  item.className="lesson";
-
-  const heading=document.createElement("strong");
-  heading.textContent=lesson.title||lesson.name||"Untitled lesson";
-
-  const access=document.createElement("div");
-  access.className="access "+(isFree(lesson)?"free":"premium");
-  access.textContent=isFree(lesson)?"FREE LESSON":"PREMIUM LESSON";
-
-  const detail=document.createElement("div");
-  detail.className="small";
-  detail.textContent="Lesson ID: "+lesson.id+
-   (lesson.subject_id?" | Subject ID: "+lesson.subject_id:"");
-
-  const buttons=document.createElement("div");
-  buttons.className="row";
-
-  const edit=document.createElement("button");
-  edit.textContent="Edit Lesson";
-  edit.onclick=()=>editLesson(lesson);
-
-  const rename=document.createElement("button");
-  rename.className="gold";
-  rename.textContent="Rename";
-  rename.onclick=()=>renameLesson(lesson);
-
-  const del=document.createElement("button");
-  del.className="red";
-  del.textContent="Delete";
-  del.onclick=()=>deleteLesson(lesson);
-
-  buttons.append(edit,rename,del);
-  item.append(heading,access,detail,buttons);
-  list.appendChild(item);
+function subjectOptions(){
+ ["ns","es"].forEach(id=>{
+  let s=document.getElementById(id),old=s.value;s.innerHTML='<option value="">Select subject</option>';
+  subjects.forEach(x=>s.add(new Option(x.title||x.name,x.id)));
+  if([...s.options].some(o=>o.value===old))s.value=old;
  });
 }
-
-async function editLesson(lesson){
- editingLesson=lesson;
-
- document.getElementById("lessonId").value=lesson.id;
- document.getElementById("editorHeading").textContent="Edit Lesson #"+lesson.id;
- document.getElementById("title").value=lesson.title||lesson.name||"";
- document.getElementById("description").value=lesson.description||"";
- document.getElementById("lessonAccess").value=isFree(lesson)?"1":"0";
- document.getElementById("photo").value="";
-
- const preview=document.getElementById("photoPreview");
- preview.textContent="";
-
- const imageUrl=lesson.image_url||lesson.photo_url||lesson.image||lesson.photo||"";
- if(imageUrl){
-  const img=document.createElement("img");
-  img.src=imageUrl;
-  img.alt="Current lesson photo";
-  img.onerror=()=>{preview.textContent="Current photo could not be displayed.";};
-  preview.appendChild(img);
- }
-
- document.getElementById("status").style.display="none";
- document.getElementById("editor").scrollIntoView({behavior:"smooth"});
-
+function renderSubjects(){
+ let box=document.getElementById("subjectList");box.innerHTML="<h4>Existing Subjects</h4>";
+ subjects.forEach(s=>{
+  let d=document.createElement("div");d.className="subject";
+  let t=document.createElement("b");t.textContent=s.title||s.name;
+  let b=document.createElement("button");b.className="gold";b.textContent="Edit Subject";b.onclick=()=>editSubject(s);
+  d.append(t,b);box.append(d);
+ });
+}
+async function addSubject(){
+ let title=st.value.trim(),description=sd.value.trim();
+ if(!title)return popup("Enter subject name.",true);
+ try{await req("/api/subjects",{method:"POST",body:JSON.stringify({title,description})});st.value=sd.value="";await load();popup("Subject added")}
+ catch(e){popup(e.message,true)}
+}
+async function editSubject(s){
+ let title=prompt("Subject name:",s.title||s.name);if(title===null||!title.trim())return;
+ let description=prompt("Description:",s.description||"");if(description===null)return;
+ try{await req("/api/subjects/"+s.id,{method:"PUT",body:JSON.stringify({title:title.trim(),description,slug:s.slug||"",sort_order:Number(s.sort_order)||0})});await load();popup("Subject updated")}
+ catch(e){popup(e.message,true)}
+}
+async function addLesson(){
+ let subject_id=Number(ns.value),title=nt.value.trim(),description=nd.value.trim();
+ if(!subject_id||!title)return popup("Choose a subject and enter a title.",true);
  try{
-  const data=await request("/api/translations/lesson/"+encodeURIComponent(lesson.id));
-  const translations=data.translations||[];
-
-  const language=document.getElementById("language").value;
-  const translation=translations.find(t=>t.language===language);
-
-  if(translation){
-   document.getElementById("title").value=translation.title||"";
-   document.getElementById("description").value=translation.description||"";
-  }else if(language!=="en"){
-   document.getElementById("title").value="";
-   document.getElementById("description").value="";
+  let d=await req("/api/lessons",{method:"POST",body:JSON.stringify({subject_id,title,description,is_free:Number(na.value),status:nst.value})});
+  if(d.id)await req("/api/translations",{method:"POST",body:JSON.stringify({lesson_id:d.id,language:"en",title,description,content:""})});
+  nt.value=nd.value="";await load();popup("Lesson added");
+ }catch(e){popup(e.message,true)}
+}
+function renderLessons(){
+ let box=document.getElementById("lessonList");box.innerHTML="";
+ lessons.forEach(l=>{
+  let d=document.createElement("div");d.className="lesson";
+  let t=document.createElement("b");t.textContent=l.title||l.name||"Untitled";
+  let tag=document.createElement("div");tag.className="tag "+(free(l)?"free":"premium");tag.textContent=free(l)?"FREE":"PREMIUM";
+  let info=document.createElement("div");info.className="small";info.textContent="ID "+l.id+" · "+(subjects.find(s=>String(s.id)===String(l.subject_id))?.title||"Subject") ;
+  let row=document.createElement("div");row.className="row";
+  let e=document.createElement("button");e.textContent="Edit";e.onclick=()=>edit(l);
+  let rn=document.createElement("button");rn.className="gold";rn.textContent="Rename";rn.onclick=()=>rename(l);
+  let del=document.createElement("button");del.className="red";del.textContent="Delete";del.onclick=()=>removeLesson(l);
+  row.append(e,rn,del);d.append(t,tag,info,row);box.append(d);
+ });
+}
+async function edit(l){
+ id.value=l.id;eh.textContent="Edit Lesson #"+l.id;title.value=l.title||l.name||"";desc.value=l.description||"";
+ access.value=free(l)?"1":"0";statusSelect.value=l.status==="DRAFT"?"DRAFT":"PUBLISHED";subjectOptions();es.value=l.subject_id||"";
+ photo.value="";photoPreview.innerHTML="";
+ let url=l.image_url||l.photo_url||l.image||l.photo;
+ if(url){let im=document.createElement("img");im.src=url;photoPreview.append(im)}
+ go("editor");
+ try{
+  let d=await req("/api/translations/lesson/"+l.id),tr=(d.translations||[]).find(x=>x.language===lang.value);
+  if(tr){title.value=tr.title||"";desc.value=tr.description||""}
+  else if(lang.value!=="en")title.value=desc.value="";
+ }catch(e){}
+}
+async function rename(l){
+ let t=prompt("New lesson title:",l.title||l.name||"");if(t===null||!t.trim())return;
+ try{await req("/api/lessons/"+l.id,{method:"PUT",body:JSON.stringify({title:t.trim(),description:l.description||"",subject_id:l.subject_id,is_free:free(l)?1:0,status:l.status==="DRAFT"?"DRAFT":"PUBLISHED"})});await load();popup("Lesson renamed")}
+ catch(e){popup(e.message,true)}
+}
+async function removeLesson(l){
+ if(!confirm("Permanently delete "+(l.title||l.name)+"?"))return;
+ try{await req("/api/lessons/"+l.id,{method:"DELETE"});clearEditor();await load();popup("Lesson deleted")}
+ catch(e){popup(e.message,true)}
+}
+async function save(){
+ let l=lessons.find(x=>String(x.id)===id.value),t=title.value.trim(),description=desc.value.trim(),subject_id=Number(es.value);
+ if(!l||!t||!subject_id)return popup("Choose a lesson, title and subject.",true);
+ try{
+  let p=photo.files[0];
+  if(p){
+   if(p.size>5*1024*1024)throw Error("Photo must be 5 MB or smaller.");
+   let f=new FormData();f.append("file",p);f.append("lesson_id",id.value);
+   await req("/api/lesson-images",{method:"POST",body:f});
   }
- }catch(error){
-  message("Could not load translations: "+error.message,true);
- }
+  await req("/api/lessons/"+id.value,{method:"PUT",body:JSON.stringify({
+   title:lang.value==="en"?t:(l.title||l.name||t),
+   description:lang.value==="en"?description:(l.description||""),
+   subject_id,is_free:Number(access.value),status:statusSelect.value
+  })});
+  await req("/api/translations",{method:"POST",body:JSON.stringify({lesson_id:Number(id.value),language:lang.value,title:t,description,content:""})});
+  clearEditor();await load();msg("Saved successfully.");popup("Lesson updated");
+ }catch(e){popup(e.message,true);msg(e.message,true)}
 }
-
-async function renameLesson(lesson){
- const oldTitle=lesson.title||lesson.name||"";
- const newTitle=prompt("Enter the new lesson title:",oldTitle);
-
- if(newTitle===null)return;
-
- if(!newTitle.trim()){
-  popup("Lesson title cannot be empty.",true);
-  return;
- }
-
- if(newTitle.trim()===oldTitle.trim())return;
-
- if(!confirm('Rename "'+oldTitle+'" to "'+newTitle.trim()+'"?'))return;
-
- try{
-  await request("/api/lessons/"+encodeURIComponent(lesson.id),{
-   method:"PUT",
-   body:JSON.stringify({
-    ...lesson,
-    title:newTitle.trim(),
-    subject_id:lesson.subject_id,
-    is_free:isFree(lesson)?1:0,
-    status:lesson.status||"PUBLISHED"
-   })
-  });
-
-  popup("Lesson renamed successfully.");
-  await loadLessons();
- }catch(error){
-  popup("Rename failed: "+error.message,true);
- }
-}
-
-async function deleteLesson(lesson){
- const title=lesson.title||lesson.name||"this lesson";
-
- if(!confirm('Delete "'+title+'"? This action cannot be undone.'))return;
- if(!confirm("Confirm permanent deletion of this lesson?"))return;
-
- try{
-  await request("/api/lessons/"+encodeURIComponent(lesson.id),{
-   method:"DELETE"
-  });
-
-  clearEditor();
-  popup("Lesson deleted successfully.");
-  await loadLessons();
- }catch(error){
-  popup("Delete failed: "+error.message,true);
- }
-}
-
-async function saveLesson(){
- const id=document.getElementById("lessonId").value;
-
- if(!id){
-  popup("Select a lesson first.",true);
-  return;
- }
-
- const lesson=lessons.find(item=>String(item.id)===String(id));
- if(!lesson){
-  popup("Lesson not found. Refresh the lesson list and try again.",true);
-  return;
- }
-
- const title=document.getElementById("title").value.trim();
- const description=document.getElementById("description").value.trim();
- const language=document.getElementById("language").value;
- const is_free=document.getElementById("lessonAccess").value==="1"?1:0;
-
- if(!title){
-  popup("Enter a lesson title.",true);
-  return;
- }
-
- if(!lesson.subject_id){
-  popup("This lesson has no subject assigned. Assign a subject before saving.",true);
-  return;
- }
-
- const button=document.getElementById("saveButton");
- button.disabled=true;
- button.textContent="Saving...";
-
- try{
-  /* Upload a lesson photo through the Worker’s actual endpoint. */
-  const photo=document.getElementById("photo").files[0];
-
-  if(photo){
-   if(photo.size>5*1024*1024){
-    throw new Error("Photo must be 5 MB or smaller.");
-   }
-
-   if(!photo.type.startsWith("image/")){
-    throw new Error("Please select an image file.");
-   }
-
-   const form=new FormData();
-   form.append("file",photo);
-   form.append("lesson_id",id);
-
-   await request("/api/lesson-images",{
-    method:"POST",
-    body:form
-   });
-  }
-
-  /*
-   * Save the lesson's Free/Premium access.
-   * Keep the original main lesson title/description when editing
-   * a Tamil or Sinhala translation.
-   */
-  const baseTitle=language==="en"?title:(lesson.title||lesson.name||title);
-  const baseDescription=language==="en"?description:(lesson.description||"");
-
-  await request("/api/lessons/"+encodeURIComponent(id),{
-   method:"PUT",
-   body:JSON.stringify({
-    title:baseTitle,
-    description:baseDescription,
-    subject_id:lesson.subject_id,
-    is_free,
-    status:lesson.status==="DRAFT"?"DRAFT":"PUBLISHED"
-   })
-  });
-
-  /* Save the selected language translation. */
-  await request("/api/translations",{
-   method:"POST",
-   body:JSON.stringify({
-    lesson_id:Number(id),
-    language,
-    title,
-    description,
-    content:""
-   })
-  });
-
-  clearEditor();
-  await loadLessons();
-
-  message("Lesson, translation and Free/Premium settings saved successfully.");
-  popup("Lesson changes saved successfully.");
- }catch(error){
-  message("Save failed: "+error.message,true);
-  popup("Save failed: "+error.message,true);
- }finally{
-  button.disabled=false;
-  button.textContent="Save Changes";
- }
-}
-
-function clearEditor(){
- editingLesson=null;
- document.getElementById("lessonId").value="";
- document.getElementById("title").value="";
- document.getElementById("description").value="";
- document.getElementById("photo").value="";
- document.getElementById("photoPreview").textContent="";
- document.getElementById("lessonAccess").value="1";
- document.getElementById("editorHeading").textContent="Edit Lesson";
-}
-
-document.getElementById("language").addEventListener("change",()=>{
- const id=document.getElementById("lessonId").value;
- if(!id)return;
-
- const lesson=lessons.find(item=>String(item.id)===String(id));
- if(lesson)editLesson(lesson);
-});
-
-document.getElementById("photo").addEventListener("change",event=>{
- const file=event.target.files[0];
- if(!file)return;
-
- const preview=document.getElementById("photoPreview");
- preview.innerHTML="";
-
- const img=document.createElement("img");
- img.alt="Selected lesson photo";
- img.src=URL.createObjectURL(file);
- preview.appendChild(img);
+function clearEditor(){id.value="";title.value=desc.value="";photo.value="";photoPreview.innerHTML="";access.value="1";eh.textContent="Edit Lesson"}
+lang.addEventListener("change",()=>{let l=lessons.find(x=>String(x.id)===id.value);if(l)edit(l)});
+photo.addEventListener("change",()=>{
+ let f=photo.files[0];if(!f)return;photoPreview.innerHTML="";
+ let im=document.createElement("img");im.src=URL.createObjectURL(f);photoPreview.append(im);
 });
 </script>
 </body>
