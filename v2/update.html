@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,7 +9,7 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f3f6fb;color:#17243b;font:15px Arial,sans-serif}
-header{background:#102a56;color:white;padding:20px}
+header{background:#102a56;color:white;padding:18px}
 header h1{font-size:21px;margin:0}
 main{max-width:760px;margin:auto;padding:16px 12px}
 .card{background:white;border:1px solid #dbe3ef;border-radius:12px;padding:18px;margin-bottom:15px}
@@ -25,9 +24,17 @@ button:disabled{opacity:.5}
 #preview{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:8px}
 .muted{color:#64748b;font-size:13px;line-height:1.5}
 [hidden]{display:none!important}
+.summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:15px 0}
+.stat{background:#eef4ff;border-radius:9px;padding:14px}
+.stat strong{display:block;font-size:23px;color:#102a56}
+.stat span{font-size:12px;color:#64748b}
+#successPopup{display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:9999;background:#15803d;color:white;padding:14px 20px;border-radius:10px;box-shadow:0 5px 20px #0003;font-weight:bold;text-align:center;width:max-content;max-width:92%}
+#successPopup.show{display:block}
 </style>
 </head>
 <body>
+
+<div id="successPopup" role="status" aria-live="polite"></div>
 <header><h1>Facebook Monetization Guide — Admin Panel</h1></header>
 
 <main>
@@ -42,14 +49,26 @@ button:disabled{opacity:.5}
 </section>
 
 <section class="card" id="editor" hidden>
+<h2>Academy Summary</h2>
+<div class="summary">
+<div class="stat"><strong id="totalSubjects">0</strong><span>SUBJECTS</span></div>
+<div class="stat"><strong id="totalLessons">0</strong><span>TOTAL LESSONS</span></div>
+<div class="stat"><strong id="totalFree">0</strong><span>FREE LESSONS</span></div>
+<div class="stat"><strong id="totalPremium">0</strong><span>PREMIUM LESSONS</span></div>
+<div class="stat"><strong id="totalTranslations">0</strong><span>TRANSLATIONS</span></div>
+</div>
+</section>
+
+<section class="card" id="lessonEditor" hidden>
 <h2>Lesson Editor</h2>
 
-<label for="lessonSelect">Select lesson to edit</label>
-<select id="lessonSelect"></select>
+<label for="lessonSelect">Select lesson</label>
+<select id="lessonSelect"><option value="">Choose a lesson</option></select>
 
 <div class="actions">
 <button id="newLesson" class="secondary">+ New Lesson</button>
 <button id="editLesson" class="secondary">Edit Selected Lesson</button>
+<button id="refresh" class="secondary">Refresh Summary</button>
 </div>
 
 <div id="fields" hidden>
@@ -64,16 +83,14 @@ button:disabled{opacity:.5}
 <input id="title" maxlength="250" placeholder="Enter lesson title">
 
 <label for="shortDescription">Short Description</label>
-<textarea id="shortDescription" maxlength="1000"
-placeholder="Write a short summary of this lesson"></textarea>
+<textarea id="shortDescription" maxlength="1000" placeholder="Write a short lesson summary"></textarea>
 
 <label for="explanation">Explanation</label>
-<textarea id="explanation" style="min-height:230px"
-placeholder="Write the full lesson explanation"></textarea>
+<textarea id="explanation" style="min-height:230px" placeholder="Write the full lesson explanation"></textarea>
 
 <label for="photo">Lesson Photo</label>
 <input id="photo" type="file" accept="image/*">
-<div id="photoActions" class="actions">
+<div class="actions">
 <button id="uploadPhoto" class="secondary">Upload / Replace Photo</button>
 </div>
 <img id="preview" hidden alt="Lesson photo preview">
@@ -91,12 +108,21 @@ placeholder="Write the full lesson explanation"></textarea>
 
 const API="https://update-v2.createlk.workers.dev";
 const GOOGLE_CLIENT_ID="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const TOKEN_KEY="createlk_admin_token";
 const $=id=>document.getElementById(id);
 
 let token="",subjects=[],lessons=[],translations=[];
-let currentId=null,isNew=false;
+let currentId=null,isNew=false,popupTimer;
 
 function msg(text){$("message").textContent=text}
+
+function successPopup(text){
+ const p=$("successPopup");
+ p.textContent="✓ "+text;
+ p.classList.add("show");
+ clearTimeout(popupTimer);
+ popupTimer=setTimeout(()=>p.classList.remove("show"),3000);
+}
 
 async function api(path,options={}){
  const headers=new Headers(options.headers||{});
@@ -107,6 +133,7 @@ async function api(path,options={}){
  const r=await fetch(API+path,{...options,headers,cache:"no-store"});
  const data=await r.json().catch(()=>({}));
  if(!r.ok)throw Error(data.error||"Request failed: "+r.status);
+ if(data.success===false)throw Error(data.error||"Request failed");
  return data;
 }
 
@@ -122,7 +149,7 @@ function renderLessons(preferred){
  const s=$("lessonSelect");
  s.innerHTML="";
  s.add(new Option("Choose a lesson",""));
- lessons.forEach(l=>s.add(new Option(l.title||("Lesson "+l.id),String(l.id))));
+ lessons.forEach(l=>s.add(new Option(l.title||"Lesson "+l.id,String(l.id))));
  if(preferred&&lessons.some(l=>String(l.id)===String(preferred)))
   s.value=String(preferred);
 }
@@ -130,8 +157,10 @@ function renderLessons(preferred){
 function showPhoto(url){
  const img=$("preview");
  img.onerror=()=>{img.hidden=true};
- img.src=url||"";
- img.hidden=!url;
+ img.onload=()=>{img.hidden=false};
+ img.hidden=true;
+ img.removeAttribute("src");
+ if(url)img.src=url;
 }
 
 function clearFields(){
@@ -145,7 +174,7 @@ function clearFields(){
 
 async function loadTranslation(){
  if(!currentId){clearFields();return}
- const data=await api("/api/translations/lesson/"+currentId);
+ const data=await api("/api/translations/lesson/"+encodeURIComponent(currentId));
  translations=data.translations||[];
  const t=currentTranslation();
  $("title").value=t?.title||"";
@@ -153,13 +182,26 @@ async function loadTranslation(){
  $("explanation").value=t?.content||"";
 }
 
+function updateSummary(){
+ const free=lessons.filter(l=>l.is_free===true||Number(l.is_free)===1).length;
+ $("totalSubjects").textContent=subjects.length;
+ $("totalLessons").textContent=lessons.length;
+ $("totalFree").textContent=free;
+ $("totalPremium").textContent=lessons.length-free;
+ $("totalTranslations").textContent="—";
+}
+
 async function loadAll(preferred){
  msg("Loading lessons...");
  const data=await api("/api/bootstrap");
  subjects=data.subjects||[];
  lessons=data.lessons||[];
+ updateSummary();
  renderLessons(preferred||currentId);
+
  $("editor").hidden=false;
+ $("lessonEditor").hidden=false;
+
  if(currentId){
   $("lessonSelect").value=String(currentId);
   await loadTranslation();
@@ -168,7 +210,35 @@ async function loadAll(preferred){
  }else{
   clearFields();
  }
+
+ // Count translations when the API returns them.
+ let translationCount=0;
+ await Promise.allSettled(lessons.map(async l=>{
+  const d=await api("/api/translations/lesson/"+encodeURIComponent(l.id));
+  translationCount+=(d.translations||[]).length;
+ }));
+ $("totalTranslations").textContent=translationCount;
  msg("Connected. Select a lesson or create a new one.");
+}
+
+async function restoreSession(){
+ const saved=localStorage.getItem(TOKEN_KEY);
+ if(!saved)return;
+ token=saved;
+ try{
+  await loadAll();
+  $("googleButton").hidden=true;
+  $("logout").hidden=false;
+  successPopup("Welcome back! Session restored.");
+ }catch(e){
+  token="";
+  localStorage.removeItem(TOKEN_KEY);
+  $("editor").hidden=true;
+  $("lessonEditor").hidden=true;
+  $("googleButton").hidden=false;
+  $("logout").hidden=true;
+  msg("Session expired. Please sign in again.");
+ }
 }
 
 function beginNew(){
@@ -203,9 +273,9 @@ async function saveLesson(){
  const explanation=$("explanation").value.trim();
  const language=$("language").value;
 
- if(!title){msg("Enter the lesson title.");return}
- if(!short){msg("Enter the short description.");return}
- if(!explanation){msg("Enter the explanation.");return}
+ if(!title)return msg("Enter the lesson title.");
+ if(!short)return msg("Enter the short description.");
+ if(!explanation)return msg("Enter the explanation.");
 
  const btn=$("save");
  btn.disabled=true;
@@ -225,13 +295,13 @@ async function saveLesson(){
      is_free:1,status:"PUBLISHED"
     })
    });
-   id=result.id;
-   if(!id)throw Error("The Worker did not return a lesson ID.");
+   id=result.id||result.lesson?.id||result.data?.id;
+   if(!id)throw Error("Worker did not return the lesson ID.");
    currentId=id;
    isNew=false;
   }else{
    if(!id)throw Error("Choose a lesson or click New Lesson.");
-   await api("/api/lessons/"+id,{
+   await api("/api/lessons/"+encodeURIComponent(id),{
     method:"PUT",
     body:JSON.stringify({
      title:old?.title||title,
@@ -253,7 +323,9 @@ async function saveLesson(){
   await loadAll(id);
   $("language").value=language;
   await loadTranslation();
+  $("fields").hidden=false;
   msg("Lesson saved successfully.");
+  successPopup("Lesson saved successfully!");
  }catch(e){
   msg("Save failed: "+e.message);
  }finally{
@@ -264,9 +336,9 @@ async function saveLesson(){
 async function uploadPhoto(){
  if(!currentId){msg("Save the lesson first, then upload its photo.");return}
  const file=$("photo").files[0];
- if(!file){msg("Choose a photo first.");return}
- if(!file.type.startsWith("image/")){msg("Choose an image file.");return}
- if(file.size>5*1024*1024){msg("Photo must be 5 MB or smaller.");return}
+ if(!file)return msg("Choose a photo first.");
+ if(!file.type.startsWith("image/"))return msg("Choose an image file.");
+ if(file.size>5*1024*1024)return msg("Photo must be 5 MB or smaller.");
 
  const btn=$("uploadPhoto");
  btn.disabled=true;
@@ -275,11 +347,12 @@ async function uploadPhoto(){
   form.append("file",file);
   form.append("lesson_id",String(currentId));
   const result=await api("/api/lesson-images",{method:"POST",body:form});
-  if(!result.url)throw Error("The Worker did not return a photo URL.");
+  if(!result.url)throw Error("Worker did not return a photo URL.");
   showPhoto(result.url);
   $("photo").value="";
   await loadAll(currentId);
   msg("Photo uploaded successfully.");
+  successPopup("Photo uploaded successfully!");
  }catch(e){
   msg("Photo upload failed: "+e.message);
  }finally{
@@ -302,15 +375,18 @@ async function changeLanguage(){
 
 function logout(){
  token="";
+ localStorage.removeItem(TOKEN_KEY);
  currentId=null;
  subjects=[];
  lessons=[];
  translations=[];
  $("editor").hidden=true;
+ $("lessonEditor").hidden=true;
  $("fields").hidden=true;
  $("logout").hidden=true;
  $("googleButton").hidden=false;
- msg("Signed out. Please sign in again.");
+ msg("Signed out.");
+ successPopup("Signed out successfully.");
 }
 
 function initGoogle(){
@@ -318,12 +394,22 @@ function initGoogle(){
  google.accounts.id.initialize({
   client_id:GOOGLE_CLIENT_ID,
   callback:async response=>{
-   token=response.credential||"";
-   $("googleButton").hidden=true;
-   $("logout").hidden=false;
-   try{await loadAll()}
-   catch(e){
+   const newToken=response.credential||"";
+   if(!newToken)return;
+   token=newToken;
+   try{
+    await loadAll();
+    localStorage.setItem(TOKEN_KEY,token);
+    $("googleButton").hidden=true;
+    $("logout").hidden=false;
+    successPopup("Login successful!");
+   }catch(e){
+    token="";
+    localStorage.removeItem(TOKEN_KEY);
     $("editor").hidden=true;
+    $("lessonEditor").hidden=true;
+    $("googleButton").hidden=false;
+    $("logout").hidden=true;
     msg("Login or connection failed: "+e.message);
    }
   }
@@ -331,6 +417,7 @@ function initGoogle(){
  google.accounts.id.renderButton($("googleButton"),{
   theme:"outline",size:"large",text:"signin_with",shape:"rectangular"
  });
+ restoreSession();
 }
 
 $("newLesson").onclick=beginNew;
@@ -339,6 +426,12 @@ $("save").onclick=saveLesson;
 $("uploadPhoto").onclick=uploadPhoto;
 $("logout").onclick=logout;
 $("language").onchange=changeLanguage;
+$("refresh").onclick=async()=>{
+ try{
+  await loadAll(currentId);
+  successPopup("Summary refreshed!");
+ }catch(e){msg("Refresh failed: "+e.message)}
+};
 $("lessonSelect").onchange=()=>{
  const l=selectedLesson();
  if(l){
@@ -346,7 +439,7 @@ $("lessonSelect").onchange=()=>{
   isNew=false;
   $("fields").hidden=true;
   showPhoto(l.image_url||l.photo_url||"");
-  msg("Lesson selected. Click Edit Selected Lesson to make changes.");
+  msg("Lesson selected. Click Edit Selected Lesson.");
  }
 };
 $("cancel").onclick=()=>{
@@ -354,6 +447,7 @@ $("cancel").onclick=()=>{
  isNew=false;
  msg("Editing cancelled.");
 };
+
 initGoogle();
 </script>
 </body>
