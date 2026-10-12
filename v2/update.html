@@ -51,7 +51,7 @@ const P={
 dash:`<h3>Dashboard</h3><div class="stats">${[["ns","Subjects"],["nc","Categories"],["nlc","Lessons"],["np","Published"]].map(([i,t])=>`<div class="stat"><b id="${i}">0</b>${t}</div>`).join("")}</div><button onclick="refresh()">Refresh Data</button><h3>Recent Lessons</h3><div id="recent"></div>`,
 subjects:`<h3 id="sh">Add Subject</h3><input id="sid" type="hidden">${I("sname","Title *")}${I("sslug","Slug")}${A("sdesc","Description")}${I("ssub","Subtitle")}${I("simg","Image URL")}<div class="row"><div>${I("sorder","Display Order","number")}</div><div>${S("sstatus","Status",ST)}</div></div><button class="gold" onclick="saveSubject()">Save Subject</button><button class="light" onclick="clearForm('s')">Clear</button><h3>Existing Subjects</h3><div id="slist"></div>`,
 cats:`<h3 id="ch">Add Category</h3><input id="cid" type="hidden">${I("cname","Category Name *")}${S("parent","Parent Category")}<div class="row"><div>${I("corder","Display Order","number")}</div><div>${S("active","Status",'<option value="1">Active</option><option value="0">Inactive</option>')}</div></div><button class="gold" onclick="saveCat()">Save Category</button><button class="light" onclick="clearForm('c')">Clear</button><h3>Categories</h3><div id="clist"></div>`,
-lessons:`<h3 id="lh">Add Lesson</h3><input id="lid" type="hidden">${S("ls","Subject *")}${S("lc","Category")}${I("lname","Lesson Title *")}${I("lm","Main Title")}${I("lsub","Subtitle")}${A("ld","Description")}${A("lcontent","Content")}<div class="row"><div>${I("lo","Order","number")}</div><div>${S("lst","Status",ST)}</div></div><label><input id="free" type="checkbox" style="width:auto"> Free Lesson</label><button class="gold" onclick="saveLesson()">Save Lesson</button><button class="light" onclick="clearForm('l')">Clear</button><h3>Existing Lessons</h3><input id="lsearch" placeholder="Search lessons" oninput="renderLessons()"><div id="llist"></div>`,
+lessons:`<h3 id="lh">Add Lesson</h3><input id="lid" type="hidden">${S("ls","Subject *")}<div id="lcs"></div>${I("lname","Lesson Title *")}${I("lm","Main Title")}${I("lsub","Subtitle")}${A("ld","Description")}${A("lcontent","Content")}<div class="row"><div>${I("lo","Order","number")}</div><div>${S("lst","Status",ST)}</div></div><label><input id="free" type="checkbox" style="width:auto"> Free Lesson</label><button class="gold" onclick="saveLesson()">Save Lesson</button><button class="light" onclick="clearForm('l')">Clear</button><h3>Existing Lessons</h3><input id="lsearch" placeholder="Search lessons" oninput="renderLessons()"><div id="llist"></div>`,
 notes:`<h3>Lesson Notes</h3>${S("nl","Lesson","",'onchange="loadNote()"')}${A("note","Notes Content")}<button onclick="saveNote()">Save Notes</button>`,
 trans:`<h3>Lesson Translations</h3>${S("tl","Lesson","",'onchange="loadTrans()"')}${S("lang","Language",'<option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option>','onchange="loadTrans()"')}${I("tt","Title")}${A("td","Description")}${A("tc","Content")}<button onclick="saveTrans()">Save Translation</button>`,
 images:`<h3>Lesson Image Upload</h3>${S("il","Lesson")}<label>Image (JPG, PNG, WEBP, GIF; max 5 MB)</label><input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><button onclick="upload()">Upload Image</button><div id="ir"></div>`,
@@ -93,14 +93,31 @@ window.addEventListener("load",()=>{let n=0;(function wait(){if(!initGoogle()&&+
 function logout(){log("Logout");token="";localStorage.removeItem(TK);location.reload()}
 async function refresh(){try{await load();render();msg("Data refreshed")}catch(e){msg(e.message,false)}}
 function catPath(c){const a=[],seen=[];let x=c;while(x&&!seen.includes(String(x.id))){seen.push(String(x.id));a.unshift(x.name);x=categories.find(y=>String(y.id)===String(x.parent_id))}return a.join(" → ")}
+const MAXL=6; // levels 0..6 = Main + Sub + 5 more nested
+const byId=id=>categories.find(c=>String(c.id)===String(id));
+const depth=c=>{let n=0,x=c;while(x&&x.parent_id&&n<20){x=byId(x.parent_id);n++}return n};
+const under=(c,id)=>{let x=c,n=0;while(x&&n++<20){if(String(x.id)===String(id))return true;x=byId(x.parent_id)}return false};
+const kids=pid=>categories.filter(c=>Number(c.is_active)!==0&&String(c.parent_id||"")===String(pid||""));
+const catVal=()=>{let r="";for(let j=0;j<=MAXL;j++){const e=$("lc"+j);if(!e||!e.value)break;r=e.value}return r};
+function buildCats(sel){
+ const path=[];let x=byId(sel);while(x&&path.length<20){path.unshift(String(x.id));x=byId(x.parent_id)}
+ let h="",pid="";
+ for(let i=0;i<=MAXL;i++){
+  const k=kids(pid);if(!k.length)break;
+  h+=`<label>${i?"Sub Category "+i+" (optional)":"Main Category *"}</label><select id="lc${i}" onchange="catChange(${i})"><option value="">${i?"None":"Select Main Category"}</option>${k.map(c=>`<option value="${esc(c.id)}"${path[i]===String(c.id)?" selected":""}>${esc(c.name)}</option>`).join("")}</select>`;
+  if(!path[i])break;pid=path[i];
+ }
+ $("lcs").innerHTML=h;
+}
+function catChange(i){const p=[];for(let j=0;j<=i;j++){const e=$("lc"+j);if(!e||!e.value)break;p.push(e.value)}buildCats(p[p.length-1]||"")}
 function options(id,arr,empty,fn){const e=$(id);if(!e)return;const old=e.value;e.innerHTML=`<option value="">${esc(empty)}</option>`+arr.map(x=>`<option value="${esc(x.id)}">${esc(fn(x))}</option>`).join("");if([...e.options].some(o=>o.value===old))e.value=old}
 function render(){
  $("ns").textContent=subjects.length;$("nc").textContent=categories.length;$("nlc").textContent=lessons.length;$("np").textContent=lessons.filter(x=>!x.status||x.status==="PUBLISHED").length;
  $("recent").innerHTML=lessons.slice(-5).reverse().map(l=>`<div class="item">${esc(l.title)} <span class="muted">${esc(l.status||"PUBLISHED")}</span></div>`).join("");
  $("slist").innerHTML=subjects.map(s=>`<div class="item"><b>${esc(s.title||s.name)}</b><p>${esc(s.description||"")}</p>${btns("editS",s.id,"subjects","Subject")}</div>`).join("")||"No subjects";
- $("clist").innerHTML=categories.map(c=>`<div class="item"><b>${esc(catPath(c))}</b><div class="muted">Level ${Number(c.level||0)+1} · ${Number(c.is_active)===0?"Inactive":"Active"}</div>${btns("editC",c.id,"categories","Category")}</div>`).join("")||"No categories";
- options("parent",categories.filter(c=>Number(c.level||0)<2&&String(c.id)!==v("cid")),"Main Category",c=>"— ".repeat(Number(c.level||0))+c.name);
- options("ls",subjects,"Select Subject",s=>s.title||s.name);options("lc",categories.filter(c=>Number(c.is_active)!==0),"No Category",catPath);
+ $("clist").innerHTML=categories.map(c=>`<div class="item"><b>${esc(catPath(c))}</b><div class="muted">Level ${depth(c)+1} · ${Number(c.is_active)===0?"Inactive":"Active"}</div>${btns("editC",c.id,"categories","Category")}</div>`).join("")||"No categories";
+ options("parent",categories.filter(c=>depth(c)<MAXL&&!(v("cid")&&under(c,v("cid")))),"Main Category (no parent)",c=>"— ".repeat(depth(c))+c.name);
+ options("ls",subjects,"Select Subject",s=>s.title||s.name);buildCats(catVal());
  ["nl","tl","il"].forEach(id=>options(id,lessons,"Select Lesson",l=>l.title));renderLessons();
 }
 function renderLessons(){const q=v("lsearch").toLowerCase();$("llist").innerHTML=lessons.filter(l=>(l.title||"").toLowerCase().includes(q)).map(l=>`<div class="item"><b>${esc(l.title)}</b><div class="muted">ID ${l.id} · ${esc(l.status||"PUBLISHED")} · ${Number(l.is_free)===1?"Free":"Premium"}</div>${btns("editL",l.id,"lessons","Lesson")}</div>`).join("")||"No lessons"}
@@ -109,7 +126,7 @@ function clearForm(t){
  f.forEach(i=>$(i).value="");
  if(t==="s"){$("sh").textContent="Add Subject";$("sorder").value=subjects.length+1;$("sstatus").value="PUBLISHED"}
  if(t==="c"){$("ch").textContent="Add Category";$("corder").value=categories.length+1;$("active").value="1";render()}
- if(t==="l"){$("lh").textContent="Add Lesson";$("lo").value=lessons.length+1;$("lst").value="PUBLISHED";$("free").checked=false}
+ if(t==="l"){$("lh").textContent="Add Lesson";$("lo").value=lessons.length+1;$("lst").value="PUBLISHED";$("free").checked=false;buildCats("")}
 }
 function editS(id){const s=subjects.find(x=>String(x.id)===String(id));if(!s)return;show("subjects");fill({sid:s.id,sname:s.title||s.name||"",sslug:s.slug||"",sdesc:s.description||"",ssub:s.subtitle||"",simg:s.image_url||"",sorder:s.display_order||1,sstatus:s.status||"PUBLISHED"});$("sh").textContent="Edit Subject"}
 function saveSubject(){const id=v("sid"),title=v("sname").trim();if(!title)return msg("Enter subject title.",false);
@@ -117,9 +134,9 @@ function saveSubject(){const id=v("sid"),title=v("sname").trim();if(!title)retur
 function editC(id){const c=categories.find(x=>String(x.id)===String(id));if(!c)return;show("cats");$("cid").value=c.id;render();fill({cname:c.name,corder:c.display_order||1,active:Number(c.is_active)===0?"0":"1",parent:c.parent_id||""});$("ch").textContent="Edit Category"}
 function saveCat(){const id=v("cid"),name=v("cname").trim();if(!name)return msg("Enter category name.",false);
  act("Save Category",async()=>{await send("/api/categories"+(id?"/"+id:""),id?"PUT":"POST",{name,parent_id:v("parent")||null,display_order:+v("corder"),is_active:+v("active")});clearForm("c");await refresh()},"Category saved",name)}
-function editL(id){const l=lessons.find(x=>String(x.id)===String(id));if(!l)return;show("lessons");fill({lid:l.id,ls:l.subject_id||"",lc:l.category_id||"",lname:l.title||"",lm:l.main_title||"",lsub:l.subtitle||"",ld:l.description||"",lcontent:l.content||"",lo:l.display_order||1,lst:l.status||"PUBLISHED"});$("free").checked=Number(l.is_free)===1;$("lh").textContent="Edit Lesson"}
-function saveLesson(){const id=v("lid"),title=v("lname").trim(),subject_id=+v("ls");if(!title||!subject_id)return msg("Enter title and select subject.",false);
- act("Save Lesson",async()=>{await send("/api/lessons"+(id?"/"+id:""),id?"PUT":"POST",{subject_id,title,category_id:v("lc")||null,main_title:v("lm"),subtitle:v("lsub"),description:v("ld"),content:v("lcontent"),display_order:+v("lo"),status:v("lst"),is_free:$("free").checked?1:0});clearForm("l");await refresh()},"Lesson saved",title)}
+function editL(id){const l=lessons.find(x=>String(x.id)===String(id));if(!l)return;show("lessons");fill({lid:l.id,ls:l.subject_id||"",lname:l.title||"",lm:l.main_title||"",lsub:l.subtitle||"",ld:l.description||"",lcontent:l.content||"",lo:l.display_order||1,lst:l.status||"PUBLISHED"});$("free").checked=Number(l.is_free)===1;buildCats(l.category_id||"");$("lh").textContent="Edit Lesson"}
+function saveLesson(){const id=v("lid"),title=v("lname").trim(),subject_id=+v("ls");if(!title||!subject_id)return msg("Enter title and select subject.",false);if(!catVal())return msg("Select a Main Category (create one in Categories first).",false);
+ act("Save Lesson",async()=>{await send("/api/lessons"+(id?"/"+id:""),id?"PUT":"POST",{subject_id,title,category_id:catVal(),main_title:v("lm"),subtitle:v("lsub"),description:v("ld"),content:v("lcontent"),display_order:+v("lo"),status:v("lst"),is_free:$("free").checked?1:0});clearForm("l");await refresh()},"Lesson saved",title)}
 function del(url,type){if(confirm("Delete this "+type+"?"))act("Delete "+type,async()=>{await api(url,{method:"DELETE"});await refresh()},type+" deleted")}
 async function loadNote(){const id=v("nl");if(!id){$("note").value="";return}try{$("note").value=(await api("/api/notes/"+id)).content||""}catch(e){msg(e.message,false)}}
 function saveNote(){const id=v("nl");if(!id)return msg("Select a lesson.",false);act("Save Notes",()=>send("/api/notes/"+id,"PUT",{content:v("note")}),"Notes saved")}
