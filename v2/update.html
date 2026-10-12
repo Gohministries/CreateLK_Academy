@@ -4,184 +4,145 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
 <title>CreateLK English V2 Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-:root{--n:#102a56;--b:#155eef;--g:#d69b16}
-*{box-sizing:border-box}body{margin:0;font:15px Arial;background:#f3f6fb;color:#172033}
-header{background:var(--n);color:white;padding:16px;display:flex;justify-content:space-between;flex-wrap:wrap}
-main{max-width:950px;margin:auto;padding:14px}.card{background:white;padding:16px;border-radius:10px;margin-bottom:14px}
-h3{color:var(--n);margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
-input,select,textarea{width:100%;padding:10px;border:1px solid #ccd4e0;border-radius:7px;font:inherit}
-label{display:block;margin:10px 0 5px;font-weight:bold;font-size:13px}
-textarea{min-height:90px}button{padding:10px 13px;margin:4px 2px;border:0;border-radius:7px;background:var(--b);color:white;cursor:pointer;font-weight:bold}
-.secondary{background:#e8edf6;color:var(--n)}.danger{background:#dc2626}.gold{background:var(--g);color:#172033}
-.item{padding:12px;border:1px solid #e1e6ef;border-radius:8px;margin:8px 0}
-.small{font-size:12px;color:#667085}.hidden{display:none!important}
-#toast{display:none;position:fixed;top:12px;left:5%;width:90%;padding:13px;border-radius:8px;background:#166534;color:white;text-align:center;z-index:9}
+*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#17243a;font:15px Arial,sans-serif}header{background:#102a56;color:white;padding:18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}main{max-width:1000px;margin:auto;padding:16px}.card{background:white;padding:16px;margin:12px 0;border-radius:12px;box-shadow:0 2px 8px #102a5612}h2{font-size:18px;margin:0 0 14px}input,textarea,select{width:100%;padding:11px;margin:6px 0 12px;border:1px solid #ccd5e3;border-radius:7px;font:inherit}textarea{min-height:90px}button{border:0;border-radius:7px;padding:11px 14px;background:#102a56;color:white;font-weight:bold;cursor:pointer;margin:3px}button.gold{background:#d69b16;color:#102039}button.red{background:#b42318}button.light{background:#e8eef8;color:#102a56}.tabs{display:flex;gap:6px;flex-wrap:wrap}.tabs button{flex:1}.item{border:1px solid #e1e7f0;padding:12px;border-radius:8px;margin:8px 0;overflow-wrap:anywhere}.item strong{display:block;margin-bottom:5px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hide{display:none}.muted{color:#66758b;font-size:13px}#msg{position:sticky;top:0;padding:10px;background:#e8eef8;color:#102a56;z-index:5;display:none;white-space:pre-wrap}.status{font-size:12px;color:#66758b}@media(max-width:600px){.row{grid-template-columns:1fr}main{padding:10px}header{padding:14px}}
 </style>
 </head>
 <body>
-<div id="toast"></div>
-<header><b>CreateLK English V2 Admin</b><button class="gold" onclick="loadAll()">Refresh</button></header>
+<header><div><b>CreateLK English V2</b><div class="muted" style="color:#dce6f7">Admin Panel</div></div><button id="logout" class="light hide" onclick="logout()">Sign out</button></header>
+<div id="msg"></div>
 <main>
-<div id="login" class="card">
-<h3>Administrator Login</h3><div id="google"></div>
-<p class="small">Authorized account required.</p>
-</div>
-
-<div id="app" class="hidden">
+<section id="login" class="card">
+<h2>Administrator Login</h2>
+<p>Sign in with your authorized Google account.</p>
+<div id="gbtn"></div>
+<p class="muted">Only the configured administrator email is permitted.</p>
+</section>
+<section id="app" class="hide">
 <div class="card">
+<div class="tabs">
+<button onclick="tab('dashboard')">Dashboard</button>
 <button onclick="tab('subjects')">Subjects</button>
 <button onclick="tab('lessons')">Lessons</button>
-<button onclick="tab('translations')">Translations</button>
 <button onclick="tab('notes')">Notes</button>
+<button onclick="tab('translations')">Translations</button>
 <button onclick="tab('images')">Images</button>
-<button class="secondary" onclick="logout()">Logout</button>
+</div>
 </div>
 
-<section id="subjects" class="card">
-<h3>Manage Subjects</h3><input id="sid" type="hidden">
-<div class="grid">
-<div><label>Name</label><input id="sn"></div>
-<div><label>Slug</label><input id="slug"></div>
-<div><label>Icon</label><input id="icon"></div>
-<div><label>Order</label><input id="so" type="number" value="1"></div>
-<div><label>Status</label><select id="sa"><option value="1">Active</option><option value="0">Inactive</option></select></div>
-</div>
-<label>Description</label><textarea id="sd"></textarea>
-<label>Image URL</label><input id="si">
-<button onclick="saveSubject()">Save Subject</button><button class="secondary" onclick="clearSubject()">Clear</button>
-<h3>Subjects</h3><div id="subjectList"></div>
+<section id="dashboard" class="panel card">
+<h2>Dashboard</h2><div id="stats">Loading...</div>
+<button onclick="loadAll()">Refresh</button>
 </section>
 
-<section id="lessons" class="card hidden">
-<h3>Manage Lessons</h3><input id="lid" type="hidden">
-<div class="grid">
-<div><label>Subject</label><select id="ls"></select></div>
-<div><label>Lesson Title</label><input id="lt"></div>
-<div><label>Order</label><input id="lo" type="number" value="1"></div>
-<div><label>Access</label><select id="lf"><option value="1">Free</option><option value="0">Premium</option></select></div>
-<div><label>Status</label><select id="status"><option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option></select></div>
-</div>
-<label>Description</label><textarea id="ld"></textarea>
-<label>Content</label><textarea id="lc" style="min-height:140px"></textarea>
-<label>Image URL</label><input id="li">
-<button onclick="saveLesson()">Save Lesson</button><button class="secondary" onclick="clearLesson()">Clear</button>
-<h3>Lessons</h3><select id="filter" onchange="renderLessons()"></select>
-<div id="lessonList"></div>
+<section id="subjects" class="panel card hide">
+<h2 id="stitle">Add Subject</h2>
+<input id="sid" type="hidden">
+<label>Subject title</label><input id="sname" placeholder="Subject name">
+<label>Slug (optional)</label><input id="sslug" placeholder="facebook-marketing">
+<label>Description</label><textarea id="sdesc" placeholder="Subject description"></textarea>
+<label>Subtitle</label><input id="ssub" placeholder="Subtitle">
+<label>Image URL</label><input id="simage" placeholder="https://...">
+<div class="row"><div><label>Display order</label><input id="sorder" type="number" value="1"></div><div><label>Status</label><select id="sstatus"><option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option></select></div></div>
+<button class="gold" onclick="saveSubject()">Save Subject</button><button class="light" onclick="clearSubject()">Clear</button>
+<h2>Existing Subjects</h2><div id="subjectList"></div>
 </section>
 
-<section id="translations" class="card hidden">
-<h3>Translations</h3><label>Lesson</label><select id="tl"></select>
-<label>Language</label><select id="lang"><option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option></select>
-<label>Title</label><input id="tt">
-<label>Content</label><textarea id="tc"></textarea>
-<button onclick="saveTranslation()">Save Translation</button>
+<section id="lessons" class="panel card hide">
+<h2 id="ltitle">Add Lesson</h2>
+<input id="lid" type="hidden">
+<label>Subject</label><select id="lsubject"></select>
+<label>Lesson title</label><input id="lname" placeholder="Lesson title">
+<label>Main title</label><input id="lmain" placeholder="Main title">
+<label>Subtitle</label><input id="lsub" placeholder="Subtitle">
+<label>Description</label><textarea id="ldesc" placeholder="Lesson description"></textarea>
+<label>Lesson content</label><textarea id="lcontent" placeholder="Lesson content"></textarea>
+<div class="row"><div><label>Display order</label><input id="lorder" type="number" value="1"></div><div><label>Status</label><select id="lstatus"><option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option></select></div></div>
+<label><input id="lfree" type="checkbox" style="width:auto;margin:0 7px 0 0">Free lesson</label>
+<p><button class="gold" onclick="saveLesson()">Save Lesson</button><button class="light" onclick="clearLesson()">Clear</button></p>
+<h2>Existing Lessons</h2><input id="search" placeholder="Search lessons..." oninput="renderLessons()"><div id="lessonList"></div>
 </section>
 
-<section id="notes" class="card hidden">
-<h3>Lesson Notes</h3><label>Lesson</label><select id="nl" onchange="loadNotes()"></select>
-<label>Notes</label><textarea id="nc" style="min-height:180px"></textarea>
-<button onclick="saveNotes()">Save Notes</button>
+<section id="notes" class="panel card hide">
+<h2>Lesson Notes</h2><label>Lesson</label><select id="nlesson" onchange="loadNote()"></select>
+<textarea id="ncontent" placeholder="Write notes for this lesson"></textarea>
+<button class="gold" onclick="saveNote()">Save Notes</button>
 </section>
 
-<section id="images" class="card hidden">
-<h3>Upload Image</h3><input id="file" type="file" accept="image/*">
-<label>Lesson (optional)</label><select id="il"></select>
-<button onclick="upload()">Upload</button><div id="result"></div>
+<section id="translations" class="panel card hide">
+<h2>Lesson Translations</h2><label>Lesson</label><select id="tlesson" onchange="loadTranslation()"></select>
+<label>Language</label><select id="tlang" onchange="loadTranslation()"><option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option></select>
+<label>Translated title</label><input id="ttitle">
+<label>Translated description</label><textarea id="tdesc"></textarea>
+<label>Translated content</label><textarea id="tcontent"></textarea>
+<button class="gold" onclick="saveTranslation()">Save Translation</button>
 </section>
-</div>
+
+<section id="images" class="panel card hide">
+<h2>Lesson Image Upload</h2><label>Lesson</label><select id="ilesson"></select>
+<label>Choose image (JPG, PNG, WEBP, GIF; maximum 5 MB)</label><input id="ifile" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+<button class="gold" onclick="uploadImage()">Upload Image</button><div id="imageResult"></div>
+</section>
+</section>
 </main>
 <script>
 const API="https://update-v2.createlk.workers.dev";
-const ADMIN="gateofheavensl1@gmail.com";
+const CLIENT_ID="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
 let token="",subjects=[],lessons=[];
-
-function msg(s,err=false){let e=document.getElementById("toast");e.textContent=s;e.style.background=err?"#b42318":"#166534";e.style.display="block";setTimeout(()=>e.style.display="none",3000)}
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-async function api(path,opt={}){
- opt.headers={Authorization:"Bearer "+token,...opt.headers};
- if(opt.body&&!(opt.body instanceof FormData)){opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(opt.body)}
- let r=await fetch(API+path,opt),d=await r.json().catch(()=>({}));
- if(!r.ok)throw Error(d.error||d.message||"Request failed");return d;
+const $=id=>document.getElementById(id);
+function message(s,ok=true){$("msg").style.display="block";$("msg").style.background=ok?"#e4f7eb":"#fde8e7";$("msg").style.color=ok?"#17663a":"#a12622";$("msg").textContent=s;window.scrollTo({top:0,behavior:"smooth"})}
+async function api(path,options={}){
+ const headers={...(options.body instanceof FormData?{}:{"Content-Type":"application/json"}),...(options.headers||{})};
+ if(token)headers.Authorization="Bearer "+token;
+ const r=await fetch(API+path,{...options,headers});
+ const d=await r.json().catch(()=>({error:"Invalid server response"}));
+ if(!r.ok)throw Error(d.error||"Request failed ("+r.status+")");
+ return d;
 }
-function tab(id){document.querySelectorAll("#app section").forEach(e=>e.classList.add("hidden"));document.getElementById(id).classList.remove("hidden")}
-function logout(){token="";document.getElementById("app").classList.add("hidden");document.getElementById("login").classList.remove("hidden")}
-function initGoogle(){
- if(!window.google?.accounts?.id)return setTimeout(initGoogle,300);
- google.accounts.id.initialize({client_id:"582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com",callback:async r=>{
- try{
-  let p=JSON.parse(atob(r.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
-  if(p.email.toLowerCase()!==ADMIN)throw Error("Unauthorized Google account");
-  token=r.credential;await loadAll();
-  document.getElementById("login").classList.add("hidden");document.getElementById("app").classList.remove("hidden");msg("Login successful");
- }catch(e){msg(e.message,true)}
- }});
- google.accounts.id.renderButton(document.getElementById("google"),{theme:"outline",size:"large"});
+function handleCredential(response){
+ token=response.credential;
+ api("/api/bootstrap").then(d=>{
+  $("login").classList.add("hide");$("app").classList.remove("hide");$("logout").classList.remove("hide");subjects=d.subjects||[];lessons=d.lessons||[];renderAll();message("Login successful.");
+ }).catch(e=>{token="";message(e.message,false)});
 }
-window.addEventListener("load",initGoogle);
-async function loadAll(){
- try{
- let d=await api("/api/bootstrap");subjects=d.subjects||[];lessons=d.lessons||[];
- renderSubjects();options();renderLessons();
- }catch(e){msg(e.message,true);throw e}
+window.addEventListener("load",()=>{
+ const wait=()=>{if(window.google?.accounts?.id){google.accounts.id.initialize({client_id:CLIENT_ID,callback:handleCredential});google.accounts.id.renderButton($("gbtn"),{theme:"outline",size:"large",text:"signin_with",width:280})}else setTimeout(wait,300)};
+ wait();
+});
+function logout(){token="";$("app").classList.add("hide");$("login").classList.remove("hide");$("logout").classList.add("hide");$("gbtn").innerHTML="";location.reload()}
+function tab(id){document.querySelectorAll(".panel").forEach(x=>x.classList.add("hide"));$(id).classList.remove("hide");if(id==="notes")loadNote();if(id==="translations")loadTranslation()}
+function renderAll(){renderSubjects();renderLessons();fillLessonSelects();$("stats").textContent=`Subjects: ${subjects.length} | Lessons: ${lessons.length} | Published lessons: ${lessons.filter(x=>(x.status||"PUBLISHED")==="PUBLISHED").length}`}
+function fillLessonSelects(){
+ const sub=subjects.map(s=>`<option value="${s.id}">${esc(s.title||s.name||("Subject "+s.id))}</option>`).join("");
+ $("lsubject").innerHTML=sub;
+ const opts=lessons.map(l=>`<option value="${l.id}">${esc(l.title||("Lesson "+l.id))}</option>`).join("");
+ ["nlesson","tlesson","ilesson"].forEach(id=>$(id).innerHTML=opts||'<option value="">No lessons</option>');
 }
-function options(){
- let s=subjects.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
- ["ls","filter"].forEach(id=>document.getElementById(id).innerHTML=(id==="filter"?'<option value="">All Subjects</option>':"")+s);
- let l=lessons.map(x=>`<option value="${esc(x.id)}">${esc(x.title||x.name||x.id)}</option>`).join("");
- ["tl","nl","il"].forEach(id=>document.getElementById(id).innerHTML=(id==="il"?'<option value="">No lesson selected</option>':"")+l);
-}
+function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function renderSubjects(){
- document.getElementById("subjectList").innerHTML=subjects.map(s=>`<div class="item"><b>${esc(s.icon)} ${esc(s.name)}</b><p>${esc(s.description)}</p><button onclick="editSubject('${esc(s.id)}')">Edit</button><button class="danger" onclick="delSubject('${esc(s.id)}')">Delete</button></div>`).join("")||"No subjects";
+ $("subjectList").innerHTML=subjects.map(s=>`<div class="item"><strong>${esc(s.title||s.name)}</strong><div class="muted">ID ${s.id} · ${esc(s.status||"PUBLISHED")} · Order ${s.display_order??0}</div><p>${esc(s.description||"")}</p><button onclick="editSubject(${s.id})">Edit</button><button class="red" onclick="deleteSubject(${s.id})">Delete</button></div>`).join("")||"No subjects yet.";
 }
-function clearSubject(){["sid","sn","slug","icon","sd","si"].forEach(id=>document.getElementById(id).value="");so.value=subjects.length+1;sa.value="1"}
-function editSubject(id){
- let s=subjects.find(x=>String(x.id)===String(id));if(!s)return;
- sid.value=s.id;sn.value=s.name||"";slug.value=s.slug||"";icon.value=s.icon||"";sd.value=s.description||"";si.value=s.image_url||"";so.value=s.display_order??s.sort_order??1;sa.value=s.is_active??1;tab("subjects");
-}
-async function saveSubject(){
- try{
- let id=sid.value,b={name:sn.value,slug:slug.value,icon:icon.value,description:sd.value,image_url:si.value,display_order:+so.value||1,is_active:+sa.value};
- if(!b.name.trim())return msg("Enter subject name",true);
- await api(id?"/api/subjects/"+id:"/api/subjects",{method:id?"PUT":"POST",body:b});
- msg("Subject saved successfully");clearSubject();await loadAll();
- }catch(e){msg(e.message,true)}
-}
-async function delSubject(id){if(!confirm("Delete this subject?"))return;try{await api("/api/subjects/"+id,{method:"DELETE"});await loadAll();msg("Subject deleted")}catch(e){msg(e.message,true)}}
 function renderLessons(){
- let f=document.getElementById("filter").value;
- document.getElementById("lessonList").innerHTML=lessons.filter(l=>!f||String(l.subject_id)===f).sort((a,b)=>(a.display_order||a.sort_order||0)-(b.display_order||b.sort_order||0)).map(l=>`<div class="item"><b>${esc(l.title||l.name)}</b><p>${esc(l.status||"PUBLISHED")} · ${Number(l.is_free??l.free??1)?"Free":"Premium"} · Order ${esc(l.display_order??l.sort_order??0)}</p><button onclick="editLesson('${esc(l.id)}')">Edit</button><button onclick="move('${esc(l.id)}',-1)">↑</button><button onclick="move('${esc(l.id)}',1)">↓</button><button class="danger" onclick="delLesson('${esc(l.id)}')">Delete</button></div>`).join("")||"No lessons";
+ const q=$("search").value.toLowerCase();
+ $("lessonList").innerHTML=lessons.filter(l=>(l.title||"").toLowerCase().includes(q)).map(l=>`<div class="item"><strong>${esc(l.title)}</strong><div class="muted">ID ${l.id} · Subject ${l.subject_id||"-"} · ${esc(l.status||"PUBLISHED")} · ${Number(l.is_free)?"Free":"Premium"}</div><p>${esc(l.description||"")}</p>${l.image_url?`<img src="${esc(l.image_url)}" style="max-width:120px;max-height:90px">`:""}<p><button onclick="editLesson(${l.id})">Edit</button><button class="red" onclick="deleteLesson(${l.id})">Delete</button></p></div>`).join("")||"No lessons found.";
 }
-function clearLesson(){["lid","lt","ld","lc","li"].forEach(id=>document.getElementById(id).value="");lo.value=lessons.length+1;lf.value="1";status.value="PUBLISHED"}
-function editLesson(id){
- let l=lessons.find(x=>String(x.id)===String(id));if(!l)return;
- lid.value=l.id;ls.value=l.subject_id;lt.value=l.title||l.name||"";lo.value=l.display_order??l.sort_order??1;lf.value=l.is_free??l.free??1;status.value=l.status||"PUBLISHED";ld.value=l.description||"";lc.value=l.content||"";li.value=l.image_url||"";tab("lessons");
-}
-async function saveLesson(){
- try{
- let id=lid.value,b={subject_id:ls.value,title:lt.value,name:lt.value,display_order:+lo.value||1,sort_order:+lo.value||1,is_free:+lf.value,status:status.value,description:ld.value,content:lc.value,image_url:li.value};
- if(!b.subject_id||!b.title.trim())return msg("Choose subject and enter title",true);
- await api(id?"/api/lessons/"+id:"/api/lessons",{method:id?"PUT":"POST",body:b});msg("Lesson saved");clearLesson();await loadAll();
- }catch(e){msg(e.message,true)}
-}
-async function move(id,n){let l=lessons.find(x=>String(x.id)===String(id));try{let o=+(l.display_order??l.sort_order??1)+n;await api("/api/lessons/"+id,{method:"PUT",body:{display_order:o,sort_order:o}});await loadAll();msg("Order updated")}catch(e){msg(e.message,true)}}
-async function delLesson(id){if(!confirm("Delete this lesson?"))return;try{await api("/api/lessons/"+id,{method:"DELETE"});await loadAll();msg("Lesson deleted")}catch(e){msg(e.message,true)}}
-async function saveTranslation(){try{await api("/api/translations",{method:"POST",body:{lesson_id:tl.value,language:lang.value,lang:lang.value,title:tt.value,content:tc.value}});msg("Translation saved")}catch(e){msg(e.message,true)}}
-async function loadNotes(){try{let d=await api("/api/lessons/"+nl.value+"/notes");nc.value=d.content||d.notes||""}catch(e){msg(e.message,true)}}
-async function saveNotes(){try{await api("/api/lessons/"+nl.value+"/notes",{method:"PUT",body:{content:nc.value,notes:nc.value}});msg("Notes saved")}catch(e){msg(e.message,true)}}
-async function upload(){
- let f=file.files[0];if(!f)return msg("Choose an image",true);if(f.size>5*1024*1024)return msg("Maximum image size is 5 MB",true);
- let d=new FormData();d.append("file",f);
- try{
- let r=await api("/api/lesson-images",{method:"POST",body:d}),url=r.url||r.image_url||(r.key?API+"/images/"+r.key:"");
- if(!url)throw Error("No image URL returned");
- result.innerHTML=`<input id="imageUrl" value="${esc(url)}" readonly><button onclick="navigator.clipboard.writeText(imageUrl.value).then(()=>msg('URL copied'))">Copy URL</button>`;
- if(il.value){let l=lessons.find(x=>String(x.id)===il.value);if(l){li.value=url;lid.value=l.id;}}
- msg("Image uploaded");
- }catch(e){msg(e.message,true)}
-}
+async function loadAll(){try{const d=await api("/api/bootstrap");subjects=d.subjects||[];lessons=d.lessons||[];renderAll();message("Data refreshed.")}catch(e){message(e.message,false)}}
+function clearSubject(){["sid","sname","sslug","sdesc","ssub","simage"].forEach(x=>$(x).value="");$("sorder").value=subjects.length+1;$("sstatus").value="PUBLISHED";$("stitle").textContent="Add Subject"}
+function editSubject(id){const s=subjects.find(x=>x.id===id);if(!s)return;tab("subjects");$("sid").value=id;$("sname").value=s.title||s.name||"";$("sslug").value=s.slug||"";$("sdesc").value=s.description||"";$("ssub").value=s.subtitle||"";$("simage").value=s.image_url||"";$("sorder").value=s.display_order??0;$("sstatus").value=s.status||"PUBLISHED";$("stitle").textContent="Edit Subject";window.scrollTo(0,0)}
+async function saveSubject(){try{const id=$("sid").value,b={title:$("sname").value,slug:$("sslug").value,description:$("sdesc").value,subtitle:$("ssub").value,image_url:$("simage").value,display_order:Number($("sorder").value),status:$("sstatus").value};await api("/api/subjects"+(id?"/"+id:""),{method:id?"PUT":"POST",body:JSON.stringify(b)});clearSubject();await loadAll();message("Subject saved successfully.")}catch(e){message(e.message,false)}}
+async function deleteSubject(id){if(!confirm("Delete this subject? Subjects with lessons cannot be deleted."))return;try{await api("/api/subjects/"+id,{method:"DELETE"});await loadAll();message("Subject deleted.")}catch(e){message(e.message,false)}}
+function clearLesson(){["lid","lname","lmain","lsub","ldesc","lcontent"].forEach(x=>$(x).value="");$("lorder").value=lessons.length+1;$("lstatus").value="PUBLISHED";$("lfree").checked=false;$("ltitle").textContent="Add Lesson"}
+function editLesson(id){const l=lessons.find(x=>x.id===id);if(!l)return;tab("lessons");$("lid").value=id;$("lsubject").value=l.subject_id||"";$("lname").value=l.title||"";$("lmain").value=l.main_title||"";$("lsub").value=l.subtitle||"";$("ldesc").value=l.description||"";$("lcontent").value=l.content||"";$("lorder").value=l.display_order??l.sort_order??1;$("lstatus").value=l.status||"PUBLISHED";$("lfree").checked=Number(l.is_free)===1;$("ltitle").textContent="Edit Lesson";window.scrollTo(0,0)}
+async function saveLesson(){try{const id=$("lid").value,b={subject_id:Number($("lsubject").value),title:$("lname").value,main_title:$("lmain").value,subtitle:$("lsub").value,description:$("ldesc").value,content:$("lcontent").value,display_order:Number($("lorder").value),status:$("lstatus").value,is_free:$("lfree").checked?1:0};await api("/api/lessons"+(id?"/"+id:""),{method:id?"PUT":"POST",body:JSON.stringify(b)});clearLesson();await loadAll();message("Lesson saved successfully.")}catch(e){message(e.message,false)}}
+async function deleteLesson(id){if(!confirm("Permanently delete this lesson and its notes/translations?"))return;try{await api("/api/lessons/"+id,{method:"DELETE"});await loadAll();message("Lesson deleted.")}catch(e){message(e.message,false)}}
+async function loadNote(){const id=$("nlesson").value;if(!id)return $("ncontent").value="";try{$("ncontent").value=(await api("/api/notes/"+id)).content||""}catch(e){message(e.message,false)}}
+async function saveNote(){try{await api("/api/notes/"+$("nlesson").value,{method:"PUT",body:JSON.stringify({content:$("ncontent").value})});message("Notes saved successfully.")}catch(e){message(e.message,false)}}
+async function loadTranslation(){const id=$("tlesson").value;if(!id)return;try{const d=await api("/api/translations/lesson/"+id);const t=(d.translations||[]).find(x=>x.language===$("tlang").value)||{};$("ttitle").value=t.title||"";$("tdesc").value=t.description||"";$("tcontent").value=t.content||""}catch(e){message(e.message,false)}}
+async function saveTranslation(){try{await api("/api/translations",{method:"POST",body:JSON.stringify({lesson_id:Number($("tlesson").value),language:$("tlang").value,title:$("ttitle").value,description:$("tdesc").value,content:$("tcontent").value})});message("Translation saved successfully.")}catch(e){message(e.message,false)}}
+async function uploadImage(){try{const file=$("ifile").files[0],id=$("ilesson").value;if(!file||!id)throw Error("Select a lesson and image.");const f=new FormData();f.append("file",file);f.append("lesson_id",id);const d=await api("/api/lesson-images",{method:"POST",body:f});$("imageResult").innerHTML=`<p>Uploaded successfully.</p><input value="${esc(d.url)}" readonly><img src="${esc(d.url)}" style="display:block;max-width:220px;margin-top:10px">`;await loadAll();message("Image uploaded successfully.")}catch(e){message(e.message,false)}}
 </script>
 </body>
 </html>
