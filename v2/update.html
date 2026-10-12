@@ -5,241 +5,148 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#102a56">
 <title>CreateLK V2 Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#18243a;font:15px Arial}
-header{background:#102a56;color:white;padding:18px;display:flex;justify-content:space-between;align-items:center}
-main{max-width:1000px;margin:20px auto;padding:0 12px}
-.panel{background:white;border:1px solid #dce3ee;border-radius:12px;padding:18px;margin-bottom:16px}
-h2{font-size:19px;margin-top:0}label{display:block;font-weight:bold;font-size:13px;margin:12px 0 6px}
-input,select,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
-textarea{min-height:100px}button{padding:11px 14px;border:0;border-radius:8px;background:#102a56;color:white;font-weight:bold;cursor:pointer;margin:4px 3px 4px 0}
-.secondary{background:#e8edf5;color:#102a56}.danger{background:#b42318}.gold{background:#f4bd35;color:#102a56}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.status{display:none;padding:12px;border-radius:8px;margin:12px 0;overflow-wrap:anywhere}
-.ok{display:block;background:#e8f7ee;color:#17633b}.err{display:block;background:#fff0ef;color:#9c1c13}
-#app{display:none}#login{max-width:450px;margin:55px auto;text-align:center}
-table{width:100%;border-collapse:collapse;min-width:520px}th,td{text-align:left;padding:10px;border-bottom:1px solid #dce3ee;font-size:13px;vertical-align:top}
-th{background:#f3f6fb}.tablewrap{overflow:auto}.muted{color:#65738a;font-size:13px}
-.preview{max-width:160px;max-height:110px;display:block;margin-top:10px;border-radius:8px}
-@media(max-width:600px){.grid{grid-template-columns:1fr}main{margin-top:10px}.panel{padding:14px}}
+*{box-sizing:border-box}body{margin:0;font:15px Arial;background:#f3f6fb;color:#18253b}
+header{background:#102a56;color:white;padding:18px}main{max-width:850px;margin:20px auto;padding:12px}
+section{background:white;padding:18px;margin-bottom:16px;border-radius:12px}
+h2{font-size:19px;color:#102a56}input,select,textarea,button{font:inherit;padding:11px;width:100%;margin:5px 0;border:1px solid #ccd5e2;border-radius:7px}
+textarea{min-height:90px}button{background:#102a56;color:white;cursor:pointer}button.alt{background:#f0b92f;color:#102a56}
+.item{border:1px solid #ddd;padding:12px;margin:9px 0;border-radius:8px;overflow-wrap:anywhere}
+.sub{margin-left:18px;border-left:3px solid #f0b92f}
+.actions{display:flex;gap:6px}.actions button{flex:1}
+small{color:#68758a}#app{display:none}#msg{padding:10px;display:none}
+img{max-width:100%;max-height:220px;margin-top:8px}
 </style>
 </head>
 <body>
-<header>
-<div><b>CreateLK V2 Admin</b><div class="muted" style="color:#dbe6f6;margin-top:5px">Categories & Content Manager</div></div>
-<button id="logout" class="secondary" hidden onclick="signOut()">Sign out</button>
-</header>
+<header><b>CreateLK V2 Admin</b><button class="alt" id="logout" hidden onclick="location.reload()">Sign Out</button></header>
+
 <main>
-<section id="login" class="panel">
+<section id="login">
 <h2>Administrator Login</h2>
-<p class="muted">Sign in with the authorized Google account.</p>
-<div id="googleButton"></div>
-<div id="loginMsg" class="status"></div>
+<div id="google"></div><p id="loginmsg">Loading Google login...</p>
 </section>
 
-<section id="app">
-<div id="msg" class="status"></div>
-
-<div class="panel">
-<h2>1. Categories</h2>
-<p class="muted">Create Main Categories and Subcategories. Maximum two levels.</p>
+<div id="app">
+<section>
+<h2>Categories</h2>
 <form id="catForm">
 <input type="hidden" id="catId">
-<label>Category Name</label>
-<input id="catName" maxlength="120" required placeholder="Category name">
-<label>Parent Category</label>
+<input id="catName" placeholder="Category name" required maxlength="120">
 <select id="parent"><option value="">Main Category</option></select>
-<button type="submit" id="catSave">Save Category</button>
-<button type="button" class="secondary" onclick="resetCat()">Clear</button>
+<button id="catSave">Save Category</button>
+<button type="button" class="alt" onclick="resetCat()">Cancel</button>
 </form>
-<h3>Existing Categories</h3>
-<div id="cats" class="tablewrap"></div>
-</div>
+<div id="cats"></div>
+</section>
 
-<div class="panel">
-<h2>2. Content Manager</h2>
+<section>
+<h2 id="formTitle">Add Content</h2>
 <form id="contentForm">
 <input type="hidden" id="contentId">
 <input type="hidden" id="imageUrl">
-<label>Category</label>
-<select id="contentCat" required><option value="">Select category</option></select>
-<label>Title (Automatic)</label>
-<input id="title" readonly placeholder="Category name">
-<label>Description</label>
-<textarea id="description" placeholder="Short description"></textarea>
-<label>Explanation / Lesson Content</label>
-<textarea id="explanation" style="min-height:180px" placeholder="Enter full content"></textarea>
-<label>Photo (JPG, PNG, WEBP, GIF; max 10 MB)</label>
-<input type="file" id="photo" accept="image/jpeg,image/png,image/webp,image/gif">
-<div id="uploadMsg" class="muted"></div>
-<img id="preview" class="preview" hidden alt="Content photo">
-<button type="button" id="removePhoto" class="secondary" hidden onclick="clearPhoto()">Remove Photo</button>
-<br>
-<button id="contentSave" type="submit">Save Content</button>
-<button type="button" class="secondary" onclick="resetContent()">Clear</button>
+<select id="category" required><option value="">Select category</option></select>
+<input id="title" placeholder="Title (automatic)" readonly>
+<textarea id="description" placeholder="Description"></textarea>
+<textarea id="explanation" placeholder="Explanation or content"></textarea>
+<label>Upload photo</label>
+<input id="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+<small>JPG, PNG, WEBP, GIF · Maximum 10 MB</small>
+<img id="preview" hidden>
+<button id="contentSave">Save Content</button>
+<button type="button" class="alt" onclick="resetContent()">Clear</button>
 </form>
-</div>
-
-<div class="panel">
-<h2>3. Saved Content</h2>
-<button class="secondary" onclick="loadContents()">Refresh</button>
-<div id="contents" class="tablewrap"></div>
-</div>
 </section>
+
+<section><h2>Saved Content</h2><div id="contents"></div></section>
+</div>
+<p id="msg"></p>
 </main>
 
 <script>
-"use strict";
-
 const API="https://update-v2.createlk.workers.dev";
-const CLIENT_ID="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
 const ADMIN="gateofheavensl1@gmail.com";
-const KEY="createlk_v2_category_admin_token";
-let token="",categories=[],contents=[];
+let token="",cats=[],items=[];
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-
-function notice(id,text,error=false){$(id).textContent=text;$(id).className="status "+(error?"err":"ok")}
-function payload(t){try{return JSON.parse(decodeURIComponent(escape(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))))}catch{return null}}
-function valid(t){let p=payload(t);return p&&p.email?.toLowerCase()===ADMIN&&p.aud===CLIENT_ID&&(p.email_verified===true||p.email_verified==="true")&&p.exp*1000>Date.now()}
-function signedIn(){ $("login").style.display="none";$("app").style.display="block";$("logout").hidden=false}
-function signOut(){token="";localStorage.removeItem(KEY);$("app").style.display="none";$("login").style.display="block";$("logout").hidden=true;notice("loginMsg","Signed out.")}
-
-async function api(path,options={}){
- let headers=new Headers(options.headers||{});
- headers.set("Authorization","Bearer "+token);
- if(options.body&&!(options.body instanceof FormData))headers.set("Content-Type","application/json");
- let r=await fetch(API+path,{...options,headers,credentials:"omit"});
- let d={};try{d=await r.json()}catch{}
- if(!r.ok){if(r.status===401){token="";localStorage.removeItem(KEY)}throw Error(d.error||"Request failed: "+r.status)}
- return d
+function msg(s,error=false){$("msg").textContent=s;$("msg").style.display="block";$("msg").style.color=error?"#b00020":"#18794e"}
+async function api(path,opt={}){
+ opt.headers={...(opt.headers||{}),Authorization:"Bearer "+token};
+ if(opt.body&&!(opt.body instanceof FormData))opt.headers["Content-Type"]="application/json";
+ let r;try{r=await fetch(API+path,opt)}catch{throw Error("Cannot connect to Worker. Check deployment and CORS.")}
+ let d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d;
 }
-
-async function loginWithToken(t){
- if(!valid(t)){notice("loginMsg","Access denied. Use "+ADMIN,true);return}
- token=t;
- try{
-  await api("/api/bootstrap");
-  localStorage.setItem(KEY,t);
-  signedIn();
-  await loadAll();
- }catch(e){
-  token="";localStorage.removeItem(KEY);
-  notice("loginMsg",e.message,true);
- }
+function login(res){
+ token=res.credential;
+ const p=JSON.parse(atob(token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+ if(p.email?.toLowerCase()!==ADMIN||p.email_verified!==true){token="";return msg("Use the authorized admin account.",true)}
+ $("login").hidden=true;$("app").style.display="block";$("logout").hidden=false;
+ refresh().catch(e=>msg(e.message,true));
 }
-
-function initGoogle(){
- if(!window.google?.accounts?.id){setTimeout(initGoogle,250);return}
- google.accounts.id.initialize({client_id:CLIENT_ID,callback:r=>loginWithToken(r.credential),auto_select:false});
- google.accounts.id.renderButton($("googleButton"),{theme:"outline",size:"large",text:"signin_with",width:280});
+function init(){
+ if(!window.google?.accounts?.id)return;
+ google.accounts.id.initialize({client_id:CLIENT,callback:login});
+ google.accounts.id.renderButton($("google"),{theme:"outline",size:"large",text:"signin_with"});
+ $("loginmsg").textContent="Sign in as "+ADMIN;
 }
-window.addEventListener("load",()=>{
- initGoogle();
- let saved=localStorage.getItem(KEY);
- if(saved&&valid(saved))loginWithToken(saved);
- else localStorage.removeItem(KEY);
-});
+window.addEventListener("load",()=>{let n=0;let t=setInterval(()=>{if(window.google?.accounts?.id){clearInterval(t);init()}else if(++n>40){clearInterval(t);$("loginmsg").textContent="Google login failed to load. Reload the page."}},250)});
 
-function category(id){return categories.find(c=>Number(c.id)===Number(id))}
-function pathName(c){
- if(!c)return "";
- if(c.parent_id==null)return c.name;
- return (category(c.parent_id)?.name||"")+" → "+c.name;
-}
-function selectors(){
- let roots=categories.filter(c=>c.parent_id==null);
- $("parent").innerHTML='<option value="">Main Category</option>'+roots.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
- $("contentCat").innerHTML='<option value="">Select category</option>'+categories.map(c=>`<option value="${c.id}">${esc(pathName(c))}</option>`).join("");
- updateTitle();
+function main(c){return c.parent_id==null||c.parent_id===""}
+function byId(id){return cats.find(c=>+c.id===+id)}
+function kids(id){return cats.filter(c=>+c.parent_id===+id)}
+async function refresh(){
+ let d=await api("/api/bootstrap");cats=d.categories||[];
+ $("parent").innerHTML='<option value="">Main Category</option>'+cats.filter(main).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
+ $("category").innerHTML='<option value="">Select category</option>'+cats.map(c=>`<option value="${c.id}">${esc(main(c)?c.name:(byId(c.parent_id)?.name||"Main")+" → "+c.name)}</option>`).join("");
+ renderCats();await loadContent();
 }
 function renderCats(){
- if(!categories.length){$("cats").innerHTML="<p>No categories yet.</p>";return}
- let rows="";
- for(let c of categories){
-  rows+=`<tr><td>${esc(c.name)}</td><td>${c.parent_id==null?"Main Category":"Subcategory"}</td><td>${c.content_count||0}</td><td><button class="secondary" onclick="editCat(${c.id})">Edit</button><button class="danger" onclick="deleteCat(${c.id})">Delete</button></td></tr>`;
- }
- $("cats").innerHTML=`<table><thead><tr><th>Name</th><th>Level</th><th>Content</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+ $("cats").innerHTML=cats.filter(main).map(c=>`<div class="item"><b>${esc(c.name)}</b> — Main Category
+<div class="actions"><button onclick="editCat(${c.id})">Edit</button><button onclick="delCat(${c.id})">Delete</button><button onclick="newSub(${c.id})">+ Subcategory</button></div>
+${kids(c.id).map(s=>`<div class="item sub"><b>${esc(s.name)}</b> — Subcategory<div class="actions"><button onclick="editCat(${s.id})">Edit</button><button onclick="delCat(${s.id})">Delete</button></div></div>`).join("")}</div>`).join("")||"No categories yet.";
 }
-async function loadCats(){
- let d=await api("/api/categories");categories=d.categories||[];
- selectors();renderCats();
-}
-async function loadContents(){
- let d=await api("/api/contents");contents=d.contents||[];renderContents();
-}
-async function loadAll(){try{await loadCats();await loadContents()}catch(e){notice("msg",e.message,true)}}
-function resetCat(){$("catId").value="";$("catName").value="";$("parent").value="";$("catSave").textContent="Save Category"}
-function editCat(id){
- let c=category(id);if(!c)return;
- $("catId").value=c.id;$("catName").value=c.name;$("parent").value=c.parent_id??"";
- $("catSave").textContent="Update Category";$("catName").focus();
-}
-$("catForm").addEventListener("submit",async e=>{
- e.preventDefault();
- let id=$("catId").value;
- try{
-  await api(id?"/api/categories/"+id:"/api/categories",{method:id?"PUT":"POST",body:JSON.stringify({name:$("catName").value.trim(),parent_id:$("parent").value||null})});
-  resetCat();await loadCats();notice("msg","Category saved successfully.");
- }catch(e){notice("msg",e.message,true)}
-});
-async function deleteCat(id){
- let c=category(id);if(!c||!confirm("Delete "+c.name+"?"))return;
- try{await api("/api/categories/"+id,{method:"DELETE"});await loadAll();notice("msg","Category deleted.")}
- catch(e){notice("msg",e.message,true)}
-}
-function updateTitle(){$("title").value=category($("contentCat").value)?.name||""}
-$("contentCat").addEventListener("change",updateTitle);
+function resetCat(){$("catForm").reset();$("catId").value="";$("catSave").textContent="Save Category"}
+function newSub(id){resetCat();$("parent").value=id;$("catName").focus()}
+function editCat(id){let c=byId(id);$("catId").value=id;$("catName").value=c.name;$("parent").value=c.parent_id||"";$("catSave").textContent="Update Category"}
+$("catForm").onsubmit=async e=>{
+ e.preventDefault();let id=$("catId").value;
+ try{await api(id?"/api/categories/"+id:"/api/categories",{method:id?"PUT":"POST",body:JSON.stringify({name:$("catName").value.trim(),parent_id:$("parent").value?+$("parent").value:null})});resetCat();await refresh();msg("Category saved successfully")}
+ catch(e){msg(e.message,true)}
+};
+async function delCat(id){if(!confirm("Delete this category?"))return;try{await api("/api/categories/"+id,{method:"DELETE"});await refresh();msg("Category deleted")}catch(e){msg(e.message,true)}}
 
-$("photo").addEventListener("change",async()=>{
- let f=$("photo").files[0];if(!f)return;
- if(f.size>10*1024*1024){notice("msg","Image must be 10 MB or smaller.",true);$("photo").value="";return}
- if(!["image/jpeg","image/png","image/webp","image/gif"].includes(f.type)){notice("msg","Unsupported image type.",true);$("photo").value="";return}
- $("uploadMsg").textContent="Uploading...";
+$("category").onchange=()=>$("title").value=byId($("category").value)?.name||"";
+$("photo").onchange=()=>{
+ let f=$("photo").files[0];if(!f){$("preview").hidden=true;return}
+ if(f.size>10485760||!["image/jpeg","image/png","image/webp","image/gif"].includes(f.type)){ $("photo").value="";return msg("Use JPG, PNG, WEBP or GIF up to 10 MB.",true)}
+ $("preview").src=URL.createObjectURL(f);$("preview").hidden=false;
+};
+async function upload(f){let form=new FormData();form.append("image",f);return (await api("/api/content-images",{method:"POST",body:form})).image_url}
+function resetContent(){$("contentForm").reset();$("contentId").value="";$("imageUrl").value="";$("preview").hidden=true;$("formTitle").textContent="Add Content";$("contentSave").textContent="Save Content";$("title").value=""}
+$("contentForm").onsubmit=async e=>{
+ e.preventDefault();let id=$("contentId").value;
  try{
-  let fd=new FormData();fd.append("image",f);
-  let d=await api("/api/content-images",{method:"POST",body:fd});
-  $("imageUrl").value=d.image_url;$("preview").src=d.image_url;$("preview").hidden=false;$("removePhoto").hidden=false;
-  $("uploadMsg").textContent="Image uploaded.";
- }catch(e){$("uploadMsg").textContent=e.message}
-});
-function clearPhoto(){
- $("imageUrl").value="";$("photo").value="";$("preview").removeAttribute("src");$("preview").hidden=true;$("removePhoto").hidden=true;$("uploadMsg").textContent="";
+ let image_url=$("imageUrl").value,f=$("photo").files[0];if(f)image_url=await upload(f);
+ await api(id?"/api/contents/"+id:"/api/contents",{method:id?"PUT":"POST",body:JSON.stringify({category_id:+$("category").value,description:$("description").value,explanation:$("explanation").value,image_url})});
+ resetContent();await refresh();msg("Content saved successfully");
+ }catch(e){msg(e.message,true)}
+};
+async function loadContent(){
+ let d=await api("/api/contents");items=d.contents||[];
+ $("contents").innerHTML=items.map(x=>`<div class="item"><b>${esc(x.title||x.category_name)}</b><p>${esc(x.description)}</p>${x.image_url?`<img src="${esc(x.image_url)}" alt="Content photo">`:""}<details><summary>Explanation</summary><p>${esc(x.explanation)}</p></details><div class="actions"><button onclick="editContent(${x.id})">Edit</button><button onclick="delContent(${x.id})">Delete</button></div></div>`).join("")||"No content yet.";
 }
-function resetContent(){
- $("contentId").value="";$("contentCat").value="";$("description").value="";$("explanation").value="";
- $("title").value="";clearPhoto();$("contentSave").textContent="Save Content";
+async function editContent(id){
+ let x=items.find(a=>+a.id===+id);if(!x)return;
+ $("contentId").value=x.id;$("category").value=x.category_id;$("title").value=x.title;
+ $("description").value=x.description||"";$("explanation").value=x.explanation||"";$("imageUrl").value=x.image_url||"";
+ $("preview").hidden=!x.image_url;if(x.image_url)$("preview").src=x.image_url;
+ $("formTitle").textContent="Edit Content";$("contentSave").textContent="Update Content";$("contentForm").scrollIntoView({behavior:"smooth"});
 }
-$("contentForm").addEventListener("submit",async e=>{
- e.preventDefault();
- let id=$("contentId").value;
- if(!$("contentCat").value){notice("msg","Select a category.",true);return}
- let data={category_id:Number($("contentCat").value),description:$("description").value.trim(),explanation:$("explanation").value.trim(),image_url:$("imageUrl").value.trim()};
- try{
-  await api(id?"/api/contents/"+id:"/api/contents",{method:id?"PUT":"POST",body:JSON.stringify(data)});
-  resetContent();await loadContents();await loadCats();notice("msg","Content saved successfully.");
- }catch(e){notice("msg",e.message,true)}
-});
-function renderContents(){
- if(!contents.length){$("contents").innerHTML="<p>No content saved yet.</p>";return}
- $("contents").innerHTML=`<table><thead><tr><th>Title / Category</th><th>Description</th><th>Photo</th><th>Actions</th></tr></thead><tbody>${contents.map(c=>`<tr><td><b>${esc(c.title)}</b><br>${esc(pathName({id:c.category_id,name:c.category_name,parent_id:c.parent_id}))}</td><td>${esc(c.description||"—")}</td><td>${c.image_url?`<a href="${esc(c.image_url)}" target="_blank" rel="noopener">View photo</a>`:"—"}</td><td><button class="secondary" onclick="editContent(${c.id})">Edit</button><button class="danger" onclick="deleteContent(${c.id})">Delete</button></td></tr>`).join("")}</tbody></table>`;
-}
-function editContent(id){
- let c=contents.find(x=>Number(x.id)===Number(id));if(!c)return;
- $("contentId").value=c.id;$("contentCat").value=c.category_id;updateTitle();
- $("description").value=c.description||"";$("explanation").value=c.explanation||"";$("imageUrl").value=c.image_url||"";
- if(c.image_url){$("preview").src=c.image_url;$("preview").hidden=false;$("removePhoto").hidden=false}else clearPhoto();
- $("contentSave").textContent="Update Content";window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"});
-}
-async function deleteContent(id){
- let c=contents.find(x=>Number(x.id)===Number(id));if(!c||!confirm("Permanently delete "+c.title+"?"))return;
- try{await api("/api/contents/"+id,{method:"DELETE"});await loadAll();notice("msg","Content deleted.")}
- catch(e){notice("msg",e.message,true)}
-}
+async function delContent(id){if(!confirm("Delete this content?"))return;try{await api("/api/contents/"+id,{method:"DELETE"});await refresh();msg("Content deleted")}catch(e){msg(e.message,true)}}
 </script>
 </body>
 </html>
