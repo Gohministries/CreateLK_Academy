@@ -1,291 +1,184 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CreateLK Admin Dashboard</title>
-    <!-- Tailwind CSS for modern, clean UI -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Identity Services SDK -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CreateLK English V2 Admin</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f5fa;font:14px Arial;color:#17243a}header{background:#102a56;color:white;padding:16px;display:flex;justify-content:space-between;align-items:center}main{max-width:1000px;margin:auto;padding:12px}.card{background:white;padding:14px;border-radius:10px;margin:10px 0}button{padding:10px;border:0;border-radius:6px;background:#102a56;color:white;cursor:pointer;margin:3px}button.gold{background:#d69b16;color:#102039}button.red{background:#b42318}button.light{background:#e8eef8;color:#102a56}input,select,textarea{width:100%;padding:10px;border:1px solid #ccd5e3;border-radius:6px;margin:5px 0 10px;font:inherit}textarea{min-height:90px}label{font-weight:bold;font-size:12px}.tabs{display:flex;flex-wrap:wrap}.tabs button{flex:1}.hide{display:none!important}.item{padding:10px;border:1px solid #e1e7f0;border-radius:7px;margin:8px 0;overflow-wrap:anywhere}.muted{font-size:12px;color:#66758b}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.stat{background:#edf2fa;padding:12px;border-radius:7px}.stat b{display:block;font-size:22px}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}#msg{padding:10px;display:none;white-space:pre-wrap}.preview{max-width:180px;max-height:120px}@media(max-width:550px){.stats{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr}main{padding:6px}}
+</style>
 </head>
-<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+<body>
+<header><b>CreateLK V2 Admin</b><span id="who"></span><button id="out" class="hide" onclick="logout()">Logout</button></header>
+<div id="msg"></div>
+<main>
+<div id="login" class="card"><h3>Administrator Login</h3><div id="gbtn"></div><p class="muted">Authorized: gateofheavensl1@gmail.com</p></div>
+<div id="app" class="hide">
+<div class="card tabs">
+<button onclick="show('dash')">Dashboard</button>
+<button onclick="show('subjects')">Subjects</button>
+<button onclick="show('cats')">Categories</button>
+<button onclick="show('lessons')">Lessons</button>
+<button onclick="show('notes')">Notes</button>
+<button onclick="show('trans')">Translations</button>
+<button onclick="show('images')">Images</button>
+<button onclick="show('logs')">30-Day Log</button>
+</div>
 
-    <!-- Header -->
-    <header class="bg-white border-b border-gray-200 shadow-sm">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-            <h1 class="text-xl font-bold text-indigo-600">CreateLK Admin Panel</h1>
-            <div id="auth-section">
-                <!-- Google Sign-In Button Container -->
-                <div id="g_id_onload"
-                     data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
-                     data-callback="handleCredentialResponse"
-                     data-auto_prompt="false">
-                </div>
-                <div class="g_id_signin" data-type="standard" data-size="medium"></div>
-            </div>
-            <div id="user-info" class="hidden flex items-center space-x-4">
-                <span id="admin-email" class="text-sm font-medium text-gray-600"></span>
-                <button onclick="signOut()" class="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-red-100 transition">Sign Out</button>
-            </div>
-        </div>
-    </header>
+<section id="dash" class="card page">
+<div class="stats"><div class="stat"><b id="ns">0</b>Subjects</div><div class="stat"><b id="nc">0</b>Categories</div><div class="stat"><b id="nl">0</b>Lessons</div><div class="stat"><b id="np">0</b>Published</div></div>
+<button onclick="refresh()">Refresh</button>
+<div id="recent"></div>
+</section>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
-        
-        <!-- Login Prompt View -->
-        <div id="login-prompt" class="flex flex-col items-center justify-center h-96 bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
-            <h2 class="text-2xl font-semibold mb-2">Welcome Back</h2>
-            <p class="text-gray-500 mb-6">Please sign in with your authorized administrator Google account to continue.</p>
-            <div class="flex justify-center">
-                <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline"></div>
-            </div>
-        </div>
+<section id="subjects" class="card page hide">
+<h3 id="sh">Add Subject</h3><input id="sid" type="hidden">
+<label>Title *</label><input id="sname">
+<label>Slug</label><input id="sslug">
+<label>Description</label><textarea id="sdesc"></textarea>
+<label>Subtitle</label><input id="ssub">
+<label>Image URL</label><input id="simg">
+<div class="row"><div><label>Order</label><input id="sorder" type="number" value="1"></div><div><label>Status</label><select id="sstatus"><option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option></select></div></div>
+<button class="gold" onclick="saveSubject()">Save Subject</button><button class="light" onclick="clearForm('s')">Clear</button>
+<h3>Subjects</h3><div id="slist"></div>
+</section>
 
-        <!-- Dashboard View (Hidden until signed in) -->
-        <div id="dashboard" class="hidden space-y-6">
-            
-            <!-- Navigation Tabs -->
-            <div class="flex border-b border-gray-200 space-x-8">
-                <button onclick="switchTab('subjects')" id="tab-subjects" class="pb-3 border-b-2 border-indigo-600 font-medium text-indigo-600 transition">Subjects</button>
-                <button onclick="switchTab('categories')" id="tab-categories" class="pb-3 border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition">Categories</button>
-                <button onclick="switchTab('lessons')" id="tab-lessons" class="pb-3 border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition">Lessons</button>
-            </div>
+<section id="cats" class="card page hide">
+<h3 id="ch">Add Category</h3><input id="cid" type="hidden">
+<label>Category Name *</label><input id="cname">
+<label>Parent Category</label><select id="parent"></select>
+<div class="row"><div><label>Order</label><input id="corder" type="number" value="1"></div><div><label>Status</label><select id="active"><option value="1">Active</option><option value="0">Inactive</option></select></div></div>
+<button class="gold" onclick="saveCat()">Save Category</button><button class="light" onclick="clearForm('c')">Clear</button>
+<div id="clist"></div>
+</section>
 
-            <!-- Tab Content: Subjects -->
-            <section id="section-subjects" class="space-y-4">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-lg font-bold">Manage Subjects</h2>
-                    <button onclick="openSubjectModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">+ Add Subject</button>
-                </div>
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
-                            <tr>
-                                <th class="p-4">ID</th>
-                                <th class="p-4">Title</th>
-                                <th class="p-4">Status</th>
-                                <th class="p-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="subjects-table-body" class="divide-y divide-gray-200 text-sm">
-                            <!-- Populated dynamically -->
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+<section id="lessons" class="card page hide">
+<h3 id="lh">Add Lesson</h3><input id="lid" type="hidden">
+<label>Subject *</label><select id="ls"></select>
+<label>Category</label><select id="lc"></select>
+<label>Lesson Title *</label><input id="lname">
+<label>Main Title</label><input id="lm">
+<label>Subtitle</label><input id="lsub">
+<label>Description</label><textarea id="ld"></textarea>
+<label>Content</label><textarea id="lcontent"></textarea>
+<div class="row"><div><label>Order</label><input id="lo" type="number" value="1"></div><div><label>Status</label><select id="lst"><option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option></select></div></div>
+<label><input id="free" type="checkbox" style="width:auto"> Free Lesson</label><br>
+<button class="gold" onclick="saveLesson()">Save Lesson</button><button class="light" onclick="clearForm('l')">Clear</button>
+<h3>Lessons</h3><input id="lsearch" placeholder="Search lessons" oninput="renderLessons()"><div id="llist"></div>
+</section>
 
-            <!-- Tab Content: Categories -->
-            <section id="section-categories" class="hidden space-y-4">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-lg font-bold">Manage Categories</h2>
-                    <button onclick="openCategoryModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">+ Add Category</button>
-                </div>
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
-                            <tr>
-                                <th class="p-4">ID</th>
-                                <th class="p-4">Name</th>
-                                <th class="p-4">Level</th>
-                                <th class="p-4">Lessons</th>
-                                <th class="p-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="categories-table-body" class="divide-y divide-gray-200 text-sm">
-                            <!-- Populated dynamically -->
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+<section id="notes" class="card page hide">
+<h3>Lesson Notes</h3><select id="nl" onchange="loadNote()"></select><textarea id="note"></textarea><button onclick="saveNote()">Save Notes</button>
+</section>
 
-            <!-- Tab Content: Lessons -->
-            <section id="section-lessons" class="hidden space-y-4">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-lg font-bold">Manage Lessons</h2>
-                    <button onclick="openLessonModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">+ Add Lesson</button>
-                </div>
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
-                            <tr>
-                                <th class="p-4">ID</th>
-                                <th class="p-4">Title</th>
-                                <th class="p-4">Subject ID</th>
-                                <th class="p-4">Status</th>
-                                <th class="p-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="lessons-table-body" class="divide-y divide-gray-200 text-sm">
-                            <!-- Populated dynamically -->
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+<section id="trans" class="card page hide">
+<h3>Translations</h3><select id="tl" onchange="loadTrans()"></select>
+<select id="lang" onchange="loadTrans()"><option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option></select>
+<label>Title</label><input id="tt"><label>Description</label><textarea id="td"></textarea><label>Content</label><textarea id="tc"></textarea>
+<button onclick="saveTrans()">Save Translation</button>
+</section>
 
-        </div>
-    </main>
+<section id="images" class="card page hide">
+<h3>Lesson Image Upload</h3><select id="il"></select>
+<input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+<button onclick="upload()">Upload Image</button><div id="ir"></div>
+</section>
 
-    <!-- Global Application Scripts -->
-    <script>
-        // Set your backend Worker URL here
-        const API_BASE = "https://your-worker-subdomain.workers.dev";
-        let idToken = localStorage.getItem("admin_token") || "";
-        let cacheData = { subjects: [], categories: [], lessons: [] };
-
-        document.addEventListener("DOMContentLoaded", () => {
-            if (idToken) {
-                verifyAndLoadDashboard();
-            }
-        });
-
-        function handleCredentialResponse(response) {
-            idToken = response.credential;
-            localStorage.setItem("admin_token", idToken);
-            verifyAndLoadDashboard();
-        }
-
-        async function verifyAndLoadDashboard() {
-            try {
-                await fetchBootstrap();
-                document.getElementById("login-prompt").classList.add("hidden");
-                document.getElementById("auth-section").classList.add("hidden");
-                document.getElementById("dashboard").classList.remove("hidden");
-                document.getElementById("user-info").classList.remove("hidden");
-            } catch (err) {
-                alert(err.message || "Authentication failed.");
-                signOut();
-            }
-        }
-
-        function signOut() {
-            idToken = "";
-            localStorage.removeItem("admin_token");
-            window.location.reload();
-        }
-
-        async function apiFetch(endpoint, options = {}) {
-            headers = options.headers || {};
-            headers["Authorization"] = `Bearer ${idToken}`;
-            if (options.body && !(options.body instanceof FormData)) {
-                headers["Content-Type"] = "application/json";
-            }
-            options.headers = headers;
-
-            const res = await fetch(`${API_BASE}${endpoint}`, options);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Request failed.");
-            return data;
-        }
-
-        async function fetchBootstrap() {
-            const data = await apiFetch("/api/bootstrap");
-            cacheData.subjects = data.subjects || [];
-            cacheData.categories = data.categories || [];
-            cacheData.lessons = data.lessons || [];
-            renderSubjects();
-            renderCategories();
-            renderLessons();
-        }
-
-        function switchTab(tab) {
-            ["subjects", "categories", "lessons"].forEach(t => {
-                document.getElementById(`section-${t}`).classList.add("hidden");
-                document.getElementById(`tab-${t}`).classList.remove("border-indigo-600", "text-indigo-600");
-                document.getElementById(`tab-${t}`).classList.add("border-transparent", "text-gray-500");
-            });
-            document.getElementById(`section-${tab}`).classList.remove("hidden");
-            document.getElementById(`tab-${tab}`).classList.add("border-indigo-600", "text-indigo-600");
-            document.getElementById(`tab-${tab}`).classList.remove("border-transparent", "text-gray-500");
-        }
-
-        function renderSubjects() {
-            const tbody = document.getElementById("subjects-table-body");
-            tbody.innerHTML = cacheData.subjects.map(s => `
-                <tr>
-                    <td class="p-4">${s.id}</td>
-                    <td class="p-4 font-medium">${s.title}</td>
-                    <td class="p-4"><span class="px-2 py-1 rounded text-xs bg-gray-100">${s.status}</span></td>
-                    <td class="p-4 text-right space-x-2">
-                        <button onclick="deleteSubject(${s.id})" class="text-red-600 hover:underline">Delete</button>
-                    </td>
-                </tr>
-            `).join("");
-        }
-
-        function renderCategories() {
-            const tbody = document.getElementById("categories-table-body");
-            tbody.innerHTML = cacheData.categories.map(c => `
-                <tr>
-                    <td class="p-4">${c.id}</td>
-                    <td class="p-4 font-medium">${c.name}</td>
-                    <td class="p-4">${c.level}</td>
-                    <td class="p-4">${c.lesson_count}</td>
-                    <td class="p-4 text-right space-x-2">
-                        <button onclick="deleteCategory(${c.id})" class="text-red-600 hover:underline">Delete</button>
-                    </td>
-                </tr>
-            `).join("");
-        }
-
-        function renderLessons() {
-            const tbody = document.getElementById("lessons-table-body");
-            tbody.innerHTML = cacheData.lessons.map(l => `
-                <tr>
-                    <td class="p-4">${l.id}</td>
-                    <td class="p-4 font-medium">${l.title}</td>
-                    <td class="p-4">${l.subject_id || '-'}</td>
-                    <td class="p-4"><span class="px-2 py-1 rounded text-xs bg-gray-100">${l.status || 'PUBLISHED'}</span></td>
-                    <td class="p-4 text-right space-x-2">
-                        <button onclick="deleteLesson(${l.id})" class="text-red-600 hover:underline">Delete</button>
-                    </td>
-                </tr>
-            `).join("");
-        }
-
-        async function deleteSubject(id) {
-            if (!confirm("Are you sure?")) return;
-            try {
-                await apiFetch(`/api/subjects/${id}`, { method: "DELETE" });
-                fetchBootstrap();
-            } catch(e) { alert(e.message); }
-        }
-
-        async function deleteCategory(id) {
-            if (!confirm("Are you sure?")) return;
-            try {
-                await apiFetch(`/api/categories/${id}`, { method: "DELETE" });
-                fetchBootstrap();
-            } catch(e) { alert(e.message); }
-        }
-
-        async function deleteLesson(id) {
-            if (!confirm("Are you sure?")) return;
-            try {
-                await apiFetch(`/api/lessons/${id}`, { method: "DELETE" });
-                fetchBootstrap();
-            } catch(e) { alert(e.message); }
-        }
-
-        function openSubjectModal() {
-            const title = prompt("Enter Subject Title:");
-            if (!title) return;
-            apiFetch("/api/subjects", { method: "POST", body: JSON.stringify({ title }) }).then(() => fetchBootstrap()).catch(e => alert(e.message));
-        }
-
-        function openCategoryModal() {
-            const name = prompt("Enter Category Name:");
-            if (!name) return;
-            apiFetch("/api/categories", { method: "POST", body: JSON.stringify({ name }) }).then(() => fetchBootstrap()).catch(e => alert(e.message));
-        }
-
-        function openLessonModal() {
-            const title = prompt("Enter Lesson Title:");
-            const subject_id = prompt("Enter Subject ID for this lesson:");
-            if (!title || !subject_id) return;
-            apiFetch("/api/lessons", { method: "POST", body: JSON.stringify({ title, subject_id: Number(subject_id) }) }).then(() => fetchBootstrap()).catch(e => alert(e.message));
-        }
-    </script>
+<section id="logs" class="card page hide">
+<h3>Activity Log — Last 30 Days</h3><p class="muted">Stored only in this browser.</p>
+<button onclick="renderLog()">Refresh</button><button onclick="exportLog()">Export CSV</button><button class="red" onclick="clearLog()">Clear</button><div id="loglist"></div>
+</section>
+</div>
+</main>
+<script>
+const API="https://update-v2.createlk.workers.dev",ADMIN="gateofheavensl1@gmail.com",CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com",TK="createlk_v2_admin_token",LK="createlk_v2_admin_activity";
+let token="",subjects=[],categories=[],lessons=[];
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function msg(s,ok=true){$("msg").style.display="block";$("msg").style.background=ok?"#dff7e7":"#ffe4e4";$("msg").textContent=s}
+function payload(t){try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))}catch{return null}}
+function log(a,r="Success",d=""){
+ try{let x=JSON.parse(localStorage.getItem(LK)||"[]").filter(v=>v.t>Date.now()-2592e6);x.unshift({t:Date.now(),a,r,d});localStorage.setItem(LK,JSON.stringify(x.slice(0,2000)))}catch{}
+}
+async function api(path,opt={}){
+ const h={...(opt.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:"Bearer "+token,...opt.headers};
+ const r=await fetch(API+path,{...opt,headers:h}),d=await r.json().catch(()=>({error:"Invalid response"}));
+ if(r.status===401){localStorage.removeItem(TK);token="";$("app").classList.add("hide");$("login").classList.remove("hide");throw Error("Session expired. Please sign in again.")}
+ if(!r.ok)throw Error(d.error||"Request failed");return d;
+}
+async function login(t){
+ const p=payload(t);
+ if(!p||p.email?.toLowerCase()!==ADMIN||!p.email_verified||p.exp*1000<Date.now())return msg("Use the authorized Google account.",false);
+ token=t;
+ try{
+ const d=await api("/api/bootstrap");subjects=d.subjects||[];categories=d.categories||[];lessons=d.lessons||[];
+ localStorage.setItem(TK,t);$("login").classList.add("hide");$("app").classList.remove("hide");$("out").classList.remove("hide");$("who").textContent=ADMIN;
+ render();log("Login");msg("Login successful.");
+ }catch(e){token="";msg(e.message,false)}
+}
+function initGoogle(){
+ if(!window.google?.accounts?.id)return false;
+ google.accounts.id.initialize({client_id:CLIENT,callback:r=>login(r.credential),auto_select:true});
+ google.accounts.id.renderButton($("gbtn"),{theme:"outline",size:"large",text:"signin_with"});return true;
+}
+window.addEventListener("load",()=>{
+ let n=0;const wait=()=>{if(!initGoogle()&&++n<30)setTimeout(wait,300)};wait();
+ const t=localStorage.getItem(TK),p=t&&payload(t);if(t&&p&&p.email?.toLowerCase()===ADMIN&&p.exp*1000>Date.now())login(t);else localStorage.removeItem(TK);
+});
+function logout(){log("Logout");token="";localStorage.removeItem(TK);location.reload()}
+function show(id){document.querySelectorAll(".page").forEach(x=>x.classList.add("hide"));$(id).classList.remove("hide");if(id==="notes")loadNote();if(id==="trans")loadTrans();if(id==="logs")renderLog()}
+function path(c){let a=[],x=c,seen=[];while(x&&!seen.includes(String(x.id))){seen.push(String(x.id));a.unshift(x.name);x=categories.find(v=>String(v.id)===String(x.parent_id))}return a.join(" → ")}
+function options(id,arr,empty,fn){const e=$(id),old=e.value;e.innerHTML=`<option value="">${esc(empty)}</option>`+arr.map(x=>`<option value="${x.id}">${esc(fn(x))}</option>`).join("");if([...e.options].some(o=>o.value===old))e.value=old}
+function render(){
+ $("ns").textContent=subjects.length;$("nc").textContent=categories.length;$("nl").textContent=lessons.length;$("np").textContent=lessons.filter(x=>x.status==="PUBLISHED"||!x.status).length;
+ $("recent").innerHTML=lessons.slice(-5).reverse().map(l=>`<div class="item">${esc(l.title)} <span class="muted">${esc(l.status||"PUBLISHED")}</span></div>`).join("");
+ $("slist").innerHTML=subjects.map(s=>`<div class="item"><b>${esc(s.title||s.name)}</b><p>${esc(s.description||"")}</p><button onclick="editS(${s.id})">Edit</button><button class="red" onclick="del('/api/subjects/${s.id}','Subject')">Delete</button></div>`).join("");
+ $("clist").innerHTML=categories.map(c=>`<div class="item"><b>${esc(path(c))}</b><div class="muted">Level ${Number(c.level||0)+1}</div><button onclick="editC(${c.id})">Edit</button><button class="red" onclick="del('/api/categories/${c.id}','Category')">Delete</button></div>`).join("");
+ options("parent",categories.filter(c=>Number(c.level||0)<2&&String(c.id)!==$("cid").value),"Main Category",c=>"— ".repeat(Number(c.level||0))+c.name);
+ options("ls",subjects,"Select Subject",s=>s.title||s.name);options("lc",categories.filter(c=>Number(c.is_active)!==0),"No Category",path);
+ ["nl","tl","il"].forEach(id=>options(id,lessons,"Select Lesson",l=>l.title));
+ renderLessons();
+}
+function renderLessons(){
+ const q=$("lsearch").value.toLowerCase();
+ $("llist").innerHTML=lessons.filter(l=>(l.title||"").toLowerCase().includes(q)).map(l=>`<div class="item"><b>${esc(l.title)}</b><p class="muted">ID ${l.id} · ${esc(l.status||"PUBLISHED")} · ${Number(l.is_free)===1?"Free":"Premium"}</p><button onclick="editL(${l.id})">Edit</button><button class="red" onclick="del('/api/lessons/${l.id}','Lesson')">Delete</button></div>`).join("");
+}
+async function refresh(){try{const d=await api("/api/bootstrap");subjects=d.subjects||[];categories=d.categories||[];lessons=d.lessons||[];render();msg("Data refreshed")}catch(e){msg(e.message,false)}}
+function clearForm(t){
+ const ids=t==="s"?["sid","sname","sslug","sdesc","ssub","simg"]:t==="c"?["cid","cname"]:["lid","lname","lm","lsub","ld","lcontent"];
+ ids.forEach(i=>$(i).value="");
+ if(t==="s")$("sh").textContent="Add Subject";if(t==="c")$("ch").textContent="Add Category";if(t==="l"){$("lh").textContent="Add Lesson";$("free").checked=false}
+}
+function editS(id){const s=subjects.find(x=>String(x.id)===String(id));if(!s)return;show("subjects");$("sid").value=s.id;$("sname").value=s.title||s.name||"";$("sslug").value=s.slug||"";$("sdesc").value=s.description||"";$("ssub").value=s.subtitle||"";$("simg").value=s.image_url||"";$("sorder").value=s.display_order||1;$("sstatus").value=s.status||"PUBLISHED";$("sh").textContent="Edit Subject"}
+async function saveSubject(){
+ const id=$("sid").value,title=$("sname").value.trim();if(!title)return msg("Enter subject title.",false);
+ try{await api("/api/subjects"+(id?"/"+id:""),{method:id?"PUT":"POST",body:JSON.stringify({title,slug:$("sslug").value,description:$("sdesc").value,subtitle:$("ssub").value,image_url:$("simg").value,display_order:+$("sorder").value,status:$("sstatus").value})});log("Save Subject", "Success",title);clearForm("s");await refresh();msg("Subject saved")}catch(e){log("Save Subject","Failed",e.message);msg(e.message,false)}
+}
+function editC(id){const c=categories.find(x=>String(x.id)===String(id));if(!c)return;show("cats");$("cid").value=c.id;render();$("cname").value=c.name;$("corder").value=c.display_order||1;$("active").value=Number(c.is_active)===0?"0":"1";$("parent").value=c.parent_id||"";$("ch").textContent="Edit Category"}
+async function saveCat(){
+ const id=$("cid").value,name=$("cname").value.trim();if(!name)return msg("Enter category name.",false);
+ try{await api("/api/categories"+(id?"/"+id:""),{method:id?"PUT":"POST",body:JSON.stringify({name,parent_id:$("parent").value||null,display_order:+$("corder").value,is_active:+$("active").value})});log("Save Category","Success",name);clearForm("c");await refresh();msg("Category saved")}catch(e){log("Save Category","Failed",e.message);msg(e.message,false)}
+}
+function editL(id){const l=lessons.find(x=>String(x.id)===String(id));if(!l)return;show("lessons");$("lid").value=l.id;$("ls").value=l.subject_id||"";$("lc").value=l.category_id||"";$("lname").value=l.title||"";$("lm").value=l.main_title||"";$("lsub").value=l.subtitle||"";$("ld").value=l.description||"";$("lcontent").value=l.content||"";$("lo").value=l.display_order||1;$("lst").value=l.status||"PUBLISHED";$("free").checked=Number(l.is_free)===1;$("lh").textContent="Edit Lesson"}
+async function saveLesson(){
+ const id=$("lid").value,title=$("lname").value.trim(),subject_id=+$("ls").value;if(!title||!subject_id)return msg("Enter title and select subject.",false);
+ try{await api("/api/lessons"+(id?"/"+id:""),{method:id?"PUT":"POST",body:JSON.stringify({subject_id,title,category_id:$("lc").value||null,main_title:$("lm").value,subtitle:$("lsub").value,description:$("ld").value,content:$("lcontent").value,display_order:+$("lo").value,status:$("lst").value,is_free:$("free").checked?1:0})});log("Save Lesson","Success",title);clearForm("l");await refresh();msg("Lesson saved")}catch(e){log("Save Lesson","Failed",e.message);msg(e.message,false)}
+}
+async function del(url,type){if(!confirm("Delete this "+type+"?"))return;try{await api(url,{method:"DELETE"});log("Delete "+type);await refresh();msg(type+" deleted")}catch(e){log("Delete "+type,"Failed",e.message);msg(e.message,false)}}
+async function loadNote(){const id=$("nl").value;if(!id){$("note").value="";return}try{$("note").value=(await api("/api/notes/"+id)).content||""}catch(e){msg(e.message,false)}}
+async function saveNote(){if(!$("nl").value)return msg("Select a lesson.",false);try{await api("/api/notes/"+$("nl").value,{method:"PUT",body:JSON.stringify({content:$("note").value})});log("Save Notes");msg("Notes saved")}catch(e){msg(e.message,false)}}
+async function loadTrans(){const id=$("tl").value;if(!id)return;try{const a=(await api("/api/translations/lesson/"+id)).translations||[],t=a.find(x=>x.language===$("lang").value)||{};$("tt").value=t.title||"";$("td").value=t.description||"";$("tc").value=t.content||""}catch(e){msg(e.message,false)}}
+async function saveTrans(){if(!$("tl").value)return msg("Select a lesson.",false);try{await api("/api/translations",{method:"POST",body:JSON.stringify({lesson_id:+$("tl").value,language:$("lang").value,title:$("tt").value,description:$("td").value,content:$("tc").value})});log("Save Translation");msg("Translation saved")}catch(e){msg(e.message,false)}}
+async function upload(){
+ const f=$("file").files[0],id=$("il").value;if(!f||!id)return msg("Select lesson and image.",false);
+ if(f.size>5*1024*1024||!["image/jpeg","image/png","image/webp","image/gif"].includes(f.type))return msg("Image must be JPG, PNG, WEBP or GIF under 5 MB.",false);
+ const d=new FormData();d.append("file",f);d.append("lesson_id",id);
+ try{const r=await api("/api/lesson-images",{method:"POST",body:d});$("ir").innerHTML=`<p>Uploaded: <a href="${esc(r.url)}" target="_blank" rel="noopener">Open image</a></p><input readonly value="${esc(r.url)}">`;log("Upload Image","Success","Lesson "+id);msg("Image uploaded")}catch(e){log("Upload Image","Failed",e.message);msg(e.message,false)}
+}
+function renderLog(){let a=[];try{a=JSON.parse(localStorage.getItem(LK)||"[]").filter(x=>x.t>Date.now()-2592e6)}catch{}localStorage.setItem(LK,JSON.stringify(a));$("loglist").innerHTML=a.map(x=>`<div class="item"><b>${esc(x.a)}</b> · ${esc(x.r)}<div class="muted">${new Date(x.t).toLocaleString()}</div>${esc(x.d)}</div>`).join("")||"No activity recorded."}
+function clearLog(){if(confirm("Clear local activity log?")){localStorage.removeItem(LK);renderLog()}}
+function exportLog(){let a=JSON.parse(localStorage.getItem(LK)||"[]"),csv="Date,Action,Result,Details\n"+a.map(x=>[new Date(x.t).toISOString(),x.a,x.r,x.d].map(v=>'"'+String(v||"").replace(/"/g,'""')+'"').join(",")).join("\n"),u=URL.createObjectURL(new Blob([csv],{type:"text/csv"})),a1=document.createElement("a");a1.href=u;a1.download="admin-log.csv";a1.click();URL.revokeObjectURL(u)}
+</script>
 </body>
 </html>
