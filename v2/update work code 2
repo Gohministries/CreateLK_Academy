@@ -1,150 +1,344 @@
-const ORIGIN="https://createlk.com";
-const CORS={"Access-Control-Allow-Origin":ORIGIN,"Access-Control-Allow-Credentials":"true","Access-Control-Allow-Methods":"GET,POST,PUT,DELETE,OPTIONS","Access-Control-Allow-Headers":"Content-Type,Authorization","Vary":"Origin"};
-const json=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{...CORS,"Content-Type":"application/json"}});
-const fail=(e,s=400)=>json({error:e},s);
-const slug=s=>String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
-const pick=(c,n)=>n.find(x=>c.includes(x))||null;
-async function cols(db,t){return(await db.prepare(`PRAGMA table_info("${t}")`).all()).results.map(x=>x.name)}
-async function exists(db,t){return!!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").bind(t).first()}
-async function admin(req,env){
- const token=(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");
- if(!token)throw Error("Please sign in with Google.");
- if(!env.GOOGLE_CLIENT_ID||!env.ADMIN_EMAIL)throw Error("Admin settings missing.");
- const r=await fetch("https://oauth2.googleapis.com/tokeninfo?id_token="+encodeURIComponent(token));
- if(!r.ok)throw Error("Google login expired. Sign in again.");
- const u=await r.json();
- if(u.aud!==env.GOOGLE_CLIENT_ID||u.email_verified!=="true"||String(u.email||"").toLowerCase()!==String(env.ADMIN_EMAIL).toLowerCase()||Number(u.exp)*1000<=Date.now())throw Error("Administrator access denied.");
+
+const ORIGIN = "https://createlk.com";
+const GOOGLE_TOKENINFO = "https://oauth2.googleapis.com/tokeninfo";
+
+function json(data, status = 200, origin = ORIGIN) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Vary": "Origin"
+    }
+  });
 }
-function published(r,c){return c.includes("status")?String(r.status||"PUBLISHED").toUpperCase()==="PUBLISHED":c.includes("is_active")?Number(r.is_active)===1:true}
-async function setup(db){
- if(!await exists(db,"subjects")||!await exists(db,"lessons"))throw Error("Required subjects or lessons table missing.");
- await db.prepare("CREATE TABLE IF NOT EXISTS lesson_translations(id INTEGER PRIMARY KEY AUTOINCREMENT,lesson_id INTEGER NOT NULL,language TEXT NOT NULL,title TEXT DEFAULT '',description TEXT DEFAULT '',content TEXT DEFAULT '',UNIQUE(lesson_id,language))").run();
- await db.prepare("CREATE TABLE IF NOT EXISTS lesson_notes(id INTEGER PRIMARY KEY AUTOINCREMENT,lesson_id INTEGER NOT NULL UNIQUE,content TEXT DEFAULT '')").run();
- await db.prepare("CREATE TABLE IF NOT EXISTS subject_lesson_map(lesson_id INTEGER PRIMARY KEY,subject_id INTEGER NOT NULL,display_order INTEGER NOT NULL DEFAULT 1)").run();
- await db.prepare("CREATE TABLE IF NOT EXISTS categories(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,parent_id INTEGER DEFAULT NULL,display_order INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
- await db.prepare("CREATE TABLE IF NOT EXISTS lesson_category_map(lesson_id INTEGER PRIMARY KEY,category_id INTEGER NOT NULL)").run();
- let c=await cols(db,"subjects"),had=c.includes("status");
- for(const[n,d]of[["subtitle","TEXT DEFAULT ''"],["image_url","TEXT DEFAULT ''"],["content","TEXT DEFAULT ''"],["status","TEXT DEFAULT 'PUBLISHED'"]])if(!c.includes(n)){await db.prepare(`ALTER TABLE subjects ADD COLUMN "${n}" ${d}`).run();c=await cols(db,"subjects")}
- if(!had&&c.includes("is_active"))await db.prepare("UPDATE subjects SET status=CASE WHEN is_active=0 THEN 'DRAFT' ELSE 'PUBLISHED' END").run();
- c=await cols(db,"lessons");
- if(!pick(c,["image_url","photo_url","image","photo"]))await db.prepare("ALTER TABLE lessons ADD COLUMN image_url TEXT DEFAULT ''").run();
- c=await cols(db,"lessons");
- for(const n of["main_title","subtitle","content"])if(!c.includes(n))await db.prepare(`ALTER TABLE lessons ADD COLUMN "${n}" TEXT DEFAULT ''`).run();
- const lc=await cols(db,"lessons"),oc=pick(lc,["display_order","sort_order"]);
- if(lc.includes("subject_id"))await db.prepare(`INSERT OR IGNORE INTO subject_lesson_map(lesson_id,subject_id,display_order) SELECT id,subject_id,COALESCE(${oc?`"${oc}"`:"1"},1) FROM lessons WHERE subject_id IS NOT NULL`).run();
+
+function cors(req) {
+  const origin = req.headers.get("Origin") || "";
+  if (origin !== ORIGIN) {
+    return new Response("Origin not allowed", { status: 403 });
+  }
+  return null;
 }
-async function saveSubject(db,id,b){
- const c=await cols(db,"subjects"),title=String(b.title||b.name||"").trim();
- if(!title)throw Error("Subject title required.");
- const status=String(b.status||"PUBLISHED").toUpperCase();
- if(!["PUBLISHED","DRAFT","COMING_SOON"].includes(status))throw Error("Invalid status.");
- const order=Number(b.display_order??b.sort_order??0),v={name:title,title,slug:String(b.slug||slug(title)),description:String(b.description||""),subtitle:String(b.subtitle||""),image_url:String(b.image_url||""),content:String(b.content||""),status,display_order:order,sort_order:order,is_active:status==="DRAFT"?0:1},e=Object.entries(v).filter(([k])=>c.includes(k));
- if(id){if(!await db.prepare("SELECT id FROM subjects WHERE id=?").bind(id).first())throw Error("Subject not found.");await db.prepare(`UPDATE subjects SET ${e.map(([k])=>`"${k}"=?`).join(",")} WHERE id=?`).bind(...e.map(x=>x[1]),id).run();return id}
- const r=await db.prepare(`INSERT INTO subjects(${e.map(([k])=>`"${k}"`).join(",")}) VALUES(${e.map(()=>"?").join(",")})`).bind(...e.map(x=>x[1])).run();return r.meta.last_row_id;
+
+async function body(req) {
+  try {
+    return await req.json();
+  } catch {
+    throw new Error("Invalid JSON body.");
+  }
 }
-async function listSubjects(db){
- const c=await cols(db,"subjects"),name=pick(c,["name","title"]),order=pick(c,["display_order","sort_order","position"]),r=await db.prepare(`SELECT * FROM subjects ORDER BY ${order?`"${order}"`:"id"},id`).all();
- return(r.results||[]).map(x=>({...x,title:name?x[name]:"",subtitle:x.subtitle||"",image_url:x.image_url||"",description:x.description||"",content:x.content||"",slug:x.slug||"",status:String(x.status||(Number(x.is_active)===0?"DRAFT":"PUBLISHED")).toUpperCase(),display_order:x.display_order??x.sort_order??x.position??0}));
+
+async function ensureTables(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS academy_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      parent_id INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS academy_category_contents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      explanation TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
 }
-async function depth(db,id){
- let n=0,seen=new Set(),cur=id;
- while(cur!=null&&Number(cur)!==0){cur=Number(cur);if(seen.has(cur))throw Error("Category cycle detected.");seen.add(cur);const r=await db.prepare("SELECT parent_id FROM categories WHERE id=?").bind(cur).first();if(!r)throw Error("Parent category not found.");n++;cur=r.parent_id;if(n>3)throw Error("Maximum category depth is 3 levels.");}
- return n-1;
+
+async function authorize(req, env) {
+  const header = req.headers.get("Authorization") || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) throw new Error("Please sign in with the authorized Google account.");
+
+  const response = await fetch(
+    GOOGLE_TOKENINFO + "?id_token=" + encodeURIComponent(token)
+  );
+  if (!response.ok) throw new Error("Google login expired. Please sign in again.");
+
+  const p = await response.json();
+  const expectedClient = env.GOOGLE_CLIENT_ID;
+  const expectedEmail = (env.ADMIN_EMAIL || "").toLowerCase();
+
+  if (
+    p.aud !== expectedClient ||
+    p.email_verified !== "true" ||
+    (p.email || "").toLowerCase() !== expectedEmail ||
+    Number(p.exp) * 1000 <= Date.now()
+  ) {
+    throw new Error("Access denied. Use the authorized administrator account.");
+  }
 }
-async function subtree(db,id){
- const r=await db.prepare("SELECT id FROM categories WHERE parent_id=?").bind(id).all();let max=0;
- for(const x of r.results||[])max=Math.max(max,1+await subtree(db,x.id));
- return max;
+
+async function getCategories(db) {
+  const result = await db.prepare(`
+    SELECT c.id, c.name, c.parent_id, c.created_at,
+      (SELECT COUNT(*) FROM academy_category_contents x
+       WHERE x.category_id = c.id) AS content_count
+    FROM academy_categories c
+    ORDER BY COALESCE(c.parent_id, 0), c.name COLLATE NOCASE
+  `).all();
+  return result.results || [];
 }
-async function saveCategory(db,id,b){
- const name=String(b.name||"").trim();if(!name)throw Error("Category name required.");
- if(id&&!await db.prepare("SELECT id FROM categories WHERE id=?").bind(id).first())throw Error("Category not found.");
- let p=b.parent_id==null||b.parent_id===""||Number(b.parent_id)===0?null:Number(b.parent_id);
- if(p!==null){
-  if(!Number.isInteger(p)||p<1)throw Error("Invalid parent category.");
-  if(p===Number(id))throw Error("Category cannot be its own parent.");
-  if(!await db.prepare("SELECT id FROM categories WHERE id=?").bind(p).first())throw Error("Parent category not found.");
-  let cur=p,seen=new Set(id?[Number(id)]:[]);
-  while(cur!=null){if(seen.has(Number(cur)))throw Error("Category cycle detected.");seen.add(Number(cur));const x=await db.prepare("SELECT parent_id FROM categories WHERE id=?").bind(cur).first();cur=x?.parent_id??null;}
-  const pd=await depth(db,p);
-  if(pd+1+(id?await subtree(db,id):0)>2)throw Error("Maximum category depth is 3 levels.");
- }
- const active=b.is_active===undefined?1:(b.is_active===true||Number(b.is_active)===1?1:0),order=Number(b.display_order||0);
- if(id){await db.prepare("UPDATE categories SET name=?,parent_id=?,display_order=?,is_active=? WHERE id=?").bind(name,p,order,active,id).run();return id}
- const r=await db.prepare("INSERT INTO categories(name,parent_id,display_order,is_active) VALUES(?,?,?,?)").bind(name,p,order,active).run();return r.meta.last_row_id;
+
+async function categoryDepth(db, id) {
+  let depth = 0;
+  let current = id;
+  const seen = new Set();
+
+  while (current) {
+    if (seen.has(Number(current))) throw new Error("Invalid category hierarchy.");
+    seen.add(Number(current));
+
+    const row = await db.prepare(
+      "SELECT id,parent_id FROM academy_categories WHERE id=?"
+    ).bind(current).first();
+
+    if (!row) throw new Error("Category not found.");
+    if (row.parent_id == null) return depth;
+
+    depth++;
+    if (depth > 1) throw new Error("Only Main Category → Subcategory is allowed.");
+    current = row.parent_id;
+  }
+  return depth;
 }
-async function listCategories(db){
- const r=await db.prepare("SELECT c.*,(SELECT COUNT(*) FROM categories ch WHERE ch.parent_id=c.id) child_count,(SELECT COUNT(*) FROM lesson_category_map lm WHERE lm.category_id=c.id) lesson_count FROM categories c ORDER BY COALESCE(c.parent_id,0),c.display_order,c.id").all(),all=r.results||[];
- return Promise.all(all.map(async c=>({...c,parent_id:c.parent_id==null?null:Number(c.parent_id),is_active:Number(c.is_active)===1,child_count:Number(c.child_count),lesson_count:Number(c.lesson_count),level:c.parent_id==null?0:await depth(db,c.id)})));
+
+async function saveCategory(db, data, id = null) {
+  const name = String(data.name || "").trim();
+  const parentId = data.parent_id ? Number(data.parent_id) : null;
+
+  if (!name) throw new Error("Category name is required.");
+  if (name.length > 120) throw new Error("Category name is too long.");
+
+  if (parentId !== null) {
+    if (id && Number(id) === parentId) throw new Error("A category cannot be its own parent.");
+    const parent = await db.prepare(
+      "SELECT id,parent_id FROM academy_categories WHERE id=?"
+    ).bind(parentId).first();
+
+    if (!parent) throw new Error("Select an existing main category.");
+    if (parent.parent_id != null) {
+      throw new Error("Only two levels are allowed: Main Category → Subcategory.");
+    }
+    if (id) {
+      const children = await db.prepare(
+        "SELECT id FROM academy_categories WHERE parent_id=? LIMIT 1"
+      ).bind(id).first();
+      if (children) throw new Error("A category with subcategories cannot become a subcategory.");
+    }
+  } else if (id) {
+    const parent = await db.prepare(
+      "SELECT parent_id FROM academy_categories WHERE id=?"
+    ).bind(id).first();
+    if (parent && parent.parent_id != null) {
+      const children = await db.prepare(
+        "SELECT id FROM academy_categories WHERE parent_id=? LIMIT 1"
+      ).bind(id).first();
+      if (children) throw new Error("Move or delete its subcategories first.");
+    }
+  }
+
+  if (id) {
+    await db.prepare(
+      "UPDATE academy_categories SET name=?,parent_id=? WHERE id=?"
+    ).bind(name, parentId, id).run();
+  } else {
+    await db.prepare(
+      "INSERT INTO academy_categories(name,parent_id) VALUES(?,?)"
+    ).bind(name, parentId).run();
+  }
 }
-async function listLessons(db){
- const c=await cols(db,"lessons"),name=pick(c,["title","name"]),order=pick(c,["display_order","sort_order","position"]),r=await db.prepare(`SELECT * FROM lessons ORDER BY ${order?`"${order}"`:"id"},id`).all();
- return Promise.all((r.results||[]).map(async x=>{const s=await db.prepare("SELECT subject_id,display_order FROM subject_lesson_map WHERE lesson_id=?").bind(x.id).first(),cat=await db.prepare("SELECT category_id FROM lesson_category_map WHERE lesson_id=?").bind(x.id).first();return{...x,title:name?x[name]:"",subject_id:s?.subject_id??x.subject_id??null,display_order:s?.display_order??x.display_order??x.sort_order??1,category_id:cat?.category_id??null}}));
+
+async function handle(req, env) {
+  const blocked = cors(req);
+  if (blocked) return blocked;
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": ORIGIN,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization",
+        "Vary": "Origin"
+      }
+    });
+  }
+
+  const url = new URL(req.url);
+  const path = url.pathname;
+
+  // Public image delivery; upload endpoints remain administrator-only.
+  if (req.method === "GET" && path.startsWith("/images/")) {
+    const key = decodeURIComponent(path.slice("/images/".length));
+    if (!key || key.includes("..")) return json({ error: "Invalid image path." }, 400);
+    const object = await env.FILES.get(key);
+    if (!object) return json({ error: "Image not found." }, 404);
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("ETag", object.httpEtag);
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    return new Response(object.body, { headers });
+  }
+
+  try {
+    await authorize(req, env);
+    await ensureTables(env.DB);
+
+    if (req.method === "GET" && path === "/api/bootstrap") {
+      return json({ ok: true, categories: await getCategories(env.DB) });
+    }
+
+    if (req.method === "GET" && path === "/api/categories") {
+      return json({ categories: await getCategories(env.DB) });
+    }
+
+    if (req.method === "POST" && path === "/api/categories") {
+      await saveCategory(env.DB, await body(req));
+      return json({ ok: true, categories: await getCategories(env.DB) });
+    }
+
+    const categoryMatch = path.match(/^\/api\/categories\/(\d+)$/);
+    if (categoryMatch && req.method === "PUT") {
+      await saveCategory(env.DB, await body(req), Number(categoryMatch[1]));
+      return json({ ok: true, categories: await getCategories(env.DB) });
+    }
+
+    if (categoryMatch && req.method === "DELETE") {
+      const id = Number(categoryMatch[1]);
+      const content = await env.DB.prepare(
+        "SELECT id FROM academy_category_contents WHERE category_id=? LIMIT 1"
+      ).bind(id).first();
+      if (content) return json({ error: "This category has content. Delete or move its content first." }, 409);
+
+      const child = await env.DB.prepare(
+        "SELECT id FROM academy_categories WHERE parent_id=? LIMIT 1"
+      ).bind(id).first();
+      if (child) return json({ error: "Delete its subcategories first." }, 409);
+
+      await env.DB.prepare("DELETE FROM academy_categories WHERE id=?").bind(id).run();
+      return json({ ok: true, categories: await getCategories(env.DB) });
+    }
+
+    if (req.method === "GET" && path === "/api/contents") {
+      const result = await env.DB.prepare(`
+        SELECT x.*, c.name AS category_name, c.parent_id
+        FROM academy_category_contents x
+        JOIN academy_categories c ON c.id=x.category_id
+        ORDER BY x.updated_at DESC, x.id DESC
+      `).all();
+      return json({ contents: result.results || [] });
+    }
+
+    if (req.method === "POST" && path === "/api/contents") {
+      const data = await body(req);
+      const categoryId = Number(data.category_id);
+      const category = await env.DB.prepare(
+        "SELECT id,name FROM academy_categories WHERE id=?"
+      ).bind(categoryId).first();
+
+      if (!category) return json({ error: "Please select a valid category." }, 400);
+
+      await env.DB.prepare(`
+        INSERT INTO academy_category_contents
+          (category_id,title,description,explanation,image_url)
+        VALUES(?,?,?,?,?)
+      `).bind(
+        categoryId,
+        category.name,
+        String(data.description || "").trim(),
+        String(data.explanation || "").trim(),
+        String(data.image_url || "").trim()
+      ).run();
+
+      return json({ ok: true });
+    }
+
+    const contentMatch = path.match(/^\/api\/contents\/(\d+)$/);
+    if (contentMatch && req.method === "PUT") {
+      const id = Number(contentMatch[1]);
+      const data = await body(req);
+      const categoryId = Number(data.category_id);
+      const category = await env.DB.prepare(
+        "SELECT id,name FROM academy_categories WHERE id=?"
+      ).bind(categoryId).first();
+      if (!category) return json({ error: "Please select a valid category." }, 400);
+
+      await env.DB.prepare(`
+        UPDATE academy_category_contents
+        SET category_id=?, title=?, description=?, explanation=?, image_url=?,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+      `).bind(
+        categoryId,
+        category.name,
+        String(data.description || "").trim(),
+        String(data.explanation || "").trim(),
+        String(data.image_url || "").trim(),
+        id
+      ).run();
+      return json({ ok: true });
+    }
+
+    if (contentMatch && req.method === "DELETE") {
+      await env.DB.prepare(
+        "DELETE FROM academy_category_contents WHERE id=?"
+      ).bind(Number(contentMatch[1])).run();
+      return json({ ok: true });
+    }
+
+    if (req.method === "POST" && path === "/api/content-images") {
+      if (!env.FILES) throw new Error("R2 binding FILES is not configured.");
+
+      const form = await req.formData();
+      const file = form.get("image");
+      if (!file || typeof file.arrayBuffer !== "function") {
+        return json({ error: "Choose an image to upload." }, 400);
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        return json({ error: "Image must be 10 MB or smaller." }, 400);
+      }
+
+      const allowed = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif"
+      };
+      const ext = allowed[file.type];
+      if (!ext) return json({ error: "Use JPG, PNG, WEBP, or GIF." }, 400);
+
+      const key = `category-content/${crypto.randomUUID()}.${ext}`;
+      await env.FILES.put(key, await file.arrayBuffer(), {
+        httpMetadata: { contentType: file.type }
+      });
+      return json({ ok: true, image_url: `${url.origin}/images/${key}` });
+    }
+
+    return json({ error: "Endpoint not found." }, 404);
+  } catch (error) {
+    const message = error?.message || "Unexpected server error.";
+    const status = /sign in|login expired|access denied|authorized administrator/i.test(message)
+      ? 401 : 400;
+    return json({ error: message }, status);
+  }
 }
-async function saveLesson(db,id,b){
- const title=String(b.title||"").trim(),subject=Number(b.subject_id);if(!title||!subject)throw Error("Lesson title and subject required.");
- if(!await db.prepare("SELECT id FROM subjects WHERE id=?").bind(subject).first())throw Error("Subject not found.");
- const c=await cols(db,"lessons"),old=id?await db.prepare("SELECT * FROM lessons WHERE id=?").bind(id).first():null;if(id&&!old)throw Error("Lesson not found.");
- const order=Number(b.display_order||old?.display_order||1),status=["PUBLISHED","DRAFT","COMING_SOON"].includes(String(b.status||"").toUpperCase())?String(b.status).toUpperCase():"PUBLISHED",v={title,name:title,main_title:String(b.main_title||""),subtitle:String(b.subtitle||""),description:String(b.description||""),content:String(b.content||""),is_free:Number(b.is_free)?1:0,status,display_order:order,position:order};
- if(c.includes("sort_order"))v.sort_order=id?old.sort_order:(await db.prepare("SELECT COALESCE(MAX(sort_order),0)+1 n FROM lessons").first()).n;
- const e=Object.entries(v).filter(([k])=>c.includes(k));let lid=id;
- if(id)await db.prepare(`UPDATE lessons SET ${e.map(([k])=>`"${k}"=?`).join(",")} WHERE id=?`).bind(...e.map(x=>x[1]),id).run();
- else{const r=await db.prepare(`INSERT INTO lessons(${e.map(([k])=>`"${k}"`).join(",")}) VALUES(${e.map(()=>"?").join(",")})`).bind(...e.map(x=>x[1])).run();lid=r.meta.last_row_id}
- await db.prepare("INSERT INTO subject_lesson_map(lesson_id,subject_id,display_order) VALUES(?,?,?) ON CONFLICT(lesson_id) DO UPDATE SET subject_id=excluded.subject_id,display_order=excluded.display_order").bind(lid,subject,order).run();
- if(b.category_id!==undefined){if(!b.category_id)await db.prepare("DELETE FROM lesson_category_map WHERE lesson_id=?").bind(lid).run();else{const cat=await db.prepare("SELECT id FROM categories WHERE id=?").bind(Number(b.category_id)).first();if(!cat)throw Error("Category not found.");await db.prepare("INSERT INTO lesson_category_map(lesson_id,category_id) VALUES(?,?) ON CONFLICT(lesson_id) DO UPDATE SET category_id=excluded.category_id").bind(lid,Number(b.category_id)).run();}}
- return lid;
-}
-function cookie(req,n){const x=(req.headers.get("Cookie")||"").split(";").find(x=>x.trim().startsWith(n+"="));try{return x?decodeURIComponent(x.trim().slice(n.length+1)):""}catch{return""}}
-function expired(v){if(v==null||v==="")return false;const n=Number(v);if(Number.isFinite(n)&&n>0)return(n<1e12?n*1000:n)<=Date.now();const t=Date.parse(v);return Number.isFinite(t)&&t<=Date.now()}
-async function student(db,req){
- const token=cookie(req,"english_v2_session");if(!token||!await exists(db,"sessions")||!await exists(db,"users"))return null;
- const sc=await cols(db,"sessions"),uc=await cols(db,"users"),tc=pick(sc,["token","session_token","session_id"]),uid=pick(sc,["user_id","student_id"]);if(!tc||!uid)return null;
- const s=await db.prepare(`SELECT * FROM sessions WHERE "${tc}"=? LIMIT 1`).bind(token).first();if(!s)return null;
- const ec=pick(sc,["expires_at","expires","expiry","expires_at_ms"]);if(ec&&expired(s[ec]))return null;
- const idc=pick(uc,["id","user_id"]);if(!idc)return null;
- const u=await db.prepare(`SELECT * FROM users WHERE "${idc}"=? LIMIT 1`).bind(s[uid]).first();if(!u)return null;
- const mc=pick(uc,["membership","membership_status"]),xc=pick(uc,["membership_expiry","membership_expires_at","premium_expiry"]);
- return{premium:!!mc&&String(u[mc]||"").toUpperCase()==="PREMIUM"&&!(xc&&expired(u[xc]))};
-}
-async function publicLesson(db,id){
- const c=await cols(db,"lessons"),row=await db.prepare("SELECT * FROM lessons WHERE id=?").bind(id).first();if(!row||!published(row,c))return null;
- const tc=pick(c,["title","name"]),ic=pick(c,["image_url","photo_url","image","photo"]),map=await db.prepare("SELECT subject_id FROM subject_lesson_map WHERE lesson_id=?").bind(id).first();
- if(map){const sc=await cols(db,"subjects"),sub=await db.prepare("SELECT * FROM subjects WHERE id=?").bind(map.subject_id).first();if(!sub||!published(sub,sc))return null}
- const cat=await db.prepare("SELECT c.id,c.name,c.parent_id,c.is_active FROM lesson_category_map lm JOIN categories c ON c.id=lm.category_id WHERE lm.lesson_id=?").bind(id).first();
- return{id:row.id,title:tc?row[tc]||"":"",main_title:row.main_title||"",subtitle:row.subtitle||"",description:row.description||"",content:row.content||"",image_url:ic?row[ic]||"":"",is_free:Number(row.is_free)===1,category:cat&&Number(cat.is_active)===1?cat:null};
-}
-export default{async fetch(req,env){
- if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
- const url=new URL(req.url),path=url.pathname.replace(/\/+$/,"")||"/",method=req.method;
- try{
-  const db=env.DB;
-  if(path.startsWith("/images/")&&method==="GET"){const key=decodeURIComponent(path.slice(8));if(!key||key.includes(".."))return fail("Invalid image key.");const obj=await env.FILES.get(key);if(!obj)return fail("Image not found.",404);const h=new Headers(CORS);h.set("Content-Type",obj.httpMetadata?.contentType||"application/octet-stream");h.set("Cache-Control","public,max-age=86400");return new Response(obj.body,{headers:h})}
-  const lm=path.match(/^\/api\/public\/lessons\/(\d+)$/),tm=path.match(/^\/api\/public\/translations\/lesson\/(\d+)$/);
-  if(method==="GET"&&(lm||tm)){await setup(db);const id=Number((lm||tm)[1]),lesson=await publicLesson(db,id);if(!lesson)return fail("Lesson not found.",404);if(lm)return json({lesson});if(!lesson.is_free){const s=await student(db,req);if(!s)return fail("Please sign in.",401);if(!s.premium)return fail("Premium membership required.",403)}const r=await db.prepare("SELECT language,title,description,content FROM lesson_translations WHERE lesson_id=? ORDER BY language").bind(id).all();return json({translations:r.results||[]})}
-  await admin(req,env);await setup(db);
-  if(path==="/api/bootstrap"&&method==="GET")return json({subjects:await listSubjects(db),lessons:await listLessons(db),categories:await listCategories(db)});
-  if(path==="/api/categories"&&method==="GET")return json({categories:await listCategories(db)});
-  if(path==="/api/categories"&&method==="POST")return json({success:true,id:await saveCategory(db,null,await req.json())});
-  let m=path.match(/^\/api\/categories\/(\d+)$/);
-  if(m&&method==="PUT")return json({success:true,id:await saveCategory(db,Number(m[1]),await req.json())});
-  if(m&&method==="DELETE"){const id=Number(m[1]);if(await db.prepare("SELECT id FROM categories WHERE id=?").bind(id).first()===null)return fail("Category not found.",404);if(await db.prepare("SELECT id FROM categories WHERE parent_id=? LIMIT 1").bind(id).first())return fail("Delete subcategories first.");if(await db.prepare("SELECT lesson_id FROM lesson_category_map WHERE category_id=? LIMIT 1").bind(id).first())return fail("Reassign lessons first.");await db.prepare("DELETE FROM categories WHERE id=?").bind(id).run();return json({success:true})}
-  if(path==="/api/subjects"&&method==="GET")return json({subjects:await listSubjects(db)});
-  if(path==="/api/subjects"&&method==="POST")return json({success:true,id:await saveSubject(db,null,await req.json())});
-  m=path.match(/^\/api\/subjects\/(\d+)$/);
-  if(m&&method==="PUT")return json({success:true,id:await saveSubject(db,Number(m[1]),await req.json())});
-  if(m&&method==="DELETE"){const id=Number(m[1]);if(await db.prepare("SELECT 1 FROM subject_lesson_map WHERE subject_id=? LIMIT 1").bind(id).first())return fail("Reassign or delete lessons first.");await db.prepare("DELETE FROM subjects WHERE id=?").bind(id).run();return json({success:true})}
-  if(path==="/api/lessons"&&method==="GET")return json({lessons:await listLessons(db)});
-  if(path==="/api/lessons"&&method==="POST")return json({success:true,id:await saveLesson(db,null,await req.json())});
-  m=path.match(/^\/api\/lessons\/(\d+)$/);
-  if(m&&method==="PUT")return json({success:true,id:await saveLesson(db,Number(m[1]),await req.json())});
-  if(m&&method==="DELETE"){const id=Number(m[1]);for(const t of["lesson_translations","lesson_notes","subject_lesson_map","lesson_category_map"])await db.prepare(`DELETE FROM "${t}" WHERE lesson_id=?`).bind(id).run();await db.prepare("DELETE FROM lessons WHERE id=?").bind(id).run();return json({success:true})}
-  m=path.match(/^\/api\/notes\/(\d+)$/);
-  if(m&&method==="GET"){const r=await db.prepare("SELECT content FROM lesson_notes WHERE lesson_id=?").bind(Number(m[1])).first();return json({content:r?.content||""})}
-  if(m&&method==="PUT"){const b=await req.json();await db.prepare("INSERT INTO lesson_notes(lesson_id,content) VALUES(?,?) ON CONFLICT(lesson_id) DO UPDATE SET content=excluded.content").bind(Number(m[1]),String(b.content||"")).run();return json({success:true})}
-  if(path==="/api/translations"&&method==="POST"){const b=await req.json();if(!b.lesson_id||!["ta","si","en"].includes(b.language))return fail("Choose lesson and language ta, si, or en.");await db.prepare("INSERT INTO lesson_translations(lesson_id,language,title,description,content) VALUES(?,?,?,?,?) ON CONFLICT(lesson_id,language) DO UPDATE SET title=excluded.title,description=excluded.description,content=excluded.content").bind(Number(b.lesson_id),b.language,String(b.title||""),String(b.description||""),String(b.content||"")).run();return json({success:true})}
-  m=path.match(/^\/api\/translations\/lesson\/(\d+)$/);
-  if(m&&method==="GET"){const r=await db.prepare("SELECT * FROM lesson_translations WHERE lesson_id=? ORDER BY language").bind(Number(m[1])).all();return json({translations:r.results||[]})}
-  if(path==="/api/lesson-images"&&method==="POST"){const f=await req.formData(),file=f.get("file"),id=Number(f.get("lesson_id"));if(!file||typeof file==="string"||!id)return fail("Choose image and lesson.");const types={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"};if(!types[file.type])return fail("Use JPG, PNG, WEBP, or GIF.");if(file.size>5*1024*1024)return fail("Image maximum is 5 MB.");if(!await db.prepare("SELECT id FROM lessons WHERE id=?").bind(id).first())return fail("Lesson not found.");const key=`lessons/${id}/${crypto.randomUUID()}.${types[file.type]}`;await env.FILES.put(key,file.stream(),{httpMetadata:{contentType:file.type}});const c=await cols(db,"lessons"),ic=pick(c,["image_url","photo_url","image","photo"]),imageUrl=`${url.origin}/images/${encodeURIComponent(key)}`;if(ic)await db.prepare(`UPDATE lessons SET "${ic}"=? WHERE id=?`).bind(imageUrl,id).run();return json({success:true,key,url:imageUrl})}
-  return fail("Endpoint not found: "+method+" "+path,404);
- }catch(e){const msg=e?.message||"Worker error";return fail(msg,/sign in|login expired|access denied|administrator/i.test(msg)?401:500)}
-}};
+
+export default {
+  async fetch(req, env) {
+    return handle(req, env);
+  }
+};
