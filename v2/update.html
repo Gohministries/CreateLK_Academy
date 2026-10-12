@@ -1,157 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#102a56">
-<title>CreateLK V2 Admin</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CreateLK V2 Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#17243a;font:14px Arial,sans-serif}
-header{background:#102a56;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
-header strong{font-size:17px;flex:1}.hamb{font-size:23px;padding:5px 10px;background:transparent;line-height:1}
-main{max-width:1050px;margin:auto;padding:12px}.card{background:#fff;padding:14px;border-radius:10px;margin:10px 0;box-shadow:0 2px 8px #102a560b}
-button{padding:10px 12px;border:0;border-radius:6px;background:#102a56;color:#fff;cursor:pointer;margin:3px;font-weight:600}
-.gold{background:#d69b16;color:#102039}.red{background:#b42318}.light{background:#e8eef8;color:#102a56}
-input,select,textarea{width:100%;padding:10px;border:1px solid #ccd5e3;border-radius:6px;margin:5px 0 10px;font:inherit;background:#fff;color:#17243a}
-textarea{min-height:90px;resize:vertical}label{font-size:12px;font-weight:bold;display:block}.hide{display:none!important}
-#nav{position:fixed;z-index:10;top:58px;left:0;bottom:0;width:255px;background:#102a56;padding:12px;overflow:auto;transform:translateX(-105%);transition:.2s}
-#nav.open{transform:none}#nav button{display:block;width:100%;text-align:left;margin:4px 0;background:transparent;color:#fff}
-#nav button.active,#nav button:hover{background:#d69b16;color:#102039}#nav button.x{background:#e8eef8;color:#102a56;margin-bottom:10px}
-#shade{position:fixed;inset:58px 0 0;background:#0007;z-index:9}.page{display:none}.page.active{display:block}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.stat{background:#edf2fa;padding:12px;border-radius:7px}.stat b{font-size:22px;display:block;color:#102a56}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.item{border:1px solid #e1e7f0;padding:11px;border-radius:7px;margin:8px 0;overflow-wrap:anywhere}
-.muted{font-size:12px;color:#66758b}#msg{display:none;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere}
-@media(max-width:550px){main{padding:6px}.card{padding:11px}.stats{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr}header{padding:12px}#nav{top:54px}#shade{inset:54px 0 0}}
+*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#17243a;font:14px Arial}header{background:#102a56;color:white;padding:10px;display:flex;gap:10px;align-items:center;position:sticky;top:0}header b{flex:1}main{max-width:950px;margin:auto;padding:8px}.card,.item{background:white;padding:10px;border-radius:7px;margin:6px 0}.item{border:1px solid #ddd}button{border:0;border-radius:5px;padding:8px;background:#102a56;color:white;margin:2px;cursor:pointer}input,select,textarea{width:100%;padding:9px;margin:3px 0 7px;border:1px solid #ccd5e3;border-radius:5px}label{display:block;font-size:12px;font-weight:bold}.hide{display:none!important}.page{display:none}.page.active{display:block}#nav{position:fixed;top:45px;bottom:0;width:230px;background:#102a56;padding:8px;z-index:5;transform:translateX(-110%);overflow:auto}#nav.open{transform:none}#nav button{display:block;width:100%;text-align:left}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.stats div{padding:10px;background:#edf2fa}.stats b{display:block;font-size:20px}.head{display:flex;align-items:center}.head b{flex:1}.dots{background:#eee;color:#102a56}.menu{position:absolute;right:0;background:white;z-index:10;box-shadow:0 2px 8px #aaa}.menu button{display:block;width:100%;background:white;color:#102a56}.wrap{position:relative}.muted{font-size:12px;color:#66758b}#msg{padding:9px;border-radius:5px;white-space:pre-wrap}@media(max-width:500px){.stats{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
-<header>
-<button class="hamb" id="hb" onclick="menu()" aria-label="Menu">☰</button>
-<strong>CreateLK V2 Admin</strong><span id="who" style="font-size:11px"></span>
-<button id="out" class="hide light" onclick="logout()">Logout</button>
-</header>
-<nav id="nav"></nav><div id="shade" class="hide" onclick="menu()"></div><div id="msg"></div>
-<main>
-<section id="login" class="card"><h3>Administrator Login</h3><div id="gbtn"></div><p class="muted">Authorized account: gateofheavensl1@gmail.com</p></section>
-<div id="app" class="hide"></div>
-</main>
+<header><button onclick="$('nav').classList.toggle('open')">☰</button><b>CreateLK V2 Admin</b><button id="logout" class="hide" onclick="signout()">Logout</button></header>
+<nav id="nav"></nav><main><div id="msg"></div><section id="login" class="card"><h3>Administrator Login</h3><div id="google"></div><small>gateofheavensl1@gmail.com</small></section><div id="app" class="hide"></div></main>
 <script>
-const API="https://update-v2.createlk.workers.dev",ADMIN="gateofheavensl1@gmail.com",CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com",TK="createlk_v2_admin_token",LK="createlk_v2_admin_activity";
+const $=id=>document.getElementById(id),API="https://update-v2.createlk.workers.dev",ADMIN="gateofheavensl1@gmail.com",CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com",KEY="createlk_v2_admin_token",LOG="createlk_v2_admin_activity";
 let token="",subjects=[],categories=[],lessons=[];
-const $=id=>document.getElementById(id),v=id=>$(id).value,fill=o=>Object.entries(o).forEach(([k,x])=>$(k).value=x);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const I=(id,l,t="text")=>`<label>${l}</label><input id="${id}" type="${t}">`;
-const A=(id,l)=>`<label>${l}</label><textarea id="${id}"></textarea>`;
-const S=(id,l,o="",e="")=>`<label>${l}</label><select id="${id}" ${e}>${o}</select>`;
-const ST=["PUBLISHED","DRAFT","COMING_SOON"].map(x=>`<option>${x}</option>`).join("");
-const btns=(f,id,p,t)=>`<button onclick="${f}(${+id})">Edit</button><button class="red" onclick="del('/api/${p}/${+id}','${t}')">Delete</button>`;
-const N=[["dash","▦ Dashboard"],["subjects","▣ Subjects"],["cats","▤ Categories"],["lessons","▧ Lessons"],["notes","▤ Notes"],["trans","文 Translations"],["images","▧ Images"],["logs","◷ 30-Day Activity Log"]];
-const P={
-dash:`<h3>Dashboard</h3><div class="stats">${[["ns","Subjects"],["nc","Categories"],["nlc","Lessons"],["np","Published"]].map(([i,t])=>`<div class="stat"><b id="${i}">0</b>${t}</div>`).join("")}</div><button onclick="refresh()">Refresh Data</button><h3>Recent Lessons</h3><div id="recent"></div>`,
-subjects:`<h3 id="sh">Add Subject</h3><input id="sid" type="hidden">${I("sname","Title *")}${I("sslug","Slug")}${A("sdesc","Description")}${I("ssub","Subtitle")}${I("simg","Image URL")}<div class="row"><div>${I("sorder","Display Order","number")}</div><div>${S("sstatus","Status",ST)}</div></div><button class="gold" onclick="saveSubject()">Save Subject</button><button class="light" onclick="clearForm('s')">Clear</button><h3>Existing Subjects</h3><div id="slist"></div>`,
-cats:`<h3 id="ch">Add Category</h3><input id="cid" type="hidden">${I("cname","Category Name *")}${S("parent","Parent Category")}<div class="row"><div>${I("corder","Display Order","number")}</div><div>${S("active","Status",'<option value="1">Active</option><option value="0">Inactive</option>')}</div></div><button class="gold" onclick="saveCat()">Save Category</button><button class="light" onclick="clearForm('c')">Clear</button><h3>Categories</h3><div id="clist"></div>`,
-lessons:`<h3 id="lh">Add Lesson</h3><input id="lid" type="hidden">${S("ls","Subject *")}<div id="lcs"></div>${I("lname","Lesson Title *")}${I("lm","Main Title")}${I("lsub","Subtitle")}${A("ld","Description")}${A("lcontent","Content")}<div class="row"><div>${I("lo","Order","number")}</div><div>${S("lst","Status",ST)}</div></div><label><input id="free" type="checkbox" style="width:auto"> Free Lesson</label><button class="gold" onclick="saveLesson()">Save Lesson</button><button class="light" onclick="clearForm('l')">Clear</button><h3>Existing Lessons</h3><input id="lsearch" placeholder="Search lessons" oninput="renderLessons()"><div id="llist"></div>`,
-notes:`<h3>Lesson Notes</h3>${S("nl","Lesson","",'onchange="loadNote()"')}${A("note","Notes Content")}<button onclick="saveNote()">Save Notes</button>`,
-trans:`<h3>Lesson Translations</h3>${S("tl","Lesson","",'onchange="loadTrans()"')}${S("lang","Language",'<option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option>','onchange="loadTrans()"')}${I("tt","Title")}${A("td","Description")}${A("tc","Content")}<button onclick="saveTrans()">Save Translation</button>`,
-images:`<h3>Lesson Image Upload</h3>${S("il","Lesson")}<label>Image (JPG, PNG, WEBP, GIF; max 5 MB)</label><input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><button onclick="upload()">Upload Image</button><div id="ir"></div>`,
-logs:`<h3>30-Day Activity Log</h3><p class="muted">Stored in this browser only.</p><button onclick="renderLog()">Refresh</button><button onclick="exportLog()">Export CSV</button><button class="red" onclick="clearLog()">Clear Log</button><div id="loglist"></div>`};
-$("app").innerHTML=N.map(([k],i)=>`<section id="${k}" class="card page${i?"":" active"}">${P[k]}</section>`).join("");
-$("nav").innerHTML='<button class="x" onclick="menu()">✕ Close menu</button>'+N.map(([k,t])=>`<button onclick="show('${k}',this)">${t}</button>`).join("");
-["sorder","corder","lo"].forEach(i=>$(i).value=1);
-const msg=(s,ok=true)=>{$("msg").style.display="block";$("msg").style.background=ok?"#dff7e7":"#ffe4e4";$("msg").textContent=s};
-function menu(){const o=$("nav").classList.toggle("open");$("shade").classList.toggle("hide",!o);$("hb").textContent=o?"✕":"☰"}
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$("nav").classList.contains("open"))menu()});
-function show(id,btn){
- document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));$(id).classList.add("active");
- document.querySelectorAll("#nav button").forEach(x=>x.classList.remove("active"));
- if(btn)btn.classList.add("active");
- $("nav").classList.remove("open");$("shade").classList.add("hide");$("hb").textContent="☰";
- if(id==="notes")loadNote();if(id==="trans")loadTrans();if(id==="logs")renderLog();
-}
-const payload=t=>{try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))}catch{return null}};
-const getLog=()=>{try{return JSON.parse(localStorage.getItem(LK)||"[]").filter(x=>x.t>Date.now()-2592e6)}catch{return[]}};
-function log(a,r="Success",d=""){try{const x=getLog();x.unshift({t:Date.now(),a,r,d});localStorage.setItem(LK,JSON.stringify(x.slice(0,2000)))}catch{}}
-async function api(path,opt={}){
- const h={...(opt.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:"Bearer "+token};
- const r=await fetch(API+path,{...opt,headers:h}),d=await r.json().catch(()=>({error:"Invalid server response"}));
- if(r.status===401){token="";localStorage.removeItem(TK);$("app").classList.add("hide");$("login").classList.remove("hide");throw Error("Session expired. Sign in again.")}
- if(!r.ok)throw Error(d.error||"Request failed");return d;
-}
+function say(s,ok=true){$("msg").textContent=s;$("msg").style.background=ok?"#dff7e7":"#ffe4e4"}
+function jwt(t){try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))}catch{return{}}}
+function valid(t){let p=jwt(t);return p.email?.toLowerCase()===ADMIN&&p.email_verified===true&&p.exp*1000>Date.now()}
+function signout(){token="";localStorage.removeItem(KEY);location.reload()}
+async function api(p,o={}){let h={Authorization:"Bearer "+token};if(!(o.body instanceof FormData))h["Content-Type"]="application/json";let r=await fetch(API+p,{...o,headers:h}),d=await r.json().catch(()=>({error:"Server error"}));if(r.status===401){signout();throw Error("Sign in again")}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const send=(p,m,b)=>api(p,{method:m,body:JSON.stringify(b)});
-async function act(name,fn,ok,d=""){try{const r=await fn();log(name,"Success",d);msg(ok);return r}catch(e){log(name,"Failed",e.message);msg(e.message,false)}}
-async function load(){const d=await api("/api/bootstrap");subjects=d.subjects||[];categories=d.categories||[];lessons=d.lessons||[]}
-async function login(t){
- const p=payload(t);
- if(!p||p.email?.toLowerCase()!==ADMIN||!p.email_verified||p.exp*1000<Date.now())return msg("Use the authorized Google account.",false);
- token=t;
- try{await load();localStorage.setItem(TK,t);$("login").classList.add("hide");$("app").classList.remove("hide");$("out").classList.remove("hide");$("who").textContent=ADMIN;try{render()}catch(e){console.error(e)}log("Login");msg("Login successful")}
- catch(e){token="";msg(e.message,false)}
-}
-function initGoogle(){if(!window.google?.accounts?.id)return false;google.accounts.id.initialize({client_id:CLIENT,callback:r=>login(r.credential),auto_select:true});google.accounts.id.renderButton($("gbtn"),{theme:"outline",size:"large",text:"signin_with"});return true}
-window.addEventListener("load",()=>{let n=0;(function wait(){if(!initGoogle()&&++n<30)setTimeout(wait,300)})();const t=localStorage.getItem(TK),p=t&&payload(t);if(p&&p.email?.toLowerCase()===ADMIN&&p.exp*1000>Date.now())login(t);else localStorage.removeItem(TK)});
-function logout(){log("Logout");token="";localStorage.removeItem(TK);location.reload()}
-async function refresh(){try{await load();render();msg("Data refreshed")}catch(e){msg(e.message,false)}}
-function catPath(c){const a=[],seen=[];let x=c;while(x&&!seen.includes(String(x.id))){seen.push(String(x.id));a.unshift(x.name);x=categories.find(y=>String(y.id)===String(x.parent_id))}return a.join(" → ")}
-const MAXL=6; // levels 0..6 = Main + Sub + 5 more nested
-const byId=id=>categories.find(c=>String(c.id)===String(id));
-const depth=c=>{let n=0,x=c;while(x&&x.parent_id&&n<20){x=byId(x.parent_id);n++}return n};
-const under=(c,id)=>{let x=c,n=0;while(x&&n++<20){if(String(x.id)===String(id))return true;x=byId(x.parent_id)}return false};
-const kids=pid=>categories.filter(c=>Number(c.is_active)!==0&&String(c.parent_id||"")===String(pid||""));
-const catVal=()=>{let r="";for(let j=0;j<=MAXL;j++){const e=$("lc"+j);if(!e||!e.value)break;r=e.value}return r};
-function buildCats(sel){
- const path=[];let x=byId(sel);while(x&&path.length<20){path.unshift(String(x.id));x=byId(x.parent_id)}
- let h="",pid="";
- for(let i=0;i<=MAXL;i++){
-  const k=kids(pid);if(!k.length)break;
-  h+=`<label>${i?"Sub Category "+i+" (optional)":"Main Category *"}</label><select id="lc${i}" onchange="catChange(${i})"><option value="">${i?"None":"Select Main Category"}</option>${k.map(c=>`<option value="${esc(c.id)}"${path[i]===String(c.id)?" selected":""}>${esc(c.name)}</option>`).join("")}</select>`;
-  if(!path[i])break;pid=path[i];
- }
- $("lcs").innerHTML=h;
-}
-function catChange(i){const p=[];for(let j=0;j<=i;j++){const e=$("lc"+j);if(!e||!e.value)break;p.push(e.value)}buildCats(p[p.length-1]||"")}
-function options(id,arr,empty,fn){const e=$(id);if(!e)return;const old=e.value;e.innerHTML=`<option value="">${esc(empty)}</option>`+arr.map(x=>`<option value="${esc(x.id)}">${esc(fn(x))}</option>`).join("");if([...e.options].some(o=>o.value===old))e.value=old}
-function render(){
- $("ns").textContent=subjects.length;$("nc").textContent=categories.length;$("nlc").textContent=lessons.length;$("np").textContent=lessons.filter(x=>!x.status||x.status==="PUBLISHED").length;
- $("recent").innerHTML=lessons.slice(-5).reverse().map(l=>`<div class="item">${esc(l.title)} <span class="muted">${esc(l.status||"PUBLISHED")}</span></div>`).join("");
- $("slist").innerHTML=subjects.map(s=>`<div class="item"><b>${esc(s.title||s.name)}</b><p>${esc(s.description||"")}</p>${btns("editS",s.id,"subjects","Subject")}</div>`).join("")||"No subjects";
- $("clist").innerHTML=categories.map(c=>`<div class="item"><b>${esc(catPath(c))}</b><div class="muted">Level ${depth(c)+1} · ${Number(c.is_active)===0?"Inactive":"Active"}</div>${btns("editC",c.id,"categories","Category")}</div>`).join("")||"No categories";
- options("parent",categories.filter(c=>depth(c)<MAXL&&!(v("cid")&&under(c,v("cid")))),"Main Category (no parent)",c=>"— ".repeat(depth(c))+c.name);
- options("ls",subjects,"Select Subject",s=>s.title||s.name);buildCats(catVal());
- ["nl","tl","il"].forEach(id=>options(id,lessons,"Select Lesson",l=>l.title));renderLessons();
-}
-function renderLessons(){const q=v("lsearch").toLowerCase();$("llist").innerHTML=lessons.filter(l=>(l.title||"").toLowerCase().includes(q)).map(l=>`<div class="item"><b>${esc(l.title)}</b><div class="muted">ID ${l.id} · ${esc(l.status||"PUBLISHED")} · ${Number(l.is_free)===1?"Free":"Premium"}</div>${btns("editL",l.id,"lessons","Lesson")}</div>`).join("")||"No lessons"}
-function clearForm(t){
- const f={s:["sid","sname","sslug","sdesc","ssub","simg"],c:["cid","cname"],l:["lid","lname","lm","lsub","ld","lcontent"]}[t];
- f.forEach(i=>$(i).value="");
- if(t==="s"){$("sh").textContent="Add Subject";$("sorder").value=subjects.length+1;$("sstatus").value="PUBLISHED"}
- if(t==="c"){$("ch").textContent="Add Category";$("corder").value=categories.length+1;$("active").value="1";render()}
- if(t==="l"){$("lh").textContent="Add Lesson";$("lo").value=lessons.length+1;$("lst").value="PUBLISHED";$("free").checked=false;buildCats("")}
-}
-function editS(id){const s=subjects.find(x=>String(x.id)===String(id));if(!s)return;show("subjects");fill({sid:s.id,sname:s.title||s.name||"",sslug:s.slug||"",sdesc:s.description||"",ssub:s.subtitle||"",simg:s.image_url||"",sorder:s.display_order||1,sstatus:s.status||"PUBLISHED"});$("sh").textContent="Edit Subject"}
-function saveSubject(){const id=v("sid"),title=v("sname").trim();if(!title)return msg("Enter subject title.",false);
- act("Save Subject",async()=>{await send("/api/subjects"+(id?"/"+id:""),id?"PUT":"POST",{title,slug:v("sslug"),description:v("sdesc"),subtitle:v("ssub"),image_url:v("simg"),display_order:+v("sorder"),status:v("sstatus")});clearForm("s");await refresh()},"Subject saved",title)}
-function editC(id){const c=categories.find(x=>String(x.id)===String(id));if(!c)return;show("cats");$("cid").value=c.id;render();fill({cname:c.name,corder:c.display_order||1,active:Number(c.is_active)===0?"0":"1",parent:c.parent_id||""});$("ch").textContent="Edit Category"}
-function saveCat(){const id=v("cid"),name=v("cname").trim();if(!name)return msg("Enter category name.",false);
- act("Save Category",async()=>{await send("/api/categories"+(id?"/"+id:""),id?"PUT":"POST",{name,parent_id:v("parent")||null,display_order:+v("corder"),is_active:+v("active")});clearForm("c");await refresh()},"Category saved",name)}
-function editL(id){const l=lessons.find(x=>String(x.id)===String(id));if(!l)return;show("lessons");fill({lid:l.id,ls:l.subject_id||"",lname:l.title||"",lm:l.main_title||"",lsub:l.subtitle||"",ld:l.description||"",lcontent:l.content||"",lo:l.display_order||1,lst:l.status||"PUBLISHED"});$("free").checked=Number(l.is_free)===1;buildCats(l.category_id||"");$("lh").textContent="Edit Lesson"}
-function saveLesson(){const id=v("lid"),title=v("lname").trim(),subject_id=+v("ls");if(!title||!subject_id)return msg("Enter title and select subject.",false);if(!catVal())return msg("Select a Main Category (create one in Categories first).",false);
- act("Save Lesson",async()=>{await send("/api/lessons"+(id?"/"+id:""),id?"PUT":"POST",{subject_id,title,category_id:catVal(),main_title:v("lm"),subtitle:v("lsub"),description:v("ld"),content:v("lcontent"),display_order:+v("lo"),status:v("lst"),is_free:$("free").checked?1:0});clearForm("l");await refresh()},"Lesson saved",title)}
-function del(url,type){if(confirm("Delete this "+type+"?"))act("Delete "+type,async()=>{await api(url,{method:"DELETE"});await refresh()},type+" deleted")}
-async function loadNote(){const id=v("nl");if(!id){$("note").value="";return}try{$("note").value=(await api("/api/notes/"+id)).content||""}catch(e){msg(e.message,false)}}
-function saveNote(){const id=v("nl");if(!id)return msg("Select a lesson.",false);act("Save Notes",()=>send("/api/notes/"+id,"PUT",{content:v("note")}),"Notes saved")}
-async function loadTrans(){const id=v("tl");if(!id)return;try{const t=((await api("/api/translations/lesson/"+id)).translations||[]).find(x=>x.language===v("lang"))||{};fill({tt:t.title||"",td:t.description||"",tc:t.content||""})}catch(e){msg(e.message,false)}}
-function saveTrans(){if(!v("tl"))return msg("Select a lesson.",false);act("Save Translation",()=>send("/api/translations","POST",{lesson_id:+v("tl"),language:v("lang"),title:v("tt"),description:v("td"),content:v("tc")}),"Translation saved")}
-async function upload(){
- const f=$("file").files[0],id=v("il");if(!f||!id)return msg("Select lesson and image.",false);
- if(f.size>5*1024*1024||!/^image\/(jpeg|png|webp|gif)$/.test(f.type))return msg("Use JPG, PNG, WEBP or GIF under 5 MB.",false);
- const d=new FormData();d.append("file",f);d.append("lesson_id",id);
- const r=await act("Upload Image",()=>api("/api/lesson-images",{method:"POST",body:d}),"Image uploaded","Lesson "+id);
- if(r)$("ir").innerHTML=`<p>Image uploaded</p><input readonly value="${esc(r.url||"")}"><a href="${esc(r.url||"")}" target="_blank" rel="noopener">Open image</a>`;
-}
-function renderLog(){const a=getLog();localStorage.setItem(LK,JSON.stringify(a));$("loglist").innerHTML=a.map(x=>`<div class="item"><b>${esc(x.a)}</b> · ${esc(x.r)}<div class="muted">${new Date(x.t).toLocaleString()}</div>${esc(x.d)}</div>`).join("")||"No activity recorded"}
-function clearLog(){if(confirm("Clear local activity log?")){localStorage.removeItem(LK);renderLog()}}
-function exportLog(){const csv="Date,Action,Result,Details\n"+getLog().map(x=>[new Date(x.t).toISOString(),x.a,x.r,x.d].map(s=>'"'+String(s||"").replace(/"/g,'""')+'"').join(",")).join("\n"),el=document.createElement("a");el.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));el.download="createlk-admin-log.csv";el.click();URL.revokeObjectURL(el.href)}
+async function load(){let d=await api("/api/bootstrap");subjects=d.subjects||[];categories=d.categories||[];lessons=d.lessons||[]}
+async function login(t){if(!valid(t)){localStorage.removeItem(KEY);return say("Use the authorized Google account.",false)}token=t;try{await load();localStorage.setItem(KEY,t);$("login").classList.add("hide");$("app").classList.remove("hide");$("logout").classList.remove("hide");render();say("Login successful")}catch(e){token="";localStorage.removeItem(KEY);say(e.message,false)}}
+function act(name,fn){return fn().then(async()=>{log(name);await load();render();say(name+" successful")}).catch(e=>say(e.message,false))}
+function log(a){let x=logs();x.unshift({date:new Date().toLocaleString(),action:a});localStorage.setItem(LOG,JSON.stringify(x.slice(0,500)))}
+function logs(){try{return JSON.parse(localStorage.getItem(LOG)||"[]")}catch{return[]}}
+const names=[["dash","Dashboard"],["subjects","Subjects"],["cats","Categories"],["lessons","Lessons"],["notes","Notes"],["trans","Translations"],["images","Images"],["logs","Activity Log"]];
+const status='<option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option>';
+$("nav").innerHTML=names.map(([i,n])=>`<button onclick="page('${i}')">${n}</button>`).join("");
+$("app").innerHTML=`
+<section id="dash" class="card page active"><h3>Dashboard</h3><div class="stats"><div><b id="ns">0</b>Subjects</div><div><b id="nc">0</b>Categories</div><div><b id="nl">0</b>Lessons</div><div><b id="np">0</b>Published</div></div><button onclick="refresh()">Refresh</button></section>
+<section id="subjects" class="card page"><h3>Subject</h3><input id="sid" type="hidden"><input id="st" placeholder="Subject title"><input id="slug" placeholder="Slug"><textarea id="sd" placeholder="Description"></textarea><input id="ss" placeholder="Subtitle"><input id="si" placeholder="Image URL"><input id="so" type="number" placeholder="Order"><select id="sst">${status}</select><button onclick="saveS()">Save</button><div id="sl"></div></section>
+<section id="cats" class="card page"><h3>Category</h3><input id="cid" type="hidden"><input id="ct" placeholder="Category name"><select id="parent"></select><input id="co" type="number" placeholder="Order"><select id="ca"><option value="1">Active</option><option value="0">Inactive</option></select><button onclick="saveC()">Save</button><div id="cl"></div></section>
+<section id="lessons" class="card page"><h3>Lesson</h3><input id="lid" type="hidden"><select id="ls"></select><div id="catpick"></div><input id="lt" placeholder="Lesson title"><input id="lm" placeholder="Main title"><input id="lsub" placeholder="Subtitle"><textarea id="ld" placeholder="Description"></textarea><textarea id="lc" placeholder="Content"></textarea><input id="lo" type="number" placeholder="Order"><select id="lst">${status}</select><label><input id="free" type="checkbox" style="width:auto"> Free lesson</label><button onclick="saveL()">Save</button><input id="search" placeholder="Search lessons" oninput="renderL()"><div id="ll"></div></section>
+<section id="notes" class="card page"><select id="nl"></select><textarea id="note" placeholder="Notes"></textarea><button onclick="saveN()">Save notes</button></section>
+<section id="trans" class="card page"><select id="tl"></select><select id="lang"><option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option></select><input id="tt" placeholder="Title"><textarea id="td" placeholder="Description"></textarea><textarea id="tc" placeholder="Content"></textarea><button onclick="saveT()">Save translation</button></section>
+<section id="images" class="card page"><select id="il"></select><input id="file" type="file" accept="image/*"><button onclick="upload()">Upload image</button><div id="ir"></div></section>
+<section id="logs" class="card page"><button onclick="exportLogs()">Export CSV</button><button onclick="clearLogs()">Clear</button><div id="loglist"></div></section>`;
+function page(id){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));$(id).classList.add("active");$("nav").classList.remove("open");if(id==="notes")loadN();if(id==="trans")loadT();if(id==="logs")renderLogs()}
+function options(id,a,txt,fn){let e=$(id),old=e.value;e.innerHTML=`<option value="">${txt}</option>`+a.map(x=>`<option value="${esc(x.id)}">${esc(fn(x))}</option>`).join("");e.value=old}
+function cat(id){return categories.find(x=>String(x.id)===String(id))}
+function path(c){let a=[],n=0;while(c&&n++<10){a.unshift(c.name);c=cat(c.parent_id)}return a.join(" → ")}
+function buildCat(id){let a=[],x=cat(id);while(x){a.unshift(String(x.id));x=cat(x.parent_id)}let h="",pid="";for(let i=0;i<3;i++){let arr=categories.filter(c=>String(c.parent_id||"")===pid&&+c.is_active!==0);if(!arr.length)break;h+=`<label>${i?"Subcategory":"Main category"}</label><select id="cp${i}" onchange="changeCat(${i})"><option value="">Select</option>${arr.map(c=>`<option value="${c.id}" ${a[i]===String(c.id)?"selected":""}>${esc(c.name)}</option>`).join("")}</select>`;if(!a[i])break;pid=a[i]}$("catpick").innerHTML=h}
+function changeCat(i){let id="";for(let j=0;j<=i;j++){if(!$("cp"+j)?.value)break;id=$("cp"+j).value}buildCat(id)}
+function catValue(){let id="";for(let i=0;i<3;i++){if(!$("cp"+i)?.value)break;id=$("cp"+i).value}return id}
+function menuItem(type,x){let published=(x.status||"PUBLISHED")==="PUBLISHED";return `<div class="wrap"><button class="dots" onclick="event.stopPropagation();this.nextElementSibling.classList.toggle('hide')">⋮</button><div class="menu hide"><button onclick="edit('${type}',${x.id})">Edit</button><button onclick="rename('${type}',${x.id})">Rename</button>${published?`<button onclick="del('${type}',${x.id})">Delete</button>`:""}</div></div>`}
+function item(type,x,title,meta=""){return `<div class="item"><div class="head"><b>${esc(title)}</b>${menuItem(type,x)}</div><small>${esc(meta)}</small></div>`}
+function render(){ $("ns").textContent=subjects.length;$("nc").textContent=categories.length;$("nl").textContent=lessons.length;$("np").textContent=lessons.filter(x=>(x.status||"PUBLISHED")==="PUBLISHED").length;$("sl").innerHTML=subjects.map(x=>item("s",x,x.title||x.name,x.status)).join("");$("cl").innerHTML=categories.map(x=>item("c",x,path(x),+x.is_active===0?"Inactive":"Active")).join("");options("parent",categories,"No parent",x=>path(x));options("ls",subjects,"Select subject",x=>x.title||x.name);["nl","tl","il"].forEach(id=>options(id,lessons,"Select lesson",x=>x.title));buildCat("");renderL()}
+function renderL(){let q=($("search")?.value||"").toLowerCase();$("ll").innerHTML=lessons.filter(x=>(x.title||"").toLowerCase().includes(q)).map(x=>item("l",x,x.title,`ID ${x.id} · ${x.status||"PUBLISHED"} · ${+x.is_free===1?"Free":"Premium"}`)).join("")}
+function edit(t,id){let x=({s:subjects,c:categories,l:lessons})[t].find(a=>+a.id===+id);if(!x)return;page(({s:"subjects",c:"cats",l:"lessons"})[t]);if(t==="s"){set({sid:x.id,st:x.title||x.name,slug:x.slug,sd:x.description,ss:x.subtitle,si:x.image_url,so:x.display_order,sst:x.status||"PUBLISHED"})}if(t==="c"){set({cid:x.id,ct:x.name,parent:x.parent_id,co:x.display_order,ca:x.is_active})}if(t==="l"){set({lid:x.id,ls:x.subject_id,lt:x.title,lm:x.main_title,lsub:x.subtitle,ld:x.description,lc:x.content,lo:x.display_order,lst:x.status||"PUBLISHED"});$("free").checked=+x.is_free===1;buildCat(x.category_id)}}
+function set(o){Object.entries(o).forEach(([k,v])=>{if($(k))$(k).value=v??""})}
+function rename(t,id){let a=({s:subjects,c:categories,l:lessons})[t],x=a.find(z=>+z.id===+id),n=prompt("New name:",x.title||x.name);if(!n?.trim())return;let p={s:"subjects",c:"categories",l:"lessons"}[t],b=t==="c"?{name:n.trim(),parent_id:x.parent_id??null,display_order:+x.display_order,is_active:+x.is_active}:t==="s"?{title:n.trim(),slug:x.slug||"",description:x.description||"",subtitle:x.subtitle||"",image_url:x.image_url||"",display_order:+x.display_order,status:x.status||"PUBLISHED"}:{subject_id:+x.subject_id,title:n.trim(),category_id:x.category_id||null,main_title:x.main_title||"",subtitle:x.subtitle||"",description:x.description||"",content:x.content||"",display_order:+x.display_order,status:x.status||"PUBLISHED",is_free:+x.is_free};act("Rename",()=>send("/api/"+p+"/"+id,"PUT",b))}
+function del(t,id){if(!confirm("Delete this item?"))return;act("Delete",()=>api("/api/"+({s:"subjects",c:"categories",l:"lessons"}[t])+"/"+id,{method:"DELETE"}))}
+function saveS(){let id=v("sid"),title=v("st").trim();if(!title)return say("Enter subject title",false);act("Save subject",()=>send("/api/subjects"+(id?"/"+id:""),id?"PUT":"POST",{title,slug:v("slug"),description:v("sd"),subtitle:v("ss"),image_url:v("si"),display_order:+v("so"),status:v("sst")}))}
+function saveC(){let id=v("cid"),name=v("ct").trim();if(!name)return say("Enter category name",false);act("Save category",()=>send("/api/categories"+(id?"/"+id:""),id?"PUT":"POST",{name,parent_id:v("parent")||null,display_order:+v("co"),is_active:+v("ca")}))}
+function saveL(){let id=v("lid"),title=v("lt").trim(),subject_id=+v("ls"),category_id=catValue();if(!title||!subject_id||!category_id)return say("Enter title, subject and category",false);act("Save lesson",()=>send("/api/lessons"+(id?"/"+id:""),id?"PUT":"POST",{subject_id,title,category_id,main_title:v("lm"),subtitle:v("lsub"),description:v("ld"),content:v("lc"),display_order:+v("lo"),status:v("lst"),is_free:$("free").checked?1:0}))}
+async function loadN(){try{$("note").value=(await api("/api/notes/"+v("nl"))).content||""}catch(e){say(e.message,false)}}
+function saveN(){act("Save notes",()=>send("/api/notes/"+v("nl"),"PUT",{content:v("note")}))}
+async function loadT(){try{let d=await api("/api/translations/lesson/"+v("tl")),x=(d.translations||[]).find(y=>y.language===v("lang"))||{};set({tt:x.title,td:x.description,tc:x.content})}catch(e){say(e.message,false)}}
+function saveT(){act("Save translation",()=>send("/api/translations","POST",{lesson_id:+v("tl"),language:v("lang"),title:v("tt"),description:v("td"),content:v("tc")}))}
+async function upload(){let f=$("file").files[0];if(!f||!v("il"))return say("Select lesson and image",false);if(f.size>10*1024*1024)return say("Maximum image size is 10 MB",false);let d=new FormData();d.append("file",f);d.append("lesson_id",v("il"));try{let r=await api("/api/lesson-images",{method:"POST",body:d});$("ir").innerHTML=`<input readonly value="${esc(r.url||"")}">`;say("Uploaded")}catch(e){say(e.message,false)}}
+async function refresh(){try{await load();render();say("Refreshed")}catch(e){say(e.message,false)}}
+function renderLogs(){$("loglist").innerHTML=logs().map(x=>`<div class="item">${esc(x.date)} · ${esc(x.action)}</div>`).join("")}
+function clearLogs(){if(confirm("Clear log?")){localStorage.removeItem(LOG);renderLogs()}}
+function exportLogs(){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["Date,Action\n"+logs().map(x=>`"${x.date}","${x.action}"`).join("\n")],{type:"text/csv"}));a.download="admin-log.csv";a.click()}
+window.addEventListener("load",()=>{let tries=0,timer=setInterval(()=>{if(window.google?.accounts?.id){clearInterval(timer);google.accounts.id.initialize({client_id:CLIENT,callback:r=>login(r.credential)});google.accounts.id.renderButton($("google"),{theme:"outline",size:"large"})}if(++tries>30)clearInterval(timer)},300);let t=localStorage.getItem(KEY);if(t&&valid(t))login(t);else localStorage.removeItem(KEY)});
 </script>
 </body>
 </html>
