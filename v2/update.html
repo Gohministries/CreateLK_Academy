@@ -1,70 +1,245 @@
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CreateLK V2 Admin</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
+<title>CreateLK V2 Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#17243a;font:14px Arial}header{background:#102a56;color:white;padding:10px;display:flex;gap:10px;align-items:center;position:sticky;top:0}header b{flex:1}main{max-width:950px;margin:auto;padding:8px}.card,.item{background:white;padding:10px;border-radius:7px;margin:6px 0}.item{border:1px solid #ddd}button{border:0;border-radius:5px;padding:8px;background:#102a56;color:white;margin:2px;cursor:pointer}input,select,textarea{width:100%;padding:9px;margin:3px 0 7px;border:1px solid #ccd5e3;border-radius:5px}label{display:block;font-size:12px;font-weight:bold}.hide{display:none!important}.page{display:none}.page.active{display:block}#nav{position:fixed;top:45px;bottom:0;width:230px;background:#102a56;padding:8px;z-index:5;transform:translateX(-110%);overflow:auto}#nav.open{transform:none}#nav button{display:block;width:100%;text-align:left}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.stats div{padding:10px;background:#edf2fa}.stats b{display:block;font-size:20px}.head{display:flex;align-items:center}.head b{flex:1}.dots{background:#eee;color:#102a56}.menu{position:absolute;right:0;background:white;z-index:10;box-shadow:0 2px 8px #aaa}.menu button{display:block;width:100%;background:white;color:#102a56}.wrap{position:relative}.muted{font-size:12px;color:#66758b}#msg{padding:9px;border-radius:5px;white-space:pre-wrap}@media(max-width:500px){.stats{grid-template-columns:1fr 1fr}}
+*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#18243a;font:15px Arial}
+header{background:#102a56;color:white;padding:18px;display:flex;justify-content:space-between;align-items:center}
+main{max-width:1000px;margin:20px auto;padding:0 12px}
+.panel{background:white;border:1px solid #dce3ee;border-radius:12px;padding:18px;margin-bottom:16px}
+h2{font-size:19px;margin-top:0}label{display:block;font-weight:bold;font-size:13px;margin:12px 0 6px}
+input,select,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+textarea{min-height:100px}button{padding:11px 14px;border:0;border-radius:8px;background:#102a56;color:white;font-weight:bold;cursor:pointer;margin:4px 3px 4px 0}
+.secondary{background:#e8edf5;color:#102a56}.danger{background:#b42318}.gold{background:#f4bd35;color:#102a56}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.status{display:none;padding:12px;border-radius:8px;margin:12px 0;overflow-wrap:anywhere}
+.ok{display:block;background:#e8f7ee;color:#17633b}.err{display:block;background:#fff0ef;color:#9c1c13}
+#app{display:none}#login{max-width:450px;margin:55px auto;text-align:center}
+table{width:100%;border-collapse:collapse;min-width:520px}th,td{text-align:left;padding:10px;border-bottom:1px solid #dce3ee;font-size:13px;vertical-align:top}
+th{background:#f3f6fb}.tablewrap{overflow:auto}.muted{color:#65738a;font-size:13px}
+.preview{max-width:160px;max-height:110px;display:block;margin-top:10px;border-radius:8px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}main{margin-top:10px}.panel{padding:14px}}
 </style>
 </head>
 <body>
-<header><button onclick="$('nav').classList.toggle('open')">☰</button><b>CreateLK V2 Admin</b><button id="logout" class="hide" onclick="signout()">Logout</button></header>
-<nav id="nav"></nav><main><div id="msg"></div><section id="login" class="card"><h3>Administrator Login</h3><div id="google"></div><small>gateofheavensl1@gmail.com</small></section><div id="app" class="hide"></div></main>
+<header>
+<div><b>CreateLK V2 Admin</b><div class="muted" style="color:#dbe6f6;margin-top:5px">Categories & Content Manager</div></div>
+<button id="logout" class="secondary" hidden onclick="signOut()">Sign out</button>
+</header>
+<main>
+<section id="login" class="panel">
+<h2>Administrator Login</h2>
+<p class="muted">Sign in with the authorized Google account.</p>
+<div id="googleButton"></div>
+<div id="loginMsg" class="status"></div>
+</section>
+
+<section id="app">
+<div id="msg" class="status"></div>
+
+<div class="panel">
+<h2>1. Categories</h2>
+<p class="muted">Create Main Categories and Subcategories. Maximum two levels.</p>
+<form id="catForm">
+<input type="hidden" id="catId">
+<label>Category Name</label>
+<input id="catName" maxlength="120" required placeholder="Category name">
+<label>Parent Category</label>
+<select id="parent"><option value="">Main Category</option></select>
+<button type="submit" id="catSave">Save Category</button>
+<button type="button" class="secondary" onclick="resetCat()">Clear</button>
+</form>
+<h3>Existing Categories</h3>
+<div id="cats" class="tablewrap"></div>
+</div>
+
+<div class="panel">
+<h2>2. Content Manager</h2>
+<form id="contentForm">
+<input type="hidden" id="contentId">
+<input type="hidden" id="imageUrl">
+<label>Category</label>
+<select id="contentCat" required><option value="">Select category</option></select>
+<label>Title (Automatic)</label>
+<input id="title" readonly placeholder="Category name">
+<label>Description</label>
+<textarea id="description" placeholder="Short description"></textarea>
+<label>Explanation / Lesson Content</label>
+<textarea id="explanation" style="min-height:180px" placeholder="Enter full content"></textarea>
+<label>Photo (JPG, PNG, WEBP, GIF; max 10 MB)</label>
+<input type="file" id="photo" accept="image/jpeg,image/png,image/webp,image/gif">
+<div id="uploadMsg" class="muted"></div>
+<img id="preview" class="preview" hidden alt="Content photo">
+<button type="button" id="removePhoto" class="secondary" hidden onclick="clearPhoto()">Remove Photo</button>
+<br>
+<button id="contentSave" type="submit">Save Content</button>
+<button type="button" class="secondary" onclick="resetContent()">Clear</button>
+</form>
+</div>
+
+<div class="panel">
+<h2>3. Saved Content</h2>
+<button class="secondary" onclick="loadContents()">Refresh</button>
+<div id="contents" class="tablewrap"></div>
+</div>
+</section>
+</main>
+
 <script>
-const $=id=>document.getElementById(id),API="https://update-v2.createlk.workers.dev",ADMIN="gateofheavensl1@gmail.com",CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com",KEY="createlk_v2_admin_token",LOG="createlk_v2_admin_activity";
-let token="",subjects=[],categories=[],lessons=[];
+"use strict";
+
+const API="https://update-v2-category-manager.createlk.workers.dev";
+const CLIENT_ID="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const ADMIN="gateofheavensl1@gmail.com";
+const KEY="createlk_v2_category_admin_token";
+let token="",categories=[],contents=[];
+
+const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function say(s,ok=true){$("msg").textContent=s;$("msg").style.background=ok?"#dff7e7":"#ffe4e4"}
-function jwt(t){try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))}catch{return{}}}
-function valid(t){let p=jwt(t);return p.email?.toLowerCase()===ADMIN&&p.email_verified===true&&p.exp*1000>Date.now()}
-function signout(){token="";localStorage.removeItem(KEY);location.reload()}
-async function api(p,o={}){let h={Authorization:"Bearer "+token};if(!(o.body instanceof FormData))h["Content-Type"]="application/json";let r=await fetch(API+p,{...o,headers:h}),d=await r.json().catch(()=>({error:"Server error"}));if(r.status===401){signout();throw Error("Sign in again")}if(!r.ok)throw Error(d.error||"Request failed");return d}
-const send=(p,m,b)=>api(p,{method:m,body:JSON.stringify(b)});
-async function load(){let d=await api("/api/bootstrap");subjects=d.subjects||[];categories=d.categories||[];lessons=d.lessons||[]}
-async function login(t){if(!valid(t)){localStorage.removeItem(KEY);return say("Use the authorized Google account.",false)}token=t;try{await load();localStorage.setItem(KEY,t);$("login").classList.add("hide");$("app").classList.remove("hide");$("logout").classList.remove("hide");render();say("Login successful")}catch(e){token="";localStorage.removeItem(KEY);say(e.message,false)}}
-function act(name,fn){return fn().then(async()=>{log(name);await load();render();say(name+" successful")}).catch(e=>say(e.message,false))}
-function log(a){let x=logs();x.unshift({date:new Date().toLocaleString(),action:a});localStorage.setItem(LOG,JSON.stringify(x.slice(0,500)))}
-function logs(){try{return JSON.parse(localStorage.getItem(LOG)||"[]")}catch{return[]}}
-const names=[["dash","Dashboard"],["subjects","Subjects"],["cats","Categories"],["lessons","Lessons"],["notes","Notes"],["trans","Translations"],["images","Images"],["logs","Activity Log"]];
-const status='<option>PUBLISHED</option><option>DRAFT</option><option>COMING_SOON</option>';
-$("nav").innerHTML=names.map(([i,n])=>`<button onclick="page('${i}')">${n}</button>`).join("");
-$("app").innerHTML=`
-<section id="dash" class="card page active"><h3>Dashboard</h3><div class="stats"><div><b id="ns">0</b>Subjects</div><div><b id="nc">0</b>Categories</div><div><b id="nl">0</b>Lessons</div><div><b id="np">0</b>Published</div></div><button onclick="refresh()">Refresh</button></section>
-<section id="subjects" class="card page"><h3>Subject</h3><input id="sid" type="hidden"><input id="st" placeholder="Subject title"><input id="slug" placeholder="Slug"><textarea id="sd" placeholder="Description"></textarea><input id="ss" placeholder="Subtitle"><input id="si" placeholder="Image URL"><input id="so" type="number" placeholder="Order"><select id="sst">${status}</select><button onclick="saveS()">Save</button><div id="sl"></div></section>
-<section id="cats" class="card page"><h3>Category</h3><input id="cid" type="hidden"><input id="ct" placeholder="Category name"><select id="parent"></select><input id="co" type="number" placeholder="Order"><select id="ca"><option value="1">Active</option><option value="0">Inactive</option></select><button onclick="saveC()">Save</button><div id="cl"></div></section>
-<section id="lessons" class="card page"><h3>Lesson</h3><input id="lid" type="hidden"><select id="ls"></select><div id="catpick"></div><input id="lt" placeholder="Lesson title"><input id="lm" placeholder="Main title"><input id="lsub" placeholder="Subtitle"><textarea id="ld" placeholder="Description"></textarea><textarea id="lc" placeholder="Content"></textarea><input id="lo" type="number" placeholder="Order"><select id="lst">${status}</select><label><input id="free" type="checkbox" style="width:auto"> Free lesson</label><button onclick="saveL()">Save</button><input id="search" placeholder="Search lessons" oninput="renderL()"><div id="ll"></div></section>
-<section id="notes" class="card page"><select id="nl"></select><textarea id="note" placeholder="Notes"></textarea><button onclick="saveN()">Save notes</button></section>
-<section id="trans" class="card page"><select id="tl"></select><select id="lang"><option value="ta">Tamil</option><option value="si">Sinhala</option><option value="en">English</option></select><input id="tt" placeholder="Title"><textarea id="td" placeholder="Description"></textarea><textarea id="tc" placeholder="Content"></textarea><button onclick="saveT()">Save translation</button></section>
-<section id="images" class="card page"><select id="il"></select><input id="file" type="file" accept="image/*"><button onclick="upload()">Upload image</button><div id="ir"></div></section>
-<section id="logs" class="card page"><button onclick="exportLogs()">Export CSV</button><button onclick="clearLogs()">Clear</button><div id="loglist"></div></section>`;
-function page(id){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));$(id).classList.add("active");$("nav").classList.remove("open");if(id==="notes")loadN();if(id==="trans")loadT();if(id==="logs")renderLogs()}
-function options(id,a,txt,fn){let e=$(id),old=e.value;e.innerHTML=`<option value="">${txt}</option>`+a.map(x=>`<option value="${esc(x.id)}">${esc(fn(x))}</option>`).join("");e.value=old}
-function cat(id){return categories.find(x=>String(x.id)===String(id))}
-function path(c){let a=[],n=0;while(c&&n++<10){a.unshift(c.name);c=cat(c.parent_id)}return a.join(" → ")}
-function buildCat(id){let a=[],x=cat(id);while(x){a.unshift(String(x.id));x=cat(x.parent_id)}let h="",pid="";for(let i=0;i<3;i++){let arr=categories.filter(c=>String(c.parent_id||"")===pid&&+c.is_active!==0);if(!arr.length)break;h+=`<label>${i?"Subcategory":"Main category"}</label><select id="cp${i}" onchange="changeCat(${i})"><option value="">Select</option>${arr.map(c=>`<option value="${c.id}" ${a[i]===String(c.id)?"selected":""}>${esc(c.name)}</option>`).join("")}</select>`;if(!a[i])break;pid=a[i]}$("catpick").innerHTML=h}
-function changeCat(i){let id="";for(let j=0;j<=i;j++){if(!$("cp"+j)?.value)break;id=$("cp"+j).value}buildCat(id)}
-function catValue(){let id="";for(let i=0;i<3;i++){if(!$("cp"+i)?.value)break;id=$("cp"+i).value}return id}
-function menuItem(type,x){let published=(x.status||"PUBLISHED")==="PUBLISHED";return `<div class="wrap"><button class="dots" onclick="event.stopPropagation();this.nextElementSibling.classList.toggle('hide')">⋮</button><div class="menu hide"><button onclick="edit('${type}',${x.id})">Edit</button><button onclick="rename('${type}',${x.id})">Rename</button>${published?`<button onclick="del('${type}',${x.id})">Delete</button>`:""}</div></div>`}
-function item(type,x,title,meta=""){return `<div class="item"><div class="head"><b>${esc(title)}</b>${menuItem(type,x)}</div><small>${esc(meta)}</small></div>`}
-function render(){ $("ns").textContent=subjects.length;$("nc").textContent=categories.length;$("nl").textContent=lessons.length;$("np").textContent=lessons.filter(x=>(x.status||"PUBLISHED")==="PUBLISHED").length;$("sl").innerHTML=subjects.map(x=>item("s",x,x.title||x.name,x.status)).join("");$("cl").innerHTML=categories.map(x=>item("c",x,path(x),+x.is_active===0?"Inactive":"Active")).join("");options("parent",categories,"No parent",x=>path(x));options("ls",subjects,"Select subject",x=>x.title||x.name);["nl","tl","il"].forEach(id=>options(id,lessons,"Select lesson",x=>x.title));buildCat("");renderL()}
-function renderL(){let q=($("search")?.value||"").toLowerCase();$("ll").innerHTML=lessons.filter(x=>(x.title||"").toLowerCase().includes(q)).map(x=>item("l",x,x.title,`ID ${x.id} · ${x.status||"PUBLISHED"} · ${+x.is_free===1?"Free":"Premium"}`)).join("")}
-function edit(t,id){let x=({s:subjects,c:categories,l:lessons})[t].find(a=>+a.id===+id);if(!x)return;page(({s:"subjects",c:"cats",l:"lessons"})[t]);if(t==="s"){set({sid:x.id,st:x.title||x.name,slug:x.slug,sd:x.description,ss:x.subtitle,si:x.image_url,so:x.display_order,sst:x.status||"PUBLISHED"})}if(t==="c"){set({cid:x.id,ct:x.name,parent:x.parent_id,co:x.display_order,ca:x.is_active})}if(t==="l"){set({lid:x.id,ls:x.subject_id,lt:x.title,lm:x.main_title,lsub:x.subtitle,ld:x.description,lc:x.content,lo:x.display_order,lst:x.status||"PUBLISHED"});$("free").checked=+x.is_free===1;buildCat(x.category_id)}}
-function set(o){Object.entries(o).forEach(([k,v])=>{if($(k))$(k).value=v??""})}
-function rename(t,id){let a=({s:subjects,c:categories,l:lessons})[t],x=a.find(z=>+z.id===+id),n=prompt("New name:",x.title||x.name);if(!n?.trim())return;let p={s:"subjects",c:"categories",l:"lessons"}[t],b=t==="c"?{name:n.trim(),parent_id:x.parent_id??null,display_order:+x.display_order,is_active:+x.is_active}:t==="s"?{title:n.trim(),slug:x.slug||"",description:x.description||"",subtitle:x.subtitle||"",image_url:x.image_url||"",display_order:+x.display_order,status:x.status||"PUBLISHED"}:{subject_id:+x.subject_id,title:n.trim(),category_id:x.category_id||null,main_title:x.main_title||"",subtitle:x.subtitle||"",description:x.description||"",content:x.content||"",display_order:+x.display_order,status:x.status||"PUBLISHED",is_free:+x.is_free};act("Rename",()=>send("/api/"+p+"/"+id,"PUT",b))}
-function del(t,id){if(!confirm("Delete this item?"))return;act("Delete",()=>api("/api/"+({s:"subjects",c:"categories",l:"lessons"}[t])+"/"+id,{method:"DELETE"}))}
-function saveS(){let id=v("sid"),title=v("st").trim();if(!title)return say("Enter subject title",false);act("Save subject",()=>send("/api/subjects"+(id?"/"+id:""),id?"PUT":"POST",{title,slug:v("slug"),description:v("sd"),subtitle:v("ss"),image_url:v("si"),display_order:+v("so"),status:v("sst")}))}
-function saveC(){let id=v("cid"),name=v("ct").trim();if(!name)return say("Enter category name",false);act("Save category",()=>send("/api/categories"+(id?"/"+id:""),id?"PUT":"POST",{name,parent_id:v("parent")||null,display_order:+v("co"),is_active:+v("ca")}))}
-function saveL(){let id=v("lid"),title=v("lt").trim(),subject_id=+v("ls"),category_id=catValue();if(!title||!subject_id||!category_id)return say("Enter title, subject and category",false);act("Save lesson",()=>send("/api/lessons"+(id?"/"+id:""),id?"PUT":"POST",{subject_id,title,category_id,main_title:v("lm"),subtitle:v("lsub"),description:v("ld"),content:v("lc"),display_order:+v("lo"),status:v("lst"),is_free:$("free").checked?1:0}))}
-async function loadN(){try{$("note").value=(await api("/api/notes/"+v("nl"))).content||""}catch(e){say(e.message,false)}}
-function saveN(){act("Save notes",()=>send("/api/notes/"+v("nl"),"PUT",{content:v("note")}))}
-async function loadT(){try{let d=await api("/api/translations/lesson/"+v("tl")),x=(d.translations||[]).find(y=>y.language===v("lang"))||{};set({tt:x.title,td:x.description,tc:x.content})}catch(e){say(e.message,false)}}
-function saveT(){act("Save translation",()=>send("/api/translations","POST",{lesson_id:+v("tl"),language:v("lang"),title:v("tt"),description:v("td"),content:v("tc")}))}
-async function upload(){let f=$("file").files[0];if(!f||!v("il"))return say("Select lesson and image",false);if(f.size>10*1024*1024)return say("Maximum image size is 10 MB",false);let d=new FormData();d.append("file",f);d.append("lesson_id",v("il"));try{let r=await api("/api/lesson-images",{method:"POST",body:d});$("ir").innerHTML=`<input readonly value="${esc(r.url||"")}">`;say("Uploaded")}catch(e){say(e.message,false)}}
-async function refresh(){try{await load();render();say("Refreshed")}catch(e){say(e.message,false)}}
-function renderLogs(){$("loglist").innerHTML=logs().map(x=>`<div class="item">${esc(x.date)} · ${esc(x.action)}</div>`).join("")}
-function clearLogs(){if(confirm("Clear log?")){localStorage.removeItem(LOG);renderLogs()}}
-function exportLogs(){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["Date,Action\n"+logs().map(x=>`"${x.date}","${x.action}"`).join("\n")],{type:"text/csv"}));a.download="admin-log.csv";a.click()}
-window.addEventListener("load",()=>{let tries=0,timer=setInterval(()=>{if(window.google?.accounts?.id){clearInterval(timer);google.accounts.id.initialize({client_id:CLIENT,callback:r=>login(r.credential)});google.accounts.id.renderButton($("google"),{theme:"outline",size:"large"})}if(++tries>30)clearInterval(timer)},300);let t=localStorage.getItem(KEY);if(t&&valid(t))login(t);else localStorage.removeItem(KEY)});
+
+function notice(id,text,error=false){$(id).textContent=text;$(id).className="status "+(error?"err":"ok")}
+function payload(t){try{return JSON.parse(decodeURIComponent(escape(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))))}catch{return null}}
+function valid(t){let p=payload(t);return p&&p.email?.toLowerCase()===ADMIN&&p.aud===CLIENT_ID&&(p.email_verified===true||p.email_verified==="true")&&p.exp*1000>Date.now()}
+function signedIn(){ $("login").style.display="none";$("app").style.display="block";$("logout").hidden=false}
+function signOut(){token="";localStorage.removeItem(KEY);$("app").style.display="none";$("login").style.display="block";$("logout").hidden=true;notice("loginMsg","Signed out.")}
+
+async function api(path,options={}){
+ let headers=new Headers(options.headers||{});
+ headers.set("Authorization","Bearer "+token);
+ if(options.body&&!(options.body instanceof FormData))headers.set("Content-Type","application/json");
+ let r=await fetch(API+path,{...options,headers,credentials:"omit"});
+ let d={};try{d=await r.json()}catch{}
+ if(!r.ok){if(r.status===401){token="";localStorage.removeItem(KEY)}throw Error(d.error||"Request failed: "+r.status)}
+ return d
+}
+
+async function loginWithToken(t){
+ if(!valid(t)){notice("loginMsg","Access denied. Use "+ADMIN,true);return}
+ token=t;
+ try{
+  await api("/api/bootstrap");
+  localStorage.setItem(KEY,t);
+  signedIn();
+  await loadAll();
+ }catch(e){
+  token="";localStorage.removeItem(KEY);
+  notice("loginMsg",e.message,true);
+ }
+}
+
+function initGoogle(){
+ if(!window.google?.accounts?.id){setTimeout(initGoogle,250);return}
+ google.accounts.id.initialize({client_id:CLIENT_ID,callback:r=>loginWithToken(r.credential),auto_select:false});
+ google.accounts.id.renderButton($("googleButton"),{theme:"outline",size:"large",text:"signin_with",width:280});
+}
+window.addEventListener("load",()=>{
+ initGoogle();
+ let saved=localStorage.getItem(KEY);
+ if(saved&&valid(saved))loginWithToken(saved);
+ else localStorage.removeItem(KEY);
+});
+
+function category(id){return categories.find(c=>Number(c.id)===Number(id))}
+function pathName(c){
+ if(!c)return "";
+ if(c.parent_id==null)return c.name;
+ return (category(c.parent_id)?.name||"")+" → "+c.name;
+}
+function selectors(){
+ let roots=categories.filter(c=>c.parent_id==null);
+ $("parent").innerHTML='<option value="">Main Category</option>'+roots.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
+ $("contentCat").innerHTML='<option value="">Select category</option>'+categories.map(c=>`<option value="${c.id}">${esc(pathName(c))}</option>`).join("");
+ updateTitle();
+}
+function renderCats(){
+ if(!categories.length){$("cats").innerHTML="<p>No categories yet.</p>";return}
+ let rows="";
+ for(let c of categories){
+  rows+=`<tr><td>${esc(c.name)}</td><td>${c.parent_id==null?"Main Category":"Subcategory"}</td><td>${c.content_count||0}</td><td><button class="secondary" onclick="editCat(${c.id})">Edit</button><button class="danger" onclick="deleteCat(${c.id})">Delete</button></td></tr>`;
+ }
+ $("cats").innerHTML=`<table><thead><tr><th>Name</th><th>Level</th><th>Content</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function loadCats(){
+ let d=await api("/api/categories");categories=d.categories||[];
+ selectors();renderCats();
+}
+async function loadContents(){
+ let d=await api("/api/contents");contents=d.contents||[];renderContents();
+}
+async function loadAll(){try{await loadCats();await loadContents()}catch(e){notice("msg",e.message,true)}}
+function resetCat(){$("catId").value="";$("catName").value="";$("parent").value="";$("catSave").textContent="Save Category"}
+function editCat(id){
+ let c=category(id);if(!c)return;
+ $("catId").value=c.id;$("catName").value=c.name;$("parent").value=c.parent_id??"";
+ $("catSave").textContent="Update Category";$("catName").focus();
+}
+$("catForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ let id=$("catId").value;
+ try{
+  await api(id?"/api/categories/"+id:"/api/categories",{method:id?"PUT":"POST",body:JSON.stringify({name:$("catName").value.trim(),parent_id:$("parent").value||null})});
+  resetCat();await loadCats();notice("msg","Category saved successfully.");
+ }catch(e){notice("msg",e.message,true)}
+});
+async function deleteCat(id){
+ let c=category(id);if(!c||!confirm("Delete "+c.name+"?"))return;
+ try{await api("/api/categories/"+id,{method:"DELETE"});await loadAll();notice("msg","Category deleted.")}
+ catch(e){notice("msg",e.message,true)}
+}
+function updateTitle(){$("title").value=category($("contentCat").value)?.name||""}
+$("contentCat").addEventListener("change",updateTitle);
+
+$("photo").addEventListener("change",async()=>{
+ let f=$("photo").files[0];if(!f)return;
+ if(f.size>10*1024*1024){notice("msg","Image must be 10 MB or smaller.",true);$("photo").value="";return}
+ if(!["image/jpeg","image/png","image/webp","image/gif"].includes(f.type)){notice("msg","Unsupported image type.",true);$("photo").value="";return}
+ $("uploadMsg").textContent="Uploading...";
+ try{
+  let fd=new FormData();fd.append("image",f);
+  let d=await api("/api/content-images",{method:"POST",body:fd});
+  $("imageUrl").value=d.image_url;$("preview").src=d.image_url;$("preview").hidden=false;$("removePhoto").hidden=false;
+  $("uploadMsg").textContent="Image uploaded.";
+ }catch(e){$("uploadMsg").textContent=e.message}
+});
+function clearPhoto(){
+ $("imageUrl").value="";$("photo").value="";$("preview").removeAttribute("src");$("preview").hidden=true;$("removePhoto").hidden=true;$("uploadMsg").textContent="";
+}
+function resetContent(){
+ $("contentId").value="";$("contentCat").value="";$("description").value="";$("explanation").value="";
+ $("title").value="";clearPhoto();$("contentSave").textContent="Save Content";
+}
+$("contentForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ let id=$("contentId").value;
+ if(!$("contentCat").value){notice("msg","Select a category.",true);return}
+ let data={category_id:Number($("contentCat").value),description:$("description").value.trim(),explanation:$("explanation").value.trim(),image_url:$("imageUrl").value.trim()};
+ try{
+  await api(id?"/api/contents/"+id:"/api/contents",{method:id?"PUT":"POST",body:JSON.stringify(data)});
+  resetContent();await loadContents();await loadCats();notice("msg","Content saved successfully.");
+ }catch(e){notice("msg",e.message,true)}
+});
+function renderContents(){
+ if(!contents.length){$("contents").innerHTML="<p>No content saved yet.</p>";return}
+ $("contents").innerHTML=`<table><thead><tr><th>Title / Category</th><th>Description</th><th>Photo</th><th>Actions</th></tr></thead><tbody>${contents.map(c=>`<tr><td><b>${esc(c.title)}</b><br>${esc(pathName({id:c.category_id,name:c.category_name,parent_id:c.parent_id}))}</td><td>${esc(c.description||"—")}</td><td>${c.image_url?`<a href="${esc(c.image_url)}" target="_blank" rel="noopener">View photo</a>`:"—"}</td><td><button class="secondary" onclick="editContent(${c.id})">Edit</button><button class="danger" onclick="deleteContent(${c.id})">Delete</button></td></tr>`).join("")}</tbody></table>`;
+}
+function editContent(id){
+ let c=contents.find(x=>Number(x.id)===Number(id));if(!c)return;
+ $("contentId").value=c.id;$("contentCat").value=c.category_id;updateTitle();
+ $("description").value=c.description||"";$("explanation").value=c.explanation||"";$("imageUrl").value=c.image_url||"";
+ if(c.image_url){$("preview").src=c.image_url;$("preview").hidden=false;$("removePhoto").hidden=false}else clearPhoto();
+ $("contentSave").textContent="Update Content";window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"});
+}
+async function deleteContent(id){
+ let c=contents.find(x=>Number(x.id)===Number(id));if(!c||!confirm("Permanently delete "+c.title+"?"))return;
+ try{await api("/api/contents/"+id,{method:"DELETE"});await loadAll();notice("msg","Content deleted.")}
+ catch(e){notice("msg",e.message,true)}
+}
 </script>
 </body>
 </html>
