@@ -4,320 +4,664 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CreateLK V2 Admin</title>
+<meta name="theme-color" content="#102a56">
+<title>Facebook Monetization Guide — Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#f3f6fb;color:#17243b;font:15px Arial}
-header{background:#102a56;color:white;padding:18px}
-main{max-width:850px;margin:18px auto;padding:0 12px}
-.card{background:white;padding:16px;border-radius:12px;margin-bottom:14px;border:1px solid #ddd}
-h2{font-size:18px;margin:0 0 12px}
-h3{font-size:14px;color:#102a56}
-label{display:block;font-weight:bold;font-size:13px;margin:10px 0 5px}
-input,textarea,select{width:100%;padding:10px;border:1px solid #ccd4df;border-radius:7px;font:inherit}
-textarea{min-height:75px}
-button{padding:10px 13px;margin:5px 3px 5px 0;border:0;border-radius:7px;background:#102a56;color:white;cursor:pointer}
-.gold{background:#f4bd35;color:#102a56}
-.red{background:#b42318}
-.item{padding:12px;border:1px solid #ddd;border-radius:8px;margin:9px 0;overflow-wrap:anywhere}
-small,.muted{color:#667085}
-#app{display:none}
-#msg{white-space:pre-wrap}
-.lang{border-top:1px solid #eee;margin-top:12px;padding-top:5px}
-#preview{display:none;max-width:150px;margin-top:8px}
-@media(max-width:500px){.card{padding:12px}}
+body{margin:0;background:#f3f6fb;color:#17243b;font:15px Arial,sans-serif}
+header{background:#102a56;color:white;padding:20px}
+header h1{font-size:21px;margin:0}
+main{max-width:760px;margin:auto;padding:16px 12px}
+.card{background:white;border:1px solid #dbe3ef;border-radius:12px;padding:18px;margin-bottom:15px}
+label{display:block;font-weight:bold;font-size:14px;margin:15px 0 7px}
+input,select,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+textarea{min-height:100px;resize:vertical;line-height:1.6}
+button{border:0;border-radius:8px;padding:12px 15px;background:#155eef;color:white;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.secondary{background:#e8eef8;color:#102a56}
+.danger{background:#b42318;color:white}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}
+#message{background:#eef4ff;padding:12px;border-radius:8px;margin-top:12px;overflow-wrap:anywhere;line-height:1.5}
+#preview{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:8px}
+.muted{color:#64748b;font-size:13px;line-height:1.5}
+.item{padding:12px;border:1px solid #dbe3ef;border-radius:8px;margin-top:10px;overflow-wrap:anywhere}
+.item p{line-height:1.5}
+[hidden]{display:none!important}
+@media(max-width:500px){
+ .card{padding:14px}
+ header{padding:16px}
+}
 </style>
 </head>
 <body>
-<header><b>CreateLK V2 Admin</b><div><small style="color:white">Multilingual Category &amp; Content Manager</small></div></header>
+<header>
+<h1>Facebook Monetization Guide — Admin Panel</h1>
+</header>
+
 <main>
-
-<section class="card" id="login">
-<h2>Admin Login</h2>
-<div id="google"></div><p id="err"></p>
+<section class="card" id="loginCard">
+<h2>Administrator Login</h2>
+<p class="muted">Sign in with your authorized Google administrator account.</p>
+<div id="googleButton"></div>
+<div id="message" role="status" aria-live="polite">Please sign in with Google.</div>
 </section>
 
-<div id="app">
-<section class="card">
-<b id="email"></b>
-<button onclick="load()">Refresh</button>
-<button onclick="logout()">Logout</button>
-<p id="msg"></p><div id="stats"></div>
-</section>
+<section class="card" id="editor" hidden>
+<h2>Lesson Editor</h2>
 
-<section class="card" id="catForm">
-<h2 id="ch">Add Category</h2>
-<input type="hidden" id="cid">
-<label>Parent Category</label><select id="parent"><option value="">Main Category</option></select>
+<p class="muted" id="adminEmail"></p>
 
-<div class="lang"><h3>English</h3>
-<label>Category Name</label><input id="cn" placeholder="English name"></div>
+<label for="lessonSelect">Select lesson</label>
+<select id="lessonSelect">
+<option value="">Choose a lesson</option>
+</select>
 
-<div class="lang"><h3>Tamil</h3>
-<label>வகை பெயர்</label><input id="ct" placeholder="தமிழ் பெயர்"></div>
-
-<div class="lang"><h3>Sinhala</h3>
-<label>ප්‍රවර්ග නාමය</label><input id="cs" placeholder="සිංහල නම"></div>
-
-<label>Description (optional)</label><textarea id="cd"></textarea>
-<label>Order</label><input id="co" type="number" value="0">
-<button class="gold" onclick="saveCat()">Save Category</button>
-<button onclick="clearCat()">Clear</button>
-</section>
-
-<section class="card">
-<h2>Categories</h2>
-<input id="csearch" placeholder="Search..." oninput="renderCats()">
-<div id="cats"></div>
-</section>
-
-<section class="card" id="contentForm">
-<h2 id="th">Add Content</h2>
-<input type="hidden" id="tid">
-<label>Category</label><select id="tc"><option value="">Select category</option></select>
-
-<div class="lang"><h3>English</h3>
-<label>Title</label><input id="enT">
-<label>Description</label><textarea id="enD"></textarea>
-<label>Explanation</label><textarea id="enE"></textarea></div>
-
-<div class="lang"><h3>Tamil</h3>
-<label>தலைப்பு</label><input id="taT">
-<label>விளக்கம்</label><textarea id="taD"></textarea>
-<label>விரிவான விளக்கம்</label><textarea id="taE"></textarea></div>
-
-<div class="lang"><h3>Sinhala</h3>
-<label>මාතෘකාව</label><input id="siT">
-<label>විස්තරය</label><textarea id="siD"></textarea>
-<label>පැහැදිලි කිරීම</label><textarea id="siE"></textarea></div>
-
-<label>Photo (JPG, PNG, WEBP, GIF; max 10 MB)</label>
-<input id="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
-<img id="preview" alt="Photo preview">
-<input type="hidden" id="image">
-<small id="uploadStatus">Optional photo</small>
-
-<label>Order</label><input id="to" type="number" value="0">
-<button class="gold" id="saveBtn" onclick="saveContent()">Save Content</button>
-<button onclick="clearContent()">Clear</button>
-</section>
-
-<section class="card">
-<h2>Content Items</h2>
-<input id="tsearch" placeholder="Search..." oninput="renderContents()">
-<div id="contents"></div>
-</section>
+<div class="actions">
+<button id="newLesson" class="secondary" type="button">+ New Lesson</button>
+<button id="editLesson" class="secondary" type="button">Edit Selected Lesson</button>
+<button id="refresh" class="secondary" type="button">Refresh Lessons</button>
+<button id="logout" class="danger" type="button">Sign Out</button>
 </div>
+
+<div id="fields" hidden>
+<hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0">
+
+<h3 id="formHeading">Lesson Details</h3>
+
+<label for="language">Language</label>
+<select id="language">
+<option value="en">English</option>
+<option value="ta">Tamil — தமிழ்</option>
+<option value="si">Sinhala — සිංහල</option>
+</select>
+
+<label for="title">Lesson Title</label>
+<input id="title" maxlength="250" placeholder="Enter lesson title">
+
+<label for="shortDescription">Short Description</label>
+<textarea id="shortDescription" maxlength="1000"
+placeholder="Write a short summary of this lesson"></textarea>
+
+<label for="explanation">Full Lesson Explanation</label>
+<textarea id="explanation" style="min-height:230px"
+placeholder="Write the complete lesson content"></textarea>
+
+<label for="photo">Lesson Photo</label>
+<input id="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+<p class="muted">JPG, PNG, WEBP or GIF. Maximum file size: 5 MB.</p>
+
+<div class="actions">
+<button id="uploadPhoto" class="secondary" type="button">Upload / Replace Photo</button>
+<button id="removePhoto" class="secondary" type="button">Clear Photo Preview</button>
+</div>
+
+<img id="preview" hidden alt="Lesson photo preview">
+
+<div class="actions">
+<button id="save" type="button">Save Changes</button>
+<button id="cancel" class="secondary" type="button">Cancel</button>
+</div>
+</div>
+</section>
+
+<section class="card" id="lessonListCard" hidden>
+<h2>Available Lessons</h2>
+<input id="searchLessons" placeholder="Search lessons..." aria-label="Search lessons">
+<div id="lessonList"></div>
+</section>
 </main>
 
 <script>
-const API="https://update-v2.createlk.workers.dev";
-const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
-const ADMIN="gateofheavensl1@gmail.com";
-const $=id=>document.getElementById(id);
-let token="",cats=[],items=[],uploading=false;
+"use strict";
 
-function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function say(s,bad=false){$("msg").textContent=s;$("msg").style.color=bad?"#b42318":"#16803d"}
+const API = "https://update-v2.createlk.workers.dev";
+const GOOGLE_CLIENT_ID =
+  "582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+const ADMIN = "gateofheavensl1@gmail.com";
 
-async function req(path,opts={}){
- const h=new Headers(opts.headers||{});
- h.set("Authorization","Bearer "+token);
- if(typeof opts.body==="string"&&!h.has("Content-Type"))h.set("Content-Type","application/json");
- const r=await fetch(API+path,{...opts,headers:h});
- const d=await r.json().catch(()=>({}));
- if(!r.ok)throw Error(d.error||"Request failed: "+r.status);
- return d;
+const $ = id => document.getElementById(id);
+
+let token = "";
+let subjects = [];
+let lessons = [];
+let translations = [];
+let currentId = null;
+let isNew = false;
+let savedPhotoUrl = "";
+let googleInitialized = false;
+
+function msg(text) {
+  $("message").textContent = text;
 }
 
-function googleLogin(r){
- token=r.credential;
- try{
-  const p=JSON.parse(atob(token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
-  if(p.email!==ADMIN||p.email_verified!==true||p.aud!==CLIENT||p.exp*1000<Date.now())throw Error();
- }catch(e){token="";$("err").textContent="Use the authorized Google account.";return}
- start().catch(e=>{$("err").textContent=e.message;});
-}
+async function api(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set("Authorization", "Bearer " + token);
 
-async function start(){
- await load();
- $("login").style.display="none";
- $("app").style.display="block";
- $("email").textContent=ADMIN;
- $("err").textContent="";
-}
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
 
-function logout(){
- token="";cats=[];items=[];
- $("app").style.display="none";
- $("login").style.display="block";
- $("err").textContent="Logged out.";
- if(window.google?.accounts?.id){
-  google.accounts.id.renderButton($("google"),{theme:"outline",size:"large",text:"signin_with",width:260});
- }
-}
-
-async function load(){
- try{
-  const d=await req("/api/bootstrap");
-  cats=d.categories||[];items=d.contents||[];
-  render();say("Data loaded successfully.");
- }catch(e){say(e.message,true);throw e}
-}
-
-function name(c){return c.name_en||c.name||c.name_ta||c.name_si||("Category "+c.id)}
-function path(id,seen=new Set()){
- const c=cats.find(x=>+x.id===+id);
- if(!c)return "Unknown";
- if(seen.has(+c.id))return name(c);
- const next=new Set(seen);next.add(+c.id);
- return c.parent_id?path(c.parent_id,next)+" › "+name(c):name(c);
-}
-
-function render(){
- $("stats").textContent=`Categories: ${cats.length} | Subcategories: ${cats.filter(c=>c.parent_id).length} | Content: ${items.length}`;
- const old=$("tc").value;
- $("tc").innerHTML='<option value="">Select category</option>'+cats.map(c=>`<option value="${c.id}">${esc(path(c.id))}</option>`).join("");
- if(cats.some(c=>String(c.id)===old))$("tc").value=old;
- parentOptions();renderCats();renderContents();
-}
-
-function parentOptions(selected=$("parent").value,exclude=+$("cid").value||0){
- let html='<option value="">Main Category</option>';
- function walk(pid,depth,seen){
-  cats.filter(c=>+(c.parent_id||0)===+(pid||0)).forEach(c=>{
-   if(+c.id===exclude||seen.has(+c.id))return;
-   html+=`<option value="${c.id}">${"— ".repeat(depth)}${esc(name(c))}</option>`;
-   const next=new Set(seen);next.add(+c.id);walk(c.id,depth+1,next);
+  const response = await fetch(API + path, {
+    ...options,
+    headers,
+    cache: "no-store"
   });
- }
- walk(null,0,new Set());$("parent").innerHTML=html;$("parent").value=selected||"";
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw Error(data.error || "Request failed: " + response.status);
+  }
+
+  return data;
 }
 
-function renderCats(){
- const q=$("csearch").value.toLowerCase();
- const arr=cats.filter(c=>[c.name,c.name_en,c.name_ta,c.name_si,c.description].some(v=>(v||"").toLowerCase().includes(q)));
- $("cats").innerHTML=arr.map(c=>`<div class="item">
- <b>${esc(path(c.id))}</b>
- <p><small>EN: ${esc(c.name_en||c.name||"—")} | TA: ${esc(c.name_ta||"—")} | SI: ${esc(c.name_si||"—")}</small></p>
- <button onclick="editCat(${c.id})">Edit</button>
- <button class="red" onclick="delCat(${c.id})">Delete</button>
- </div>`).join("")||"<p>No categories.</p>";
+/* Google login: preserve the old working authentication flow. */
+function googleLogin(response) {
+  token = response.credential || "";
+
+  try {
+    const payload = JSON.parse(
+      atob(
+        token.split(".")[1]
+          .replace(/-/g, "+")
+          .replace(/_/g, "/")
+      )
+    );
+
+    if (
+      payload.email !== ADMIN ||
+      payload.email_verified !== true ||
+      payload.aud !== GOOGLE_CLIENT_ID ||
+      payload.exp * 1000 < Date.now()
+    ) {
+      throw Error("Unauthorized account");
+    }
+  } catch (error) {
+    token = "";
+    msg("Use the authorized Google administrator account.");
+    return;
+  }
+
+  $("googleButton").hidden = true;
+  msg("Signing in and connecting to the admin API...");
+
+  start().catch(error => {
+    token = "";
+    $("googleButton").hidden = false;
+    $("editor").hidden = true;
+    $("lessonListCard").hidden = true;
+    msg("Login or connection failed: " + error.message);
+  });
 }
 
-function renderContents(){
- const q=$("tsearch").value.toLowerCase();
- const arr=items.filter(c=>[c.title,c.title_en,c.title_ta,c.title_si,c.description_en,c.description_ta,c.description_si].some(v=>(v||"").toLowerCase().includes(q)));
- $("contents").innerHTML=arr.map(c=>`<div class="item">
- <b>${esc(c.title_en||c.title||c.title_ta||c.title_si||"Untitled")}</b>
- <p><small>${esc(path(c.category_id))} | TA: ${esc(c.title_ta||"—")} | SI: ${esc(c.title_si||"—")}</small></p>
- ${c.image_url?`<a target="_blank" rel="noopener" href="${esc(c.image_url)}">View photo</a><br>`:""}
- <button onclick="editContent(${c.id})">Edit</button>
- <button class="red" onclick="delContent(${c.id})">Delete</button>
- </div>`).join("")||"<p>No content.</p>";
+async function start() {
+  await loadAll();
+
+  $("loginCard").hidden = true;
+  $("editor").hidden = false;
+  $("lessonListCard").hidden = false;
+  $("adminEmail").textContent = "Signed in as: " + ADMIN;
 }
 
-function clearCat(){
- ["cid","cn","ct","cs","cd"].forEach(id=>$(id).value="");
- $("co").value=0;$("ch").textContent="Add Category";parentOptions("");
+function initGoogle() {
+  if (!window.google?.accounts?.id) {
+    setTimeout(initGoogle, 200);
+    return;
+  }
+
+  if (googleInitialized) return;
+  googleInitialized = true;
+
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: googleLogin
+  });
+
+  google.accounts.id.renderButton(
+    $("googleButton"),
+    {
+      theme: "outline",
+      size: "large",
+      text: "signin_with",
+      width: 260
+    }
+  );
 }
 
-function editCat(id){
- const c=cats.find(x=>+x.id===+id);if(!c)return;
- $("cid").value=c.id;$("cn").value=c.name_en||c.name||"";
- $("ct").value=c.name_ta||"";$("cs").value=c.name_si||"";
- $("cd").value=c.description||"";$("co").value=c.sort_order??0;
- $("ch").textContent="Edit Category";parentOptions(c.parent_id||"",+c.id);
- $("catForm").scrollIntoView({behavior:"smooth"});
+function selectedLesson() {
+  return lessons.find(
+    lesson => String(lesson.id) === $("lessonSelect").value
+  ) || null;
 }
 
-async function saveCat(){
- const id=$("cid").value;
- const b={name_en:$("cn").value.trim(),name_ta:$("ct").value.trim(),name_si:$("cs").value.trim(),description:$("cd").value,parent_id:$("parent").value||null,sort_order:+$("co").value||0};
- if(!b.name_en&&!b.name_ta&&!b.name_si)return say("Enter a category name.",true);
- if(id&&b.parent_id&&+b.parent_id===+id)return say("A category cannot be its own parent.",true);
- try{
-  await req(id?"/api/categories/"+id:"/api/categories",{method:id?"PUT":"POST",body:JSON.stringify(b)});
-  clearCat();await load();say("Category saved.");
- }catch(e){say(e.message,true)}
+function currentTranslation() {
+  return translations.find(
+    translation => translation.language === $("language").value
+  ) || null;
 }
 
-async function delCat(id){
- if(!confirm("Delete category? Remove its children or content first if required."))return;
- try{await req("/api/categories/"+id,{method:"DELETE"});await load();say("Category deleted.");}
- catch(e){say(e.message,true)}
+function renderLessons(preferredId) {
+  const select = $("lessonSelect");
+  select.innerHTML = "";
+
+  select.add(new Option("Choose a lesson", ""));
+
+  lessons.forEach(lesson => {
+    const title = lesson.title || ("Lesson " + lesson.id);
+    select.add(new Option(title, String(lesson.id)));
+  });
+
+  if (
+    preferredId &&
+    lessons.some(lesson => String(lesson.id) === String(preferredId))
+  ) {
+    select.value = String(preferredId);
+  }
 }
 
-function clearContent(){
- $("tid").value="";
- ["enT","taT","siT","enD","taD","siD","enE","taE","siE","image"].forEach(id=>$(id).value="");
- $("to").value=0;$("tc").value="";$("photo").value="";
- $("preview").style.display="none";$("preview").removeAttribute("src");
- $("uploadStatus").textContent="Optional photo";$("th").textContent="Add Content";
+function showPhoto(url) {
+  const image = $("preview");
+
+  image.onerror = () => {
+    image.hidden = true;
+  };
+
+  image.onload = () => {
+    image.hidden = false;
+  };
+
+  image.src = url || "";
+  image.hidden = !url;
+  savedPhotoUrl = url || "";
 }
 
-function editContent(id){
- const c=items.find(x=>+x.id===+id);if(!c)return;
- $("tid").value=c.id;$("tc").value=c.category_id;$("th").textContent="Edit Content";
- $("enT").value=c.title_en||c.title||"";$("taT").value=c.title_ta||"";$("siT").value=c.title_si||"";
- $("enD").value=c.description_en||c.description||"";$("taD").value=c.description_ta||"";$("siD").value=c.description_si||"";
- $("enE").value=c.explanation_en||c.explanation||"";$("taE").value=c.explanation_ta||"";$("siE").value=c.explanation_si||"";
- $("image").value=c.image_url||"";$("to").value=c.sort_order??0;$("photo").value="";
- $("preview").style.display=c.image_url?"block":"none";
- if(c.image_url)$("preview").src=c.image_url;
- $("uploadStatus").textContent=c.image_url?"Current photo":"Optional photo";
- $("contentForm").scrollIntoView({behavior:"smooth"});
+function clearFields() {
+  $("language").value = "en";
+  $("title").value = "";
+  $("shortDescription").value = "";
+  $("explanation").value = "";
+  $("photo").value = "";
+  showPhoto("");
 }
 
-$("photo").addEventListener("change",async()=>{
- const f=$("photo").files[0];if(!f)return;
- if(!["image/jpeg","image/png","image/webp","image/gif"].includes(f.type)||f.size>10*1024*1024){
-  say("Choose JPG, PNG, WEBP, or GIF under 10 MB.",true);$("photo").value="";return;
- }
- if(!token){say("Sign in before uploading.",true);return}
- const oldImage=$("image").value;
- uploading=true;$("saveBtn").disabled=true;$("uploadStatus").textContent="Uploading...";
- $("preview").src=URL.createObjectURL(f);$("preview").style.display="block";
- const form=new FormData();form.append("image",f);
- try{
-  const d=await req("/api/content-images",{method:"POST",body:form});
-  const url=d.image_url||d.url;
-  if(!url)throw Error("Worker did not return an image URL.");
-  $("image").value=url;$("uploadStatus").textContent="Upload successful";say("Photo uploaded.");
- }catch(e){
-  $("image").value=oldImage;
-  $("uploadStatus").textContent=e.message;say(e.message,true);
- }finally{
-  uploading=false;$("saveBtn").disabled=false;
- }
+async function loadTranslation() {
+  if (!currentId) {
+    clearFields();
+    return;
+  }
+
+  const data = await api("/api/translations/lesson/" + currentId);
+  translations = data.translations || [];
+
+  const translation = currentTranslation();
+
+  $("title").value = translation?.title || "";
+  $("shortDescription").value = translation?.description || "";
+  $("explanation").value = translation?.content || "";
+}
+
+async function loadAll(preferredId) {
+  msg("Loading lessons...");
+
+  const data = await api("/api/bootstrap");
+
+  subjects = data.subjects || [];
+  lessons = data.lessons || [];
+
+  renderLessons(preferredId || currentId);
+
+  $("editor").hidden = false;
+  $("lessonListCard").hidden = false;
+
+  if (currentId) {
+    $("lessonSelect").value = String(currentId);
+    await loadTranslation();
+
+    const lesson = lessons.find(
+      item => String(item.id) === String(currentId)
+    );
+
+    showPhoto(
+      lesson?.image_url ||
+      lesson?.photo_url ||
+      ""
+    );
+  } else {
+    clearFields();
+  }
+
+  renderLessonList();
+  msg("Connected. Select a lesson or create a new one.");
+}
+
+function beginNew() {
+  if (!subjects.length) {
+    msg("No subject exists. Create a subject in your database first.");
+    return;
+  }
+
+  currentId = null;
+  isNew = true;
+  translations = [];
+
+  $("lessonSelect").value = "";
+  $("fields").hidden = false;
+  $("formHeading").textContent = "Create New Lesson";
+
+  clearFields();
+  msg("Enter the new lesson details.");
+}
+
+function beginEdit() {
+  const lesson = selectedLesson();
+
+  if (!lesson) {
+    msg("Select a lesson first.");
+    return;
+  }
+
+  currentId = lesson.id;
+  isNew = false;
+
+  $("fields").hidden = false;
+  $("formHeading").textContent = "Edit Lesson";
+  $("language").value = "en";
+
+  showPhoto(lesson.image_url || lesson.photo_url || "");
+
+  loadTranslation()
+    .then(() => msg("Lesson ready to edit."))
+    .catch(error => msg("Could not load translation: " + error.message));
+}
+
+async function saveLesson() {
+  const title = $("title").value.trim();
+  const shortDescription = $("shortDescription").value.trim();
+  const explanation = $("explanation").value.trim();
+  const language = $("language").value;
+
+  if (!title) {
+    msg("Enter the lesson title.");
+    return;
+  }
+
+  if (!shortDescription) {
+    msg("Enter the short description.");
+    return;
+  }
+
+  if (!explanation) {
+    msg("Enter the explanation.");
+    return;
+  }
+
+  const button = $("save");
+  button.disabled = true;
+  msg("Saving lesson...");
+
+  try {
+    let id = currentId;
+    const oldLesson = lessons.find(
+      lesson => String(lesson.id) === String(id)
+    );
+
+    const subjectId = oldLesson?.subject_id || subjects[0]?.id;
+
+    if (!subjectId) {
+      throw Error("No subject available for this lesson.");
+    }
+
+    if (isNew) {
+      const result = await api("/api/lessons", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          subject_id: Number(subjectId),
+          description: shortDescription,
+          is_free: 1,
+          status: "PUBLISHED"
+        })
+      });
+
+      id = result.id;
+
+      if (!id) {
+        throw Error("The Worker did not return a lesson ID.");
+      }
+
+      currentId = id;
+      isNew = false;
+    } else {
+      if (!id) {
+        throw Error("Choose a lesson or click New Lesson.");
+      }
+
+      await api("/api/lessons/" + id, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: oldLesson?.title || title,
+          subject_id: Number(subjectId),
+          description: shortDescription,
+          is_free: oldLesson?.is_free ?? 1,
+          status: oldLesson?.status || "PUBLISHED"
+        })
+      });
+    }
+
+    await api("/api/translations", {
+      method: "POST",
+      body: JSON.stringify({
+        lesson_id: Number(id),
+        language,
+        title,
+        description: shortDescription,
+        content: explanation
+      })
+    });
+
+    await loadAll(id);
+
+    $("language").value = language;
+    await loadTranslation();
+
+    $("fields").hidden = false;
+    msg("Lesson saved successfully.");
+  } catch (error) {
+    msg("Save failed: " + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function uploadPhoto() {
+  if (!currentId || isNew) {
+    msg("Save the lesson first, then upload its photo.");
+    return;
+  }
+
+  const file = $("photo").files[0];
+
+  if (!file) {
+    msg("Choose a photo first.");
+    return;
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif"
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    msg("Choose a JPG, PNG, WEBP, or GIF image.");
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    msg("Photo must be 5 MB or smaller.");
+    return;
+  }
+
+  const button = $("uploadPhoto");
+  button.disabled = true;
+
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("lesson_id", String(currentId));
+
+    const result = await api("/api/lesson-images", {
+      method: "POST",
+      body: form
+    });
+
+    if (!result.url) {
+      throw Error("The Worker did not return a photo URL.");
+    }
+
+    showPhoto(result.url);
+    $("photo").value = "";
+
+    await loadAll(currentId);
+    msg("Photo uploaded successfully.");
+  } catch (error) {
+    msg("Photo upload failed: " + error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function changeLanguage() {
+  if (isNew) {
+    $("title").value = "";
+    $("shortDescription").value = "";
+    $("explanation").value = "";
+    return;
+  }
+
+  try {
+    await loadTranslation();
+    msg("Language fields loaded.");
+  } catch (error) {
+    msg("Language load failed: " + error.message);
+  }
+}
+
+function renderLessonList() {
+  const query = $("searchLessons").value.trim().toLowerCase();
+
+  const filtered = lessons.filter(lesson =>
+    String(lesson.title || "").toLowerCase().includes(query) ||
+    String(lesson.description || "").toLowerCase().includes(query) ||
+    String(lesson.id || "").includes(query)
+  );
+
+  $("lessonList").innerHTML = filtered.map(lesson => {
+    const title = escapeHTML(lesson.title || ("Lesson " + lesson.id));
+    const description = escapeHTML(lesson.description || "No description");
+    const imageUrl = lesson.image_url || lesson.photo_url || "";
+
+    return `
+      <div class="item">
+        <strong>${title}</strong>
+        <p class="muted">${description}</p>
+        <p class="muted">Lesson ID: ${escapeHTML(lesson.id)}</p>
+        ${imageUrl
+          ? `<p><a href="${escapeHTML(imageUrl)}" target="_blank" rel="noopener">View photo</a></p>`
+          : ""}
+        <button type="button" class="secondary"
+          onclick="selectLessonForEdit(${Number(lesson.id)})">
+          Edit
+        </button>
+      </div>
+    `;
+  }).join("") || "<p>No lessons found.</p>";
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[character]);
+}
+
+function selectLessonForEdit(id) {
+  $("lessonSelect").value = String(id);
+  beginEdit();
+  $("fields").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function logout() {
+  token = "";
+  currentId = null;
+  isNew = false;
+  subjects = [];
+  lessons = [];
+  translations = [];
+
+  $("editor").hidden = true;
+  $("lessonListCard").hidden = true;
+  $("fields").hidden = true;
+  $("loginCard").hidden = false;
+  $("googleButton").hidden = false;
+
+  clearFields();
+  msg("Signed out. Please sign in again.");
+}
+
+$("newLesson").addEventListener("click", beginNew);
+$("editLesson").addEventListener("click", beginEdit);
+$("save").addEventListener("click", saveLesson);
+$("uploadPhoto").addEventListener("click", uploadPhoto);
+$("logout").addEventListener("click", logout);
+$("language").addEventListener("change", changeLanguage);
+$("refresh").addEventListener("click", () => {
+  loadAll().catch(error => msg("Refresh failed: " + error.message));
+});
+$("searchLessons").addEventListener("input", renderLessonList);
+
+$("lessonSelect").addEventListener("change", () => {
+  const lesson = selectedLesson();
+
+  if (lesson) {
+    currentId = lesson.id;
+    isNew = false;
+    $("fields").hidden = true;
+    showPhoto(lesson.image_url || lesson.photo_url || "");
+    msg("Lesson selected. Click Edit Selected Lesson to make changes.");
+  } else {
+    currentId = null;
+    $("fields").hidden = true;
+  }
 });
 
-async function saveContent(){
- if(uploading)return say("Wait for the image upload.",true);
- const id=$("tid").value;
- const b={category_id:$("tc").value,title_en:$("enT").value.trim(),title_ta:$("taT").value.trim(),title_si:$("siT").value.trim(),description_en:$("enD").value,description_ta:$("taD").value,description_si:$("siD").value,explanation_en:$("enE").value,explanation_ta:$("taE").value,explanation_si:$("siE").value,image_url:$("image").value,sort_order:+$("to").value||0};
- if(!b.category_id||!(b.title_en||b.title_ta||b.title_si))return say("Choose a category and enter a title.",true);
- try{
-  await req(id?"/api/contents/"+id:"/api/contents",{method:id?"PUT":"POST",body:JSON.stringify(b)});
-  clearContent();await load();say("Content saved.");
- }catch(e){say(e.message,true)}
-}
+$("cancel").addEventListener("click", () => {
+  $("fields").hidden = true;
+  isNew = false;
+  msg("Editing cancelled.");
+});
 
-async function delContent(id){
- if(!confirm("Delete this content?"))return;
- try{await req("/api/contents/"+id,{method:"DELETE"});await load();say("Content deleted.");}
- catch(e){say(e.message,true)}
-}
+$("removePhoto").addEventListener("click", () => {
+  $("photo").value = "";
+  showPhoto(savedPhotoUrl);
+  msg("Photo preview reset to the saved photo.");
+});
 
-window.addEventListener("load",()=>{
- const check=setInterval(()=>{
-  if(!window.google?.accounts?.id)return;
-  clearInterval(check);
-  google.accounts.id.initialize({client_id:CLIENT,callback:googleLogin});
-  google.accounts.id.renderButton($("google"),{theme:"outline",size:"large",text:"signin_with",width:260});
- },200);
- setTimeout(()=>{if(!window.google?.accounts?.id)$("err").textContent="Google sign-in failed to load. Refresh the page.";},8000);
+window.addEventListener("load", () => {
+  initGoogle();
+
+  setTimeout(() => {
+    if (!window.google?.accounts?.id) {
+      msg("Google sign-in failed to load. Check your connection and refresh.");
+    }
+  }, 8000);
 });
 </script>
 </body>
