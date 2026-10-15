@@ -2,12 +2,12 @@
 const ORIGIN = "https://createlk.com";
 const GOOGLE_TOKENINFO = "https://oauth2.googleapis.com/tokeninfo";
 
-function json(data, status = 200, origin = ORIGIN) {
+function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Origin": ORIGIN,
       "Access-Control-Allow-Credentials": "true",
       "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type,Authorization",
@@ -29,6 +29,16 @@ async function body(req) {
     return await req.json();
   } catch {
     throw new Error("Invalid JSON body.");
+  }
+}
+
+async function ensureColumn(db, table, column, definition) {
+  const info = await db.prepare(`PRAGMA table_info(${table})`).all();
+  const columns = (info.results || []).map(x => x.name);
+  if (!columns.includes(column)) {
+    await db.prepare(
+      `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`
+    ).run();
   }
 }
 
@@ -54,21 +64,80 @@ async function ensureTables(db) {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
+
+  const categoryColumns = {
+    name_en: "TEXT DEFAULT ''",
+    name_ta: "TEXT DEFAULT ''",
+    name_si: "TEXT DEFAULT ''",
+    description: "TEXT DEFAULT ''",
+    sort_order: "INTEGER DEFAULT 0"
+  };
+
+  for (const [name, definition] of Object.entries(categoryColumns)) {
+    await ensureColumn(db, "academy_categories", name, definition);
+  }
+
+  const contentColumns = {
+    title_en: "TEXT DEFAULT ''",
+    title_ta: "TEXT DEFAULT ''",
+    title_si: "TEXT DEFAULT ''",
+    description_en: "TEXT DEFAULT ''",
+    description_ta: "TEXT DEFAULT ''",
+    description_si: "TEXT DEFAULT ''",
+    explanation_en: "TEXT DEFAULT ''",
+    explanation_ta: "TEXT DEFAULT ''",
+    explanation_si: "TEXT DEFAULT ''",
+    sort_order: "INTEGER DEFAULT 0"
+  };
+
+  for (const [name, definition] of Object.entries(contentColumns)) {
+    await ensureColumn(db, "academy_category_contents", name, definition);
+  }
+
+  // Backfill language fields from the existing single-language fields.
+  await db.prepare(`
+    UPDATE academy_categories
+    SET name_en = CASE WHEN name_en = '' THEN name ELSE name_en END
+    WHERE name_en = '' OR name_en IS NULL
+  `).run();
+
+  await db.prepare(`
+    UPDATE academy_category_contents
+    SET
+      title_en = CASE WHEN title_en = '' THEN title ELSE title_en END,
+      description_en = CASE WHEN description_en = '' THEN description ELSE description_en END,
+      explanation_en = CASE WHEN explanation_en = '' THEN explanation ELSE explanation_en END
+    WHERE title_en = '' OR title_en IS NULL
+       OR description_en = '' OR description_en IS NULL
+       OR explanation_en = '' OR explanation_en IS NULL
+  `).run();
 }
 
 async function authorize(req, env) {
   const header = req.headers.get("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!token) throw new Error("Please sign in with the authorized Google account.");
+
+  if (!token) {
+    throw new Error("Please sign in with the authorized Google account.");
+  }
+
+  if (!env.GOOGLE_CLIENT_ID || !env.ADMIN_EMAIL) {
+    throw new Error(
+      "Worker configuration missing: set GOOGLE_CLIENT_ID and ADMIN_EMAIL in Production secrets."
+    );
+  }
 
   const response = await fetch(
     GOOGLE_TOKENINFO + "?id_token=" + encodeURIComponent(token)
   );
-  if (!response.ok) throw new Error("Google login expired. Please sign in again.");
+
+  if (!response.ok) {
+    throw new Error("Google login expired. Please sign in again.");
+  }
 
   const p = await response.json();
-  const expectedClient = env.GOOGLE_CLIENT_ID;
-  const expectedEmail = (env.ADMIN_EMAIL || "").toLowerCase();
+  const expectedClient = env.GOOGLE_CLIENT_ID.trim();
+  const expectedEmail = env.ADMIN_EMAIL.trim().toLowerCase();
 
   if (
     p.aud !== expectedClient ||
@@ -82,89 +151,171 @@ async function authorize(req, env) {
 
 async function getCategories(db) {
   const result = await db.prepare(`
-    SELECT c.id, c.name, c.parent_id, c.created_at,
+    SELECT c.*,
+      COALESCE(NULLIF(c.name_en,''), c.name) AS display_name,
       (SELECT COUNT(*) FROM academy_category_contents x
        WHERE x.category_id = c.id) AS content_count
     FROM academy_categories c
-    ORDER BY COALESCE(c.parent_id, 0), c.name COLLATE NOCASE
+    ORDER BY c.sort_order ASC, c.id ASC
   `).all();
+
   return result.results || [];
 }
 
-async function categoryDepth(db, id) {
-  let depth = 0;
-  let current = id;
-  const seen = new Set();
+async function getContents(db) {
+  const result = await db.prepare(`
+    SELECT x.*,
+      COALESCE(NULLIF(x.title_en,''), NULLIF(x.title_ta,''),
+               NULLIF(x.title_si,''), x.title) AS display_title,
+      c.name AS category_name,
+      c.name_en AS category_name_en,
+      c.name_ta AS category_name_ta,
+      c.name_si AS category_name_si,
+      c.parent_id
+    FROM academy_category_contents x
+    JOIN academy_categories c ON c.id = x.category_id
+    ORDER BY x.sort_order ASC, x.updated_at DESC, x.id DESC
+  `).all();
 
-  while (current) {
-    if (seen.has(Number(current))) throw new Error("Invalid category hierarchy.");
-    seen.add(Number(current));
-
-    const row = await db.prepare(
-      "SELECT id,parent_id FROM academy_categories WHERE id=?"
-    ).bind(current).first();
-
-    if (!row) throw new Error("Category not found.");
-    if (row.parent_id == null) return depth;
-
-    depth++;
-    if (depth > 1) throw new Error("Only Main Category → Subcategory is allowed.");
-    current = row.parent_id;
-  }
-  return depth;
+  return result.results || [];
 }
 
 async function saveCategory(db, data, id = null) {
-  const name = String(data.name || "").trim();
-  const parentId = data.parent_id ? Number(data.parent_id) : null;
+  const name_en = String(data.name_en || data.name || "").trim();
+  const name_ta = String(data.name_ta || "").trim();
+  const name_si = String(data.name_si || "").trim();
+  const name = name_en || name_ta || name_si;
 
-  if (!name) throw new Error("Category name is required.");
-  if (name.length > 120) throw new Error("Category name is too long.");
+  const description = String(data.description || "").trim();
+  const sort_order = Number(data.sort_order) || 0;
+  const parent_id = data.parent_id ? Number(data.parent_id) : null;
 
-  if (parentId !== null) {
-    if (id && Number(id) === parentId) throw new Error("A category cannot be its own parent.");
+  if (!name) throw new Error("Enter a category name in at least one language.");
+  if ([name_en, name_ta, name_si].some(n => n.length > 120)) {
+    throw new Error("Category name must be 120 characters or fewer.");
+  }
+
+  if (id) {
+    const current = await db.prepare(
+      "SELECT id,parent_id FROM academy_categories WHERE id=?"
+    ).bind(id).first();
+
+    if (!current) throw new Error("Category not found.");
+
+    if (parent_id === Number(id)) {
+      throw new Error("A category cannot be its own parent.");
+    }
+  }
+
+  if (parent_id !== null) {
     const parent = await db.prepare(
       "SELECT id,parent_id FROM academy_categories WHERE id=?"
-    ).bind(parentId).first();
+    ).bind(parent_id).first();
 
     if (!parent) throw new Error("Select an existing main category.");
     if (parent.parent_id != null) {
-      throw new Error("Only two levels are allowed: Main Category → Subcategory.");
+      throw new Error("Only Main Category → Subcategory is allowed.");
     }
+
     if (id) {
-      const children = await db.prepare(
+      const child = await db.prepare(
         "SELECT id FROM academy_categories WHERE parent_id=? LIMIT 1"
       ).bind(id).first();
-      if (children) throw new Error("A category with subcategories cannot become a subcategory.");
-    }
-  } else if (id) {
-    const parent = await db.prepare(
-      "SELECT parent_id FROM academy_categories WHERE id=?"
-    ).bind(id).first();
-    if (parent && parent.parent_id != null) {
-      const children = await db.prepare(
-        "SELECT id FROM academy_categories WHERE parent_id=? LIMIT 1"
-      ).bind(id).first();
-      if (children) throw new Error("Move or delete its subcategories first.");
+
+      if (child) {
+        throw new Error("A category with subcategories cannot become a subcategory.");
+      }
     }
   }
 
   if (id) {
-    await db.prepare(
-      "UPDATE academy_categories SET name=?,parent_id=? WHERE id=?"
-    ).bind(name, parentId, id).run();
+    await db.prepare(`
+      UPDATE academy_categories
+      SET name=?, name_en=?, name_ta=?, name_si=?,
+          description=?, parent_id=?, sort_order=?
+      WHERE id=?
+    `).bind(
+      name, name_en, name_ta, name_si,
+      description, parent_id, sort_order, id
+    ).run();
   } else {
-    await db.prepare(
-      "INSERT INTO academy_categories(name,parent_id) VALUES(?,?)"
-    ).bind(name, parentId).run();
+    await db.prepare(`
+      INSERT INTO academy_categories
+        (name,name_en,name_ta,name_si,description,parent_id,sort_order)
+      VALUES(?,?,?,?,?,?,?)
+    `).bind(
+      name, name_en, name_ta, name_si,
+      description, parent_id, sort_order
+    ).run();
+  }
+}
+
+async function saveContent(db, data, id = null) {
+  const category_id = Number(data.category_id);
+  const category = await db.prepare(
+    "SELECT id FROM academy_categories WHERE id=?"
+  ).bind(category_id).first();
+
+  if (!category) throw new Error("Please select a valid category.");
+
+  const title_en = String(data.title_en || data.title || "").trim();
+  const title_ta = String(data.title_ta || "").trim();
+  const title_si = String(data.title_si || "").trim();
+  const title = title_en || title_ta || title_si;
+
+  if (!title) throw new Error("Enter a title in at least one language.");
+
+  const description_en = String(data.description_en ?? data.description ?? "");
+  const description_ta = String(data.description_ta || "");
+  const description_si = String(data.description_si || "");
+  const explanation_en = String(data.explanation_en ?? data.explanation ?? "");
+  const explanation_ta = String(data.explanation_ta || "");
+  const explanation_si = String(data.explanation_si || "");
+  const image_url = String(data.image_url || "").trim();
+  const sort_order = Number(data.sort_order) || 0;
+
+  if (id) {
+    const existing = await db.prepare(
+      "SELECT id FROM academy_category_contents WHERE id=?"
+    ).bind(id).first();
+
+    if (!existing) throw new Error("Content not found.");
+
+    await db.prepare(`
+      UPDATE academy_category_contents SET
+        category_id=?, title=?, title_en=?, title_ta=?, title_si=?,
+        description=?, description_en=?, description_ta=?, description_si=?,
+        explanation=?, explanation_en=?, explanation_ta=?, explanation_si=?,
+        image_url=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=?
+    `).bind(
+      category_id, title, title_en, title_ta, title_si,
+      description_en, description_en, description_ta, description_si,
+      explanation_en, explanation_en, explanation_ta, explanation_si,
+      image_url, sort_order, id
+    ).run();
+  } else {
+    await db.prepare(`
+      INSERT INTO academy_category_contents (
+        category_id,title,title_en,title_ta,title_si,
+        description,description_en,description_ta,description_si,
+        explanation,explanation_en,explanation_ta,explanation_si,
+        image_url,sort_order
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).bind(
+      category_id, title, title_en, title_ta, title_si,
+      description_en, description_en, description_ta, description_si,
+      explanation_en, explanation_en, explanation_ta, explanation_si,
+      image_url, sort_order
+    ).run();
   }
 }
 
 async function handle(req, env) {
-  const blocked = cors(req);
-  if (blocked) return blocked;
-
   if (req.method === "OPTIONS") {
+    const blocked = cors(req);
+    if (blocked) return blocked;
+
     return new Response(null, {
       status: 204,
       headers: {
@@ -177,20 +328,28 @@ async function handle(req, env) {
     });
   }
 
+  const blocked = cors(req);
+  if (blocked) return blocked;
+
   const url = new URL(req.url);
   const path = url.pathname;
 
-  // Public image delivery; upload endpoints remain administrator-only.
+  // Public image delivery.
   if (req.method === "GET" && path.startsWith("/images/")) {
     const key = decodeURIComponent(path.slice("/images/".length));
-    if (!key || key.includes("..")) return json({ error: "Invalid image path." }, 400);
+    if (!key || key.includes("..") || key.startsWith("/")) {
+      return json({ error: "Invalid image path." }, 400);
+    }
+
     const object = await env.FILES.get(key);
     if (!object) return json({ error: "Image not found." }, 404);
 
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("ETag", object.httpEtag);
+    headers.set("Access-Control-Allow-Origin", ORIGIN);
     headers.set("Cache-Control", "public, max-age=31536000, immutable");
+
     return new Response(object.body, { headers });
   }
 
@@ -199,7 +358,11 @@ async function handle(req, env) {
     await ensureTables(env.DB);
 
     if (req.method === "GET" && path === "/api/bootstrap") {
-      return json({ ok: true, categories: await getCategories(env.DB) });
+      const [categories, contents] = await Promise.all([
+        getCategories(env.DB),
+        getContents(env.DB)
+      ]);
+      return json({ ok: true, categories, contents });
     }
 
     if (req.method === "GET" && path === "/api/categories") {
@@ -212,6 +375,7 @@ async function handle(req, env) {
     }
 
     const categoryMatch = path.match(/^\/api\/categories\/(\d+)$/);
+
     if (categoryMatch && req.method === "PUT") {
       await saveCategory(env.DB, await body(req), Number(categoryMatch[1]));
       return json({ ok: true, categories: await getCategories(env.DB) });
@@ -219,77 +383,47 @@ async function handle(req, env) {
 
     if (categoryMatch && req.method === "DELETE") {
       const id = Number(categoryMatch[1]);
+
       const content = await env.DB.prepare(
         "SELECT id FROM academy_category_contents WHERE category_id=? LIMIT 1"
       ).bind(id).first();
-      if (content) return json({ error: "This category has content. Delete or move its content first." }, 409);
+
+      if (content) {
+        return json({
+          error: "This category has content. Delete or move its content first."
+        }, 409);
+      }
 
       const child = await env.DB.prepare(
         "SELECT id FROM academy_categories WHERE parent_id=? LIMIT 1"
       ).bind(id).first();
-      if (child) return json({ error: "Delete its subcategories first." }, 409);
 
-      await env.DB.prepare("DELETE FROM academy_categories WHERE id=?").bind(id).run();
+      if (child) {
+        return json({ error: "Delete its subcategories first." }, 409);
+      }
+
+      await env.DB.prepare(
+        "DELETE FROM academy_categories WHERE id=?"
+      ).bind(id).run();
+
       return json({ ok: true, categories: await getCategories(env.DB) });
     }
 
     if (req.method === "GET" && path === "/api/contents") {
-      const result = await env.DB.prepare(`
-        SELECT x.*, c.name AS category_name, c.parent_id
-        FROM academy_category_contents x
-        JOIN academy_categories c ON c.id=x.category_id
-        ORDER BY x.updated_at DESC, x.id DESC
-      `).all();
-      return json({ contents: result.results || [] });
+      return json({ contents: await getContents(env.DB) });
     }
 
     if (req.method === "POST" && path === "/api/contents") {
-      const data = await body(req);
-      const categoryId = Number(data.category_id);
-      const category = await env.DB.prepare(
-        "SELECT id,name FROM academy_categories WHERE id=?"
-      ).bind(categoryId).first();
-
-      if (!category) return json({ error: "Please select a valid category." }, 400);
-
-      await env.DB.prepare(`
-        INSERT INTO academy_category_contents
-          (category_id,title,description,explanation,image_url)
-        VALUES(?,?,?,?,?)
-      `).bind(
-        categoryId,
-        category.name,
-        String(data.description || "").trim(),
-        String(data.explanation || "").trim(),
-        String(data.image_url || "").trim()
-      ).run();
-
+      await saveContent(env.DB, await body(req));
       return json({ ok: true });
     }
 
     const contentMatch = path.match(/^\/api\/contents\/(\d+)$/);
-    if (contentMatch && req.method === "PUT") {
-      const id = Number(contentMatch[1]);
-      const data = await body(req);
-      const categoryId = Number(data.category_id);
-      const category = await env.DB.prepare(
-        "SELECT id,name FROM academy_categories WHERE id=?"
-      ).bind(categoryId).first();
-      if (!category) return json({ error: "Please select a valid category." }, 400);
 
-      await env.DB.prepare(`
-        UPDATE academy_category_contents
-        SET category_id=?, title=?, description=?, explanation=?, image_url=?,
-            updated_at=CURRENT_TIMESTAMP
-        WHERE id=?
-      `).bind(
-        categoryId,
-        category.name,
-        String(data.description || "").trim(),
-        String(data.explanation || "").trim(),
-        String(data.image_url || "").trim(),
-        id
-      ).run();
+    if (contentMatch && req.method === "PUT") {
+      await saveContent(
+        env.DB, await body(req), Number(contentMatch[1])
+      );
       return json({ ok: true });
     }
 
@@ -297,17 +431,22 @@ async function handle(req, env) {
       await env.DB.prepare(
         "DELETE FROM academy_category_contents WHERE id=?"
       ).bind(Number(contentMatch[1])).run();
+
       return json({ ok: true });
     }
 
     if (req.method === "POST" && path === "/api/content-images") {
-      if (!env.FILES) throw new Error("R2 binding FILES is not configured.");
+      if (!env.FILES) {
+        throw new Error("R2 binding FILES is not configured.");
+      }
 
       const form = await req.formData();
       const file = form.get("image");
+
       if (!file || typeof file.arrayBuffer !== "function") {
         return json({ error: "Choose an image to upload." }, 400);
       }
+
       if (file.size > 10 * 1024 * 1024) {
         return json({ error: "Image must be 10 MB or smaller." }, 400);
       }
@@ -318,21 +457,34 @@ async function handle(req, env) {
         "image/webp": "webp",
         "image/gif": "gif"
       };
+
       const ext = allowed[file.type];
-      if (!ext) return json({ error: "Use JPG, PNG, WEBP, or GIF." }, 400);
+      if (!ext) {
+        return json({ error: "Use JPG, PNG, WEBP, or GIF." }, 400);
+      }
 
       const key = `category-content/${crypto.randomUUID()}.${ext}`;
+
       await env.FILES.put(key, await file.arrayBuffer(), {
         httpMetadata: { contentType: file.type }
       });
-      return json({ ok: true, image_url: `${url.origin}/images/${key}` });
+
+      return json({
+        ok: true,
+        image_url: `${url.origin}/images/${key}`
+      });
     }
 
     return json({ error: "Endpoint not found." }, 404);
   } catch (error) {
     const message = error?.message || "Unexpected server error.";
-    const status = /sign in|login expired|access denied|authorized administrator/i.test(message)
-      ? 401 : 400;
+    const status =
+      /sign in|login expired|access denied|authorized administrator/i.test(message)
+        ? 401
+        : /not configured|missing:/i.test(message)
+          ? 500
+          : 400;
+
     return json({ error: message }, status);
   }
 }
