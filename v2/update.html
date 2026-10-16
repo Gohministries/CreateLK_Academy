@@ -1,668 +1,145 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#102a56">
-<title>Facebook Monetization Guide — Admin</title>
+<title>CreateLK Academy Admin</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#f3f6fb;color:#17243b;font:15px Arial,sans-serif}
-header{background:#102a56;color:white;padding:20px}
-header h1{font-size:21px;margin:0}
-main{max-width:760px;margin:auto;padding:16px 12px}
-.card{background:white;border:1px solid #dbe3ef;border-radius:12px;padding:18px;margin-bottom:15px}
-label{display:block;font-weight:bold;font-size:14px;margin:15px 0 7px}
-input,select,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
-textarea{min-height:100px;resize:vertical;line-height:1.6}
-button{border:0;border-radius:8px;padding:12px 15px;background:#155eef;color:white;font-weight:bold;cursor:pointer}
-button:disabled{opacity:.5;cursor:not-allowed}
-.secondary{background:#e8eef8;color:#102a56}
-.danger{background:#b42318;color:white}
-.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}
-#message{background:#eef4ff;padding:12px;border-radius:8px;margin-top:12px;overflow-wrap:anywhere;line-height:1.5}
-#preview{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:8px}
-.muted{color:#64748b;font-size:13px;line-height:1.5}
-.item{padding:12px;border:1px solid #dbe3ef;border-radius:8px;margin-top:10px;overflow-wrap:anywhere}
-.item p{line-height:1.5}
-[hidden]{display:none!important}
-@media(max-width:500px){
- .card{padding:14px}
- header{padding:16px}
-}
+*{box-sizing:border-box}body{margin:0;font:14px Arial;background:#f4f6fa;color:#182238}
+header{background:#102a56;color:white;padding:15px;display:flex;gap:15px;align-items:center}
+button{padding:10px;border:0;border-radius:7px;background:#102a56;color:white;cursor:pointer;margin:2px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #ccd4e0;border-radius:7px;margin:5px 0 12px}
+nav{display:none;background:white;padding:10px}nav.open{display:block}nav button{width:100%;text-align:left}
+main{padding:15px;max-width:1000px;margin:auto}.card{background:white;padding:15px;border-radius:10px;margin:12px 0}
+.hidden{display:none!important}.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #ddd}
+.wrap{overflow:auto}.danger{background:#b42318}.light{background:#e9edf5;color:#102a56}
+#msg{position:fixed;bottom:10px;left:10px;background:#102a56;color:white;padding:12px;border-radius:8px}
 </style>
 </head>
 <body>
 <header>
-<h1>Facebook Monetization Guide — Admin Panel</h1>
+<button onclick="nav.classList.toggle('open')">☰</button>
+<strong>CreateLK Academy Admin</strong>
+<button style="margin-left:auto" onclick="logout()">Logout</button>
 </header>
 
-<main>
-<section class="card" id="loginCard">
-<h2>Administrator Login</h2>
-<p class="muted">Sign in with your authorized Google administrator account.</p>
-<div id="googleButton"></div>
-<div id="message" role="status" aria-live="polite">Please sign in with Google.</div>
-</section>
-
-<section class="card" id="editor" hidden>
-<h2>Lesson Editor</h2>
-
-<p class="muted" id="adminEmail"></p>
-
-<label for="lessonSelect">Select lesson</label>
-<select id="lessonSelect">
-<option value="">Choose a lesson</option>
-</select>
-
-<div class="actions">
-<button id="newLesson" class="secondary" type="button">+ New Lesson</button>
-<button id="editLesson" class="secondary" type="button">Edit Selected Lesson</button>
-<button id="refresh" class="secondary" type="button">Refresh Lessons</button>
-<button id="logout" class="danger" type="button">Sign Out</button>
+<div id="login" class="card" style="max-width:400px;margin:35px auto;text-align:center">
+<h2>Admin Login</h2><div id="google"></div>
 </div>
 
-<div id="fields" hidden>
-<hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0">
+<nav id="nav" class="hidden">
+<button onclick="page('home')">Dashboard</button>
+<button onclick="page('categories')">Categories</button>
+<button onclick="page('contents')">Lessons / Content</button>
+<button onclick="load()">Refresh</button>
+</nav>
 
-<h3 id="formHeading">Lesson Details</h3>
+<main id="app" class="hidden">
+<section id="home" class="page">
+<div class="card"><h2>Dashboard</h2>
+<p>Categories: <b id="nc">0</b></p>
+<p>Lessons / Content: <b id="nn">0</b></p>
+<button onclick="page('categories')">Manage Categories</button>
+<button onclick="page('contents')">Manage Lessons</button>
+</div></section>
 
-<label for="language">Language</label>
-<select id="language">
-<option value="en">English</option>
-<option value="ta">Tamil — தமிழ்</option>
-<option value="si">Sinhala — සිංහල</option>
-</select>
+<section id="categories" class="page hidden">
+<div class="card"><h2>Categories</h2>
+<button onclick="edit('category')">+ Add Category</button>
+<input id="cs" placeholder="Search categories" oninput="render()">
+<div class="wrap"><table><tbody id="cr"></tbody></table></div>
+</div></section>
 
-<label for="title">Lesson Title</label>
-<input id="title" maxlength="250" placeholder="Enter lesson title">
+<section id="contents" class="page hidden">
+<div class="card"><h2>Lessons / Content</h2>
+<button onclick="edit('content')">+ Add Content</button>
+<input id="ns" placeholder="Search content" oninput="render()">
+<div class="wrap"><table><tbody id="nr"></tbody></table></div>
+</div></section>
 
-<label for="shortDescription">Short Description</label>
-<textarea id="shortDescription" maxlength="1000"
-placeholder="Write a short summary of this lesson"></textarea>
-
-<label for="explanation">Full Lesson Explanation</label>
-<textarea id="explanation" style="min-height:230px"
-placeholder="Write the complete lesson content"></textarea>
-
-<label for="photo">Lesson Photo</label>
-<input id="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
-<p class="muted">JPG, PNG, WEBP or GIF. Maximum file size: 5 MB.</p>
-
-<div class="actions">
-<button id="uploadPhoto" class="secondary" type="button">Upload / Replace Photo</button>
-<button id="removePhoto" class="secondary" type="button">Clear Photo Preview</button>
+<div id="form" class="card hidden">
+<h2 id="ft">Edit</h2><form id="editor"></form>
 </div>
-
-<img id="preview" hidden alt="Lesson photo preview">
-
-<div class="actions">
-<button id="save" type="button">Save Changes</button>
-<button id="cancel" class="secondary" type="button">Cancel</button>
-</div>
-</div>
-</section>
-
-<section class="card" id="lessonListCard" hidden>
-<h2>Available Lessons</h2>
-<input id="searchLessons" placeholder="Search lessons..." aria-label="Search lessons">
-<div id="lessonList"></div>
-</section>
 </main>
+<div id="msg" class="hidden"></div>
 
 <script>
-"use strict";
-
-const API = "https://update-v2.createlk.workers.dev";
-const GOOGLE_CLIENT_ID =
-  "582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
-const ADMIN = "gateofheavensl1@gmail.com";
-
-const $ = id => document.getElementById(id);
-
-let token = "";
-let subjects = [];
-let lessons = [];
-let translations = [];
-let currentId = null;
-let isNew = false;
-let savedPhotoUrl = "";
-let googleInitialized = false;
-
-function msg(text) {
-  $("message").textContent = text;
+const API="https://update-v2.createlk.workers.dev";
+const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
+let token=sessionStorage.token||"",cats=[],items=[],kind="",current=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function say(s){$("msg").textContent=s;$("msg").classList.remove("hidden");setTimeout(()=>$("msg").classList.add("hidden"),3500)}
+async function api(path,opts={}){
+ let h={Authorization:"Bearer "+token,...opts.headers};
+ if(opts.body&&!(opts.body instanceof FormData))h["Content-Type"]="application/json";
+ let r=await fetch(API+path,{...opts,headers:h}),d;
+ try{d=await r.json()}catch{d={}}
+ if(!r.ok||d.ok===false)throw Error(d.error||d.message||"Request failed");
+ return d
 }
-
-async function api(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  headers.set("Authorization", "Bearer " + token);
-
-  if (options.body && !(options.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const response = await fetch(API + path, {
-    ...options,
-    headers,
-    cache: "no-store"
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw Error(data.error || "Request failed: " + response.status);
-  }
-
-  return data;
+function id(x){return x.id??x.category_id??x.content_id}
+function cname(x){return x?.name_en||x?.name_ta||x?.name_si||"Category"}
+function title(x){return x?.title_en||x?.title_ta||x?.title_si||"Content"}
+function auth(){
+ $("login").classList.add("hidden");$("app").classList.remove("hidden");
+ $("nav").classList.remove("hidden");load()
 }
-
-/* Google login: preserve the old working authentication flow. */
-function googleLogin(response) {
-  token = response.credential || "";
-
-  try {
-    const payload = JSON.parse(
-      atob(
-        token.split(".")[1]
-          .replace(/-/g, "+")
-          .replace(/_/g, "/")
-      )
-    );
-
-    if (
-      payload.email !== ADMIN ||
-      payload.email_verified !== true ||
-      payload.aud !== GOOGLE_CLIENT_ID ||
-      payload.exp * 1000 < Date.now()
-    ) {
-      throw Error("Unauthorized account");
-    }
-  } catch (error) {
-    token = "";
-    msg("Use the authorized Google administrator account.");
-    return;
-  }
-
-  $("googleButton").hidden = true;
-  msg("Signing in and connecting to the admin API...");
-
-  start().catch(error => {
-    token = "";
-    $("googleButton").hidden = false;
-    $("editor").hidden = true;
-    $("lessonListCard").hidden = true;
-    msg("Login or connection failed: " + error.message);
-  });
+function logout(){token="";sessionStorage.removeItem("token");$("app").classList.add("hidden");$("nav").classList.add("hidden");$("login").classList.remove("hidden")}
+function init(){
+ if(!window.google?.accounts?.id)return setTimeout(init,300);
+ google.accounts.id.initialize({client_id:CLIENT,callback:async r=>{
+ token=r.credential;sessionStorage.token=token;
+ try{await api("/api/bootstrap");auth()}catch(e){logout();say(e.message)}
+ }});
+ google.accounts.id.renderButton($("google"),{theme:"outline",size:"large"});
+ if(token)api("/api/bootstrap").then(auth).catch(logout)
 }
-
-async function start() {
-  await loadAll();
-
-  $("loginCard").hidden = true;
-  $("editor").hidden = false;
-  $("lessonListCard").hidden = false;
-  $("adminEmail").textContent = "Signed in as: " + ADMIN;
+async function load(){try{let d=await api("/api/bootstrap");cats=d.categories||[];items=d.contents||[];render()}catch(e){say(e.message)}}
+function render(){
+ $("nc").textContent=cats.length;$("nn").textContent=items.length;
+ $("cr").innerHTML="<tr><th>Category</th><th>Actions</th></tr>"+cats.filter(x=>JSON.stringify(x).toLowerCase().includes(($("cs").value||"").toLowerCase())).map(x=>`<tr><td>${esc(cname(x))}</td><td><button onclick="edit('category','${esc(id(x))}')">Edit/Rename</button><button class="danger" onclick="del('category','${esc(id(x))}')">Delete</button></td></tr>`).join("");
+ $("nr").innerHTML="<tr><th>Content</th><th>Actions</th></tr>"+items.filter(x=>JSON.stringify(x).toLowerCase().includes(($("ns").value||"").toLowerCase())).map(x=>`<tr><td>${esc(title(x))}</td><td><button onclick="edit('content','${esc(id(x))}')">Edit/Rename</button><button class="danger" onclick="del('content','${esc(id(x))}')">Delete</button></td></tr>`).join("");
 }
-
-function initGoogle() {
-  if (!window.google?.accounts?.id) {
-    setTimeout(initGoogle, 200);
-    return;
-  }
-
-  if (googleInitialized) return;
-  googleInitialized = true;
-
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: googleLogin
-  });
-
-  google.accounts.id.renderButton(
-    $("googleButton"),
-    {
-      theme: "outline",
-      size: "large",
-      text: "signin_with",
-      width: 260
-    }
-  );
+function page(p){document.querySelectorAll(".page").forEach(x=>x.classList.add("hidden"));$(p).classList.remove("hidden");$("nav").classList.remove("open");$("form").classList.add("hidden")}
+function field(label,name,value="",type="text"){return `<label>${label}</label><input name="${name}" type="${type}" value="${esc(value)}">`}
+function area(label,name,value=""){return `<label>${label}</label><textarea name="${name}">${esc(value)}</textarea>`}
+function edit(type,key){
+ kind=type;current=key?((type==="category"?cats:items).find(x=>String(id(x))===String(key))||null):null;
+ let x=current||{},f="";
+ if(type==="category"){
+ ["en","ta","si"].forEach(l=>f+=field("Name ("+l+")","name_"+l,x["name_"+l]||""));
+ }else{
+ f+='<label>Category</label><select name="category_id" required><option value="">Select</option>'+cats.map(c=>`<option value="${esc(id(c))}" ${String(x.category_id)===String(id(c))?"selected":""}>${esc(cname(c))}</option>`).join("")+'</select>';
+ ["en","ta","si"].forEach(l=>f+=field("Title ("+l+")","title_"+l,x["title_"+l]||""));
+ ["description","explanation"].forEach(a=>["en","ta","si"].forEach(l=>f+=area(a+" ("+l+")",a+"_"+l,x[a+"_"+l]||"")));
+ f+=field("Image URL","image_url",x.image_url||"");
+ f+='<label>Upload image</label><input type="file" name="image" accept="image/*">';
+ }
+ f+=field("Display order","sort_order",x.sort_order??0,"number");
+ $("ft").textContent=(current?"Edit / Rename ":"Add ")+type;
+ $("editor").innerHTML=f+'<button type="submit">Save</button><button type="button" class="light" onclick="$(\'form\').classList.add(\'hidden\')">Cancel</button>';
+ $("form").classList.remove("hidden");$("form").scrollIntoView({behavior:"smooth"});
 }
-
-function selectedLesson() {
-  return lessons.find(
-    lesson => String(lesson.id) === $("lessonSelect").value
-  ) || null;
+$("editor").onsubmit=async e=>{
+ e.preventDefault();let fd=new FormData(e.target),body=Object.fromEntries(fd.entries());
+ delete body.image;body.sort_order=Number(body.sort_order||0);
+ try{
+ let file=e.target.elements.image?.files?.[0];
+ if(file){let im=new FormData();im.append("image",file);let d=await api("/api/content-images",{method:"POST",body:im});body.image_url=d.image_url}
+ let base=kind==="category"?"/api/categories":"/api/contents";
+ await api(base+(current?"/"+encodeURIComponent(id(current)):""),{method:current?"PUT":"POST",body:JSON.stringify(body)});
+ $("form").classList.add("hidden");await load();say("Saved successfully")
+ }catch(e){say(e.message)}
+};
+async function del(type,key){
+ let x=(type==="category"?cats:items).find(x=>String(id(x))===String(key));
+ if(!confirm("Delete "+(type==="category"?cname(x):title(x))+"?"))return;
+ try{await api((type==="category"?"/api/categories/":"/api/contents/")+encodeURIComponent(key),{method:"DELETE"});await load();say("Deleted")}catch(e){say(e.message)}
 }
-
-function currentTranslation() {
-  return translations.find(
-    translation => translation.language === $("language").value
-  ) || null;
-}
-
-function renderLessons(preferredId) {
-  const select = $("lessonSelect");
-  select.innerHTML = "";
-
-  select.add(new Option("Choose a lesson", ""));
-
-  lessons.forEach(lesson => {
-    const title = lesson.title || ("Lesson " + lesson.id);
-    select.add(new Option(title, String(lesson.id)));
-  });
-
-  if (
-    preferredId &&
-    lessons.some(lesson => String(lesson.id) === String(preferredId))
-  ) {
-    select.value = String(preferredId);
-  }
-}
-
-function showPhoto(url) {
-  const image = $("preview");
-
-  image.onerror = () => {
-    image.hidden = true;
-  };
-
-  image.onload = () => {
-    image.hidden = false;
-  };
-
-  image.src = url || "";
-  image.hidden = !url;
-  savedPhotoUrl = url || "";
-}
-
-function clearFields() {
-  $("language").value = "en";
-  $("title").value = "";
-  $("shortDescription").value = "";
-  $("explanation").value = "";
-  $("photo").value = "";
-  showPhoto("");
-}
-
-async function loadTranslation() {
-  if (!currentId) {
-    clearFields();
-    return;
-  }
-
-  const data = await api("/api/translations/lesson/" + currentId);
-  translations = data.translations || [];
-
-  const translation = currentTranslation();
-
-  $("title").value = translation?.title || "";
-  $("shortDescription").value = translation?.description || "";
-  $("explanation").value = translation?.content || "";
-}
-
-async function loadAll(preferredId) {
-  msg("Loading lessons...");
-
-  const data = await api("/api/bootstrap");
-
-  subjects = data.subjects || [];
-  lessons = data.lessons || [];
-
-  renderLessons(preferredId || currentId);
-
-  $("editor").hidden = false;
-  $("lessonListCard").hidden = false;
-
-  if (currentId) {
-    $("lessonSelect").value = String(currentId);
-    await loadTranslation();
-
-    const lesson = lessons.find(
-      item => String(item.id) === String(currentId)
-    );
-
-    showPhoto(
-      lesson?.image_url ||
-      lesson?.photo_url ||
-      ""
-    );
-  } else {
-    clearFields();
-  }
-
-  renderLessonList();
-  msg("Connected. Select a lesson or create a new one.");
-}
-
-function beginNew() {
-  if (!subjects.length) {
-    msg("No subject exists. Create a subject in your database first.");
-    return;
-  }
-
-  currentId = null;
-  isNew = true;
-  translations = [];
-
-  $("lessonSelect").value = "";
-  $("fields").hidden = false;
-  $("formHeading").textContent = "Create New Lesson";
-
-  clearFields();
-  msg("Enter the new lesson details.");
-}
-
-function beginEdit() {
-  const lesson = selectedLesson();
-
-  if (!lesson) {
-    msg("Select a lesson first.");
-    return;
-  }
-
-  currentId = lesson.id;
-  isNew = false;
-
-  $("fields").hidden = false;
-  $("formHeading").textContent = "Edit Lesson";
-  $("language").value = "en";
-
-  showPhoto(lesson.image_url || lesson.photo_url || "");
-
-  loadTranslation()
-    .then(() => msg("Lesson ready to edit."))
-    .catch(error => msg("Could not load translation: " + error.message));
-}
-
-async function saveLesson() {
-  const title = $("title").value.trim();
-  const shortDescription = $("shortDescription").value.trim();
-  const explanation = $("explanation").value.trim();
-  const language = $("language").value;
-
-  if (!title) {
-    msg("Enter the lesson title.");
-    return;
-  }
-
-  if (!shortDescription) {
-    msg("Enter the short description.");
-    return;
-  }
-
-  if (!explanation) {
-    msg("Enter the explanation.");
-    return;
-  }
-
-  const button = $("save");
-  button.disabled = true;
-  msg("Saving lesson...");
-
-  try {
-    let id = currentId;
-    const oldLesson = lessons.find(
-      lesson => String(lesson.id) === String(id)
-    );
-
-    const subjectId = oldLesson?.subject_id || subjects[0]?.id;
-
-    if (!subjectId) {
-      throw Error("No subject available for this lesson.");
-    }
-
-    if (isNew) {
-      const result = await api("/api/lessons", {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          subject_id: Number(subjectId),
-          description: shortDescription,
-          is_free: 1,
-          status: "PUBLISHED"
-        })
-      });
-
-      id = result.id;
-
-      if (!id) {
-        throw Error("The Worker did not return a lesson ID.");
-      }
-
-      currentId = id;
-      isNew = false;
-    } else {
-      if (!id) {
-        throw Error("Choose a lesson or click New Lesson.");
-      }
-
-      await api("/api/lessons/" + id, {
-        method: "PUT",
-        body: JSON.stringify({
-          title: oldLesson?.title || title,
-          subject_id: Number(subjectId),
-          description: shortDescription,
-          is_free: oldLesson?.is_free ?? 1,
-          status: oldLesson?.status || "PUBLISHED"
-        })
-      });
-    }
-
-    await api("/api/translations", {
-      method: "POST",
-      body: JSON.stringify({
-        lesson_id: Number(id),
-        language,
-        title,
-        description: shortDescription,
-        content: explanation
-      })
-    });
-
-    await loadAll(id);
-
-    $("language").value = language;
-    await loadTranslation();
-
-    $("fields").hidden = false;
-    msg("Lesson saved successfully.");
-  } catch (error) {
-    msg("Save failed: " + error.message);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function uploadPhoto() {
-  if (!currentId || isNew) {
-    msg("Save the lesson first, then upload its photo.");
-    return;
-  }
-
-  const file = $("photo").files[0];
-
-  if (!file) {
-    msg("Choose a photo first.");
-    return;
-  }
-
-  const allowedTypes = [
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/gif"
-  ];
-
-  if (!allowedTypes.includes(file.type)) {
-    msg("Choose a JPG, PNG, WEBP, or GIF image.");
-    return;
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    msg("Photo must be 5 MB or smaller.");
-    return;
-  }
-
-  const button = $("uploadPhoto");
-  button.disabled = true;
-
-  try {
-    const form = new FormData();
-    form.append("file", file);
-    form.append("lesson_id", String(currentId));
-
-    const result = await api("/api/lesson-images", {
-      method: "POST",
-      body: form
-    });
-
-    if (!result.url) {
-      throw Error("The Worker did not return a photo URL.");
-    }
-
-    showPhoto(result.url);
-    $("photo").value = "";
-
-    await loadAll(currentId);
-    msg("Photo uploaded successfully.");
-  } catch (error) {
-    msg("Photo upload failed: " + error.message);
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function changeLanguage() {
-  if (isNew) {
-    $("title").value = "";
-    $("shortDescription").value = "";
-    $("explanation").value = "";
-    return;
-  }
-
-  try {
-    await loadTranslation();
-    msg("Language fields loaded.");
-  } catch (error) {
-    msg("Language load failed: " + error.message);
-  }
-}
-
-function renderLessonList() {
-  const query = $("searchLessons").value.trim().toLowerCase();
-
-  const filtered = lessons.filter(lesson =>
-    String(lesson.title || "").toLowerCase().includes(query) ||
-    String(lesson.description || "").toLowerCase().includes(query) ||
-    String(lesson.id || "").includes(query)
-  );
-
-  $("lessonList").innerHTML = filtered.map(lesson => {
-    const title = escapeHTML(lesson.title || ("Lesson " + lesson.id));
-    const description = escapeHTML(lesson.description || "No description");
-    const imageUrl = lesson.image_url || lesson.photo_url || "";
-
-    return `
-      <div class="item">
-        <strong>${title}</strong>
-        <p class="muted">${description}</p>
-        <p class="muted">Lesson ID: ${escapeHTML(lesson.id)}</p>
-        ${imageUrl
-          ? `<p><a href="${escapeHTML(imageUrl)}" target="_blank" rel="noopener">View photo</a></p>`
-          : ""}
-        <button type="button" class="secondary"
-          onclick="selectLessonForEdit(${Number(lesson.id)})">
-          Edit
-        </button>
-      </div>
-    `;
-  }).join("") || "<p>No lessons found.</p>";
-}
-
-function escapeHTML(value) {
-  return String(value ?? "").replace(/[&<>"']/g, character => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[character]);
-}
-
-function selectLessonForEdit(id) {
-  $("lessonSelect").value = String(id);
-  beginEdit();
-  $("fields").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function logout() {
-  token = "";
-  currentId = null;
-  isNew = false;
-  subjects = [];
-  lessons = [];
-  translations = [];
-
-  $("editor").hidden = true;
-  $("lessonListCard").hidden = true;
-  $("fields").hidden = true;
-  $("loginCard").hidden = false;
-  $("googleButton").hidden = false;
-
-  clearFields();
-  msg("Signed out. Please sign in again.");
-}
-
-$("newLesson").addEventListener("click", beginNew);
-$("editLesson").addEventListener("click", beginEdit);
-$("save").addEventListener("click", saveLesson);
-$("uploadPhoto").addEventListener("click", uploadPhoto);
-$("logout").addEventListener("click", logout);
-$("language").addEventListener("change", changeLanguage);
-$("refresh").addEventListener("click", () => {
-  loadAll().catch(error => msg("Refresh failed: " + error.message));
-});
-$("searchLessons").addEventListener("input", renderLessonList);
-
-$("lessonSelect").addEventListener("change", () => {
-  const lesson = selectedLesson();
-
-  if (lesson) {
-    currentId = lesson.id;
-    isNew = false;
-    $("fields").hidden = true;
-    showPhoto(lesson.image_url || lesson.photo_url || "");
-    msg("Lesson selected. Click Edit Selected Lesson to make changes.");
-  } else {
-    currentId = null;
-    $("fields").hidden = true;
-  }
-});
-
-$("cancel").addEventListener("click", () => {
-  $("fields").hidden = true;
-  isNew = false;
-  msg("Editing cancelled.");
-});
-
-$("removePhoto").addEventListener("click", () => {
-  $("photo").value = "";
-  showPhoto(savedPhotoUrl);
-  msg("Photo preview reset to the saved photo.");
-});
-
-window.addEventListener("load", () => {
-  initGoogle();
-
-  setTimeout(() => {
-    if (!window.google?.accounts?.id) {
-      msg("Google sign-in failed to load. Check your connection and refresh.");
-    }
-  }, 8000);
-});
+init();
 </script>
 </body>
 </html>
