@@ -1,0 +1,282 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post an Ad | CreateLK</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6fa;color:#182337;font:15px Arial}
+header{background:#102a56;color:white;padding:16px;font-size:22px;font-weight:bold}
+header span{color:#d69b16}main{max-width:700px;margin:24px auto;padding:0 12px}
+.card{background:white;padding:20px;margin-bottom:14px;border-radius:12px;border:1px solid #dce2eb}
+h1,h2{color:#102a56;margin-top:0}h1{font-size:27px}h2{font-size:18px}
+label{display:block;font-weight:bold;margin:12px 0 6px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #ccd4e0;border-radius:8px;font:inherit}
+textarea{min-height:100px}button{padding:12px 16px;border:0;border-radius:8px;background:#102a56;color:white;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.6}.gold{background:#d69b16;color:#102a56}.hidden{display:none!important}
+.notice{padding:12px;border-radius:8px;background:#edf3ff;margin:12px 0;overflow-wrap:anywhere}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.package{display:flex;gap:10px;align-items:center;padding:10px;border:1px solid #dce2eb;border-radius:8px;margin:8px 0}
+.package input{width:auto}.package label{flex:1;margin:0}
+#photosPreview img{width:65px;height:65px;object-fit:cover;margin:5px;border-radius:6px}
+small{color:#68758a}
+@media(max-width:500px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>Create<span>LK</span></header>
+<main>
+<h1>Post an Ad</h1>
+<div id="status" class="notice hidden"></div>
+
+<section id="login" class="card">
+<h2>Sign in</h2>
+<div id="googleButton"></div>
+<div id="loginMessage"></div>
+</section>
+
+<section id="account" class="card hidden">
+<strong id="userName"></strong> <span id="userEmail"></span>
+<button type="button" id="logout" style="float:right">Sign out</button>
+</section>
+
+<form id="form" class="hidden">
+<section class="card">
+<h2>Ad details</h2>
+<label>Title *</label><input id="title" required maxlength="150">
+<label>Description *</label><textarea id="description" required></textarea>
+<div class="row">
+<div><label>Category *</label><select id="category" required><option value="">Loading...</option></select></div>
+<div><label>District *</label><select id="district" required><option value="">Loading...</option></select></div>
+</div>
+<label>City *</label><select id="city" required disabled><option value="">Select district first</option></select>
+</section>
+
+<section class="card">
+<h2>Contact details</h2>
+<label>Name</label><input id="contactName">
+<div class="row">
+<div><label>Phone *</label><input id="phone" type="tel" required></div>
+<div><label>WhatsApp</label><input id="whatsapp" type="tel"></div>
+</div>
+</section>
+
+<section class="card">
+<h2>Photos *</h2>
+<input id="photos" type="file" accept="image/*" multiple required>
+<small>Choose 1–5 images, up to 5 MB each.</small>
+<div id="photosPreview"></div>
+</section>
+
+<section class="card">
+<h2>Package</h2>
+<div class="package"><input type="radio" name="package" value="FREE" checked><label>Free Ad — LKR 0</label></div>
+<div class="package"><input type="radio" name="package" value="URGENT"><label>Urgent — LKR 500</label></div>
+<div class="package"><input type="radio" name="package" value="FEATURED"><label>Featured — LKR 500</label></div>
+<div class="package"><input type="radio" name="package" value="TOP_AD"><label>Top Ad — LKR 500</label></div>
+<div class="package"><input type="radio" name="package" value="ALL_3"><label>All 3 — LKR 1,500</label></div>
+<div id="paymentBox" class="hidden">
+<label>Payment slip *</label>
+<input id="paymentSlip" type="file" accept="image/*,application/pdf">
+</div>
+</section>
+
+<section class="card">
+<p>Your ad will be reviewed before publication.</p>
+<button id="submit" class="gold" type="submit" style="width:100%">Submit Ad</button>
+</section>
+</form>
+</main>
+
+<script>
+const API="https://create-post.createlk.workers.dev";
+const AUTH="https://create-public.createlk.workers.dev";
+const CLIENT_ID="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+const KEY="createlk_public_token",USER="createlk_public_user";
+let token=localStorage.getItem(KEY)||"",currentUser={};
+
+const $=id=>document.getElementById(id);
+const status=(m)=>{$("status").textContent=m;$("status").classList.remove("hidden")};
+
+async function api(base,path,options={},auth=false){
+ const headers=new Headers(options.headers||{});
+ if(auth){
+  if(!token)throw Error("Please sign in.");
+  headers.set("Authorization","Bearer "+token);
+ }
+ if(options.body&&!(options.body instanceof FormData))headers.set("Content-Type","application/json");
+ const r=await fetch(base+path,{...options,headers});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok){
+  if(r.status===401&&auth)signOut(false);
+  throw Error(d.error||d.message||"Request failed");
+ }
+ return d;
+}
+
+function signedIn(u){
+ currentUser=u||{};
+ $("login").classList.add("hidden");
+ $("account").classList.remove("hidden");
+ $("form").classList.remove("hidden");
+ $("userName").textContent=currentUser.name||"Signed in";
+ $("userEmail").textContent=currentUser.email||"";
+ $("contactName").value=$("contactName").value||currentUser.name||"";
+ loadOptions().catch(e=>status(e.message));
+}
+
+function signedOut(){
+ $("login").classList.remove("hidden");
+ $("account").classList.add("hidden");
+ $("form").classList.add("hidden");
+}
+
+function signOut(show=true){
+ token="";currentUser={};
+ localStorage.removeItem(KEY);localStorage.removeItem(USER);
+ signedOut();
+ if(show)status("Signed out.");
+}
+
+async function restore(){
+ if(!token){signedOut();return}
+ try{
+  const d=await api(API,"/api/auth/me",{},true);
+  currentUser=d.user||{};
+  localStorage.setItem(USER,JSON.stringify(currentUser));
+  signedIn(currentUser);
+ }catch(e){signOut(false);$("loginMessage").textContent="Please sign in again."}
+}
+
+async function googleLogin(credential){
+ $("loginMessage").textContent="Signing in...";
+ try{
+  const d=await api(AUTH,"/public/google-login",{
+   method:"POST",body:JSON.stringify({credential})
+  });
+  if(!d.token)throw Error("Login token missing");
+  token=d.token;
+  localStorage.setItem(KEY,token);
+  const check=await api(API,"/api/auth/me",{},true);
+  currentUser=check.user||d.user||{};
+  localStorage.setItem(USER,JSON.stringify(currentUser));
+  signedIn(currentUser);
+  status("Signed in successfully.");
+ }catch(e){$("loginMessage").textContent=e.message}
+}
+
+function initGoogle(){
+ if(!window.google?.accounts?.id)return false;
+ if(CLIENT_ID.startsWith("YOUR_GOOGLE")){
+  $("loginMessage").textContent="Set your Google OAuth Client ID in the HTML.";
+  return true;
+ }
+ google.accounts.id.initialize({client_id:CLIENT_ID,callback:r=>googleLogin(r.credential),auto_select:false});
+ google.accounts.id.renderButton($("googleButton"),{theme:"outline",size:"large",text:"signin_with"});
+ return true;
+}
+
+function fill(select,items,label){
+ select.innerHTML="";
+ select.add(new Option(label,""));
+ for(const x of items||[]){
+  const id=x.id??x.category_id??x.district_id??x.city_id;
+  const name=x.name??x.title??x.category_name??"";
+  if(id!=null&&name)select.add(new Option(name,id));
+ }
+}
+
+async function loadOptions(){
+ const [c,d]=await Promise.all([
+  api(API,"/api/categories"),api(API,"/api/locations")
+ ]);
+ fill($("category"),c.categories||c.results,"Select category");
+ fill($("district"),d.locations||d.districts||d.results,"Select district");
+}
+
+$("district").onchange=async()=>{
+ $("city").disabled=true;
+ try{
+  const d=await api(API,"/api/cities?district_id="+encodeURIComponent($("district").value));
+  fill($("city"),d.cities||d.results,"Select city");
+  $("city").disabled=false;
+ }catch(e){status(e.message)}
+};
+
+function packageChange(){
+ const paid=document.querySelector('[name="package"]:checked').value!=="FREE";
+ $("paymentBox").classList.toggle("hidden",!paid);
+ $("paymentSlip").required=paid;
+ if(!paid)$("paymentSlip").value="";
+}
+document.querySelectorAll('[name="package"]').forEach(x=>x.onchange=packageChange);
+
+$("photos").onchange=()=>{
+ const files=[...$("photos").files];
+ $("photosPreview").innerHTML="";
+ if(files.length<1||files.length>5||files.some(f=>f.size>5*1024*1024)){
+  $("photos").value="";
+  status("Select 1–5 photos, each no larger than 5 MB.");return;
+ }
+ files.forEach(f=>{
+  const img=document.createElement("img");
+  img.src=URL.createObjectURL(f);img.alt=f.name;
+  $("photosPreview").append(img);
+ });
+};
+
+async function upload(file,purpose){
+ const form=new FormData();
+ form.append("file",file);form.append("purpose",purpose);
+ const d=await api(API,"/api/upload",{method:"POST",body:form},true);
+ if(!d.key)throw Error("Upload did not return a file key");
+ return d.key;
+}
+
+$("form").onsubmit=async e=>{
+ e.preventDefault();
+ const files=[...$("photos").files];
+ const pack=document.querySelector('[name="package"]:checked').value;
+ const slip=$("paymentSlip").files[0];
+ if(files.length<1||files.length>5)return status("Select 1–5 photos.");
+ if(pack!=="FREE"&&!slip)return status("Upload your payment slip.");
+
+ $("submit").disabled=true;
+ $("submit").textContent="Submitting...";
+ try{
+  await api(API,"/api/auth/me",{},true);
+  const photos=[];
+  for(const f of files)photos.push(await upload(f,"ad-photo"));
+  const payment_slip_key=pack==="FREE"?"":await upload(slip,"payment-slip");
+  const body={
+   title:$("title").value.trim(),
+   description:$("description").value.trim(),
+   category_id:$("category").value,
+   district_id:$("district").value,
+   city_id:$("city").value,
+   contact_name:$("contactName").value.trim(),
+   phone:$("phone").value.trim(),
+   whatsapp:$("whatsapp").value.trim(),
+   package:pack,photos,payment_slip_key
+  };
+  const d=await api(API,"/api/ads",{method:"POST",body:JSON.stringify(body)},true);
+  status(d.message||"Ad submitted for review.");
+  $("form").reset();$("photosPreview").innerHTML="";
+  packageChange();
+ }catch(err){status(err.message)}
+ finally{$("submit").disabled=false;$("submit").textContent="Submit Ad"}
+};
+
+$("logout").onclick=()=>signOut();
+restore();
+
+let tries=0;
+const timer=setInterval(()=>{
+ tries++;
+ if(initGoogle()||tries>=30)clearInterval(timer);
+},300);
+</script>
+</body>
+</html>
