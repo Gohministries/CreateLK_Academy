@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,56 +225,106 @@ $("logout").onclick=e=>{
 };
 
 function openLogin(){
- $("signInView").hidden=false;$("postView").hidden=true;
- say("googleStatus","");show("authPopup");googleButton();
+ $("signInView").hidden=false;
+ $("postView").hidden=true;
+ say("googleStatus","");
+ show("authPopup");
+ googleButton();
 }
 function openPost(){
  if(!token){openLogin();say("googleStatus","Sign in with Google to post your ad.");return}
- $("signInView").hidden=true;$("postView").hidden=false;
- say("signedInAs",user.email||"You are signed in.");say("postStatus","");
+ $("signInView").hidden=true;
+ $("postView").hidden=false;
+ say("signedInAs",user.email||"You are signed in.");
+ say("postStatus","");
  show("authPopup");
 }
 $("login").onclick=openLogin;
 $("postBtn").onclick=openPost;
 
 function googleButton(){
- const target=$("googleButton");target.replaceChildren();
+ const target=$("googleButton");
+ target.replaceChildren();
  if(!window.google?.accounts?.id){
-  say("googleStatus","Google Sign-In is loading. Please wait and open Sign in again.");
+  say("googleStatus","Google Sign-In is loading. Please try again.");
   return;
  }
  try{
-  google.accounts.id.initialize({client_id:CLIENT_ID,callback:async response=>{
-   say("googleStatus","Signing in...");
-   try{
-    const d=await api("/api/auth/google",{method:"POST",body:{credential:response.credential}});
-    token=d.token||d.access_token||"";
-    if(!token)throw Error("Worker did not return a session token.");
-    sessionStorage.setItem("apebazar_token",token);
-    let p={};
-    try{p=JSON.parse(atob(response.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")))}catch{}
-    user={...(d.user||{}),name:d.user?.name||p.name||"",email:d.user?.email||p.email||"",picture:d.user?.picture||p.picture||""};
-    authUI();$("signInView").hidden=true;$("postView").hidden=false;
-    say("signedInAs",user.email||"Signed in successfully.");say("googleStatus","");
-   }catch(e){say("googleStatus",e.message)}
-  }});
-  google.accounts.id.renderButton(target,{theme:"filled_black",size:"large",text:"signin_with",shape:"rectangular",width:260});
+  google.accounts.id.initialize({
+   client_id:CLIENT_ID,
+   callback:async response=>{
+    say("googleStatus","Signing in...");
+    try{
+     const d=await api("/api/auth/google",{
+      method:"POST",
+      body:{credential:response.credential}
+     });
+
+     token=d.token||d.access_token||"";
+     if(!token)throw Error("No session token returned.");
+
+     sessionStorage.setItem("apebazar_token",token);
+
+     let p={};
+     try{
+      let part=response.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
+      part+="=".repeat((4-part.length%4)%4);
+      p=JSON.parse(atob(part));
+     }catch{}
+
+     user={
+      ...(d.user||{}),
+      name:d.user?.name||p.name||"",
+      email:d.user?.email||p.email||"",
+      picture:d.user?.picture||p.picture||""
+     };
+
+     authUI();
+
+     // FIX: close login popup; do not open post form.
+     closePop();
+
+    }catch(e){
+     say("googleStatus",e.message);
+    }
+   }
+  });
+
+  google.accounts.id.renderButton(target,{
+   theme:"filled_black",
+   size:"large",
+   text:"signin_with",
+   shape:"rectangular",
+   width:260
+  });
  }catch(e){say("googleStatus",e.message)}
 }
 
 async function loadOptions(){
  try{
-  const [c,d]=await Promise.all([api("/api/categories"),api("/api/locations")]);
-  fill("category",c,"All categories");fill("adCategory",c,"Select category");
-  fill("district",d,"All districts");fill("adDistrict",d,"Select district");
+  const [c,d]=await Promise.all([
+   api("/api/categories"),
+   api("/api/locations")
+  ]);
+  fill("category",c,"All categories");
+  fill("adCategory",c,"Select category");
+  fill("district",d,"All districts");
+  fill("adDistrict",d,"Select district");
  }catch(e){say("browseStatus","Filters: "+e.message)}
 }
 
 function safeURL(v){
- try{const u=new URL(v,location.href);return ["https:","http:"].includes(u.protocol)?u.href:""}catch{return ""}
+ try{
+  const u=new URL(v,location.href);
+  return ["https:","http:"].includes(u.protocol)?u.href:"";
+ }catch{return ""}
 }
-function photo(a){return safeURL(a.image_url||a.photo_url||(Array.isArray(a.photos)?a.photos[0]:""))}
-function linkFor(a){return a.id==null?location.href:new URL("/create/ads.html?id="+encodeURIComponent(a.id),location.origin).href}
+function photo(a){
+ return safeURL(a.image_url||a.photo_url||(Array.isArray(a.photos)?a.photos[0]:""));
+}
+function linkFor(a){
+ return a.id==null?location.href:new URL("/create/ads.html?id="+encodeURIComponent(a.id),location.origin).href;
+}
 async function copyLink(a){
  const s=linkFor(a);
  try{await navigator.clipboard.writeText(s);alert("Ad link copied!")}
@@ -281,14 +332,21 @@ async function copyLink(a){
 }
 function addText(parent,label,value){
  if(value==null||value==="")return;
- const p=document.createElement("p");p.className="detail-text";
- const b=document.createElement("b");b.textContent=label+": ";
- p.append(b,document.createTextNode(String(value)));parent.append(p);
+ const p=document.createElement("p");
+ p.className="detail-text";
+ const b=document.createElement("b");
+ b.textContent=label+": ";
+ p.append(b,document.createTextNode(String(value)));
+ parent.append(p);
 }
 function detail(a){
  $("detailTitle").textContent=a.title||"Ad Details";
- const b=$("detailBody");b.replaceChildren();
- if(photo(a)){const img=document.createElement("img");img.className="detail-img";img.src=photo(a);img.alt=a.title||"Ad";b.append(img)}
+ const b=$("detailBody");
+ b.replaceChildren();
+ if(photo(a)){
+  const img=document.createElement("img");
+  img.className="detail-img";img.src=photo(a);img.alt=a.title||"Ad";b.append(img);
+ }
  const types={product:"Product for Sale",service:"Service / Business",job:"Job Vacancy",website:"Website Promotion",other:"Others"};
  addText(b,"Type",types[a.ad_type]||a.ad_type);
  const price=a.ad_type==="job"?a.salary_lkr:a.price_lkr;
@@ -300,7 +358,8 @@ function detail(a){
  addText(b,"Seller",a.seller_name);
  if(a.seller_phone){
   const row=document.createElement("div");row.className="actions";
-  const call=document.createElement("a");call.className="contact call";call.href="tel:"+a.seller_phone;call.textContent="Call";
+  const call=document.createElement("a");
+  call.className="contact call";call.href="tel:"+a.seller_phone;call.textContent="Call";
   const wa=document.createElement("a");wa.className="contact wa";
   let n=String(a.seller_phone).replace(/\D/g,"");
   if(n.startsWith("0"))n="94"+n.slice(1);
@@ -308,13 +367,21 @@ function detail(a){
   row.append(call,wa);b.append(row);
  }
  const website=safeURL(a.website_url);
- if(website){const x=document.createElement("a");x.href=website;x.target="_blank";x.rel="noopener noreferrer";x.textContent="Visit Website";b.append(x)}
- const copy=document.createElement("button");copy.className="full secondary";copy.style.marginTop="10px";copy.textContent="🔗 Copy Ad Link";copy.onclick=()=>copyLink(a);b.append(copy);
+ if(website){
+  const x=document.createElement("a");x.href=website;x.target="_blank";
+  x.rel="noopener noreferrer";x.textContent="Visit Website";b.append(x);
+ }
+ const copy=document.createElement("button");
+ copy.className="full secondary";copy.style.marginTop="10px";
+ copy.textContent="Copy Ad Link";copy.onclick=()=>copyLink(a);b.append(copy);
  show("detailPopup");
 }
 function card(a){
  const article=document.createElement("article");article.className="ad";
- if(photo(a)){const img=document.createElement("img");img.src=photo(a);img.alt=a.title||"Ad";img.loading="lazy";img.onerror=()=>img.remove();article.append(img)}
+ if(photo(a)){
+  const img=document.createElement("img");img.src=photo(a);img.alt=a.title||"Ad";
+  img.loading="lazy";img.onerror=()=>img.remove();article.append(img);
+ }
  const content=document.createElement("div");content.className="content";
  const title=document.createElement("b");title.className="title";title.textContent=a.title||"Untitled ad";
  const row=document.createElement("div");row.className="card-buttons";
@@ -334,9 +401,11 @@ $("category").onchange=$("district").onchange=loadBrowse;
 $("q").oninput=()=>{clearTimeout(timer);timer=setTimeout(loadBrowse,300)};
 
 async function loadBrowse(){
- say("browseStatus","Loading ads...");$("more").hidden=true;
+ say("browseStatus","Loading ads...");
+ $("more").hidden=true;
  try{
-  browseAds=rows(await api(listURL()));bo=0;$("results").replaceChildren();renderBrowse();
+  browseAds=rows(await api(listURL()));
+  bo=0;$("results").replaceChildren();renderBrowse();
  }catch(e){say("browseStatus","Could not load ads: "+e.message)}
 }
 function renderBrowse(){
@@ -347,9 +416,11 @@ function renderBrowse(){
 $("more").onclick=renderBrowse;
 
 async function loadRecent(){
- say("recentStatus","Loading ads...");$("moreRecent").hidden=true;
+ say("recentStatus","Loading ads...");
+ $("moreRecent").hidden=true;
  try{
-  recentAds=rows(await api("/api/listings"));ro=0;$("recentResults").replaceChildren();renderRecent();
+  recentAds=rows(await api("/api/listings"));
+  ro=0;$("recentResults").replaceChildren();renderRecent();
  }catch(e){say("recentStatus","Could not load recent ads: "+e.message)}
 }
 function renderRecent(){
@@ -367,13 +438,15 @@ $("type").onchange=()=>{
 
 $("postForm").onsubmit=async e=>{
  e.preventDefault();
- const button=$("submitAd");button.disabled=true;button.textContent="Submitting...";
+ const button=$("submitAd");
+ button.disabled=true;button.textContent="Submitting...";
  say("postStatus","Submitting ad...");
  try{
   const type=$("type").value,price=$("price").value,website=$("website").value.trim();
   if(website&&!safeURL(website))throw Error("Enter a valid website URL.");
   const payload={
-   title:$("title").value.trim(),ad_type:type,
+   title:$("title").value.trim(),
+   ad_type:type,
    category_id:$("adCategory").value||null,
    price_lkr:type!=="job"&&price!==""?Number(price):null,
    salary_lkr:type==="job"&&price!==""?Number(price):null,
@@ -388,14 +461,18 @@ $("postForm").onsubmit=async e=>{
   const result=await api("/api/ads",{method:"POST",body:payload});
   if(result.success===false)throw Error(result.message||"Ad submission failed.");
   say("postStatus",result.message||"Ad submitted for approval.");
-  $("postForm").reset();$("type").dispatchEvent(new Event("change"));
+  $("postForm").reset();
+  $("type").dispatchEvent(new Event("change"));
   await loadBrowse();await loadRecent();
  }catch(e){say("postStatus","Could not submit: "+e.message)}
  finally{button.disabled=false;button.textContent="Submit Ad for Approval"}
 };
 
 $("type").dispatchEvent(new Event("change"));
-authUI();loadOptions();loadBrowse();loadRecent();
+authUI();
+loadOptions();
+loadBrowse();
+loadRecent();
 </script>
 </body>
 </html>
