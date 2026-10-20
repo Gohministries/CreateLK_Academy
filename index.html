@@ -1,10 +1,12 @@
-<!DOCTYPE html><html lang="en">
+
+
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b1628">
 <title>CreateLK.com</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{--bg:#0b1628;--p:#13233b;--g:#ffd166;--t:#f4f7fc;--m:#c1cee0;--b:#304561}
 *{box-sizing:border-box}
@@ -29,8 +31,7 @@ main{padding:6px}
 .hero h1{font-size:23px;margin:0}
 .hero p{color:var(--m);margin:7px}
 h3{margin:0 0 8px}
-input,select,textarea{width:100%;padding:9px;background:#0c192c;color:white;border:1px solid var(--b);border-radius:5px;font:15px Arial}
-label{display:block;color:var(--m);font-size:13px;margin:8px 0 4px}
+input,select{width:100%;padding:9px;background:#0c192c;color:white;border:1px solid var(--b);border-radius:5px;font:15px Arial}
 .search,.filters{display:flex;gap:6px;margin-bottom:6px}
 .search input{flex:1;min-width:0}
 .filters>*{min-width:0;flex:1}
@@ -80,12 +81,16 @@ footer{text-align:center;padding:12px;color:var(--m);font-size:12px}
 </div>
 </div>
 </nav>
-</header><main>
+</header>
+
+<main>
 <section class="hero">
 <h1>Buy &amp; Sell in <span class="gold">Sri Lanka</span></h1>
 <p>Discover local deals. Find what you need.</p>
 <button id="postBtn">＋ Post a Free Ad</button>
-</section><section class="panel" id="browse">
+</section>
+
+<section class="panel" id="browse">
 <h3>Browse Ads</h3>
 <form id="searchForm" class="search">
 <input id="q" type="search" placeholder="Search products, vehicles, phones...">
@@ -96,62 +101,80 @@ footer{text-align:center;padding:12px;color:var(--m);font-size:12px}
 <select id="district"><option value="">All districts</option></select>
 </div>
 <div id="browseStatus" class="status"></div>
-</section><div id="results" class="grid"></div>
-<p style="text-align:center"><button id="more" class="secondary" hidden>Load more</button></p><section id="recent">
+</section>
+
+<div id="results" class="grid"></div>
+<p style="text-align:center"><button id="more" class="secondary" hidden>Load more</button></p>
+
+<section id="recent">
 <h3>Recent Posts</h3>
 <div id="recentStatus" class="status">Loading ads...</div>
 <div id="recentResults" class="grid"></div>
 <p style="text-align:center"><button id="moreRecent" class="secondary" hidden>Load more</button></p>
 </section>
-</main><footer>© <span id="year"></span> CreateLK.com</footer><div id="detailPopup" class="popup" role="dialog" aria-modal="true">
+</main>
+
+<footer>© <span id="year"></span> CreateLK.com</footer>
+
+<div id="detailPopup" class="popup" role="dialog" aria-modal="true">
 <div class="box">
 <button class="close" id="closeDetail">✕</button>
 <h2 id="detailTitle">Ad Details</h2>
 <div id="detailBody"></div>
 </div>
-</div><script>
+</div>
+
+<script>
 "use strict";
 
-/* Original API endpoint and Google OAuth client ID */
 const API="https://apebazar-public-api.createlk.workers.dev";
-const CLIENT="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
 const $=id=>document.getElementById(id);
 
 let token=sessionStorage.getItem("apebazar_token")||"";
 let user={};
 let browseAds=[],recentAds=[];
 let bo=0,ro=0,timer;
+const PAGE=12,RECENT_PAGE=6;
 
 $("year").textContent=new Date().getFullYear();
 
 async function api(path,opt={}){
- const h=new Headers(opt.headers||{});
- if(token)h.set("Authorization","Bearer "+token);
- if(opt.body&&!(opt.body instanceof FormData)){
-  h.set("Content-Type","application/json");
-  opt={...opt,body:JSON.stringify(opt.body)};
+ const headers=new Headers(opt.headers||{});
+ if(token)headers.set("Authorization","Bearer "+token);
+
+ const options={...opt,headers};
+ if(opt.body&&typeof opt.body!=="string"&&!(opt.body instanceof FormData)){
+  headers.set("Content-Type","application/json");
+  options.body=JSON.stringify(opt.body);
  }
- const r=await fetch(API+path,{...opt,headers:h});
- const d=await r.json().catch(()=>({}));
- if(!r.ok)throw Error(d.error||d.message||"Request failed ("+r.status+")");
- return d;
+
+ let response;
+ try{
+  response=await fetch(API+path,options);
+ }catch{
+  throw Error("Cannot connect to the API. Check Worker availability and CORS settings for createlk.com.");
+ }
+
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data.error||data.message||"Request failed ("+response.status+")");
+ return data;
 }
 
-function say(id,s){$(id).textContent=s}
+function say(id,text){$(id).textContent=text}
 
-function rows(d){
- if(Array.isArray(d))return d;
- for(const k of ["listings","ads","results","data","items","categories","districts","locations","cities"]){
-  if(Array.isArray(d?.[k]))return d[k];
+function rows(data){
+ if(Array.isArray(data))return data;
+ for(const key of ["listings","ads","results","data","items","categories","districts","locations","cities"]){
+  if(Array.isArray(data?.[key]))return data[key];
  }
  return [];
 }
 
-function fill(id,d,label){
- const s=$(id);
- s.replaceChildren(new Option(label,""));
- rows(d).forEach(x=>{
-  if(x.id!=null&&x.name!=null)s.add(new Option(x.name,x.id));
+function fill(id,data,label){
+ const select=$(id);
+ select.replaceChildren(new Option(label,""));
+ rows(data).forEach(item=>{
+  if(item.id!=null&&item.name!=null)select.add(new Option(item.name,item.id));
  });
 }
 
@@ -162,20 +185,17 @@ function authUI(){
  if(user.picture)$("avatar").src=user.picture;
 }
 
-/* Both buttons open the separate posting page */
+/* Posting page remains unchanged */
 $("login").onclick=()=>location.href="/create/post.html";
 $("postBtn").onclick=()=>location.href="/create/post.html";
 
-/* Popup controls for viewing ad details */
 function closePop(){
- document.querySelectorAll(".popup").forEach(x=>x.classList.remove("show"));
- document.body.classList.remove("lock");
+ document.querySelectorAll(".popup").forEach(p=>p.classList.remove("show"));
 }
 $("closeDetail").onclick=closePop;
 $("detailPopup").onclick=e=>{if(e.target===$("detailPopup"))closePop()};
 document.onkeydown=e=>{if(e.key==="Escape")closePop()};
 
-/* Navigation menu */
 $("menuBtn").onclick=e=>{
  e.stopPropagation();
  $("menu").classList.toggle("show");
@@ -184,7 +204,6 @@ document.onclick=e=>{
  if(!e.target.closest(".menu-wrap"))$("menu").classList.remove("show");
 };
 
-/* Sign out */
 $("logout").onclick=e=>{
  e.preventDefault();
  token="";
@@ -193,37 +212,38 @@ $("logout").onclick=e=>{
  authUI();
 };
 
-/* Load categories and districts */
 async function options(){
  try{
-  const [c,d]=await Promise.all([
-   api("/api/categories"),
-   api("/api/locations")
+  const [categories,locations]=await Promise.all([
+   api("/api/categories"),api("/api/locations")
   ]);
-  fill("category",c,"All categories");
-  fill("district",d,"All districts");
+  fill("category",categories,"All categories");
+  fill("district",locations,"All districts");
  }catch(e){
-  say("browseStatus","Could not load categories: "+e.message);
+  say("browseStatus","Could not load filters: "+e.message);
  }
 }
 
-/* URL helpers */
-function safeURL(v){
+function safeURL(value){
  try{
-  const u=new URL(v);
-  return ["https:","http:"].includes(u.protocol)?u.href:"";
+  const url=new URL(value,location.href);
+  return ["https:","http:"].includes(url.protocol)?url.href:"";
  }catch{return ""}
 }
 
-function wa(v){
- let n=String(v||"").replace(/\D/g,"");
- if(n.startsWith("00"))n=n.slice(2);
- if(n.startsWith("94"))return n;
- if(n.startsWith("0"))return "94"+n.slice(1);
- return n.length===9?"94"+n:n;
+function imageURL(ad){
+ const value=ad.image_url||ad.photo_url||(Array.isArray(ad.photos)?ad.photos[0]:"");
+ return safeURL(value);
 }
 
-/* Shareable ad links use /create/ */
+function wa(value){
+ let number=String(value||"").replace(/\D/g,"");
+ if(number.startsWith("00"))number=number.slice(2);
+ if(number.startsWith("94"))return number;
+ if(number.startsWith("0"))return "94"+number.slice(1);
+ return number.length===9?"94"+number:number;
+}
+
 function shareURL(ad){
  return ad.id==null?location.href:
   new URL("/create/ads.html?id="+encodeURIComponent(ad.id),location.origin).href;
@@ -235,66 +255,59 @@ async function copyLink(ad){
   if(navigator.clipboard&&window.isSecureContext){
    await navigator.clipboard.writeText(link);
    alert("Ad link copied!");
-  }else{
-   window.prompt("Copy this ad link:",link);
-  }
- }catch{
-  window.prompt("Copy this ad link:",link);
- }
+  }else window.prompt("Copy this ad link:",link);
+ }catch{window.prompt("Copy this ad link:",link)}
 }
 
-/* Ad details */
 function detail(ad){
  $("detailTitle").textContent=ad.title||"Ad Details";
- const b=$("detailBody");
- b.replaceChildren();
+ const body=$("detailBody");
+ body.replaceChildren();
 
- const photo=ad.image_url||ad.photo_url||(Array.isArray(ad.photos)?ad.photos[0]:"");
+ const photo=imageURL(ad);
  if(photo){
-  const im=document.createElement("img");
-  im.className="detail-img";
-  im.src=photo;
-  im.alt=ad.title||"Ad photo";
-  b.append(im);
+  const image=document.createElement("img");
+  image.className="detail-img";
+  image.src=photo;
+  image.alt=ad.title||"Ad photo";
+  body.append(image);
  }
 
- const add=(k,v)=>{
-  if(v==null||v==="")return;
+ const add=(key,value)=>{
+  if(value==null||value==="")return;
   const p=document.createElement("p");
   p.className="detail-text";
-  const s=document.createElement("b");
-  s.textContent=k+": ";
-  p.append(s);
+  const bold=document.createElement("b");
+  bold.textContent=key+": ";
+  p.append(bold);
 
-  if(k!=="Description"){
-   p.append(document.createTextNode(String(v)));
+  if(key!=="Description"){
+   p.append(document.createTextNode(String(value)));
   }else{
-   const t=String(v),re=/https?:\/\/[^\s<>"']+/gi;
-   let last=0,m;
-   while((m=re.exec(t))!==null){
-    p.append(document.createTextNode(t.slice(last,m.index)));
-    let u=m[0],tail="";
-    while(/[.,!?;:)\]]$/.test(u)){
-     tail=u.slice(-1)+tail;
-     u=u.slice(0,-1);
+   const text=String(value),regex=/https?:\/\/[^\s<>"']+/gi;
+   let last=0,match;
+   while((match=regex.exec(text))!==null){
+    p.append(document.createTextNode(text.slice(last,match.index)));
+    let raw=match[0],tail="";
+    while(/[.,!?;:)\]]$/.test(raw)){
+     tail=raw.slice(-1)+tail;
+     raw=raw.slice(0,-1);
     }
-    const valid=safeURL(u);
-    if(valid){
+    const url=safeURL(raw);
+    if(url){
      const a=document.createElement("a");
-     a.href=valid;
-     a.textContent=u;
+     a.href=url;
+     a.textContent=raw;
      a.target="_blank";
      a.rel="noopener noreferrer";
      p.append(a);
-    }else{
-     p.append(document.createTextNode(u));
-    }
+    }else p.append(document.createTextNode(raw));
     p.append(document.createTextNode(tail));
-    last=m.index+m[0].length;
+    last=match.index+match[0].length;
    }
-   p.append(document.createTextNode(t.slice(last)));
+   p.append(document.createTextNode(text.slice(last)));
   }
-  b.append(p);
+  body.append(p);
  };
 
  const types={product:"Product for Sale",service:"Service / Business",job:"Job Vacancy",website:"Website Promotion",other:"Others"};
@@ -314,94 +327,92 @@ function detail(ad){
  add("Seller",ad.seller_name);
 
  if(ad.seller_phone){
-  const ac=document.createElement("div");
-  ac.className="actions";
+  const actions=document.createElement("div");
+  actions.className="actions";
 
-  const c=document.createElement("a");
-  c.className="contact call";
-  c.href="tel:"+String(ad.seller_phone).replace(/[^\d+]/g,"");
-  c.textContent="Call";
+  const call=document.createElement("a");
+  call.className="contact call";
+  call.href="tel:"+String(ad.seller_phone).replace(/[^\d+]/g,"");
+  call.textContent="Call";
 
-  const w=document.createElement("a");
-  w.className="contact wa";
-  w.href="https://wa.me/"+encodeURIComponent(wa(ad.seller_phone));
-  w.target="_blank";
-  w.rel="noopener noreferrer";
-  w.textContent="WhatsApp";
+  const whatsapp=document.createElement("a");
+  whatsapp.className="contact wa";
+  whatsapp.href="https://wa.me/"+encodeURIComponent(wa(ad.seller_phone));
+  whatsapp.target="_blank";
+  whatsapp.rel="noopener noreferrer";
+  whatsapp.textContent="WhatsApp";
 
-  ac.append(c,w);
-  b.append(ac);
+  actions.append(call,whatsapp);
+  body.append(actions);
  }
 
- const web=safeURL(ad.website_url);
- if(web){
-  const a=document.createElement("a");
-  a.href=web;
-  a.target="_blank";
-  a.rel="noopener noreferrer";
-  a.className="contact call";
-  a.style.display="block";
-  a.textContent="Visit Website";
-  b.append(a);
+ const website=safeURL(ad.website_url);
+ if(website){
+  const link=document.createElement("a");
+  link.href=website;
+  link.target="_blank";
+  link.rel="noopener noreferrer";
+  link.className="contact call";
+  link.style.display="block";
+  link.textContent="Visit Website";
+  body.append(link);
  }
 
- const cp=document.createElement("button");
- cp.className="secondary";
- cp.style.cssText="width:100%;margin-top:8px";
- cp.textContent="🔗 Copy Ad Link";
- cp.onclick=()=>copyLink(ad);
- b.append(cp);
+ const copy=document.createElement("button");
+ copy.className="secondary";
+ copy.style.cssText="width:100%;margin-top:8px";
+ copy.textContent="🔗 Copy Ad Link";
+ copy.onclick=()=>copyLink(ad);
+ body.append(copy);
 
  $("detailPopup").classList.add("show");
- document.body.classList.add("lock");
 }
 
-/* Ad cards */
 function card(ad){
- const c=document.createElement("article");
- c.className="ad";
- const photo=ad.image_url||ad.photo_url||(Array.isArray(ad.photos)?ad.photos[0]:"");
+ const article=document.createElement("article");
+ article.className="ad";
+ const photo=imageURL(ad);
 
  if(photo){
-  const im=document.createElement("img");
-  im.src=photo;
-  im.alt=ad.title||"Ad photo";
-  im.loading="lazy";
-  im.onerror=()=>im.remove();
-  c.append(im);
+  const img=document.createElement("img");
+  img.src=photo;
+  img.alt=ad.title||"Ad photo";
+  img.loading="lazy";
+  img.onerror=()=>img.remove();
+  article.append(img);
  }
 
- const x=document.createElement("div");
- x.className="content";
- const t=document.createElement("b");
- t.className="title";
- t.textContent=ad.title||"Untitled ad";
+ const content=document.createElement("div");
+ content.className="content";
 
- const bs=document.createElement("div");
- bs.className="card-buttons";
+ const title=document.createElement("b");
+ title.className="title";
+ title.textContent=ad.title||"Untitled ad";
 
- const v=document.createElement("button");
- v.textContent="View Post";
- v.onclick=()=>detail(ad);
+ const buttons=document.createElement("div");
+ buttons.className="card-buttons";
 
- const cp=document.createElement("button");
- cp.className="secondary";
- cp.textContent="Copy Link";
- cp.onclick=()=>copyLink(ad);
+ const view=document.createElement("button");
+ view.textContent="View Post";
+ view.onclick=()=>detail(ad);
 
- bs.append(v,cp);
- x.append(t,bs);
- c.append(x);
- return c;
+ const copy=document.createElement("button");
+ copy.className="secondary";
+ copy.textContent="Copy Link";
+ copy.onclick=()=>copyLink(ad);
+
+ buttons.append(view,copy);
+ content.append(title,buttons);
+ article.append(content);
+ return article;
 }
 
-/* Search */
 function listingsURL(){
- const p=new URLSearchParams();
- if($("q").value.trim())p.set("search",$("q").value.trim());
- if($("category").value)p.set("category",$("category").value);
- if($("district").value)p.set("location",$("district").value);
- return "/api/listings"+(p.size?"?"+p:"");
+ const params=new URLSearchParams();
+ if($("q").value.trim())params.set("search",$("q").value.trim());
+ if($("category").value)params.set("category",$("category").value);
+ if($("district").value)params.set("location",$("district").value);
+ return "/api/listings"+(params.size?"?"+params.toString():"");
 }
 
 $("searchForm").onsubmit=e=>{
@@ -415,8 +426,9 @@ $("q").oninput=()=>{
  timer=setTimeout(loadBrowse,350);
 };
 
-/* Browse listings */
 async function loadBrowse(){
+ say("browseStatus","Loading ads...");
+ $("more").hidden=true;
  try{
   browseAds=rows(await api(listingsURL()));
   bo=0;
@@ -428,15 +440,17 @@ async function loadBrowse(){
 }
 
 function renderBrowse(){
- browseAds.slice(bo,bo+12).forEach(a=>$("results").append(card(a)));
- bo+=Math.min(12,browseAds.length-bo);
+ const batch=browseAds.slice(bo,bo+PAGE);
+ batch.forEach(ad=>$("results").append(card(ad)));
+ bo+=batch.length;
  $("more").hidden=bo>=browseAds.length;
  say("browseStatus",browseAds.length?browseAds.length+" ads found.":"No approved ads found.");
 }
 $("more").onclick=renderBrowse;
 
-/* Recent posts */
 async function loadRecent(){
+ say("recentStatus","Loading recent ads...");
+ $("moreRecent").hidden=true;
  try{
   recentAds=rows(await api("/api/listings"));
   ro=0;
@@ -448,17 +462,18 @@ async function loadRecent(){
 }
 
 function renderRecent(){
- recentAds.slice(ro,ro+6).forEach(a=>$("recentResults").append(card(a)));
- ro+=Math.min(6,recentAds.length-ro);
+ const batch=recentAds.slice(ro,ro+RECENT_PAGE);
+ batch.forEach(ad=>$("recentResults").append(card(ad)));
+ ro+=batch.length;
  $("moreRecent").hidden=ro>=recentAds.length;
  say("recentStatus",recentAds.length?"":"No approved ads available yet.");
 }
 $("moreRecent").onclick=renderRecent;
 
-/* Initialize */
 authUI();
 options();
 loadBrowse();
 loadRecent();
-</script></body>
+</script>
+</body>
 </html>
