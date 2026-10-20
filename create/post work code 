@@ -1,59 +1,22 @@
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "https://createlk.com",
-  "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
-  "Access-Control-Max-Age": "86400"
-};
 
-function response(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...CORS_HEADERS,
-      "Content-Type": "application/json; charset=utf-8"
-    }
-  });
-}
+const ALLOWED_ORIGINS = [
+  "https://createlk.com",
+  "https://www.createlk.com"
+];
 
-async function sha256(value) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)]
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const AD_LIFETIME_DAYS = 30;
 
-async function getUser(req, env) {
-  const auth = req.headers.get("Authorization") || "";
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  if (!match) return null;
-
-  const tokenHash = await sha256(match[1]);
-
-  return await env.DB.prepare(`
-    SELECT u.*
-    FROM user_sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
-      AND s.expires_at > datetime('now')
-    LIMIT 1
-  `).bind(tokenHash).first();
-}
-
-function getCors(req) {
+function cors(req) {
   const origin = req.headers.get("Origin") || "";
-  const allowed = [
-    "https://createlk.com",
-    "https://www.createlk.com"
-  ];
 
   return {
-    "Access-Control-Allow-Origin": allowed.includes(origin)
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin)
       ? origin
       : "https://createlk.com",
-    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
@@ -63,14 +26,177 @@ function json(req, data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      ...getCors(req),
-      "Content-Type": "application/json; charset=utf-8"
+      ...cors(req),
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store"
     }
   });
 }
 
-function error(req, message, status = 400) {
-  return json(req, { success: false, error: message }, status);
+function error(req, message, status = 400, detail) {
+  return json(req, {
+    success: false,
+    error: message,
+    ...(detail ? { detail } : {})
+  }, status);
+}
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value)
+  );
+
+  return [...new Uint8Array(digest)]
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function getUser(req, env) {
+  const authorization = req.headers.get("Authorization") || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+
+  if (!match) return null;
+
+  const tokenHash = await sha256(match[1]);
+
+  return env.DB.prepare(`
+    SELECT u.*
+    FROM user_sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ?
+      AND s.expires_at > datetime('now')
+    LIMIT 1
+  `).bind(tokenHash).first();
+}
+
+function str(value) {
+  return value == null ? "" : String(value).trim();
+}
+
+function getValue(body, ...keys) {
+  for (const key of keys) {
+    if (body[key] !== undefined && body[key] !== null) {
+      return body[key];
+    }
+  }
+
+  return "";
+}
+
+async function columns(db, table) {
+  const result = await db.prepare(
+    `PRAGMA table_info("${table}")`
+  ).all();
+
+  return result.results || [];
+}
+
+async function insertRow(db, table, values) {
+  const schema = await columns(db, table);
+
+  if (!schema.length) {
+    throw new Error(`Database table "${table}" is missing.`);
+  }
+
+  const available = new Set(schema.map(column => column.name));
+
+  const entries = Object.entries(values).filter(
+    ([key, value]) => available.has(key) && value !== undefined
+  );
+
+  const missing = schema.filter(column =>
+    column.notnull &&
+    column.dflt_value == null &&
+    column.pk === 0 &&
+    !entries.some(([key]) => key === column.name)
+  );
+
+  if (missing.length) {
+    throw new Error(
+      `Required columns missing for ${table}: ` +
+      missing.map(column => column.name).join(", ")
+    );
+  }
+
+  if (!entries.length) {
+    throw new Error(`No compatible columns found in ${table}.`);
+  }
+
+  const names = entries
+    .map(([key]) => `"${key}"`)
+    .join(", ");
+
+  const placeholders = entries.map(() => "?").join(", ");
+
+  return db.prepare(
+    `INSERT INTO "${table}" (${names}) VALUES (${placeholders})`
+  ).bind(...entries.map(([, value]) => value)).run();
+}
+
+async function ensureSupportTables(db) {
+  await db.batch([
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS ad_photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad_id INTEGER NOT NULL,
+        photo_key TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS free_ad_claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE,
+        ad_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+  ]);
+}
+
+function normalizePackage(value) {
+  const packageCode = str(value || "FREE").toUpperCase();
+
+  const aliases = {
+    TOP: "TOP_AD",
+    TOPAD: "TOP_AD",
+    "TOP AD": "TOP_AD",
+    "ALL 3": "ALL_3",
+    "ALL THREE": "ALL_3"
+  };
+
+  return aliases[packageCode] || packageCode;
+}
+
+function packagePrice(packageCode) {
+  const prices = {
+    FREE: 0,
+    FEATURED: 500,
+    URGENT: 500,
+    TOP_AD: 500,
+    ALL_3: 1500
+  };
+
+  return Object.prototype.hasOwnProperty.call(prices, packageCode)
+    ? prices[packageCode]
+    : null;
+}
+
+async function checkUpload(env, key, userId, purpose) {
+  if (!env.MEDIA || !key) return false;
+
+  if (!key.startsWith(`customer-uploads/${userId}/`)) {
+    return false;
+  }
+
+  const object = await env.MEDIA.head(key);
+
+  return Boolean(
+    object &&
+    object.customMetadata?.userId === String(userId) &&
+    object.customMetadata?.purpose === purpose
+  );
 }
 
 export default {
@@ -81,17 +207,22 @@ export default {
     if (req.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: getCors(req)
+        headers: cors(req)
       });
     }
 
     try {
-      if (!env.DB) return error(req, "Database binding DB is missing.", 500);
+      if (!env.DB) {
+        return error(req, "D1 binding DB is missing.", 500);
+      }
 
-      // Check the existing login session.
+      // Authentication
       if (path === "/api/auth/me" && req.method === "GET") {
         const user = await getUser(req, env);
-        if (!user) return error(req, "Login required or session expired.", 401);
+
+        if (!user) {
+          return error(req, "Please sign in again.", 401);
+        }
 
         return json(req, {
           success: true,
@@ -105,33 +236,41 @@ export default {
         });
       }
 
-      // Categories.
+      // Categories
       if (path === "/api/categories" && req.method === "GET") {
         const result = await env.DB.prepare(`
-          SELECT * FROM categories
-          ORDER BY name
+          SELECT * FROM categories ORDER BY name
         `).all();
 
-        return json(req, { success: true, categories: result.results || [] });
+        return json(req, {
+          success: true,
+          categories: result.results || []
+        });
       }
 
-      // Districts / locations.
+      // Districts
       if (
         (path === "/api/locations" || path === "/api/districts") &&
         req.method === "GET"
       ) {
         const result = await env.DB.prepare(`
-          SELECT * FROM districts
-          ORDER BY name
+          SELECT * FROM districts ORDER BY name
         `).all();
 
-        return json(req, { success: true, locations: result.results || [] });
+        return json(req, {
+          success: true,
+          locations: result.results || [],
+          districts: result.results || []
+        });
       }
 
-      // Cities in a district.
+      // Cities
       if (path === "/api/cities" && req.method === "GET") {
         const districtId = url.searchParams.get("district_id");
-        if (!districtId) return error(req, "district_id is required.");
+
+        if (!districtId) {
+          return error(req, "district_id is required.");
+        }
 
         const result = await env.DB.prepare(`
           SELECT * FROM cities
@@ -139,10 +278,13 @@ export default {
           ORDER BY name
         `).bind(districtId).all();
 
-        return json(req, { success: true, cities: result.results || [] });
+        return json(req, {
+          success: true,
+          cities: result.results || []
+        });
       }
 
-      // Public approved ads.
+      // Public approved listings
       if (path === "/api/listings" && req.method === "GET") {
         const limit = Math.min(
           Math.max(Number(url.searchParams.get("limit")) || 30, 1),
@@ -150,7 +292,8 @@ export default {
         );
 
         const result = await env.DB.prepare(`
-          SELECT a.*,
+          SELECT
+            a.*,
             c.name AS category_name,
             d.name AS district_name,
             ci.name AS city_name
@@ -159,22 +302,32 @@ export default {
           LEFT JOIN districts d ON d.id = a.district_id
           LEFT JOIN cities ci ON ci.id = a.city_id
           WHERE a.status = 'APPROVED'
-            AND (a.expires_at IS NULL OR a.expires_at > datetime('now'))
-          ORDER BY a.created_at DESC
+            AND (
+              a.expires_at IS NULL OR
+              a.expires_at > datetime('now')
+            )
+          ORDER BY
+            COALESCE(a.top_ad, 0) DESC,
+            COALESCE(a.featured, 0) DESC,
+            COALESCE(a.urgent, 0) DESC,
+            a.created_at DESC
           LIMIT ?
         `).bind(limit).all();
 
-        return json(req, { success: true, listings: result.results || [] });
+        return json(req, {
+          success: true,
+          listings: result.results || []
+        });
       }
 
-      // All other routes below require an existing login.
+      // All remaining routes require login
       const user = await getUser(req, env);
 
       if (!user) {
         return error(req, "Login required or session expired.", 401);
       }
 
-      // Upload an ad photo or payment slip.
+      // Upload photos and payment slips
       if (path === "/api/upload" && req.method === "POST") {
         if (!env.MEDIA) {
           return error(req, "R2 binding MEDIA is missing.", 500);
@@ -187,23 +340,15 @@ export default {
           return error(req, "Select a file to upload.");
         }
 
-        if (file.size > 5 * 1024 * 1024) {
+        if (file.size <= 0) {
+          return error(req, "The selected file is empty.");
+        }
+
+        if (file.size > MAX_FILE_SIZE) {
           return error(req, "Maximum file size is 5 MB.");
         }
 
-        const allowedTypes = [
-          "image/jpeg",
-          "image/png",
-          "image/webp",
-          "image/gif",
-          "application/pdf"
-        ];
-
-        if (!allowedTypes.includes(file.type)) {
-          return error(req, "Unsupported file type.");
-        }
-
-        const extMap = {
+        const types = {
           "image/jpeg": "jpg",
           "image/png": "png",
           "image/webp": "webp",
@@ -211,14 +356,28 @@ export default {
           "application/pdf": "pdf"
         };
 
+        if (!types[file.type]) {
+          return error(req, "Use JPG, PNG, WEBP, GIF or PDF.");
+        }
+
         const purpose = form.get("purpose") === "payment-slip"
           ? "payment-slip"
           : "ad-photo";
 
-        const key = `customer-uploads/${user.id}/${crypto.randomUUID()}.${extMap[file.type]}`;
+        if (
+          purpose === "ad-photo" &&
+          file.type === "application/pdf"
+        ) {
+          return error(req, "Ad photos must be images.");
+        }
+
+        const key =
+          `customer-uploads/${user.id}/${crypto.randomUUID()}.${types[file.type]}`;
 
         await env.MEDIA.put(key, await file.arrayBuffer(), {
-          httpMetadata: { contentType: file.type },
+          httpMetadata: {
+            contentType: file.type
+          },
           customMetadata: {
             userId: String(user.id),
             purpose
@@ -229,28 +388,56 @@ export default {
           success: true,
           key,
           purpose
-        });
+        }, 201);
       }
 
-      // Create an ad using the existing database tables.
+      // Create ad
       if (path === "/api/ads" && req.method === "POST") {
-        const body = await req.json();
+        let body;
 
-        const title = String(body.title || "").trim();
-        const description = String(body.description || "").trim();
-        const categoryId = body.category_id || body.categoryId;
-        const districtId = body.district_id || body.districtId;
-        const cityId = body.city_id || body.cityId;
+        try {
+          body = await req.json();
+        } catch {
+          return error(req, "Invalid JSON request.");
+        }
+
+        const title = str(body.title);
+        const description = str(body.description);
+
+        const categoryId = getValue(
+          body, "category_id", "categoryId"
+        );
+
+        const districtId = getValue(
+          body, "district_id", "districtId"
+        );
+
+        const cityId = getValue(
+          body, "city_id", "cityId"
+        );
+
         const photos = Array.isArray(body.photos)
           ? body.photos
           : Array.isArray(body.photoKeys)
             ? body.photoKeys
             : [];
 
-        if (!title) return error(req, "Ad title is required.");
-        if (!categoryId || !districtId || !cityId) {
-          return error(req, "Category, district and city are required.");
+        if (!title) {
+          return error(req, "Ad title is required.");
         }
+
+        if (title.length > 200) {
+          return error(req, "Title must be 200 characters or fewer.");
+        }
+
+        if (!description) {
+          return error(req, "Ad description is required.");
+        }
+
+        if (!categoryId || !districtId || !cityId) {
+          return error(req, "Select category, district and city.");
+        }
+
         if (photos.length < 1 || photos.length > 5) {
           return error(req, "Upload between 1 and 5 photos.");
         }
@@ -259,159 +446,253 @@ export default {
           return error(req, "R2 binding MEDIA is missing.", 500);
         }
 
-        // Verify all photo keys belong to this logged-in user.
+        const category = await env.DB.prepare(`
+          SELECT id FROM categories WHERE id = ? LIMIT 1
+        `).bind(categoryId).first();
+
+        if (!category) {
+          return error(req, "Category not found.");
+        }
+
+        const district = await env.DB.prepare(`
+          SELECT id FROM districts WHERE id = ? LIMIT 1
+        `).bind(districtId).first();
+
+        if (!district) {
+          return error(req, "District not found.");
+        }
+
+        const city = await env.DB.prepare(`
+          SELECT id FROM cities
+          WHERE id = ? AND district_id = ?
+          LIMIT 1
+        `).bind(cityId, districtId).first();
+
+        if (!city) {
+          return error(
+            req,
+            "City does not match the selected district."
+          );
+        }
+
+        // Validate every uploaded photo
         for (const key of photos) {
-          if (
-            typeof key !== "string" ||
-            !key.startsWith(`customer-uploads/${user.id}/`)
-          ) {
+          if (typeof key !== "string") {
             return error(req, "Invalid photo upload.");
           }
 
-          const object = await env.MEDIA.head(key);
-          if (!object || object.customMetadata?.userId !== String(user.id)) {
-            return error(req, "Photo not found or does not belong to this account.");
+          const valid = await checkUpload(
+            env, key, user.id, "ad-photo"
+          );
+
+          if (!valid) {
+            return error(
+              req,
+              "Photo missing or does not belong to you."
+            );
           }
         }
 
-        const packageCode = String(
-          body.package || body.package_code || "FREE"
-        ).toUpperCase();
+        const packageCode = normalizePackage(getValue(
+          body, "package", "package_code", "packageCode"
+        ));
 
-        const prices = {
-          FREE: 0,
-          URGENT: 500,
-          FEATURED: 500,
-          TOP_AD: 500,
-          ALL_3: 1500
-        };
+        const amount = packagePrice(packageCode);
 
-        if (!(packageCode in prices)) {
+        if (amount === null) {
           return error(req, "Invalid advertising package.");
         }
 
-        const paymentSlip = body.payment_slip_key ||
-          body.paymentSlipKey ||
-          body.payment_slip ||
-          "";
+        const paymentSlip = str(getValue(
+          body,
+          "payment_slip_key",
+          "paymentSlipKey",
+          "payment_slip"
+        ));
 
-        if (prices[packageCode] > 0) {
+        if (amount > 0) {
           if (!paymentSlip) {
-            return error(req, "Upload your payment slip for this package.");
+            return error(req, "Upload your payment slip.");
           }
 
-          if (!paymentSlip.startsWith(`customer-uploads/${user.id}/`)) {
-            return error(req, "Invalid payment slip.");
-          }
+          const validSlip = await checkUpload(
+            env, paymentSlip, user.id, "payment-slip"
+          );
 
-          const slipObject = await env.MEDIA.head(paymentSlip);
-
-          if (
-            !slipObject ||
-            slipObject.customMetadata?.userId !== String(user.id) ||
-            slipObject.customMetadata?.purpose !== "payment-slip"
-          ) {
+          if (!validSlip) {
             return error(req, "Payment slip is invalid.");
+          }
+
+          // Prevent reusing the same payment slip
+          const duplicateSlip = await env.DB.prepare(`
+            SELECT id FROM payments
+            WHERE r2_key = ?
+              AND status IN ('PENDING', 'APPROVED')
+            LIMIT 1
+          `).bind(paymentSlip).first();
+
+          if (duplicateSlip) {
+            return error(
+              req,
+              "This payment slip has already been submitted."
+            );
           }
         }
 
-        // Enforce one free ad per user.
+        await ensureSupportTables(env.DB);
+
+        // Check free-ad allowance
         if (packageCode === "FREE") {
-          const freeClaim = await env.DB.prepare(`
+          const claim = await env.DB.prepare(`
             SELECT id FROM free_ad_claims
             WHERE user_id = ?
             LIMIT 1
           `).bind(user.id).first();
 
-          if (freeClaim) {
-            return error(req, "Your free ad has already been used.");
+          if (claim) {
+            return error(
+              req,
+              "Your free ad has already been used."
+            );
           }
         }
 
-        const contactName = String(
-          body.contact_name || body.contactName || user.name || ""
-        ).trim();
+        const sellerName = str(getValue(
+          body, "seller_name", "contact_name", "contactName"
+        ) || user.name);
 
-        const phone = String(body.phone || body.contact_phone || "").trim();
-        const whatsapp = String(body.whatsapp || "").trim();
+        const phone = str(getValue(
+          body, "seller_phone", "phone", "contact_phone"
+        ));
 
-        if (!phone) return error(req, "Contact phone number is required.");
+        const adType = str(body.ad_type || "SALE").toUpperCase();
+        const condition = str(body.condition || "Used");
+        const websiteUrl = str(body.website_url);
 
-        const now = new Date().toISOString();
-        const expires = new Date(Date.now() + 30 * 86400000).toISOString();
+        const rawPrice = getValue(body, "price_lkr", "price");
+        const rawSalary = getValue(body, "salary_lkr", "salary");
 
-        // Pending ads require admin approval.
-        const insert = await env.DB.prepare(`
-          INSERT INTO ads (
-            user_id, title, description, category_id, district_id, city_id,
-            contact_name, phone, whatsapp, package, price, status,
-            created_at, expires_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        `).bind(
-          user.id,
-          title,
-          description,
-          categoryId,
-          districtId,
-          cityId,
-          contactName,
-          phone,
-          whatsapp,
-          packageCode,
-          prices[packageCode],
-          now,
-          expires
-        ).run();
+        const price = rawPrice === "" ? 0 : Number(rawPrice);
+        const salary = rawSalary === "" ? null : Number(rawSalary);
 
-        const adId = insert.meta?.last_row_id;
-
-        if (!adId) {
-          return error(req, "Ad was not created. Check the ads table schema.", 500);
+        if (!phone) {
+          return error(req, "Contact phone number is required.");
         }
 
+        if (!/^[+0-9()\-\s]{7,25}$/.test(phone)) {
+          return error(req, "Enter a valid phone number.");
+        }
+
+        if (!Number.isFinite(price) || price < 0) {
+          return error(req, "Enter a valid price.");
+        }
+
+        if (
+          salary !== null &&
+          (!Number.isFinite(salary) || salary < 0)
+        ) {
+          return error(req, "Enter a valid salary.");
+        }
+
+        if (websiteUrl) {
+          try {
+            const parsed = new URL(websiteUrl);
+
+            if (!["http:", "https:"].includes(parsed.protocol)) {
+              return error(req, "Invalid website URL.");
+            }
+          } catch {
+            return error(req, "Enter a valid website URL.");
+          }
+        }
+
+        const now = new Date().toISOString();
+        const expires = new Date(
+          Date.now() + AD_LIFETIME_DAYS * 86400000
+        ).toISOString();
+
+        // Labels remain inactive until admin approval.
+        const adInsert = await insertRow(env.DB, "ads", {
+          user_id: user.id,
+          title,
+          description,
+          ad_type: adType,
+          category_id: Number(categoryId),
+          district_id: Number(districtId),
+          city_id: Number(cityId),
+          package_id: null,
+          price_lkr: price,
+          salary_lkr: salary,
+          condition,
+          website_url: websiteUrl || null,
+          seller_name: sellerName,
+          seller_phone: phone,
+          status: "PENDING",
+          featured: 0,
+          urgent: 0,
+          top_ad: 0,
+          created_at: now,
+          expires_at: expires
+        });
+
+        const adId = adInsert.meta?.last_row_id;
+
+        if (!adId) {
+          throw new Error("Could not obtain the new ad ID.");
+        }
+
+        // Save photo records using the columns available in your table.
         for (const key of photos) {
-          await env.DB.prepare(`
-            INSERT INTO ad_photos (ad_id, photo_key)
-            VALUES (?, ?)
-          `).bind(adId, key).run();
+          await insertRow(env.DB, "ad_photos", {
+            ad_id: adId,
+            photo_key: key,
+            image_key: key,
+            file_key: key,
+            created_at: now
+          });
         }
 
         if (packageCode === "FREE") {
-          await env.DB.prepare(`
-            INSERT INTO free_ad_claims (user_id, ad_id, created_at)
-            VALUES (?, ?, ?)
-          `).bind(user.id, adId, now).run();
+          await insertRow(env.DB, "free_ad_claims", {
+            user_id: user.id,
+            ad_id: adId,
+            created_at: now
+          });
         } else {
-          await env.DB.prepare(`
-            INSERT INTO payments (
-              user_id, ad_id, package, amount, payment_slip_key,
-              status, created_at
-            ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?)
-          `).bind(
-            user.id,
-            adId,
-            packageCode,
-            prices[packageCode],
-            paymentSlip,
-            now
-          ).run();
+          // Uses the actual payments columns:
+          // ad_id, package_code, amount_lkr, r2_key, status.
+          await insertRow(env.DB, "payments", {
+            ad_id: adId,
+            package_code: packageCode,
+            amount_lkr: amount,
+            r2_key: paymentSlip,
+            slip_url: paymentSlip,
+            status: "PENDING",
+            created_at: now
+          });
         }
 
         return json(req, {
           success: true,
           message: "Ad submitted for review.",
           ad_id: adId,
+          package: packageCode,
+          amount_lkr: amount,
           status: "PENDING"
         }, 201);
       }
 
       return error(req, "Route not found.", 404);
+
     } catch (err) {
-      return json(req, {
-        success: false,
-        error: "Server error.",
-        detail: err?.message || String(err)
-      }, 500);
+      console.error("Create Post Worker error:", err);
+
+      return error(
+        req,
+        "Request failed. Check Worker logs.",
+        500,
+        err?.message || String(err)
+      );
     }
   },
 
