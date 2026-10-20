@@ -204,6 +204,7 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
+    // CORS preflight
     if (req.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -213,6 +214,7 @@ export default {
 
     try {
       if (!env.DB) {
+        console.error("Configuration error: D1 binding DB is missing.");
         return error(req, "D1 binding DB is missing.", 500);
       }
 
@@ -330,65 +332,96 @@ export default {
       // Upload photos and payment slips
       if (path === "/api/upload" && req.method === "POST") {
         if (!env.MEDIA) {
+          console.error("Upload failed: R2 binding MEDIA is missing.");
           return error(req, "R2 binding MEDIA is missing.", 500);
         }
 
-        const form = await req.formData();
-        const file = form.get("file");
+        let stage = "read-form";
 
-        if (!file || typeof file.arrayBuffer !== "function") {
-          return error(req, "Select a file to upload.");
-        }
+        try {
+          const form = await req.formData();
+          const file = form.get("file");
 
-        if (file.size <= 0) {
-          return error(req, "The selected file is empty.");
-        }
-
-        if (file.size > MAX_FILE_SIZE) {
-          return error(req, "Maximum file size is 5 MB.");
-        }
-
-        const types = {
-          "image/jpeg": "jpg",
-          "image/png": "png",
-          "image/webp": "webp",
-          "image/gif": "gif",
-          "application/pdf": "pdf"
-        };
-
-        if (!types[file.type]) {
-          return error(req, "Use JPG, PNG, WEBP, GIF or PDF.");
-        }
-
-        const purpose = form.get("purpose") === "payment-slip"
-          ? "payment-slip"
-          : "ad-photo";
-
-        if (
-          purpose === "ad-photo" &&
-          file.type === "application/pdf"
-        ) {
-          return error(req, "Ad photos must be images.");
-        }
-
-        const key =
-          `customer-uploads/${user.id}/${crypto.randomUUID()}.${types[file.type]}`;
-
-        await env.MEDIA.put(key, await file.arrayBuffer(), {
-          httpMetadata: {
-            contentType: file.type
-          },
-          customMetadata: {
-            userId: String(user.id),
-            purpose
+          if (!file || typeof file.arrayBuffer !== "function") {
+            return error(req, "Select a file to upload.");
           }
-        });
 
-        return json(req, {
-          success: true,
-          key,
-          purpose
-        }, 201);
+          if (file.size <= 0) {
+            return error(req, "The selected file is empty.");
+          }
+
+          if (file.size > MAX_FILE_SIZE) {
+            return error(req, "Maximum file size is 5 MB.");
+          }
+
+          const types = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+            "image/gif": "gif",
+            "application/pdf": "pdf"
+          };
+
+          if (!types[file.type]) {
+            return error(req, "Use JPG, PNG, WEBP, GIF or PDF.");
+          }
+
+          const purpose = form.get("purpose") === "payment-slip"
+            ? "payment-slip"
+            : "ad-photo";
+
+          if (
+            purpose === "ad-photo" &&
+            file.type === "application/pdf"
+          ) {
+            return error(req, "Ad photos must be images.");
+          }
+
+          const key =
+            `customer-uploads/${user.id}/${crypto.randomUUID()}.${types[file.type]}`;
+
+          stage = "read-file";
+          const data = await file.arrayBuffer();
+
+          stage = "write-r2";
+
+          await env.MEDIA.put(key, data, {
+            httpMetadata: {
+              contentType: file.type
+            },
+            customMetadata: {
+              userId: String(user.id),
+              purpose
+            }
+          });
+
+          console.log("Upload successful:", {
+            stage: "complete",
+            userId: String(user.id),
+            purpose,
+            fileType: file.type,
+            fileSize: file.size
+          });
+
+          return json(req, {
+            success: true,
+            key,
+            purpose
+          }, 201);
+
+        } catch (err) {
+          console.error("Upload failed:", {
+            stage,
+            name: err?.name || "Error",
+            message: err?.message || String(err)
+          });
+
+          return error(
+            req,
+            "Upload failed. Please check Worker logs.",
+            500
+          );
+        }
       }
 
       // Create ad
@@ -607,6 +640,7 @@ export default {
         }
 
         const now = new Date().toISOString();
+
         const expires = new Date(
           Date.now() + AD_LIFETIME_DAYS * 86400000
         ).toISOString();
@@ -641,7 +675,7 @@ export default {
           throw new Error("Could not obtain the new ad ID.");
         }
 
-        // Save photo records using the columns available in your table.
+        // Save photo records using available table columns.
         for (const key of photos) {
           await insertRow(env.DB, "ad_photos", {
             ad_id: adId,
@@ -652,6 +686,7 @@ export default {
           });
         }
 
+        // Record free-ad claim
         if (packageCode === "FREE") {
           await insertRow(env.DB, "free_ad_claims", {
             user_id: user.id,
@@ -659,8 +694,7 @@ export default {
             created_at: now
           });
         } else {
-          // Uses the actual payments columns:
-          // ad_id, package_code, amount_lkr, r2_key, status.
+          // Record payment for admin review.
           await insertRow(env.DB, "payments", {
             ad_id: adId,
             package_code: packageCode,
@@ -685,13 +719,18 @@ export default {
       return error(req, "Route not found.", 404);
 
     } catch (err) {
-      console.error("Create Post Worker error:", err);
+      console.error("Create Post Worker error:", {
+        path,
+        method: req.method,
+        name: err?.name || "Error",
+        message: err?.message || String(err),
+        stack: err?.stack || ""
+      });
 
       return error(
         req,
         "Request failed. Check Worker logs.",
-        500,
-        err?.message || String(err)
+        500
       );
     }
   },
