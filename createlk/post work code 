@@ -1,409 +1,431 @@
 
-const AD_DURATION_DAYS = 30;
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-const PUBLIC_PACKAGES = {
-  FREE: { name: "FREE", price: 0, labels: "" },
-  URGENT: { name: "URGENT", price: 500, labels: "URGENT" },
-  FEATURED: { name: "FEATURED", price: 500, labels: "FEATURED" },
-  TOP_AD: { name: "TOP AD", price: 500, labels: "TOP AD" },
-  ALL_3: { name: "ALL 3", price: 1500, labels: "URGENT,FEATURED,TOP AD" }
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "https://createlk.com",
+  "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Max-Age": "86400"
 };
 
-const headers = {
-  "Content-Type": "application/json; charset=utf-8"
-};
-
-function json(data, status = 200, origin = "*") {
+function response(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      ...headers,
-      "Access-Control-Allow-Origin": origin || "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Vary": "Origin"
+      ...CORS_HEADERS,
+      "Content-Type": "application/json; charset=utf-8"
     }
   });
 }
 
-async function body(req) {
-  try {
-    return await req.json();
-  } catch {
-    throw new Error("INVALID_JSON");
-  }
+async function sha256(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-function clean(value, max = 500) {
-  return String(value ?? "").trim().slice(0, max);
-}
-
-function token() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hash(value) {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest), b =>
-    b.toString(16).padStart(2, "0")
-  ).join("");
-}
-
-function requirePublicUser(req) {
+async function getUser(req, env) {
   const auth = req.headers.get("Authorization") || "";
-  if (!auth.startsWith("Bearer ") || !auth.slice(7).trim()) {
-    throw new Error("USER_UNAUTHORIZED");
-  }
-  return auth.slice(7).trim();
-}
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
 
-async function publicUser(req, env) {
-  const session = await env.DB.prepare(`
-    SELECT u.id,u.email,u.name,u.role
+  const tokenHash = await sha256(match[1]);
+
+  return await env.DB.prepare(`
+    SELECT u.*
     FROM user_sessions s
-    JOIN users u ON u.id=s.user_id
-    WHERE s.token_hash=?
-      AND julianday(s.expires_at)>julianday('now')
+    JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ?
+      AND s.expires_at > datetime('now')
     LIMIT 1
-  `).bind(await hash(requirePublicUser(req))).first();
-
-  if (!session || session.role !== "USER") {
-    throw new Error("USER_UNAUTHORIZED");
-  }
-  return session;
+  `).bind(tokenHash).first();
 }
 
-async function publicGoogleLogin(req, env, origin) {
-  const b = await body(req);
-  if (!b.credential) {
-    return json({ error: "Google credential required." }, 400, origin);
-  }
+function getCors(req) {
+  const origin = req.headers.get("Origin") || "";
+  const allowed = [
+    "https://createlk.com",
+    "https://www.createlk.com"
+  ];
 
-  const verifyURL = new URL("https://oauth2.googleapis.com/tokeninfo");
-  verifyURL.searchParams.set("id_token", b.credential);
-  const response = await fetch(verifyURL);
-
-  if (!response.ok) {
-    return json({ error: "Google sign-in verification failed." }, 401, origin);
-  }
-
-  const p = await response.json();
-  if (
-    p.aud !== env.GOOGLE_CLIENT_ID ||
-    String(p.email_verified) !== "true" ||
-    !p.email || !p.sub
-  ) {
-    return json({ error: "Invalid Google account." }, 401, origin);
-  }
-
-  const email = clean(p.email, 254).toLowerCase();
-  let user = await env.DB.prepare(`
-    SELECT id,email,name,role,google_id FROM users
-    WHERE lower(email)=? LIMIT 1
-  `).bind(email).first();
-
-  if (user && user.role !== "USER") {
-    return json({ error: "Use the administrator login for this account." }, 403, origin);
-  }
-
-  if (user?.google_id && user.google_id !== p.sub) {
-    return json({ error: "Google account does not match the linked account." }, 403, origin);
-  }
-
-  if (!user) {
-    await env.DB.prepare(`
-      INSERT INTO users(email,name,phone,role,google_id,email_verified)
-      VALUES(?,?,?,'USER',?,1)
-    `).bind(email, clean(p.name || email.split("@")[0], 150), "", p.sub).run();
-  } else {
-    await env.DB.prepare(`
-      UPDATE users SET google_id=?,email_verified=1
-      WHERE id=? AND role='USER'
-    `).bind(p.sub, user.id).run();
-  }
-
-  user = await env.DB.prepare(`
-    SELECT id,email,name,role FROM users
-    WHERE lower(email)=? LIMIT 1
-  `).bind(email).first();
-
-  const sessionToken = token();
-  await env.DB.prepare(`
-    INSERT INTO user_sessions(token_hash,user_id,expires_at)
-    VALUES(?,?,datetime('now','+7 days'))
-  `).bind(await hash(sessionToken), user.id).run();
-
-  return json({
-    token: sessionToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role
-    }
-  }, 200, origin);
-}
-
-async function uploadPublicFile(req, env, origin) {
-  const user = await publicUser(req, env);
-
-  if (!(req.headers.get("Content-Type") || "").toLowerCase().startsWith("multipart/form-data")) {
-    return json({ error: "Use multipart/form-data." }, 400, origin);
-  }
-
-  const form = await req.formData();
-  const file = form.get("file");
-
-  if (!file || typeof file.arrayBuffer !== "function") {
-    return json({ error: "Choose a file." }, 400, origin);
-  }
-  if (file.size < 1 || file.size > MAX_FILE_SIZE) {
-    return json({ error: "Maximum file size is 5 MB." }, 400, origin);
-  }
-
-  const formats = {
-    "image/jpeg": ["jpg", b => b[0] === 255 && b[1] === 216 && b[2] === 255],
-    "image/png": ["png", b => b[0] === 137 && b[1] === 80 && b[2] === 78 && b[3] === 71],
-    "image/webp": ["webp", b => b[0] === 82 && b[1] === 73 && b[2] === 70 && b[3] === 70 && b[8] === 87 && b[9] === 69],
-    "application/pdf": ["pdf", b => b[0] === 37 && b[1] === 80 && b[2] === 68 && b[3] === 70]
+  return {
+    "Access-Control-Allow-Origin": allowed.includes(origin)
+      ? origin
+      : "https://createlk.com",
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
   };
+}
 
-  const format = formats[file.type];
-  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-
-  if (!format || !format[1](bytes)) {
-    return json({ error: "Only valid JPG, PNG, WEBP and PDF files are allowed." }, 400, origin);
-  }
-
-  const purpose = form.get("purpose") === "payment-slip" ? "payment-slip" : "ad-photo";
-  const key = `customer-uploads/${user.id}/${crypto.randomUUID()}.${format[0]}`;
-
-  await env.UPLOADS.put(key, file.stream(), {
-    httpMetadata: { contentType: file.type },
-    customMetadata: { userId: String(user.id), purpose }
+function json(req, data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...getCors(req),
+      "Content-Type": "application/json; charset=utf-8"
+    }
   });
-
-  return json({ success: true, key, purpose }, 201, origin);
 }
 
-function validDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(`${value}T00:00:00.000Z`);
-  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
-}
-
-async function submitPublicAd(req, env, origin) {
-  const user = await publicUser(req, env);
-  const b = await body(req);
-
-  const title = clean(b.title, 200);
-  const description = clean(b.description, 10000);
-  const districtName = clean(b.district, 100);
-  const cityName = clean(b.city, 100);
-  const sellerName = clean(b.contactName, 150);
-  const phone = clean(b.phone, 30);
-  const whatsapp = clean(b.whatsapp, 30);
-  const condition = clean(b.condition, 30) || "Used";
-  const categoryName = clean(b.category, 100);
-  const pkg = PUBLIC_PACKAGES[clean(b.package, 30).toUpperCase()];
-  const start = clean(b.requestedStartDate, 10);
-  const end = clean(b.requestedEndDate, 10);
-  const price = b.price == null || b.price === "" ? 0 : Number(b.price);
-
-  if (!title || !description || !districtName || !cityName ||
-      !sellerName || !phone || !categoryName || !pkg) {
-    return json({ error: "Complete all required ad fields." }, 400, origin);
-  }
-
-  if (!validDate(start) || !validDate(end) ||
-      start < new Date().toISOString().slice(0, 10)) {
-    return json({ error: "Choose valid advertising dates." }, 400, origin);
-  }
-
-  const endDate = new Date(`${start}T00:00:00.000Z`);
-  endDate.setUTCDate(endDate.getUTCDate() + AD_DURATION_DAYS);
-  const expectedEnd = endDate.toISOString().slice(0, 10);
-
-  if (end !== expectedEnd) {
-    return json({
-      error: "All packages are valid for 30 days.",
-      requiredEndDate: expectedEnd
-    }, 400, origin);
-  }
-
-  if (!Number.isFinite(price) || price < 0 || price > 1000000000) {
-    return json({ error: "Enter a valid ad price." }, 400, origin);
-  }
-  if (!["New", "Used", "Not applicable"].includes(condition)) {
-    return json({ error: "Invalid item condition." }, 400, origin);
-  }
-
-  const category = await env.DB.prepare(
-    "SELECT id FROM categories WHERE lower(name)=lower(?) LIMIT 1"
-  ).bind(categoryName).first();
-
-  const district = await env.DB.prepare(
-    "SELECT id FROM districts WHERE lower(name)=lower(?) LIMIT 1"
-  ).bind(districtName).first();
-
-  if (!category || !district) {
-    return json({ error: "Category or district not found." }, 400, origin);
-  }
-
-  const city = await env.DB.prepare(`
-    SELECT id FROM cities WHERE district_id=? AND lower(name)=lower(?) LIMIT 1
-  `).bind(district.id, cityName).first();
-
-  if (!city) return json({ error: "City not found for this district." }, 400, origin);
-
-  const packageRow = await env.DB.prepare(`
-    SELECT id,price_lkr,duration_days,active FROM packages WHERE name=? LIMIT 1
-  `).bind(pkg.name).first();
-
-  if (!packageRow || !packageRow.active ||
-      Number(packageRow.price_lkr) !== pkg.price ||
-      Number(packageRow.duration_days) !== AD_DURATION_DAYS) {
-    return json({ error: "Package must be configured with the correct price and 30-day duration." }, 500, origin);
-  }
-
-  const photoKeys = Array.isArray(b.photoKeys) ? b.photoKeys : [];
-  if (photoKeys.length > 5 || photoKeys.some(k => typeof k !== "string")) {
-    return json({ error: "Upload no more than five valid photos." }, 400, origin);
-  }
-
-  const slipKey = clean(b.paymentSlipKey, 300);
-  if (pkg.price > 0 && !slipKey) {
-    return json({ error: "Upload your payment slip." }, 400, origin);
-  }
-
-  const validUpload = async (key, purpose) => {
-    if (typeof key !== "string" || !key.startsWith(`customer-uploads/${user.id}/`)) return false;
-    const obj = await env.UPLOADS.head(key);
-    return !!obj &&
-      obj.customMetadata?.userId === String(user.id) &&
-      obj.customMetadata?.purpose === purpose;
-  };
-
-  if (pkg.price > 0 && !(await validUpload(slipKey, "payment-slip"))) {
-    return json({ error: "Payment slip is invalid. Upload it again." }, 400, origin);
-  }
-
-  for (const key of photoKeys) {
-    if (!(await validUpload(key, "ad-photo"))) {
-      return json({ error: "An ad photo is invalid. Upload it again." }, 400, origin);
-    }
-  }
-
-  if (pkg.price === 0) {
-    const claim = await env.DB.prepare(
-      "SELECT id FROM free_ad_claims WHERE user_id=? LIMIT 1"
-    ).bind(user.id).first();
-
-    if (claim) return json({ error: "Your one free ad has already been used." }, 403, origin);
-  }
-
-  const expiresAt = `${expectedEnd} 00:00:00`;
-
-  const insert = await env.DB.prepare(`
-    INSERT INTO ads (
-      user_id,category_id,district_id,city_id,package_id,title,description,
-      price_lkr,condition,seller_name,seller_phone,status,expires_at,
-      requested_start_date,requested_end_date,whatsapp,ad_labels
-    ) VALUES (?,?,?,?,?,?,?,?,?, ?,?,'PENDING',?,?,?,?,?)
-  `).bind(
-    user.id, category.id, district.id, city.id, packageRow.id,
-    title, description, Math.round(price), condition, sellerName, phone,
-    expiresAt, start, expectedEnd, whatsapp || null, ""
-  ).run();
-
-  const adId = insert.meta.last_row_id;
-
-  try {
-    for (const key of photoKeys) {
-      await env.DB.prepare(`
-        INSERT INTO ad_photos(ad_id,photo_url,r2_key) VALUES(?,?,?)
-      `).bind(adId, `r2://${key}`, key).run();
-    }
-
-    if (pkg.price > 0) {
-      await env.DB.prepare(`
-        INSERT INTO payments(ad_id,user_id,amount_lkr,status,slip_url,r2_key)
-        VALUES(?,?,?,'PENDING',?,?)
-      `).bind(adId, user.id, pkg.price, `r2://${slipKey}`, slipKey).run();
-    } else {
-      await env.DB.prepare(`
-        INSERT INTO free_ad_claims(user_id,ad_id) VALUES(?,?)
-      `).bind(user.id, adId).run();
-    }
-  } catch (error) {
-    console.error("Ad save failed", error);
-    return json({ error: "Ad could not be fully saved. Contact support.", adId }, 500, origin);
-  }
-
-  return json({
-    success: true,
-    id: adId,
-    package: pkg.name,
-    price: pkg.price,
-    durationDays: AD_DURATION_DAYS,
-    startDate: start,
-    endDate: expectedEnd,
-    expiresAt,
-    status: "PENDING",
-    paymentStatus: pkg.price > 0 ? "PENDING" : "NOT_REQUIRED",
-    message: pkg.price > 0
-      ? "Ad and payment slip submitted for admin review."
-      : "Free ad submitted for admin approval."
-  }, 201, origin);
+function error(req, message, status = 400) {
+  return json(req, { success: false, error: message }, status);
 }
 
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    const origin = req.headers.get("Origin") || "*";
+    const path = url.pathname.replace(/\/+$/, "") || "/";
 
     if (req.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": origin,
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          "Vary": "Origin"
-        }
+        headers: getCors(req)
       });
     }
 
-    if (req.method !== "POST") {
-      return json({ error: "Method not allowed." }, 405, origin);
-    }
-
-    const routes = {
-      "/public/google-login": publicGoogleLogin,
-      "/public/upload": uploadPublicFile,
-      "/public/ads": submitPublicAd
-    };
-
-    const handler = routes[url.pathname];
-
-    if (!handler) {
-      return json({ error: "Route not found." }, 404, origin);
-    }
-
     try {
-      return await handler(req, env, origin);
-    } catch (error) {
-      if (error.message === "USER_UNAUTHORIZED") {
-        return json({ error: "Please sign in again." }, 401, origin);
+      if (!env.DB) return error(req, "Database binding DB is missing.", 500);
+
+      // Check the existing login session.
+      if (path === "/api/auth/me" && req.method === "GET") {
+        const user = await getUser(req, env);
+        if (!user) return error(req, "Login required or session expired.", 401);
+
+        return json(req, {
+          success: true,
+          user: {
+            id: user.id,
+            name: user.name || "",
+            email: user.email || "",
+            picture: user.picture || "",
+            role: user.role || "USER"
+          }
+        });
       }
-      if (error.message === "INVALID_JSON") {
-        return json({ error: "Invalid JSON request." }, 400, origin);
+
+      // Categories.
+      if (path === "/api/categories" && req.method === "GET") {
+        const result = await env.DB.prepare(`
+          SELECT * FROM categories
+          ORDER BY name
+        `).all();
+
+        return json(req, { success: true, categories: result.results || [] });
       }
-      console.error("Worker error:", error);
-      return json({ error: "Internal server error." }, 500, origin);
+
+      // Districts / locations.
+      if (
+        (path === "/api/locations" || path === "/api/districts") &&
+        req.method === "GET"
+      ) {
+        const result = await env.DB.prepare(`
+          SELECT * FROM districts
+          ORDER BY name
+        `).all();
+
+        return json(req, { success: true, locations: result.results || [] });
+      }
+
+      // Cities in a district.
+      if (path === "/api/cities" && req.method === "GET") {
+        const districtId = url.searchParams.get("district_id");
+        if (!districtId) return error(req, "district_id is required.");
+
+        const result = await env.DB.prepare(`
+          SELECT * FROM cities
+          WHERE district_id = ?
+          ORDER BY name
+        `).bind(districtId).all();
+
+        return json(req, { success: true, cities: result.results || [] });
+      }
+
+      // Public approved ads.
+      if (path === "/api/listings" && req.method === "GET") {
+        const limit = Math.min(
+          Math.max(Number(url.searchParams.get("limit")) || 30, 1),
+          100
+        );
+
+        const result = await env.DB.prepare(`
+          SELECT a.*,
+            c.name AS category_name,
+            d.name AS district_name,
+            ci.name AS city_name
+          FROM ads a
+          LEFT JOIN categories c ON c.id = a.category_id
+          LEFT JOIN districts d ON d.id = a.district_id
+          LEFT JOIN cities ci ON ci.id = a.city_id
+          WHERE a.status = 'APPROVED'
+            AND (a.expires_at IS NULL OR a.expires_at > datetime('now'))
+          ORDER BY a.created_at DESC
+          LIMIT ?
+        `).bind(limit).all();
+
+        return json(req, { success: true, listings: result.results || [] });
+      }
+
+      // All other routes below require an existing login.
+      const user = await getUser(req, env);
+
+      if (!user) {
+        return error(req, "Login required or session expired.", 401);
+      }
+
+      // Upload an ad photo or payment slip.
+      if (path === "/api/upload" && req.method === "POST") {
+        if (!env.MEDIA) {
+          return error(req, "R2 binding MEDIA is missing.", 500);
+        }
+
+        const form = await req.formData();
+        const file = form.get("file");
+
+        if (!file || typeof file.arrayBuffer !== "function") {
+          return error(req, "Select a file to upload.");
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+          return error(req, "Maximum file size is 5 MB.");
+        }
+
+        const allowedTypes = [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "image/gif",
+          "application/pdf"
+        ];
+
+        if (!allowedTypes.includes(file.type)) {
+          return error(req, "Unsupported file type.");
+        }
+
+        const extMap = {
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/webp": "webp",
+          "image/gif": "gif",
+          "application/pdf": "pdf"
+        };
+
+        const purpose = form.get("purpose") === "payment-slip"
+          ? "payment-slip"
+          : "ad-photo";
+
+        const key = `customer-uploads/${user.id}/${crypto.randomUUID()}.${extMap[file.type]}`;
+
+        await env.MEDIA.put(key, await file.arrayBuffer(), {
+          httpMetadata: { contentType: file.type },
+          customMetadata: {
+            userId: String(user.id),
+            purpose
+          }
+        });
+
+        return json(req, {
+          success: true,
+          key,
+          purpose
+        });
+      }
+
+      // Create an ad using the existing database tables.
+      if (path === "/api/ads" && req.method === "POST") {
+        const body = await req.json();
+
+        const title = String(body.title || "").trim();
+        const description = String(body.description || "").trim();
+        const categoryId = body.category_id || body.categoryId;
+        const districtId = body.district_id || body.districtId;
+        const cityId = body.city_id || body.cityId;
+        const photos = Array.isArray(body.photos)
+          ? body.photos
+          : Array.isArray(body.photoKeys)
+            ? body.photoKeys
+            : [];
+
+        if (!title) return error(req, "Ad title is required.");
+        if (!categoryId || !districtId || !cityId) {
+          return error(req, "Category, district and city are required.");
+        }
+        if (photos.length < 1 || photos.length > 5) {
+          return error(req, "Upload between 1 and 5 photos.");
+        }
+
+        if (!env.MEDIA) {
+          return error(req, "R2 binding MEDIA is missing.", 500);
+        }
+
+        // Verify all photo keys belong to this logged-in user.
+        for (const key of photos) {
+          if (
+            typeof key !== "string" ||
+            !key.startsWith(`customer-uploads/${user.id}/`)
+          ) {
+            return error(req, "Invalid photo upload.");
+          }
+
+          const object = await env.MEDIA.head(key);
+          if (!object || object.customMetadata?.userId !== String(user.id)) {
+            return error(req, "Photo not found or does not belong to this account.");
+          }
+        }
+
+        const packageCode = String(
+          body.package || body.package_code || "FREE"
+        ).toUpperCase();
+
+        const prices = {
+          FREE: 0,
+          URGENT: 500,
+          FEATURED: 500,
+          TOP_AD: 500,
+          ALL_3: 1500
+        };
+
+        if (!(packageCode in prices)) {
+          return error(req, "Invalid advertising package.");
+        }
+
+        const paymentSlip = body.payment_slip_key ||
+          body.paymentSlipKey ||
+          body.payment_slip ||
+          "";
+
+        if (prices[packageCode] > 0) {
+          if (!paymentSlip) {
+            return error(req, "Upload your payment slip for this package.");
+          }
+
+          if (!paymentSlip.startsWith(`customer-uploads/${user.id}/`)) {
+            return error(req, "Invalid payment slip.");
+          }
+
+          const slipObject = await env.MEDIA.head(paymentSlip);
+
+          if (
+            !slipObject ||
+            slipObject.customMetadata?.userId !== String(user.id) ||
+            slipObject.customMetadata?.purpose !== "payment-slip"
+          ) {
+            return error(req, "Payment slip is invalid.");
+          }
+        }
+
+        // Enforce one free ad per user.
+        if (packageCode === "FREE") {
+          const freeClaim = await env.DB.prepare(`
+            SELECT id FROM free_ad_claims
+            WHERE user_id = ?
+            LIMIT 1
+          `).bind(user.id).first();
+
+          if (freeClaim) {
+            return error(req, "Your free ad has already been used.");
+          }
+        }
+
+        const contactName = String(
+          body.contact_name || body.contactName || user.name || ""
+        ).trim();
+
+        const phone = String(body.phone || body.contact_phone || "").trim();
+        const whatsapp = String(body.whatsapp || "").trim();
+
+        if (!phone) return error(req, "Contact phone number is required.");
+
+        const now = new Date().toISOString();
+        const expires = new Date(Date.now() + 30 * 86400000).toISOString();
+
+        // Pending ads require admin approval.
+        const insert = await env.DB.prepare(`
+          INSERT INTO ads (
+            user_id, title, description, category_id, district_id, city_id,
+            contact_name, phone, whatsapp, package, price, status,
+            created_at, expires_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+        `).bind(
+          user.id,
+          title,
+          description,
+          categoryId,
+          districtId,
+          cityId,
+          contactName,
+          phone,
+          whatsapp,
+          packageCode,
+          prices[packageCode],
+          now,
+          expires
+        ).run();
+
+        const adId = insert.meta?.last_row_id;
+
+        if (!adId) {
+          return error(req, "Ad was not created. Check the ads table schema.", 500);
+        }
+
+        for (const key of photos) {
+          await env.DB.prepare(`
+            INSERT INTO ad_photos (ad_id, photo_key)
+            VALUES (?, ?)
+          `).bind(adId, key).run();
+        }
+
+        if (packageCode === "FREE") {
+          await env.DB.prepare(`
+            INSERT INTO free_ad_claims (user_id, ad_id, created_at)
+            VALUES (?, ?, ?)
+          `).bind(user.id, adId, now).run();
+        } else {
+          await env.DB.prepare(`
+            INSERT INTO payments (
+              user_id, ad_id, package, amount, payment_slip_key,
+              status, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?)
+          `).bind(
+            user.id,
+            adId,
+            packageCode,
+            prices[packageCode],
+            paymentSlip,
+            now
+          ).run();
+        }
+
+        return json(req, {
+          success: true,
+          message: "Ad submitted for review.",
+          ad_id: adId,
+          status: "PENDING"
+        }, 201);
+      }
+
+      return error(req, "Route not found.", 404);
+    } catch (err) {
+      return json(req, {
+        success: false,
+        error: "Server error.",
+        detail: err?.message || String(err)
+      }, 500);
     }
+  },
+
+  async scheduled(event, env, ctx) {
+    if (!env.DB) return;
+
+    ctx.waitUntil(
+      env.DB.prepare(`
+        UPDATE ads
+        SET status = 'EXPIRED'
+        WHERE status = 'APPROVED'
+          AND expires_at IS NOT NULL
+          AND expires_at <= datetime('now')
+      `).run()
+    );
   }
 };
