@@ -15,8 +15,7 @@ header span{color:#d69b16}
 main{max-width:700px;margin:24px auto;padding:0 12px}
 .card{background:white;padding:20px;margin-bottom:14px;border-radius:12px;border:1px solid #dce2eb}
 h1,h2{color:#102a56;margin-top:0}
-h1{font-size:27px}
-h2{font-size:18px}
+h1{font-size:27px} h2{font-size:18px}
 label{display:block;font-weight:bold;margin:12px 0 6px}
 input,select,textarea{width:100%;padding:11px;border:1px solid #ccd4e0;border-radius:8px;font:inherit}
 textarea{min-height:100px;resize:vertical}
@@ -37,14 +36,13 @@ small{color:#68758a}
 </style>
 </head>
 <body>
-
 <header>Create<span>LK</span></header>
 
 <main>
 <h1>Post an Ad</h1>
 <div id="status" class="notice hidden" role="status"></div>
 
-<section id="login" class="card">
+<section id="loginCard" class="card">
 <h2>Sign in with Google</h2>
 <div id="googleButton"></div>
 <div id="loginMessage"></div>
@@ -52,15 +50,13 @@ small{color:#68758a}
 
 <section id="account" class="card hidden">
 <strong id="userName"></strong>
-<span id="userEmail"></span>
-<button type="button" id="logout" style="float:right">Sign out</button>
-<div style="clear:both"></div>
+<div id="userEmail"></div>
+<button type="button" id="logout" style="margin-top:12px">Sign out</button>
 </section>
 
 <form id="form" class="hidden">
 <section class="card">
 <h2>Ad details</h2>
-
 <label for="title">Title *</label>
 <input id="title" required minlength="3" maxlength="100">
 
@@ -82,32 +78,25 @@ small{color:#68758a}
 </div>
 </div>
 
-<label for="city">City *</label>
-<select id="city" required disabled>
-<option value="">Select district first</option>
-</select>
+<label for="town">Town *</label>
+<input id="town" required maxlength="100" placeholder="Enter town or city">
 </section>
 
 <section class="card">
-<h2>Contact details</h2>
+<h2>Price and contact</h2>
+<label for="price">Price (LKR)</label>
+<input id="price" type="number" min="0" step="1" placeholder="Leave blank if negotiable">
 
 <label for="contactName">Contact name</label>
 <input id="contactName" maxlength="100">
 
 <label for="phone">Phone number *</label>
-<input id="phone" type="tel" required maxlength="30"
-       placeholder="e.g. 0771234567">
-
-<label for="whatsapp">WhatsApp number</label>
-<input id="whatsapp" type="tel" maxlength="30"
-       placeholder="Optional">
-<small>The current API stores the seller phone number, not a separate WhatsApp number.</small>
+<input id="phone" type="tel" required maxlength="30" placeholder="e.g. 0771234567">
 </section>
 
 <section class="card">
 <h2>Photos *</h2>
-<input id="photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
-       multiple required>
+<input id="photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple required>
 <small>Choose 1–5 images. Each image must be 5 MB or smaller.</small>
 <div id="photosPreview"></div>
 </section>
@@ -120,34 +109,26 @@ small{color:#68758a}
 </div>
 <div class="package">
 <input type="radio" name="package" value="URGENT">
-<label>Urgent — LKR 500</label>
+<label>Urgent — LKR 500 (not yet available)</label>
 </div>
 <div class="package">
 <input type="radio" name="package" value="FEATURED">
-<label>Featured — LKR 500</label>
+<label>Featured — LKR 500 (not yet available)</label>
 </div>
 <div class="package">
 <input type="radio" name="package" value="TOP_AD">
-<label>Top Ad — LKR 500</label>
+<label>Top Ad — LKR 500 (not yet available)</label>
 </div>
 <div class="package">
 <input type="radio" name="package" value="ALL_3">
-<label>All 3 — LKR 1,500</label>
+<label>All 3 — LKR 1,500 (not yet available)</label>
 </div>
-
-<div id="paymentBox" class="hidden">
-<label for="paymentSlip">Payment slip *</label>
-<input id="paymentSlip" type="file"
-       accept="image/jpeg,image/png,image/webp,image/gif,application/pdf">
-<small>Paid-package payment processing is not yet supported by the current API.</small>
-</div>
+<small>Only free ads can currently be submitted through this page.</small>
 </section>
 
 <section class="card">
 <p>Your free ad will be reviewed before publication.</p>
-<button id="submit" class="gold" type="submit" style="width:100%">
-Submit Ad
-</button>
+<button id="submit" class="gold" type="submit" style="width:100%">Submit Ad</button>
 </section>
 </form>
 </main>
@@ -156,26 +137,28 @@ Submit Ad
 "use strict";
 
 /*
-  DEPLOYMENT CONFIGURATION
+  Main API: market-public.createlk.workers.dev
 
-  Deploy the shared Worker code to create-post.createlk.workers.dev.
-  Configure these Worker bindings/secrets:
-    DB
-    MEDIA
-    GOOGLE_CLIENT_ID
-    SESSION_SECRET
+  Expected backend endpoints:
+    POST /api/auth/google
+    GET  /api/auth/me
+    GET  /api/categories
+    GET  /api/locations
+    POST /api/upload
+    POST /api/listings
 
-  The Google OAuth Client ID must match GOOGLE_CLIENT_ID.
+  The last two endpoints must be implemented in the Worker
+  before photo uploads and ad submissions can succeed.
 */
-const API = "https://create-post.createlk.workers.dev";
+const API = "https://market-public.createlk.workers.dev";
 const CLIENT_ID =
   "582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
 
-const TOKEN_KEY = "createlk_public_token";
-const USER_KEY = "createlk_public_user";
+const TOKEN_KEY = "marketplace_session_token";
+const USER_KEY = "marketplace_profile";
 
-let token = localStorage.getItem(TOKEN_KEY) || "";
-let currentUser = {};
+let token = sessionStorage.getItem(TOKEN_KEY) || "";
+let currentUser = null;
 let googleInitialized = false;
 
 const $ = id => document.getElementById(id);
@@ -186,7 +169,6 @@ function showStatus(message, type = "info") {
   el.classList.remove("hidden", "error", "success");
   if (type === "error") el.classList.add("error");
   if (type === "success") el.classList.add("success");
-  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function hideStatus() {
@@ -207,10 +189,7 @@ async function api(path, options = {}, authenticated = false) {
 
   let response;
   try {
-    response = await fetch(API + path, {
-      ...options,
-      headers
-    });
+    response = await fetch(API + path, {...options, headers});
   } catch {
     throw new Error("Network error. Check your internet connection.");
   }
@@ -221,6 +200,13 @@ async function api(path, options = {}, authenticated = false) {
     if (response.status === 401 && authenticated) {
       signOut(false);
     }
+
+    if (response.status === 404) {
+      throw new Error(
+        "This API endpoint is not available in market-public yet: " + path
+      );
+    }
+
     throw new Error(
       data.error || data.message || `Request failed (${response.status})`
     );
@@ -229,26 +215,33 @@ async function api(path, options = {}, authenticated = false) {
   return data;
 }
 
+function normalizeUser(user) {
+  if (!user) return {};
+  return {
+    ...user,
+    name: user.name || user.display_name || user.displayName || "",
+    email: user.email || "",
+    picture: user.picture || user.avatar_url || user.avatarUrl || ""
+  };
+}
+
 function showSignedOut() {
-  $("login").classList.remove("hidden");
+  $("loginCard").classList.remove("hidden");
   $("account").classList.add("hidden");
   $("form").classList.add("hidden");
 }
 
 function signedIn(user) {
-  currentUser = user || {};
-
-  $("login").classList.add("hidden");
+  currentUser = normalizeUser(user);
+  $("loginCard").classList.add("hidden");
   $("account").classList.remove("hidden");
   $("form").classList.remove("hidden");
 
   $("userName").textContent = currentUser.name || "Signed in";
-  $("userEmail").textContent = currentUser.email
-    ? " (" + currentUser.email + ")"
-    : "";
+  $("userEmail").textContent = currentUser.email || "";
 
   if (!$("contactName").value) {
-    $("contactName").value = currentUser.name || "";
+    $("contactName").value = currentUser.name;
   }
 
   loadOptions().catch(error => showStatus(error.message, "error"));
@@ -256,65 +249,62 @@ function signedIn(user) {
 
 function signOut(showMessage = true) {
   token = "";
-  currentUser = {};
-
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  currentUser = null;
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
 
   $("form").reset();
   $("photosPreview").replaceChildren();
-  $("city").disabled = true;
-
   showSignedOut();
 
   if (showMessage) showStatus("You have signed out.", "success");
 }
 
 async function restoreSession() {
-  if (!token) {
-    showSignedOut();
-    return;
-  }
-
   try {
+    // First use the same session token as the homepage.
+    token = sessionStorage.getItem(TOKEN_KEY) || "";
+
+    if (!token) {
+      showSignedOut();
+      return;
+    }
+
     const data = await api("/api/auth/me", {}, true);
-    currentUser = data.user || {};
-    localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+    currentUser = normalizeUser(data.user || data);
+    sessionStorage.setItem(USER_KEY, JSON.stringify(currentUser));
     signedIn(currentUser);
-  } catch {
+  } catch (error) {
     signOut(false);
-    $("loginMessage").textContent = "Please sign in again.";
+    $("loginMessage").textContent =
+      "Please sign in again. " + error.message;
   }
 }
 
-/* GOOGLE LOGIN
-   This matches the shared Worker route: POST /api/auth/google.
-*/
 async function googleLogin(credential) {
   $("loginMessage").textContent = "Signing in...";
 
   try {
     const data = await api("/api/auth/google", {
       method: "POST",
-      body: JSON.stringify({ credential })
+      body: JSON.stringify({credential})
     });
 
-    if (!data.token) throw new Error("The server did not return a login token.");
+    token = data.token || data.access_token;
+    if (!token) throw new Error("The server did not return a login token.");
 
-    token = data.token;
-    localStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.setItem(TOKEN_KEY, token);
 
-    const check = await api("/api/auth/me", {}, true);
-    currentUser = check.user || data.user || {};
+    const me = await api("/api/auth/me", {}, true);
+    currentUser = normalizeUser(me.user || data.user || me);
 
-    localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+    sessionStorage.setItem(USER_KEY, JSON.stringify(currentUser));
     $("loginMessage").textContent = "";
-
     signedIn(currentUser);
     showStatus("Signed in successfully.", "success");
   } catch (error) {
     token = "";
-    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
     $("loginMessage").textContent = error.message;
   }
 }
@@ -348,87 +338,45 @@ function initGoogle() {
   return true;
 }
 
-/* CATEGORIES AND LOCATIONS */
+function extractItems(data, keys) {
+  if (Array.isArray(data)) return data;
+  for (const key of keys) {
+    if (Array.isArray(data?.[key])) return data[key];
+  }
+  return [];
+}
+
 function fillSelect(select, items, placeholder) {
   select.replaceChildren(new Option(placeholder, ""));
 
-  for (const item of items || []) {
-    const id = item.id;
-    const name = item.name;
-
-    if (id != null && name) {
-      select.add(new Option(name, String(id)));
+  for (const item of items) {
+    if (item.id != null && item.name) {
+      select.add(new Option(item.name, String(item.id)));
     }
   }
 }
 
 async function loadOptions() {
-  const [categories, districts] = await Promise.all([
+  const [categoriesData, districtsData] = await Promise.all([
     api("/api/categories"),
     api("/api/locations")
   ]);
 
   fillSelect(
     $("category"),
-    Array.isArray(categories) ? categories : categories.categories || categories.results,
+    extractItems(categoriesData, ["categories", "results"]),
     "Select category"
   );
 
   fillSelect(
     $("district"),
-    Array.isArray(districts) ? districts : districts.locations || districts.districts || districts.results,
+    extractItems(districtsData, ["districts", "locations", "results"]),
     "Select district"
   );
 }
 
-$("district").addEventListener("change", async () => {
-  const districtId = $("district").value;
-
-  $("city").disabled = true;
-  fillSelect($("city"), [], districtId ? "Loading cities..." : "Select district first");
-
-  if (!districtId) return;
-
-  try {
-    const data = await api(
-      "/api/cities?district_id=" + encodeURIComponent(districtId)
-    );
-
-    fillSelect(
-      $("city"),
-      Array.isArray(data) ? data : data.cities || data.results,
-      "Select city"
-    );
-
-    $("city").disabled = false;
-  } catch (error) {
-    showStatus(error.message, "error");
-  }
-});
-
-/* PACKAGE DISPLAY
-   The shared Worker currently implements FREE ads only.
-   Paid options remain visible but cannot be submitted until
-   payment processing is implemented on the backend.
-*/
-function packageChange() {
-  const selected = document.querySelector('[name="package"]:checked');
-  const paid = selected && selected.value !== "FREE";
-
-  $("paymentBox").classList.toggle("hidden", !paid);
-  $("paymentSlip").required = Boolean(paid);
-}
-
-document.querySelectorAll('[name="package"]').forEach(radio => {
-  radio.addEventListener("change", packageChange);
-});
-
-/* PHOTO PREVIEW AND VALIDATION */
 const allowedTypes = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif"
+  "image/jpeg", "image/png", "image/webp", "image/gif"
 ];
 
 $("photos").addEventListener("change", () => {
@@ -462,7 +410,6 @@ $("photos").addEventListener("change", () => {
   }
 });
 
-/* UPLOAD PHOTOS */
 async function uploadPhoto(file) {
   const formData = new FormData();
   formData.append("file", file);
@@ -470,15 +417,17 @@ async function uploadPhoto(file) {
 
   const data = await api(
     "/api/upload",
-    { method: "POST", body: formData },
+    {method: "POST", body: formData},
     true
   );
 
-  if (!data.key) throw new Error("Photo upload did not return a file key.");
-  return data.key;
+  const key = data.key || data.r2_key;
+  if (!key) {
+    throw new Error("Photo upload did not return an R2 file key.");
+  }
+  return key;
 }
 
-/* SUBMIT FREE AD */
 $("form").addEventListener("submit", async event => {
   event.preventDefault();
   hideStatus();
@@ -488,7 +437,7 @@ $("form").addEventListener("submit", async event => {
 
   if (selectedPackage !== "FREE") {
     showStatus(
-      "Paid packages are not enabled by the current backend. Please select Free Ad. Payment-slip processing must be added to the Worker before paid ads can be submitted.",
+      "Paid packages are not enabled yet. Please select Free Ad.",
       "error"
     );
     return;
@@ -501,19 +450,18 @@ $("form").addEventListener("submit", async event => {
     return;
   }
 
-  if (!$("category").value || !$("district").value || !$("city").value) {
-    showStatus("Please select a category, district and city.", "error");
+  if (!$("category").value || !$("district").value || !$("town").value.trim()) {
+    showStatus("Please select a category and district, and enter a town.", "error");
     return;
   }
 
   $("submit").disabled = true;
   $("submit").textContent = "Submitting...";
-  
+
   try {
     await api("/api/auth/me", {}, true);
 
     const photoKeys = [];
-
     for (const file of files) {
       photoKeys.push(await uploadPhoto(file));
     }
@@ -521,16 +469,16 @@ $("form").addEventListener("submit", async event => {
     const body = {
       title: $("title").value.trim(),
       description: $("description").value.trim(),
-      category_id: $("category").value,
-      district_id: $("district").value,
-      city_id: $("city").value,
-      seller_name: $("contactName").value.trim(),
-      seller_phone: $("phone").value.trim(),
-      ad_type: "product",
+      price_lkr: $("price").value === "" ? null : Number($("price").value),
+      category_id: Number($("category").value),
+      district_id: Number($("district").value),
+      town: $("town").value.trim(),
+      seller_name: $("contactName").value.trim() || currentUser?.name || "",
+      contact_phone: $("phone").value.trim(),
       photos: photoKeys
     };
 
-    const result = await api("/api/ads", {
+    const result = await api("/api/listings", {
       method: "POST",
       body: JSON.stringify(body)
     }, true);
@@ -542,12 +490,7 @@ $("form").addEventListener("submit", async event => {
 
     $("form").reset();
     $("photosPreview").replaceChildren();
-    $("city").disabled = true;
-    fillSelect($("city"), [], "Select district first");
-    packageChange();
-
-    // Keep the user signed in after submission.
-    $("contactName").value = currentUser.name || "";
+    $("contactName").value = currentUser?.name || "";
   } catch (error) {
     showStatus(error.message, "error");
   } finally {
@@ -558,7 +501,6 @@ $("form").addEventListener("submit", async event => {
 
 $("logout").addEventListener("click", () => signOut());
 
-/* STARTUP */
 showSignedOut();
 restoreSession();
 
@@ -571,7 +513,7 @@ const googleTimer = setInterval(() => {
 
     if (!googleInitialized) {
       $("loginMessage").textContent =
-        "Google sign-in could not load. Check your internet connection and refresh.";
+        "Google sign-in could not load. Check your connection and refresh.";
     }
   }
 }, 300);
