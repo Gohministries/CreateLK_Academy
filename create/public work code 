@@ -1,432 +1,171 @@
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "https://createlk.com",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400"
-};
+const ORIGINS=new Set(["https://createlk.com","https://www.createlk.com"]);
+const MAX=5*1024*1024, LIFE=7*86400000, PHOTO_LIMIT=5;
+const PACKAGES={FREE:0,URGENT:500,FEATURED:500,TOP_AD:500,ALL_3:1500};
+const IMAGES=new Set(["image/jpeg","image/png","image/webp","image/gif"]);
+const BANK={bank_name:"People's Bank",branch:"Udapussellawa",account_number:"292200280023178",account_holder:"Thinarathnam Saththiyanadan",currency:"LKR"};
 
-const SESSION_LIFETIME = 7 * 24 * 60 * 60 * 1000;
+function headers(r){const o=r.headers.get("Origin")||"";return {"Access-Control-Allow-Origin":ORIGINS.has(o)?o:"https://createlk.com","Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type,Authorization","Access-Control-Max-Age":"86400","Vary":"Origin"}}
+function out(r,d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{...headers(r),"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}})}
+function err(r,m,s=400){return out(r,{success:false,error:m},s)}
+function str(v,n=3000){return String(v??"").trim().slice(0,n)}
+function enc(s){return btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+function dec(s){return atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4))}
+async function key(s){return crypto.subtle.importKey("raw",new TextEncoder().encode(s),{name:"HMAC",hash:"SHA-256"},false,["sign","verify"])}
+async function token(u,secret){const p=enc(JSON.stringify({id:String(u.id),exp:Date.now()+LIFE}));const sig=await crypto.subtle.sign("HMAC",await key(secret),new TextEncoder().encode(p));return p+"."+enc(String.fromCharCode(...new Uint8Array(sig)))}
+async function verify(t,secret){if(!t||!secret)return null;try{const a=t.split(".");if(a.length!==2)return null;const ok=await crypto.subtle.verify("HMAC",await key(secret),Uint8Array.from(dec(a[1]),c=>c.charCodeAt(0)),new TextEncoder().encode(a[0]));if(!ok)return null;const p=JSON.parse(dec(a[0]));return p.id&&p.exp>Date.now()?p:null}catch{return null}}
+function bearer(r){return (r.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim()}
+async function user(r,e){const p=await verify(bearer(r),e.SESSION_SECRET);return p?await e.DB.prepare("SELECT id,google_id,email,display_name,avatar_url,role FROM users WHERE id=?").bind(p.id).first():null}
+function admin(u,e){return !!u&&(String(u.role).toLowerCase()==="admin"||(e.ADMIN_EMAILS||"").split(",").some(x=>x.trim().toLowerCase()===String(u.email).toLowerCase()))}
+function publicUser(u){return {id:u.id,email:u.email,name:u.display_name||"",picture:u.avatar_url||"",role:u.role||"user"}}
+function mediaUrl(k,r){return new URL("/api/media?key="+encodeURIComponent(k),r.url).href}
+function ext(t){return ({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","application/pdf":"pdf"})[t]||"bin"}
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...CORS_HEADERS,
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store"
-    }
-  });
+async function login(r,e){
+ let b;try{b=await r.json()}catch{return err(r,"Invalid JSON")}
+ if(!b.credential)return err(r,"Google credential required");
+ let g;try{const x=await fetch("https://oauth2.googleapis.com/tokeninfo?id_token="+encodeURIComponent(b.credential));if(!x.ok)return err(r,"Google verification failed",401);g=await x.json()}catch{return err(r,"Google verification unavailable",502)}
+ if(g.aud!==e.GOOGLE_CLIENT_ID||g.email_verified!=="true"||!g.email||!g.sub)return err(r,"Invalid Google account",401);
+ const email=g.email.trim().toLowerCase();
+ try{
+  let u=await e.DB.prepare("SELECT * FROM users WHERE google_id=? OR email=? LIMIT 1").bind(g.sub,email).first();
+  if(u){await e.DB.prepare("UPDATE users SET google_id=?,email=?,display_name=?,avatar_url=? WHERE id=?").bind(g.sub,email,str(g.name,200),str(g.picture,1000),u.id).run()}
+  else{const z=await e.DB.prepare("INSERT INTO users(google_id,email,display_name,avatar_url,role) VALUES(?,?,?,?,'user')").bind(g.sub,email,str(g.name,200),str(g.picture,1000)).run();u={id:z.meta.last_row_id}}
+  u=await e.DB.prepare("SELECT id,google_id,email,display_name,avatar_url,role FROM users WHERE id=?").bind(u.id).first();
+  return out(r,{success:true,token:await token(u,e.SESSION_SECRET),user:publicUser(u)})
+ }catch(x){console.error(x);return err(r,"Unable to save account",500)}
 }
 
-function base64urlEncode(value) {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+async function listAds(r,e){
+ const u=new URL(r.url),q=str(u.searchParams.get("q"),150),cat=str(u.searchParams.get("category"),150),dist=str(u.searchParams.get("district"),100);
+ const page=Math.max(1,Number(u.searchParams.get("page"))||1),limit=Math.min(50,Math.max(1,Number(u.searchParams.get("limit"))||24));
+ const w=["LOWER(l.status)='approved'"],v=[];
+ if(q){w.push("(l.title LIKE ? OR l.description LIKE ? OR l.town LIKE ?)");v.push(`%${q}%`,`%${q}%`,`%${q}%`)}
+ if(cat&&cat.toLowerCase()!=="all"){w.push("LOWER(l.category)=LOWER(?)");v.push(cat)}
+ if(dist&&dist.toLowerCase()!=="all"){w.push("LOWER(l.district)=LOWER(?)");v.push(dist)}
+ for(const [p,op] of [["minPrice",">="],["maxPrice","<="]]){const n=u.searchParams.get(p);if(n!==null&&n!==""&&Number.isFinite(Number(n))){w.push(`l.price_lkr ${op} ?`);v.push(Number(n))}}
+ try{const z=await e.DB.prepare(`SELECT l.id,l.title,l.description,l.price_lkr,l.category,l.district,l.town,l.image_url,l.contact_phone,l.seller_name,l.created_at,(SELECT p.image_url FROM listing_photos p WHERE p.listing_id=l.id ORDER BY p.id LIMIT 1) photo_url FROM listings l WHERE ${w.join(" AND ")} ORDER BY l.created_at DESC,l.id DESC LIMIT ? OFFSET ?`).bind(...v,limit,(page-1)*limit).all();return out(r,{success:true,items:z.results||[],page,limit})}catch(x){console.error(x);return err(r,"Unable to load ads",500)}
 }
 
-function base64urlDecode(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/")
-    + "=".repeat((4 - value.length % 4) % 4);
-  return atob(padded);
+async function upload(r,e,u){
+ let f;try{f=await r.formData()}catch{return err(r,"Invalid upload form")}
+ const file=f.get("file"),purpose=str(f.get("purpose")||"photo",30),slip=purpose==="payment_slip";
+ if(!(file instanceof File)||file.size<1||file.size>MAX)return err(r,"Select a file under 5 MB");
+ if(slip?![...IMAGES,"application/pdf"].includes(file.type):purpose!=="photo"||!IMAGES.has(file.type))return err(r,"Invalid file type");
+ const k=`customer-uploads/${u.id}/${slip?"slips":"photos"}/${crypto.randomUUID()}.${ext(file.type)}`;
+ try{await e.MEDIA.put(k,file.stream(),{httpMetadata:{contentType:file.type},customMetadata:{userId:String(u.id),purpose:slip?"payment_slip":"photo"}});return out(r,{success:true,key:k,purpose:slip?"payment_slip":"photo"},201)}catch(x){console.error(x);return err(r,"Upload failed",500)}
 }
 
-async function getSigningKey(secret) {
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"]
-  );
+async function validUpload(e,k,u,purpose){
+ if(!k||!k.startsWith(`customer-uploads/${u.id}/${purpose==="photo"?"photos":"slips"}/`))return false;
+ const o=await e.MEDIA.head(k);
+ return !!o&&o.customMetadata?.userId===String(u.id)&&o.customMetadata?.purpose===purpose;
 }
 
-async function signToken(user, secret) {
-  const payload = {
-    id: user.id,
-    exp: Date.now() + SESSION_LIFETIME
-  };
-
-  const encoded = base64urlEncode(JSON.stringify(payload));
-  const key = await getSigningKey(secret);
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(encoded)
-  );
-
-  const sig = base64urlEncode(
-    String.fromCharCode(...new Uint8Array(signature))
-  );
-
-  return `${encoded}.${sig}`;
+async function submitAd(r,e,u){
+ let b;try{b=await r.json()}catch{return err(r,"Invalid JSON")}
+ const title=str(b.title,120),description=str(b.description,5000),cat=str(b.category,150),dist=str(b.district,100),town=str(b.town||b.city,100),phone=str(b.contact_phone||b.phone,30),seller=str(b.seller_name||b.contact_name||u.display_name,120),pkg=str(b.package_code||b.package||"FREE",20).toUpperCase(),photos=Array.isArray(b.photos)?b.photos.map(x=>str(x,500)).filter(Boolean):[],slip=str(b.payment_slip_key||b.slip_key,500);
+ if(title.length<3||description.length<10)return err(r,"Enter a title and description");
+ if(!cat||!dist||!town)return err(r,"Category, district and town are required");
+ if(!/^[0-9+()\-\s]{7,20}$/.test(phone))return err(r,"Invalid phone number");
+ if(!(pkg in PACKAGES))return err(r,"Invalid package");
+ if(!photos.length||photos.length>PHOTO_LIMIT)return err(r,"Upload 1–5 photos");
+ const price=b.price_lkr==null||b.price_lkr===""?null:Number(b.price_lkr);
+ if(price!==null&&(!Number.isFinite(price)||price<0))return err(r,"Invalid price");
+ const c=await e.DB.prepare("SELECT name FROM categories WHERE is_active=1 AND (LOWER(name)=LOWER(?) OR LOWER(slug)=LOWER(?)) LIMIT 1").bind(cat,cat).first();
+ const d=await e.DB.prepare("SELECT name FROM districts WHERE LOWER(name)=LOWER(?) LIMIT 1").bind(dist).first();
+ if(!c||!d)return err(r,"Invalid category or district");
+ for(const k of photos)if(!await validUpload(e,k,u,"photo"))return err(r,"Invalid photo upload");
+ const amount=PACKAGES[pkg];
+ if(amount){if(!await validUpload(e,slip,u,"payment_slip"))return err(r,"Upload your payment receipt");if(await e.DB.prepare("SELECT id FROM payments WHERE r2_key=? LIMIT 1").bind(slip).first())return err(r,"Receipt already used")}
+ if(!amount){const n=await e.DB.prepare("SELECT COUNT(*) total FROM free_ad_claims_v2 WHERE user_id=? AND claimed_at>datetime('now','-30 days')").bind(String(u.id)).first();if(Number(n?.total||0)>=5)return err(r,"Free-ad limit reached",409)}
+ try{
+  const z=await e.DB.prepare("INSERT INTO listings(user_id,title,description,price_lkr,category,district,town,image_url,contact_phone,seller_name,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,'pending',datetime('now'))").bind(u.id,title,description,price,c.name,d.name,town,mediaUrl(photos[0],r),phone,seller).run();
+  const id=z.meta.last_row_id;
+  for(const k of photos)await e.DB.prepare("INSERT INTO listing_photos(listing_id,image_url) VALUES(?,?)").bind(id,mediaUrl(k,r)).run();
+  if(amount)await e.DB.prepare("INSERT INTO payments(user_id,ad_id,package_code,amount_lkr,r2_key,status) VALUES(?,?,?,?,?,'PENDING')").bind(String(u.id),String(id),pkg,amount,slip).run();
+  else await e.DB.prepare("INSERT INTO free_ad_claims_v2(user_id,ad_id,claimed_at) VALUES(?,?,datetime('now'))").bind(String(u.id),String(id)).run();
+  return out(r,{success:true,id,status:"pending",package_code:pkg,amount_lkr:amount},201)
+ }catch(x){console.error(x);return err(r,"Could not save ad; check database schema",500)}
 }
 
-async function verifyToken(token, secret) {
-  if (!token || !secret) return null;
-
-  const parts = token.split(".");
-  if (parts.length !== 2) return null;
-
-  try {
-    const key = await getSigningKey(secret);
-    const signatureBinary = base64urlDecode(parts[1]);
-    const signature = Uint8Array.from(
-      signatureBinary,
-      char => char.charCodeAt(0)
-    );
-
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      signature,
-      new TextEncoder().encode(parts[0])
-    );
-
-    if (!valid) return null;
-
-    const payload = JSON.parse(base64urlDecode(parts[0]));
-    if (!payload.id || !payload.exp || payload.exp <= Date.now()) {
-      return null;
-    }
-
-    return payload;
-  } catch {
-    return null;
-  }
+async function myAds(r,e,u){
+ const z=await e.DB.prepare("SELECT l.id,l.title,l.price_lkr,l.category,l.district,l.town,l.status,l.created_at,p.package_code,p.amount_lkr,p.status payment_status FROM listings l LEFT JOIN payments p ON p.ad_id=CAST(l.id AS TEXT) WHERE l.user_id=? ORDER BY l.created_at DESC LIMIT 100").bind(u.id).all();
+ return out(r,{success:true,items:z.results||[]})
 }
 
-function publicUser(row) {
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.display_name || "",
-    picture: row.avatar_url || "",
-    avatar_url: row.avatar_url || "",
-    role: row.role || "user"
-  };
+async function media(r,e,u){
+ const k=str(new URL(r.url).searchParams.get("key"),500);
+ if(!k)return err(r,"Missing media key");
+ const o=await e.MEDIA.get(k);if(!o)return err(r,"File not found",404);
+ const m=o.customMetadata||{};
+ if(m.purpose==="payment_slip"&&(!u||(!admin(u,e)&&String(u.id)!==m.userId)))return err(r,"Forbidden",403);
+ if(m.purpose==="photo"){
+  const url=mediaUrl(k,r);
+  const z=await e.DB.prepare("SELECT l.user_id,l.status FROM listing_photos p JOIN listings l ON l.id=p.listing_id WHERE p.image_url=? LIMIT 1").bind(url).first();
+  if(!z||String(z.user_id)!==String(u?.id)&&String(z.status).toLowerCase()!=="approved")return err(r,"Forbidden",403);
+ }
+ const h=new Headers(headers(r));o.writeHttpMetadata(h);h.set("Cache-Control","public, max-age=3600");h.set("X-Content-Type-Options","nosniff");
+ return new Response(o.body,{headers:h})
 }
 
-function getBearerToken(request) {
-  const auth = request.headers.get("Authorization") || "";
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1] : null;
+async function adminQueue(r,e,u){
+ if(!admin(u,e))return err(r,"Admin access required",403);
+ const z=await e.DB.prepare("SELECT l.id,l.title,l.description,l.price_lkr,l.category,l.district,l.town,l.contact_phone,l.seller_name,l.status,l.created_at,u.email,p.id payment_id,p.package_code,p.amount_lkr,p.status payment_status,p.r2_key FROM listings l LEFT JOIN users u ON u.id=l.user_id LEFT JOIN payments p ON p.ad_id=CAST(l.id AS TEXT) WHERE LOWER(l.status)='pending' ORDER BY l.created_at LIMIT 100").all();
+ return out(r,{success:true,items:z.results||[]})
 }
 
-async function getUser(request, env) {
-  const payload = await verifyToken(
-    getBearerToken(request),
-    env.SESSION_SECRET
-  );
-
-  if (!payload) return null;
-
-  const row = await env.DB.prepare(`
-    SELECT id, google_id, email, display_name, avatar_url, role
-    FROM users
-    WHERE id = ?
-    LIMIT 1
-  `).bind(payload.id).first();
-
-  return row ? publicUser(row) : null;
+async function reviewPayment(r,e,u){
+ if(!admin(u,e))return err(r,"Admin access required",403);
+ let b;try{b=await r.json()}catch{return err(r,"Invalid JSON")}
+ const id=Number(b.id),action=str(b.action,20).toUpperCase();
+ if(!Number.isInteger(id)||!["APPROVE","REJECT"].includes(action))return err(r,"Invalid payment review");
+ const p=await e.DB.prepare("SELECT id FROM payments WHERE id=? AND status='PENDING'").bind(id).first();
+ if(!p)return err(r,"Pending payment not found",404);
+ await e.DB.prepare("UPDATE payments SET status=? WHERE id=?").bind(action==="APPROVE"?"APPROVED":"REJECTED",id).run();
+ return out(r,{success:true})
 }
 
-function normalizeCategory(value) {
-  return String(value || "").trim().toLowerCase();
+async function reviewAd(r,e,u){
+ if(!admin(u,e))return err(r,"Admin access required",403);
+ let b;try{b=await r.json()}catch{return err(r,"Invalid JSON")}
+ const id=str(b.id,100),action=str(b.action,20).toUpperCase();
+ if(!id||!["APPROVE","REJECT"].includes(action))return err(r,"Invalid ad review");
+ const l=await e.DB.prepare("SELECT id FROM listings WHERE id=?").bind(id).first();
+ if(!l)return err(r,"Ad not found",404);
+ if(action==="APPROVE"){
+  const p=await e.DB.prepare("SELECT status FROM payments WHERE ad_id=? ORDER BY id DESC LIMIT 1").bind(id).first();
+  if(p&&p.status!=="APPROVED")return err(r,"Verify payment before approving this ad",409);
+ }
+ await e.DB.prepare("UPDATE listings SET status=? WHERE id=?").bind(action==="APPROVE"?"approved":"rejected",id).run();
+ return out(r,{success:true,status:action==="APPROVE"?"approved":"rejected"})
 }
 
-async function handleGoogleLogin(request, env) {
-  if (!env.GOOGLE_CLIENT_ID || !env.SESSION_SECRET || !env.DB) {
-    return json({ error: "Server configuration is incomplete." }, 500);
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid JSON request." }, 400);
-  }
-
-  const credential = String(body.credential || "");
-  if (!credential) {
-    return json({ error: "Google credential is required." }, 400);
-  }
-
-  let googleAccount;
-
-  try {
-    const response = await fetch(
-      "https://oauth2.googleapis.com/tokeninfo?id_token=" +
-      encodeURIComponent(credential)
-    );
-
-    if (!response.ok) {
-      return json({ error: "Google sign-in verification failed." }, 401);
-    }
-
-    googleAccount = await response.json();
-  } catch {
-    return json({ error: "Unable to verify Google sign-in." }, 502);
-  }
-
-  if (
-    googleAccount.aud !== env.GOOGLE_CLIENT_ID ||
-    googleAccount.email_verified !== "true" ||
-    !googleAccount.email ||
-    !googleAccount.sub
-  ) {
-    return json({ error: "Google account verification failed." }, 401);
-  }
-
-  const googleId = googleAccount.sub;
-  const email = String(googleAccount.email).trim().toLowerCase();
-  const displayName = String(googleAccount.name || "");
-  const avatarUrl = String(googleAccount.picture || "");
-
-  try {
-    let user = await env.DB.prepare(`
-      SELECT id, google_id, email, display_name, avatar_url, role
-      FROM users
-      WHERE google_id = ? OR email = ?
-      LIMIT 1
-    `).bind(googleId, email).first();
-
-    if (user) {
-      await env.DB.prepare(`
-        UPDATE users
-        SET google_id = ?,
-            email = ?,
-            display_name = ?,
-            avatar_url = ?
-        WHERE id = ?
-      `).bind(
-        googleId,
-        email,
-        displayName,
-        avatarUrl,
-        user.id
-      ).run();
-
-      user = await env.DB.prepare(`
-        SELECT id, google_id, email, display_name, avatar_url, role
-        FROM users
-        WHERE id = ?
-        LIMIT 1
-      `).bind(user.id).first();
-    } else {
-      const result = await env.DB.prepare(`
-        INSERT INTO users (
-          google_id, email, display_name, avatar_url, role
-        ) VALUES (?, ?, ?, ?, 'user')
-      `).bind(
-        googleId,
-        email,
-        displayName,
-        avatarUrl
-      ).run();
-
-      user = await env.DB.prepare(`
-        SELECT id, google_id, email, display_name, avatar_url, role
-        FROM users
-        WHERE id = ?
-        LIMIT 1
-      `).bind(result.meta.last_row_id).first();
-    }
-
-    const token = await signToken(user, env.SESSION_SECRET);
-
-    return json({
-      success: true,
-      token,
-      user: publicUser(user)
-    });
-  } catch (error) {
-    console.error("Google login database error:", error);
-    return json({ error: "Unable to save the Google account." }, 500);
-  }
-}
-
-async function handleCategories(env) {
-  const result = await env.DB.prepare(`
-    SELECT id, name, slug
-    FROM categories
-    WHERE is_active = 1
-    ORDER BY sort_order, name
-  `).all();
-
-  return json(result.results || []);
-}
-
-async function handleLocations(env) {
-  const result = await env.DB.prepare(`
-    SELECT id, name, province
-    FROM districts
-    ORDER BY sort_order, name
-  `).all();
-
-  return json(result.results || []);
-}
-
-async function handleListings(request, env) {
-  const url = new URL(request.url);
-  const q = (url.searchParams.get("q") ||
-    url.searchParams.get("search") || "").trim();
-
-  const category = normalizeCategory(url.searchParams.get("category"));
-  const district = (url.searchParams.get("district") ||
-    url.searchParams.get("location") || "").trim();
-
-  const minPrice = url.searchParams.get("minPrice");
-  const maxPrice = url.searchParams.get("maxPrice");
-
-  const page = Math.max(
-    1,
-    Math.min(10000, Number(url.searchParams.get("page")) || 1)
-  );
-
-  const limit = Math.max(
-    1,
-    Math.min(100, Number(url.searchParams.get("limit")) || 24)
-  );
-
-  const offset = (page - 1) * limit;
-  const conditions = ["LOWER(l.status) = 'approved'"];
-  const params = [];
-
-  if (q) {
-    conditions.push(
-      "(l.title LIKE ? OR l.description LIKE ? OR l.town LIKE ?)"
-    );
-    const term = `%${q}%`;
-    params.push(term, term, term);
-  }
-
-  if (category && category !== "all") {
-    conditions.push("LOWER(l.category) = ?");
-    params.push(category);
-  }
-
-  if (district && district.toLowerCase() !== "all") {
-    conditions.push("LOWER(l.district) = LOWER(?)");
-    params.push(district);
-  }
-
-  if (minPrice !== null && minPrice !== "" && Number.isFinite(Number(minPrice))) {
-    conditions.push("l.price_lkr >= ?");
-    params.push(Number(minPrice));
-  }
-
-  if (maxPrice !== null && maxPrice !== "" && Number.isFinite(Number(maxPrice))) {
-    conditions.push("l.price_lkr <= ?");
-    params.push(Number(maxPrice));
-  }
-
-  const where = conditions.join(" AND ");
-
-  try {
-    const result = await env.DB.prepare(`
-      SELECT
-        l.id,
-        l.user_id,
-        l.title,
-        l.description,
-        l.price_lkr,
-        l.category,
-        l.district,
-        l.town,
-        l.image_url,
-        l.contact_phone,
-        l.seller_name,
-        l.status,
-        l.created_at,
-        COALESCE(c.name, l.category) AS category_name,
-        COALESCE(d.name, l.district) AS district_name,
-        (
-          SELECT p.image_url
-          FROM listing_photos p
-          WHERE p.listing_id = l.id
-          ORDER BY p.id
-          LIMIT 1
-        ) AS photo_url
-      FROM listings l
-      LEFT JOIN categories c ON LOWER(c.slug) = LOWER(l.category)
-      LEFT JOIN districts d ON LOWER(d.name) = LOWER(l.district)
-      WHERE ${where}
-      ORDER BY l.created_at DESC, l.id DESC
-      LIMIT ? OFFSET ?
-    `).bind(...params, limit, offset).all();
-
-    return json({
-      success: true,
-      items: result.results || [],
-      page,
-      limit
-    });
-  } catch (error) {
-    console.error("Listings query error:", error);
-    return json({ error: "Unable to load advertisements." }, 500);
-  }
+async function route(r,e){
+ const path=new URL(r.url).pathname,method=r.method;
+ if(method==="OPTIONS")return new Response(null,{status:204,headers:headers(r)});
+ if(path==="/api/health"&&method==="GET")return out(r,{success:true,service:"CreateLK API"});
+ if(path==="/api/auth/google"&&method==="POST")return login(r,e);
+ if(path==="/api/categories"&&method==="GET"){const z=await e.DB.prepare("SELECT id,name,slug FROM categories WHERE is_active=1 ORDER BY sort_order,name").all();return out(r,{success:true,items:z.results||[]})}
+ if(path==="/api/locations"&&method==="GET"){const z=await e.DB.prepare("SELECT id,name,province FROM districts ORDER BY sort_order,name").all();return out(r,{success:true,items:z.results||[]})}
+ if(path==="/api/listings"&&method==="GET")return listAds(r,e);
+ if(path==="/api/payment-details"&&method==="GET")return out(r,{success:true,payment_details:BANK,packages:PACKAGES});
+ if(path==="/api/media"&&method==="GET")return media(r,e,await user(r,e));
+ const u=await user(r,e);
+ if(path==="/api/auth/me"&&method==="GET")return u?out(r,{success:true,user:publicUser(u)}):err(r,"Sign-in required",401);
+ if(!u)return err(r,"Sign-in required",401);
+ if(path==="/api/upload"&&method==="POST")return upload(r,e,u);
+ if(path==="/api/ads"&&method==="POST")return submitAd(r,e,u);
+ if(path==="/api/my-ads"&&method==="GET")return myAds(r,e,u);
+ if(path==="/api/admin/ads"&&method==="GET")return adminQueue(r,e,u);
+ if(path==="/api/admin/payments/review"&&method==="POST")return reviewPayment(r,e,u);
+ if(path==="/api/admin/ads/review"&&method==="POST")return reviewAd(r,e,u);
+ return err(r,"Endpoint not found",404)
 }
 
 export default {
-  async fetch(request, env) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: CORS_HEADERS
-      });
-    }
-
-    if (!env.DB) {
-      return json({ error: "D1 database binding DB is missing." }, 500);
-    }
-
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-
-    try {
-      if (request.method === "POST" && path === "/api/auth/google") {
-        return await handleGoogleLogin(request, env);
-      }
-
-      if (request.method === "GET" && path === "/api/auth/me") {
-        const user = await getUser(request, env);
-        if (!user) {
-          return json({ error: "Please sign in again." }, 401);
-        }
-        return json({ success: true, user });
-      }
-
-      if (request.method === "GET" && path === "/api/categories") {
-        return await handleCategories(env);
-      }
-
-      if (request.method === "GET" && path === "/api/locations") {
-        return await handleLocations(env);
-      }
-
-      // Towns are stored as text in listings.town.
-      // The current database has no cities table.
-      if (request.method === "GET" && path === "/api/cities") {
-        return json([]);
-      }
-
-      if (request.method === "GET" && path === "/api/listings") {
-        return await handleListings(request, env);
-      }
-
-      if (request.method === "GET" && path === "/api/health") {
-        return json({ success: true, service: "create-public" });
-      }
-
-      return json({ error: "Endpoint not found." }, 404);
-    } catch (error) {
-      console.error("Worker error:", error);
-      return json({ error: "Internal server error." }, 500);
-    }
-  }
+ async fetch(request,env){
+  try{return await route(request,env)}
+  catch(error){console.error("Worker error:",error);return err(request,"Internal server error",500)}
+ }
 };
