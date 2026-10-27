@@ -1,11 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0b1628">
-<title>CreateLK Marketplace | Sri Lanka</title>
+<title>CreateLK Marketplace</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{--bg:#0b1628;--p:#13233b;--g:#ffd166;--b:#304561}
@@ -46,11 +44,16 @@ textarea{min-height:90px}.panel,.ad{background:var(--p);border:1px solid var(--b
 <button id="logout" hidden>Sign out</button>
 </div></nav></header>
 <main>
-<section class="panel" style="text-align:center"><h2>Buy &amp; Sell in <span class="gold">Sri Lanka</span></h2><p>Discover local deals and great offers.</p><button id="postBtn">＋ Post an Ad</button><p class="status">Up to 5 free ads every 30 days.</p></section>
+<section class="panel" style="text-align:center">
+<h2>Buy &amp; Sell in <span class="gold">Sri Lanka</span></h2>
+<p>Discover local deals and great offers.</p>
+<button id="postBtn">＋ Post an Ad</button><p class="status">Up to 5 free ads every 30 days.</p>
+</section>
 <section class="panel"><h3>Categories</h3><div class="categories" id="categories"></div></section>
 <section class="panel" id="browse"><h3>Search Ads</h3>
 <form id="searchForm" class="row"><input id="q" placeholder="Search advertisements" style="flex:1"><button>Search</button></form>
-<div class="row"><select id="category" style="flex:1"><option value="">All Categories</option></select><select id="district" style="flex:1"><option value="">All Districts</option></select></div><p id="status" class="status">Loading…</p></section>
+<div class="row"><select id="category" style="flex:1"><option value="">All Categories</option></select><select id="district" style="flex:1"><option value="">All Districts</option></select></div>
+<p id="status" class="status">Loading…</p></section>
 <div class="grid" id="results"></div><p style="text-align:center"><button id="more" hidden>Load More</button></p>
 <section id="recent"><h3>Recent Ads</h3><div class="grid" id="recentResults"></div></section>
 </main>
@@ -92,9 +95,11 @@ const API="https://market-public.createlk.workers.dev";
 const GOOGLE_ID="582157960266-mvlpmqne90d9q7ja5vuhi3g1aspvtp86.apps.googleusercontent.com";
 const $=id=>document.getElementById(id),MAX=5*1024*1024;
 const icons={"vehicles":"🚗","property":"🏠","phones-accessories":"📱","electronics":"💻","home-garden":"🛋️","fashion-beauty":"👕","jobs":"💼","services":"🧰","agriculture-business":"🚜","education-sports-hobbies":"⚽","pets-pet-supplies":"🐾","other-items":"📦"};
-let cats=[],districts=[],ads=[],token=sessionStorage.getItem("marketplace_session_token")||"",profile=null,googleReady=false,bank=null;
+let cats=[],districts=[],ads=[],token="",profile=null,googleReady=false,bank=null;
+function getToken(){return sessionStorage.getItem("marketplace_session_token")||""}
+function setToken(v){token=v||"";if(token)sessionStorage.setItem("marketplace_session_token",token);else sessionStorage.removeItem("marketplace_session_token")}
 try{profile=JSON.parse(sessionStorage.getItem("marketplace_profile")||"null")}catch{}
-$("year").textContent=new Date().getFullYear();
+setToken(getToken());$("year").textContent=new Date().getFullYear();
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const slug=s=>String(s||"").toLowerCase().trim().replace(/\s+/g,"-");
 const list=d=>Array.isArray(d)?d:d.items||d.listings||d.ads||[];
@@ -102,11 +107,11 @@ async function api(path,params={},opts={}){
  const {auth=false,...options}=opts,url=new URL(API+path);
  Object.entries(params).forEach(([k,v])=>{if(v!==""&&v!=null)url.searchParams.set(k,v)});
  const headers={Accept:"application/json",...(options.headers||{})};
- if(auth&&token)headers.Authorization="Bearer "+token;
+ if(auth){const t=getToken();if(!t)throw Error("Please sign in again.");headers.Authorization="Bearer "+t}
  const r=await fetch(url,{...options,headers});let d={};try{d=await r.json()}catch{}
  if(!r.ok||d.success===false)throw Error(d.error||"Request failed");return d;
 }
-function updateLogin(){$("login").hidden=!!token;$("logout").hidden=!token}
+function updateLogin(){$("login").hidden=!!getToken();$("logout").hidden=!getToken()}
 updateLogin();
 
 async function init(){
@@ -129,9 +134,7 @@ async function loadAds(){
   ads=list(d);render("results",ads);$("status").textContent=ads.length+" ads found";$("more").hidden=ads.length<12;
  }catch(e){$("status").textContent=e.message}
 }
-async function loadRecent(){
- try{render("recentResults",list(await api("/api/listings",{page:1,limit:8})))}catch(e){$("recentResults").textContent=e.message}
-}
+async function loadRecent(){try{render("recentResults",list(await api("/api/listings",{page:1,limit:8})))}catch(e){$("recentResults").textContent=e.message}}
 function imageURL(a){try{const u=new URL(a.image_url||a.photo_url||(Array.isArray(a.images)?a.images[0]:""));return u.protocol==="https:"?u.href:""}catch{return""}}
 function render(id,items){
  $(id).replaceChildren();if(!items.length){$(id).textContent="No advertisements found.";return}
@@ -152,11 +155,10 @@ function render(id,items){
 $("more").onclick=async()=>{try{const c=cats.find(x=>x.slug===$("category").value),d=await api("/api/listings",{q:$("q").value.trim(),category:c?.name||"",district:$("district").value,page:2,limit:12});render("results",ads.concat(list(d)));$("more").hidden=true}catch(e){$("status").textContent=e.message}};
 $("searchForm").onsubmit=e=>{e.preventDefault();loadAds()};$("category").onchange=loadAds;$("district").onchange=loadAds;
 $("menuBtn").onclick=()=>$("menu").classList.toggle("show");
-function requestPost(){ $("menu").classList.remove("show");if(token)openPost();else{sessionStorage.setItem("open_post_after_login","yes");signIn()}}
-$("postBtn").onclick=requestPost;
-$("postLink").onclick=e=>{e.preventDefault();requestPost()};
+function requestPost(){$("menu").classList.remove("show");if(getToken())openPost();else{sessionStorage.setItem("open_post_after_login","yes");signIn()}}
+$("postBtn").onclick=requestPost;$("postLink").onclick=e=>{e.preventDefault();requestPost()};
 $("login").onclick=()=>signIn();
-$("logout").onclick=()=>{sessionStorage.removeItem("marketplace_session_token");sessionStorage.removeItem("marketplace_profile");token="";profile=null;updateLogin()};
+$("logout").onclick=()=>{setToken("");profile=null;sessionStorage.removeItem("marketplace_profile");updateLogin()};
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>$(b.dataset.close).classList.remove("show"));
 document.querySelectorAll(".popup").forEach(p=>p.onclick=e=>{if(e.target===p)p.classList.remove("show")});
 
@@ -169,23 +171,18 @@ function signIn(){
 async function googleCallback(result){
  try{
   const d=await api("/api/auth/google",{}, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({credential:result.credential})});
-  token=d.token;profile=d.user;
-  sessionStorage.setItem("marketplace_session_token",token);
-  sessionStorage.setItem("marketplace_profile",JSON.stringify(profile));
+  if(!d.token)throw Error("Login response did not include a token.");
+  setToken(d.token);profile=d.user||null;
+  if(profile)sessionStorage.setItem("marketplace_profile",JSON.stringify(profile));
   updateLogin();$("auth").classList.remove("show");
   await init();
-  if(sessionStorage.getItem("open_post_after_login")==="yes"){
-   sessionStorage.removeItem("open_post_after_login");openPost();
-  }
+  if(sessionStorage.getItem("open_post_after_login")==="yes"){sessionStorage.removeItem("open_post_after_login");openPost()}
  }catch(e){$("authStatus").textContent=e.message}
 }
-async function share(a){
- const u=location.origin+"/create/ad.html?id="+encodeURIComponent(a.id||"");
- try{if(navigator.share)await navigator.share({title:a.title,url:u});else{await navigator.clipboard.writeText(u);alert("Link copied")}}catch{}
-}
+async function share(a){const u=location.origin+"/create/ad.html?id="+encodeURIComponent(a.id||"");try{if(navigator.share)await navigator.share({title:a.title,url:u});else{await navigator.clipboard.writeText(u);alert("Link copied")}}catch{}}
 function showDetails(a){
- $("detailTitle").textContent=a.title||"Ad Details";const b=$("detailBody");b.replaceChildren();
- const src=imageURL(a);if(src){const im=document.createElement("img");im.src=src;im.style="width:100%;max-height:250px;object-fit:contain";b.append(im)}
+ $("detailTitle").textContent=a.title||"Ad Details";const b=$("detailBody");b.replaceChildren();const src=imageURL(a);
+ if(src){const im=document.createElement("img");im.src=src;im.style="width:100%;max-height:250px;object-fit:contain";b.append(im)}
  [["Price",a.price_lkr==null?"Price on request":"LKR "+Number(a.price_lkr).toLocaleString()],["Category",a.category_name||a.category],["District",a.district_name||a.district],["Town",a.town||a.city],["Description",a.description],["Seller",a.seller_name||a.contact_name]].forEach(([k,v])=>{if(v){const p=document.createElement("p");p.textContent=k+": "+v;b.append(p)}});
  const phone=a.contact_phone||a.seller_phone;if(phone){const row=document.createElement("div");row.className="actions";const call=document.createElement("a");call.href="tel:"+phone;call.textContent="Call";row.append(call);let n=String(phone).replace(/\D/g,"");if(n.startsWith("0"))n="94"+n.slice(1);if(n.length>=9){const wa=document.createElement("a");wa.href="https://wa.me/"+n;wa.target="_blank";wa.rel="noopener";wa.textContent="WhatsApp";row.append(wa)}b.append(row)}
  $("details").classList.add("show");
@@ -194,7 +191,7 @@ async function loadBank(){
  try{
   const d=await api("/api/payment-details");bank=d.payment_details||d.bank||d;
   $("bankDetails").innerHTML="<p>Bank: "+esc(bank.bank_name||"")+"</p><p>Branch: "+esc(bank.branch||"")+"</p><p>Account holder: "+esc(bank.account_holder||"")+"</p><p>Account number: "+esc(bank.account_number||"")+"</p><p>Currency: "+esc(bank.currency||"LKR")+"</p>";
- }catch{$("bankDetails").textContent="Could not load bank details. Please retry."}
+ }catch{$("bankDetails").textContent="Could not load bank details."}
 }
 function pkg(){return document.querySelector('[name="pkg"]:checked').value}
 function updatePkg(){$("payment").hidden=pkg()==="FREE";$("slip").required=pkg()!=="FREE"}
@@ -204,12 +201,14 @@ $("photos").onchange=()=>{const f=[...$("photos").files];if(f.length>5||f.some(x
 async function upload(file,purpose){
  if(!file||file.size>MAX)throw Error("File exceeds 5 MB");
  const fd=new FormData();fd.append("file",file);fd.append("purpose",purpose);
- const d=await api("/api/upload",{}, {method:"POST",auth:true,body:fd}),f=d.file||d.upload||d,key=f.key||f.r2_key||f.object_key;
+ const d=await api("/api/upload",{}, {method:"POST",auth:true,body:fd});
+ const f=d.file||d.upload||d,key=f.key||f.r2_key||f.object_key;
  if(!key)throw Error("Upload did not return a file key");
  return {key,url:f.url||f.image_url||f.file_url||"",name:file.name,type:file.type};
 }
 $("postForm").onsubmit=async e=>{
- e.preventDefault();if(!token){requestPost();return}
+ e.preventDefault();
+ if(!getToken()){$("post").classList.remove("show");requestPost();return}
  const p=pkg(),slip=$("slip").files[0],photos=[...$("photos").files];
  if(p!=="FREE"&&!slip){$("postStatus").textContent="Upload your payment slip.";return}
  if(p!=="FREE"&&!bank){$("postStatus").textContent="Bank details unavailable.";return}
@@ -217,7 +216,7 @@ $("postForm").onsubmit=async e=>{
  $("submit").disabled=true;
  try{
   const images=[];for(const f of photos){$("postStatus").textContent="Uploading photos…";images.push(await upload(f,"ad_photo"))}
-  let paymentSlip=null;if(p!=="FREE"){ $("postStatus").textContent="Uploading payment slip…";paymentSlip=await upload(slip,"payment_slip")}
+  let paymentSlip=null;if(p!=="FREE"){$("postStatus").textContent="Uploading payment slip…";paymentSlip=await upload(slip,"payment_slip")}
   const payload={title:$("title").value.trim(),description:$("description").value.trim(),ad_type:$("type").value,category:$("adCategory").value,district:$("adDistrict").value,town:$("town").value.trim(),price_lkr:$("price").value===""?null:Number($("price").value),condition:$("condition").value,website:$("website").value.trim(),seller_name:$("name").value.trim(),contact_name:$("name").value.trim(),contact_phone:$("phone").value.trim(),whatsapp:$("whatsapp").value.trim(),package:p,photos:images,image_url:images[0]?.url||"",payment_slip:paymentSlip,payment_slip_key:paymentSlip?.key||null};
   $("postStatus").textContent="Submitting…";
   const d=await api("/api/ads",{}, {method:"POST",auth:true,headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
