@@ -21,8 +21,9 @@ function getCookie(request) {
   const raw = request.headers.get("Cookie") || "";
   for (const part of raw.split(";")) {
     const i = part.indexOf("=");
-    if (i >= 0 && part.slice(0, i).trim() === COOKIE_NAME)
+    if (i >= 0 && part.slice(0, i).trim() === COOKIE_NAME) {
       return part.slice(i + 1).trim();
+    }
   }
   return "";
 }
@@ -47,15 +48,21 @@ async function signature(value, secret) {
     false,
     ["sign"]
   );
-  return new Uint8Array(await crypto.subtle.sign(
-    "HMAC", key, new TextEncoder().encode(value)
-  ));
+  return new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(value)
+    )
+  );
 }
 
 async function makeSession(secret) {
-  const payload = b64(new TextEncoder().encode(JSON.stringify({
-    exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS
-  })));
+  const payload = b64(
+    new TextEncoder().encode(JSON.stringify({
+      exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS
+    }))
+  );
   return payload + "." + b64(await signature(payload, secret));
 }
 
@@ -82,11 +89,13 @@ async function authenticated(request, env) {
       unb64(parts[1]),
       new TextEncoder().encode(parts[0])
     );
+
     if (!valid) return false;
 
     const payload = JSON.parse(
       new TextDecoder().decode(unb64(parts[0]))
     );
+
     return Number.isInteger(payload.exp) &&
       payload.exp > Math.floor(Date.now() / 1000);
   } catch {
@@ -96,8 +105,9 @@ async function authenticated(request, env) {
 
 async function bodyJson(request) {
   const type = request.headers.get("Content-Type") || "";
-  if (!type.toLowerCase().includes("application/json"))
+  if (!type.toLowerCase().includes("application/json")) {
     throw new Error("Content-Type must be application/json.");
+  }
   return request.json();
 }
 
@@ -114,7 +124,8 @@ function dateOK(s) {
 
 function timeOK(s) {
   return s == null || s === "" ||
-    (typeof s === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
+    (typeof s === "string" &&
+      /^([01]\d|2[0-3]):[0-5]\d$/.test(s));
 }
 
 function flag(value) {
@@ -131,6 +142,7 @@ function minutesBetween(start, end) {
 function monthRange(url) {
   const month = url.searchParams.get("month") ||
     new Date().toISOString().slice(0, 7);
+
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return null;
 
   const next = new Date(month + "-01T00:00:00Z");
@@ -142,7 +154,8 @@ function monthRange(url) {
     end: next.toISOString().slice(0, 10),
     days: new Date(Date.UTC(
       Number(month.slice(0, 4)),
-      Number(month.slice(5, 7)), 0
+      Number(month.slice(5, 7)),
+      0
     )).getUTCDate()
   };
 }
@@ -153,8 +166,11 @@ async function route(request, env, url) {
 
   // Login
   if (path === "/api/login" && method === "POST") {
-    if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET)
-      return json({ error: "Configure ADMIN_PASSWORD and SESSION_SECRET." }, 500);
+    if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) {
+      return json({
+        error: "Configure ADMIN_PASSWORD and SESSION_SECRET."
+      }, 500);
+    }
 
     let body;
     try {
@@ -163,17 +179,23 @@ async function route(request, env, url) {
       return json({ error: e.message }, 400);
     }
 
-    const supplied = typeof body.password === "string" ? body.password : "";
+    const supplied = typeof body.password === "string"
+      ? body.password : "";
+
     const a = new TextEncoder().encode(supplied);
     const b = new TextEncoder().encode(env.ADMIN_PASSWORD);
     let diff = a.length ^ b.length;
-    for (let i = 0; i < Math.max(a.length, b.length); i++)
-      diff |= (a[i] || 0) ^ (b[i] || 0);
 
-    if (diff !== 0)
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      diff |= (a[i] || 0) ^ (b[i] || 0);
+    }
+
+    if (diff !== 0) {
       return json({ error: "Incorrect admin password." }, 401);
+    }
 
     const token = await makeSession(env.SESSION_SECRET);
+
     return json(
       { success: true, authenticated: true },
       200,
@@ -181,6 +203,7 @@ async function route(request, env, url) {
     );
   }
 
+  // Logout
   if (path === "/api/logout" && method === "POST") {
     return json(
       { success: true },
@@ -189,76 +212,111 @@ async function route(request, env, url) {
     );
   }
 
+  // Check session
   if (path === "/api/me" && method === "GET") {
-    return json({ authenticated: await authenticated(request, env) });
+    return json({
+      authenticated: await authenticated(request, env)
+    });
   }
 
-  if (!(await authenticated(request, env)))
+  // Protect remaining endpoints
+  if (!(await authenticated(request, env))) {
     return json({ error: "Please log in as admin." }, 401);
+  }
 
-  if (!env.DB)
+  if (!env.DB) {
     return json({ error: "D1 binding DB is missing." }, 500);
+  }
 
   // List members
   if (path === "/api/pastors" && method === "GET") {
     const result = await env.DB.prepare(
-      "SELECT id,name,role,active,created_at FROM prayer_pastors ORDER BY name COLLATE NOCASE"
+      `SELECT id, name, role, active, created_at
+       FROM prayer_pastors
+       ORDER BY name COLLATE NOCASE`
     ).all();
+
     return json({ pastors: result.results || [] });
   }
 
   // Add member
   if (path === "/api/pastors" && method === "POST") {
     let body;
-    try { body = await bodyJson(request); }
-    catch (e) { return json({ error: e.message }, 400); }
+    try {
+      body = await bodyJson(request);
+    } catch (e) {
+      return json({ error: e.message }, 400);
+    }
 
     const name = str(body.name, 100);
     const role = str(body.role, 100);
+
     if (!name) return json({ error: "Name is required." }, 400);
 
     try {
       const result = await env.DB.prepare(
-        "INSERT INTO prayer_pastors (name,role) VALUES (?,?)"
+        "INSERT INTO prayer_pastors (name, role) VALUES (?, ?)"
       ).bind(name, role).run();
-      return json({ success: true, id: result.meta.last_row_id }, 201);
+
+      return json({
+        success: true,
+        id: result.meta.last_row_id
+      }, 201);
     } catch {
-      return json({ error: "Could not add member. Name may already exist." }, 409);
+      return json({
+        error: "Could not add member. Name may already exist."
+      }, 409);
     }
   }
 
   // Update member
   const memberMatch = path.match(/^\/api\/pastors\/(\d+)$/);
+
   if (memberMatch && method === "PATCH") {
     let body;
-    try { body = await bodyJson(request); }
-    catch (e) { return json({ error: e.message }, 400); }
+    try {
+      body = await bodyJson(request);
+    } catch (e) {
+      return json({ error: e.message }, 400);
+    }
 
     const id = Number(memberMatch[1]);
+
     const exists = await env.DB.prepare(
-      "SELECT id FROM prayer_pastors WHERE id=?"
+      "SELECT id FROM prayer_pastors WHERE id = ?"
     ).bind(id).first();
 
     if (!exists) return json({ error: "Member not found." }, 404);
 
-    const sets = [], values = [];
+    const sets = [];
+    const values = [];
+
     if (body.name !== undefined) {
       const name = str(body.name, 100);
       if (!name) return json({ error: "Name is required." }, 400);
-      sets.push("name=?"); values.push(name);
+      sets.push("name = ?");
+      values.push(name);
     }
+
     if (body.role !== undefined) {
-      sets.push("role=?"); values.push(str(body.role, 100));
+      sets.push("role = ?");
+      values.push(str(body.role, 100));
     }
+
     if (body.active !== undefined) {
-      sets.push("active=?"); values.push(flag(body.active));
+      sets.push("active = ?");
+      values.push(flag(body.active));
     }
-    if (!sets.length) return json({ error: "Nothing to update." }, 400);
+
+    if (!sets.length) {
+      return json({ error: "Nothing to update." }, 400);
+    }
 
     try {
       await env.DB.prepare(
-        `UPDATE prayer_pastors SET ${sets.join(",")} WHERE id=?`
+        `UPDATE prayer_pastors SET ${sets.join(", ")} WHERE id = ?`
       ).bind(...values, id).run();
+
       return json({ success: true });
     } catch {
       return json({ error: "Could not update member." }, 400);
@@ -268,14 +326,23 @@ async function route(request, env, url) {
   // Monthly report
   if (path === "/api/monthly" && method === "GET") {
     const range = monthRange(url);
-    if (!range) return json({ error: "Use month=YYYY-MM." }, 400);
+    if (!range) {
+      return json({ error: "Use month=YYYY-MM." }, 400);
+    }
 
     const [pastors, attendance] = await Promise.all([
       env.DB.prepare(
-        "SELECT id,name,role,active FROM prayer_pastors WHERE active=1 ORDER BY name COLLATE NOCASE"
+        `SELECT id, name, role, active
+         FROM prayer_pastors
+         WHERE active = 1
+         ORDER BY name COLLATE NOCASE`
       ).all(),
+
       env.DB.prepare(
-        "SELECT * FROM prayer_attendance WHERE date>=? AND date<? ORDER BY date,pastor_id"
+        `SELECT *
+         FROM prayer_attendance
+         WHERE date >= ? AND date < ?
+         ORDER BY date, pastor_id`
       ).bind(range.start, range.end).all()
     ]);
 
@@ -290,89 +357,135 @@ async function route(request, env, url) {
   // Save attendance
   if (path === "/api/attendance" && method === "POST") {
     let body;
-    try { body = await bodyJson(request); }
-    catch (e) { return json({ error: e.message }, 400); }
+    try {
+      body = await bodyJson(request);
+    } catch (e) {
+      return json({ error: e.message }, 400);
+    }
 
     const pastorId = Number(body.pastor_id);
     const date = body.date;
-    const meeting = str(body.meeting || "Daily Prayer Meeting", 100);
+    const meeting = str(
+      body.meeting || "Daily Prayer Meeting", 100
+    );
     const status = body.status === undefined ? "" : body.status;
     const allowed = ["", "Present", "Absent", "Late", "Early Out"];
     const arrival = body.arrival_time || null;
     const departure = body.departure_time || null;
 
-    if (!Number.isInteger(pastorId) || pastorId < 1)
+    if (!Number.isInteger(pastorId) || pastorId < 1) {
       return json({ error: "Invalid member." }, 400);
-    if (!dateOK(date))
+    }
+    if (!dateOK(date)) {
       return json({ error: "Date must be YYYY-MM-DD." }, 400);
-    if (!meeting)
+    }
+    if (!meeting) {
       return json({ error: "Meeting name is required." }, 400);
-    if (!allowed.includes(status))
+    }
+    if (!allowed.includes(status)) {
       return json({ error: "Invalid attendance status." }, 400);
-    if (!timeOK(arrival) || !timeOK(departure))
+    }
+    if (!timeOK(arrival) || !timeOK(departure)) {
       return json({ error: "Invalid time. Use HH:MM." }, 400);
-    if (arrival && departure && departure < arrival)
-      return json({ error: "Departure must be after arrival." }, 400);
+    }
+    if (arrival && departure && departure < arrival) {
+      return json({
+        error: "Departure must be after arrival."
+      }, 400);
+    }
 
     const member = await env.DB.prepare(
-      "SELECT id FROM prayer_pastors WHERE id=? AND active=1"
+      "SELECT id FROM prayer_pastors WHERE id = ? AND active = 1"
     ).bind(pastorId).first();
 
-    if (!member) return json({ error: "Active member not found." }, 404);
+    if (!member) {
+      return json({ error: "Active member not found." }, 404);
+    }
 
-    const total = status === "Absent" ? 0 : minutesBetween(arrival, departure);
+    const total = status === "Absent"
+      ? 0 : minutesBetween(arrival, departure);
 
     try {
       await env.DB.prepare(`
         INSERT INTO prayer_attendance
-          (pastor_id,date,meeting,status,video_off,mic_off,arrival_time,
-           departure_time,total_minutes,remarks,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-        ON CONFLICT(pastor_id,date,meeting) DO UPDATE SET
-          status=excluded.status,
-          video_off=excluded.video_off,
-          mic_off=excluded.mic_off,
-          arrival_time=excluded.arrival_time,
-          departure_time=excluded.departure_time,
-          total_minutes=excluded.total_minutes,
-          remarks=excluded.remarks,
-          updated_at=CURRENT_TIMESTAMP
+          (pastor_id, date, meeting, status, video_off, mic_off,
+           arrival_time, departure_time, total_minutes, remarks, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(pastor_id, date, meeting) DO UPDATE SET
+          status = excluded.status,
+          video_off = excluded.video_off,
+          mic_off = excluded.mic_off,
+          arrival_time = excluded.arrival_time,
+          departure_time = excluded.departure_time,
+          total_minutes = excluded.total_minutes,
+          remarks = excluded.remarks,
+          updated_at = CURRENT_TIMESTAMP
       `).bind(
-        pastorId,date,meeting,status,flag(body.video_off),flag(body.mic_off),
-        arrival,departure,total,str(body.remarks,500)
+        pastorId,
+        date,
+        meeting,
+        status,
+        flag(body.video_off),
+        flag(body.mic_off),
+        arrival,
+        departure,
+        total,
+        str(body.remarks, 500)
       ).run();
 
-      return json({ success: true, total_minutes: total });
+      return json({
+        success: true,
+        total_minutes: total
+      });
     } catch (e) {
       console.error("Attendance save error:", e);
-      return json({ error: "Save failed. Check prayer_attendance table schema." }, 500);
+      return json({
+        error: "Save failed. Check prayer_attendance table schema."
+      }, 500);
     }
   }
 
-  // List records by date or range
+  // List attendance by date or range
   if (path === "/api/attendance" && method === "GET") {
     const date = url.searchParams.get("date");
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
 
-    if (date && !dateOK(date))
+    if (date && !dateOK(date)) {
       return json({ error: "Invalid date." }, 400);
-    if ((from && !dateOK(from)) || (to && !dateOK(to)))
+    }
+    if ((from && !dateOK(from)) || (to && !dateOK(to))) {
       return json({ error: "Invalid date range." }, 400);
+    }
 
-    let sql = `SELECT a.*,p.name AS pastor_name
+    let sql = `
+      SELECT a.*, p.name AS pastor_name
       FROM prayer_attendance a
-      JOIN prayer_pastors p ON p.id=a.pastor_id`;
-    const conditions = [], values = [];
+      JOIN prayer_pastors p ON p.id = a.pastor_id
+    `;
+
+    const conditions = [];
+    const values = [];
 
     if (date) {
-      conditions.push("a.date=?"); values.push(date);
+      conditions.push("a.date = ?");
+      values.push(date);
     } else {
-      if (from) { conditions.push("a.date>=?"); values.push(from); }
-      if (to) { conditions.push("a.date<=?"); values.push(to); }
+      if (from) {
+        conditions.push("a.date >= ?");
+        values.push(from);
+      }
+      if (to) {
+        conditions.push("a.date <= ?");
+        values.push(to);
+      }
     }
-    if (conditions.length) sql += " WHERE " + conditions.join(" AND ");
-    sql += " ORDER BY a.date,p.name COLLATE NOCASE";
+
+    if (conditions.length) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+
+    sql += " ORDER BY a.date, p.name COLLATE NOCASE";
 
     const result = await env.DB.prepare(sql).bind(...values).all();
     return json({ attendance: result.results || [] });
@@ -382,45 +495,60 @@ async function route(request, env, url) {
   if (path === "/api/export.csv" && method === "GET") {
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
-    if (!dateOK(from) || !dateOK(to) || from > to)
-      return json({ error: "Valid from and to dates are required." }, 400);
+
+    if (!dateOK(from) || !dateOK(to) || from > to) {
+      return json({
+        error: "Valid from and to dates are required."
+      }, 400);
+    }
 
     const result = await env.DB.prepare(`
-      SELECT p.name,a.date,a.meeting,a.status,a.video_off,a.mic_off,
-             a.arrival_time,a.departure_time,a.total_minutes,a.remarks
+      SELECT p.name, a.date, a.meeting, a.status,
+             a.video_off, a.mic_off, a.arrival_time,
+             a.departure_time, a.total_minutes, a.remarks
       FROM prayer_attendance a
-      JOIN prayer_pastors p ON p.id=a.pastor_id
-      WHERE a.date>=? AND a.date<=?
-      ORDER BY a.date,p.name COLLATE NOCASE
-    `).bind(from,to).all();
+      JOIN prayer_pastors p ON p.id = a.pastor_id
+      WHERE a.date >= ? AND a.date <= ?
+      ORDER BY a.date, p.name COLLATE NOCASE
+    `).bind(from, to).all();
 
     const csv = value => {
       let s = value == null ? "" : String(value);
       if (/^[=+\-@]/.test(s)) s = "'" + s;
-      return '"' + s.replace(/"/g,'""') + '"';
+      return '"' + s.replace(/"/g, '""') + '"';
     };
 
     const rows = [[
-      "Name","Date","Meeting","Status","Video OFF","Mic OFF",
-      "Arrival","Departure","Total Minutes","Remarks"
+      "Name", "Date", "Meeting", "Status", "Video OFF",
+      "Mic OFF", "Arrival", "Departure", "Total Minutes", "Remarks"
     ]];
 
     for (const r of result.results || []) {
       rows.push([
-        r.name,r.date,r.meeting,r.status,
+        r.name,
+        r.date,
+        r.meeting,
+        r.status,
         r.video_off ? "Yes" : "No",
         r.mic_off ? "Yes" : "No",
-        r.arrival_time,r.departure_time,r.total_minutes,r.remarks
+        r.arrival_time,
+        r.departure_time,
+        r.total_minutes,
+        r.remarks
       ]);
     }
 
-    return new Response("\uFEFF" + rows.map(row=>row.map(csv).join(",")).join("\r\n"),{
-      headers:{
-        "Content-Type":"text/csv; charset=utf-8",
-        "Content-Disposition":`attachment; filename="prayer-attendance-${from}-to-${to}.csv"`,
-        "Cache-Control":"no-store"
+    return new Response(
+      "\uFEFF" + rows.map(row => row.map(csv).join(",")).join("\r\n"),
+      {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition":
+            `attachment; filename="prayer-attendance-${from}-to-${to}.csv"`,
+          "Cache-Control": "no-store"
+        }
       }
-    });
+    );
   }
 
   return json({ error: "API endpoint not found." }, 404);
@@ -430,10 +558,11 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Handle all API requests in the Worker.
+    // IMPORTANT: process API requests before serving static assets.
     if (url.pathname.startsWith("/api/")) {
-      if (!["GET","POST","PATCH"].includes(request.method))
+      if (!["GET", "POST", "PATCH"].includes(request.method)) {
         return json({ error: "Method not allowed." }, 405);
+      }
 
       try {
         return await route(request, env, url);
@@ -443,8 +572,10 @@ export default {
       }
     }
 
-    // Serve index.html and other static assets.
-    if (env.ASSETS) return env.ASSETS.fetch(request);
+    // Serve the HTML and other static assets.
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(request);
+    }
 
     return new Response("Prayer Attendance Worker is running.", {
       headers: { "Content-Type": "text/plain; charset=utf-8" }
