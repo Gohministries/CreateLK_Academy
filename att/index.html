@@ -5,6 +5,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102a56">
 <title>Prayer Attendance</title>
 <style>
 :root{--navy:#102a56;--gold:#d69b16;--bg:#f3f6fb;--line:#dce3ed}
@@ -16,7 +17,7 @@ h2{font-size:17px;margin:0 0 12px}
 main{max-width:1500px;margin:auto;padding:12px}
 .panel{background:white;border:1px solid var(--line);border-radius:9px;padding:12px;margin-bottom:12px}
 button{border:0;border-radius:6px;padding:9px 12px;font-weight:bold;cursor:pointer}
-button:disabled{opacity:.6}
+button:disabled{opacity:.6;cursor:wait}
 .primary{background:var(--navy);color:white}
 .gold{background:var(--gold);color:#211700}
 .secondary{background:#e8edf5;color:var(--navy)}
@@ -49,36 +50,36 @@ td{background:white;font-size:12px}
 thead th{position:sticky;top:0;z-index:3}
 th:first-child,td:first-child{position:sticky;left:0;min-width:130px;z-index:2;background:#f8fafc}
 thead th:first-child{z-index:4;background:#e4ebf5}
-.day{min-width:190px}
+.day{min-width:175px}
 .day select,.day input,.day textarea{margin-bottom:5px}
 .checks{display:flex;gap:8px;flex-wrap:wrap;margin:3px 0 6px}
 .checks label{display:flex;align-items:center;gap:3px;font-weight:normal}
 .checks input{width:auto;margin:0}
 .member{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
 .member:last-child{border-bottom:0}
-#membersList{display:grid;gap:0}
+#membersList{display:grid}
 footer{text-align:center;padding:12px;color:#64748b;font-size:11px}
-@media(max-width:600px){main{padding:7px}.panel{padding:9px}.stats{grid-template-columns:repeat(2,1fr)}h1{font-size:19px}.day{min-width:175px}}
+@media(max-width:600px){main{padding:7px}.panel{padding:9px}.stats{grid-template-columns:repeat(2,1fr)}h1{font-size:19px}}
 @media print{
 header{padding:8px}h1{font-size:17px}main{padding:0;background:white}
 #loginSection,#membersPanel,.no-print,#message,.save-status{display:none!important}
 .panel{border:0;padding:4px;margin:0}.table-wrap{max-height:none;overflow:visible}
 thead th,th:first-child,td:first-child{position:static}
-.day{min-width:150px}input,select,textarea{border:0;padding:2px;appearance:none}
+.day{min-width:140px}input,select,textarea{border:0;padding:2px;appearance:none}
 }
 </style>
 </head>
 <body>
 <header><h1>Daily Prayer Meeting Attendance</h1></header>
 <main>
-<div id="message" class="notice" role="status"></div>
+<div id="message" class="notice" role="status" aria-live="polite"></div>
 
 <section id="loginSection" class="login">
 <div class="panel">
 <h2>Admin Login</h2>
 <form id="loginForm" class="stack">
 <input id="password" type="password" placeholder="Admin password" autocomplete="current-password" required>
-<button class="primary">Sign In</button>
+<button class="primary" type="submit">Sign In</button>
 </form>
 </div>
 </section>
@@ -104,19 +105,16 @@ thead th,th:first-child,td:first-child{position:static}
 <h2>Monthly Attendance</h2>
 <div id="sheetStatus" class="muted" style="margin-bottom:7px"></div>
 <div class="table-wrap">
-<table>
-<thead id="attendanceHead"></thead>
-<tbody id="attendanceBody"></tbody>
-</table>
+<table><thead id="attendanceHead"></thead><tbody id="attendanceBody"></tbody></table>
 </div>
 </section>
 
 <section class="panel no-print" id="membersPanel">
 <h2>Manage Members</h2>
 <form id="memberForm" class="toolbar">
-<div class="field"><label for="memberName">Name</label><input id="memberName" maxlength="120" required></div>
-<div class="field"><label for="memberRole">Role</label><input id="memberRole" maxlength="120" placeholder="Pastor / Member"></div>
-<button class="primary">Add</button>
+<div class="field"><label for="memberName">Name</label><input id="memberName" maxlength="100" required></div>
+<div class="field"><label for="memberRole">Role</label><input id="memberRole" maxlength="100" placeholder="Pastor / Member"></div>
+<button class="primary" type="submit">Add</button>
 </form>
 <div id="membersList"></div>
 </section>
@@ -154,7 +152,10 @@ opt.body=JSON.stringify(options.body);
 const res=await fetch(url,opt);
 const ct=res.headers.get("content-type")||"";
 const data=ct.includes("application/json")?await res.json():await res.text();
-if(!res.ok)throw Error(data?.error||data||`HTTP ${res.status}`);
+if(!res.ok){
+const detail=typeof data==="object"?(data.error||data.message):data;
+throw Error(detail||`HTTP ${res.status}`);
+}
 return data;
 }
 function showLogin(){
@@ -170,12 +171,10 @@ $("appSection").classList.remove("hidden");
 async function checkSession(){
 try{
 const r=await api("/api/me");
-if(r&&(r.authenticated||r.ok||r.user)){
-showApp();await refresh();
-}else showLogin();
+if(r.authenticated){showApp();await refresh()}
+else showLogin();
 }catch{showLogin()}
 }
-
 $("loginForm").addEventListener("submit",async e=>{
 e.preventDefault();
 const btn=e.submitter;btn.disabled=true;
@@ -209,12 +208,12 @@ $("sheetStatus").textContent="Loading...";
 try{
 const [p,m]=await Promise.all([
 api("/api/pastors"),
-api("/api/monthly?month="+encodeURIComponent(state.month)+"&meeting="+encodeURIComponent(state.meeting))
+api("/api/monthly?month="+encodeURIComponent(state.month))
 ]);
 state.pastors=Array.isArray(p)?p:(p.pastors||p.members||[]);
-const rows=Array.isArray(m)?m:(m.records||m.attendance||[]);
+const rows=Array.isArray(m)?m:(m.attendance||m.records||[]);
 state.records.clear();
-rows.forEach(r=>state.records.set(key(r.pastor_id??r.pastorId,r.date,r.meeting||state.meeting),r));
+rows.forEach(r=>state.records.set(key(r.pastor_id??r.pastorId,r.date,r.meeting||"Daily Prayer Meeting"),r));
 renderMembers();renderSheet();updateStats();
 $("sheetStatus").textContent=state.month+" · "+state.meeting;
 }catch(err){
@@ -222,9 +221,7 @@ $("sheetStatus").textContent="Load failed.";
 msg("Unable to load: "+err.message,"error");
 }
 }
-function activePastors(){
-return state.pastors.filter(p=>Number(p.active??1)===1);
-}
+function activePastors(){return state.pastors.filter(p=>Number(p.active??1)===1)}
 function getRecord(id,date){
 return state.records.get(key(id,date,state.meeting))||{
 pastor_id:id,date,meeting:state.meeting,status:"",video_off:0,mic_off:0,
@@ -244,13 +241,13 @@ const id=Number(p.id);
 return `<tr><td><b>${esc(p.name)}</b><div class="muted">${esc(p.role||"")}</div></td>`+
 Array.from({length:days},(_,i)=>{
 const date=dateFor(i+1),r=getRecord(id,date);
-return `<td class="day" data-pastor="${id}" data-date="${date}">
+return `<td class="day">
 <select data-field="status" aria-label="Status">
 <option value="" ${r.status===""?"selected":""}>Not marked</option>
 <option value="Present" ${r.status==="Present"?"selected":""}>Present</option>
 <option value="Absent" ${r.status==="Absent"?"selected":""}>Absent</option>
 <option value="Late" ${r.status==="Late"?"selected":""}>Late</option>
-<option value="Excused" ${r.status==="Excused"?"selected":""}>Excused</option>
+<option value="Early Out" ${r.status==="Early Out"?"selected":""}>Early Out</option>
 </select>
 <div class="checks">
 <label><input data-field="video_off" type="checkbox" ${Number(r.video_off)?"checked":""}> Video OFF</label>
@@ -280,8 +277,8 @@ const record={
 pastor_id:id,date,meeting:state.meeting,status:f("status").value,
 video_off:f("video_off").checked?1:0,
 mic_off:f("mic_off").checked?1:0,
-arrival_time:arrival,departure_time:departure,total_minutes:total,
-remarks:f("remarks").value.trim()
+arrival_time:arrival,departure_time:departure,
+total_minutes:total,remarks:f("remarks").value.trim()
 };
 b.disabled=true;
 const label=td.querySelector(".save-status");label.textContent="Saving...";
@@ -294,7 +291,7 @@ finally{b.disabled=false}
 });
 function updateStats(){
 const from=state.month+"-01",to=state.month+"-"+String(daysInMonth(state.month)).padStart(2,"0");
-const rows=[...state.records.values()].filter(r=>r.date>=from&&r.date<=to&&(r.meeting||state.meeting)===state.meeting);
+const rows=[...state.records.values()].filter(r=>r.date>=from&&r.date<=to);
 $("statMembers").textContent=activePastors().length;
 $("statRecords").textContent=rows.filter(r=>r.status).length;
 $("statAbsent").textContent=rows.filter(r=>r.status==="Absent").length;
