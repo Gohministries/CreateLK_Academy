@@ -43,7 +43,103 @@ const unb64=s=>{s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";
 async function sign(v,secret){let k=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);return b64(await crypto.subtle.sign("HMAC",k,new TextEncoder().encode(v)))}
 async function session(secret){let p=b64(new TextEncoder().encode(JSON.stringify({exp:Date.now()+28800000})));return p+"."+await sign(p,secret)}
 async function auth(req,secret){let t=cookie(req,"attendance_session").split(".");if(t.length!==2)return false;let a=t[1],b=await sign(t[0],secret);if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);if(diff)return false;try{return JSON.parse(new TextDecoder().decode(unb64(t[0]))).exp>Date.now()}catch{return false}}
-async function init(db){await db.prepare("CREATE TABLE IF NOT EXISTS attendance_months(month_key TEXT PRIMARY KEY,data_json TEXT NOT NULL,updated_at TEXT NOT NULL)").run()}
-function period(u){let m=+u.searchParams.get("month"),y=+u.searchParams.get("year");return Number.isInteger(m)&&m>=1&&m<=12&&Number.isInteger(y)&&y>=2000&&y<=2100?y+"-"+String(m).padStart(2,"0"):null}
-function clean(r){if(!r||!Array.isArray(r.names)||!r.days||typeof r.days!=="object"||Array.isArray(r.days)||r.names.length>100)throw Error("Invalid attendance record");let names=r.names.map(n=>String(n||"").trim().slice(0,100)),days={},allowed=["P","A","V","M","L","E"];for(let[d,ms]of Object.entries(r.days)){if(!/^\d+$/.test(d)||+d<1||+d>31||!ms||typeof ms!=="object"||Array.isArray(ms))continue;days[d]={};for(let[i,a]of Object.entries(ms)){if(!/^\d+$/.test(i)||+i>=names.length||+i<0||!Array.isArray(a))continue;let v=[...new Set(a.filter(s=>allowed.includes(s)))];days[d][i]=v.includes("A")?["A"]:v}}return{names,days}}
-export default{async fetch(req,env){let u=new URL(req.url),p=u.pathname;if(p==="/"||p==="/index.html")return new Response(HTML,{headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});if(!p.startsWith("/api/"))return new Response("Not found",{status:404});if(!env.DB||!env.ADMIN_PASSWORD||!env.SESSION_SECRET)return json({error:"Configure D1 binding DB and secrets ADMIN_PASSWORD, SESSION_SECRET."},500);try{await init(env.DB);if(p==="/api/login"&&req.method==="POST"){let b;try{b=await req.json()}catch{return json({error:"Invalid request."},400)}if(typeof b.password!=="string"||b.password!==env.ADMIN_PASSWORD)return json({error:"Incorrect password."},401);return json({ok:true},200,{"Set-Cookie":"attendance_session="+await session(env.SESSION_SECRET)+"; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800"})}if(p==="/api/logout"&&req.method==="POST")return json({ok:true},200,{"Set-Cookie":"attendance_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"});if(p==="/api/session"&&req.method==="GET")return json({loggedIn:await auth(req,env.SESSION_SECRET)});if(!await auth(req,env.SESSION_SECRET))return json({error:"Please log in again."},401);if(p==="/api/attendance"){let k=period(u);if(!k)return json({error:"Invalid month or year."},400);if(req.method==="GET"){let row=await env.DB.prepare("SELECT data_json FROM attendance_months WHERE month_key=?").bind(k).first();if(!row)return json({record:null});try{return json({record:JSON.parse(row.data_json)})}catch{return json({error:"Stored data is invalid."},500)}}if(req.method==="PUT"){let b;try{b=await req.json()}catch{return json({error:"Invalid JSON."},400)}let r;try{r=clean(b.record)}catch(e){return json({error:e.message},400)}let now=new Date().toISOString();await env.DB.prepare("INSERT INTO attendance_months(month_key,data_json,updated_at) VALUES(?,?,?) ON CONFLICT(month_key) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at").bind(k,JSON.stringify(r),now).run();return json({ok:true,updatedAt:now})}}return json({error:"API route not found."},404)}catch(e){return json({error:"Server error. Check Worker logs and D1 binding."},500)}}};
+
+async function init(db){
+  await db.prepare(`CREATE TABLE IF NOT EXISTS attendance_months(
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    data TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(year,month)
+  )`).run();
+}
+
+function period(u){
+  let m=+u.searchParams.get("month"),y=+u.searchParams.get("year");
+  return Number.isInteger(m)&&m>=1&&m<=12&&Number.isInteger(y)&&y>=2000&&y<=2100
+    ?{year:y,month:m,key:y+"-"+String(m).padStart(2,"0")}:null;
+}
+
+function clean(r){
+  if(!r||!Array.isArray(r.names)||!r.days||typeof r.days!=="object"||Array.isArray(r.days)||r.names.length>100)throw Error("Invalid attendance record");
+  let names=r.names.map(n=>String(n||"").trim().slice(0,100)),days={},allowed=["P","A","V","M","L","E"];
+  for(let[d,ms]of Object.entries(r.days)){
+    if(!/^\d+$/.test(d)||+d<1||+d>31||!ms||typeof ms!=="object"||Array.isArray(ms))continue;
+    days[d]={};
+    for(let[i,a]of Object.entries(ms)){
+      if(!/^\d+$/.test(i)||+i>=names.length||+i<0||!Array.isArray(a))continue;
+      let v=[...new Set(a.filter(s=>allowed.includes(s)))];
+      days[d][i]=v.includes("A")?["A"]:v;
+    }
+  }
+  return{names,days};
+}
+
+export default{
+  async fetch(req,env){
+    let u=new URL(req.url),p=u.pathname;
+    if(p==="/"||p==="/index.html"){
+      return new Response(HTML,{headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
+    }
+    if(!p.startsWith("/api/"))return new Response("Not found",{status:404});
+    if(!env.DB||!env.ADMIN_PASSWORD||!env.SESSION_SECRET)return json({error:"Configure D1 binding DB and secrets ADMIN_PASSWORD, SESSION_SECRET."},500);
+
+    try{
+      await init(env.DB);
+
+      if(p==="/api/login"&&req.method==="POST"){
+        let b;
+        try{b=await req.json()}catch{return json({error:"Invalid request."},400)}
+        if(typeof b.password!=="string"||b.password!==env.ADMIN_PASSWORD)return json({error:"Incorrect password."},401);
+        return json({ok:true},200,{"Set-Cookie":"attendance_session="+await session(env.SESSION_SECRET)+"; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800"});
+      }
+
+      if(p==="/api/logout"&&req.method==="POST"){
+        return json({ok:true},200,{"Set-Cookie":"attendance_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"});
+      }
+
+      if(p==="/api/session"&&req.method==="GET"){
+        return json({loggedIn:await auth(req,env.SESSION_SECRET)});
+      }
+
+      if(!await auth(req,env.SESSION_SECRET))return json({error:"Please log in again."},401);
+
+      if(p==="/api/attendance"){
+        let per=period(u);
+        if(!per)return json({error:"Invalid month or year."},400);
+
+        if(req.method==="GET"){
+          let row=await env.DB.prepare(
+            "SELECT data FROM attendance_months WHERE year=? AND month=?"
+          ).bind(per.year,per.month).first();
+
+          if(!row)return json({record:null});
+          try{return json({record:JSON.parse(row.data)})}
+          catch{return json({error:"Stored data is invalid."},500)};
+        }
+
+        if(req.method==="PUT"){
+          let b;
+          try{b=await req.json()}catch{return json({error:"Invalid JSON."},400)}
+          let r;
+          try{r=clean(b.record)}catch(e){return json({error:e.message},400)}
+          let now=new Date().toISOString();
+
+          await env.DB.prepare(`
+            INSERT INTO attendance_months(year,month,data,updated_at)
+            VALUES(?,?,?,?)
+            ON CONFLICT(year,month)
+            DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at
+          `).bind(per.year,per.month,JSON.stringify(r),now).run();
+
+          return json({ok:true,updatedAt:now});
+        }
+      }
+
+      return json({error:"API route not found."},404);
+    }catch(e){
+      console.error("Attendance Worker error:",e);
+      return json({error:"Server error. Check Worker logs and D1 binding."},500);
+    }
+  }
+};
