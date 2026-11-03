@@ -1,0 +1,311 @@
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Internal-Secret"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" }
+  });
+}
+
+async function initDB(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      payment_reference TEXT NOT NULL,
+      receipt_key TEXT NOT NULL,
+      receipt_type TEXT NOT NULL,
+      receipt_size INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      admin_note TEXT DEFAULT '',
+      verified_by TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_payments_application
+    ON payments(application_id)
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_payments_user
+    ON payments(user_id)
+  `).run();
+}
+
+async function authenticate(request, env) {
+  const token = request.headers.get("Authorization") || "";
+
+  if (!token.startsWith("Bearer ")) {
+    throw new Error("Please sign in again.");
+  }
+
+  const response = await fetch(
+    env.APP_WORKER_URL + "/api/me",
+    { headers: { Authorization: token } }
+  );
+
+  if (!response.ok) throw new Error("Authentication failed.");
+
+  const data = await response.json();
+  if (!data.user?.id) throw new Error("Invalid customer account.");
+
+  return data.user;
+}
+
+async function ownedApplication(id, user, env, token) {
+  const response = await fetch(
+    env.APP_WORKER_URL + "/api/applications/" + encodeURIComponent(id),
+    { headers: { Authorization: token } }
+  );
+
+  if (!response.ok) throw new Error("Application not found.");
+
+  const data = await response.json();
+  const app = data.application;
+
+  if (!app || app.user_id !== user.id) {
+    throw new Error("You cannot access this application.");
+  }
+
+  return app;
+}
+
+async function handle(request, env) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { headers: cors });
+  }
+
+  await initDB(env);
+
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  // INTERNAL ADMIN ACCESS
+  if (path.startsWith("/internal/")) {
+    if (
+      !env.INTERNAL_SECRET ||
+      request.headers.get("X-Internal-Secret") !== env.INTERNAL_SECRET
+    ) {
+      return json({ error: "Unauthorized." }, 401);
+    }
+
+    if (path === "/internal/admin/payments" && request.method === "GET") {
+      const result = await env.DB.prepare(`
+        SELECT id, application_id, user_id, payment_reference,
+        receipt_type, receipt_size, status, admin_note,
+        verified_by, created_at, updated_at
+        FROM payments ORDER BY created_at DESC LIMIT 200
+      `).all();
+
+      return json({ payments: result.results || [] });
+    }
+
+    const match = path.match(/^\/internal\/admin\/payments\/([^/]+)$/);
+
+    if (match && request.method === "PATCH") {
+      const id = decodeURIComponent(match[1]);
+      const body = await request.json();
+
+      const status = String(body.status || "").toUpperCase();
+      const allowed = ["VERIFIED", "REJECTED", "PENDING"];
+
+      if (!allowed.includes(status)) {
+        return json({ error: "Invalid payment status." }, 400);
+      }
+
+      const result = await env.DB.prepare(`
+        UPDATE payments
+        SET status = ?,
+            admin_note = ?,
+            verified_by = ?,
+            updated_at = ?
+        WHERE id = ?
+      `).bind(
+        status,
+        String(body.admin_note || "").slice(0, 1000),
+        String(body.verified_by || "Admin").slice(0, 200),
+        new Date().toISOString(),
+        id
+      ).run();
+
+      if (!result.meta.changes) {
+        return json({ error: "Payment not found." }, 404);
+      }
+
+      return json({ success: true, message: "Payment updated." });
+    }
+
+    if (match && request.method === "GET") {
+      const id = decodeURIComponent(match[1]);
+      const payment = await env.DB.prepare(
+        "SELECT * FROM payments WHERE id = ?"
+      ).bind(id).first();
+
+      if (!payment) return json({ error: "Payment not found." }, 404);
+
+      const object = await env.DOCS.get(payment.receipt_key);
+      if (!object) return json({ error: "Receipt file not found." }, 404);
+
+      return new Response(object.body, {
+        headers: {
+          ...cors,
+          "Content-Type": payment.receipt_type,
+          "Content-Disposition": "attachment; filename=\"payment-receipt\"",
+          "Cache-Control": "private, no-store"
+        }
+      });
+    }
+
+    return json({ error: "Internal endpoint not found." }, 404);
+  }
+
+  // CUSTOMER AUTHENTICATION
+  let user;
+  try {
+    user = await authenticate(request, env);
+  } catch (e) {
+    return json({ error: e.message }, 401);
+  }
+
+  // SUBMIT PAYMENT RECEIPT
+  if (path === "/api/payments" && request.method === "POST") {
+    try {
+      const form = await request.formData();
+
+      const applicationId = String(
+        form.get("application_id") || ""
+      ).trim();
+
+      const reference = String(
+        form.get("payment_reference") || ""
+      ).trim();
+
+      const file = form.get("receipt");
+
+      if (!applicationId || !reference || !file || typeof file === "string") {
+        return json({
+          error: "Application, payment reference and receipt are required."
+        }, 400);
+      }
+
+      if (reference.length > 150) {
+        return json({ error: "Payment reference is too long." }, 400);
+      }
+
+      if (file.size < 1 || file.size > 5 * 1024 * 1024) {
+        return json({ error: "Receipt must be between 1 byte and 5 MB." }, 400);
+      }
+
+      const mimeTypes = [
+        "image/jpeg",
+        "image/png",
+        "application/pdf"
+      ];
+
+      if (!mimeTypes.includes(file.type)) {
+        return json({ error: "Only JPG, PNG and PDF files are allowed." }, 400);
+      }
+
+      const token = request.headers.get("Authorization");
+
+      await ownedApplication(applicationId, user, env, token);
+
+      const id = crypto.randomUUID();
+      const extension = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "application/pdf": "pdf"
+      }[file.type];
+
+      const key = `payment-receipts/${user.id}/${id}.${extension}`;
+      const now = new Date().toISOString();
+
+      await env.DOCS.put(key, file.stream(), {
+        httpMetadata: { contentType: file.type },
+        customMetadata: {
+          paymentId: id,
+          applicationId,
+          userId: user.id
+        }
+      });
+
+      try {
+        await env.DB.prepare(`
+          INSERT INTO payments (
+            id, application_id, user_id, payment_reference,
+            receipt_key, receipt_type, receipt_size,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+        `).bind(
+          id,
+          applicationId,
+          user.id,
+          reference,
+          key,
+          file.type,
+          file.size,
+          now,
+          now
+        ).run();
+      } catch (e) {
+        await env.DOCS.delete(key);
+        throw e;
+      }
+
+      return json({
+        success: true,
+        payment_id: id,
+        status: "PENDING",
+        message: "Receipt submitted for admin verification."
+      }, 201);
+
+    } catch (e) {
+      return json({ error: e.message || "Payment submission failed." }, 400);
+    }
+  }
+
+  // CUSTOMER PAYMENT HISTORY
+  if (path === "/api/payments" && request.method === "GET") {
+    const applicationId = url.searchParams.get("application_id");
+
+    let query = `
+      SELECT id, application_id, payment_reference,
+      receipt_type, receipt_size, status, admin_note,
+      created_at, updated_at
+      FROM payments WHERE user_id = ?
+    `;
+
+    const values = [user.id];
+
+    if (applicationId) {
+      query += " AND application_id = ?";
+      values.push(applicationId);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    const result = await env.DB.prepare(query).bind(...values).all();
+
+    return json({ payments: result.results || [] });
+  }
+
+  return json({ error: "Endpoint not found." }, 404);
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      return json({ error: "Server error. Please try again later." }, 500);
+    }
+  }
+};
