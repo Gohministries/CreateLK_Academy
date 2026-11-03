@@ -1,0 +1,236 @@
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type"
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...cors,
+      "Content-Type": "application/json"
+    }
+  });
+}
+
+async function initDB(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      reference TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL,
+      service TEXT NOT NULL,
+      service_label TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      nic TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      address TEXT NOT NULL,
+      notes TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      payment_status TEXT NOT NULL DEFAULT 'NOT_SUBMITTED',
+      admin_note TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_applications_user
+    ON applications(user_id)
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_applications_status
+    ON applications(status)
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_applications_reference
+    ON applications(reference)
+  `).run();
+}
+
+async function authenticate(request, env) {
+  if (!env.APP_WORKER_URL) {
+    throw new Error("Application Worker URL is not configured.");
+  }
+
+  const token = request.headers.get("Authorization");
+
+  if (!token || !token.startsWith("Bearer ")) {
+    throw new Error("Please sign in using Google.");
+  }
+
+  const response = await fetch(
+    env.APP_WORKER_URL + "/api/me",
+    {
+      headers: {
+        Authorization: token
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Login expired. Please sign in again.");
+  }
+
+  const result = await response.json();
+
+  if (!result.user || !result.user.id) {
+    throw new Error("Invalid customer account.");
+  }
+
+  return result.user;
+}
+
+const serviceNames = {
+  NEW_TIN: "New TIN Registration",
+  TIN_CORRECTION: "TIN Information Correction",
+  TIN_CERTIFICATE: "TIN Certificate Assistance",
+  APPLICATION_ASSISTANCE: "Application Assistance"
+};
+
+async function handle(request, env) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { headers: cors });
+  }
+
+  await initDB(env);
+
+  const url = new URL(request.url);
+
+  if (
+    url.pathname !== "/api/applications" ||
+    request.method !== "POST"
+  ) {
+    return json({ error: "Endpoint not found." }, 404);
+  }
+
+  let user;
+
+  try {
+    user = await authenticate(request, env);
+  } catch (error) {
+    return json({ error: error.message }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid application data." }, 400);
+  }
+
+  const service = String(body.service || "").trim();
+  const fullName = String(body.full_name || "").trim();
+  const nic = String(body.nic || "").trim();
+  const email = String(body.email || "").trim();
+  const phone = String(body.phone || "").trim();
+  const address = String(body.address || "").trim();
+  const notes = String(body.notes || "").trim();
+
+  if (!serviceNames[service]) {
+    return json({ error: "Please select a valid service." }, 400);
+  }
+
+  if (!fullName || fullName.length > 150) {
+    return json({ error: "Enter a valid full name." }, 400);
+  }
+
+  if (!nic || nic.length > 20) {
+    return json({ error: "Enter a valid NIC number." }, 400);
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    return json({ error: "Enter a valid email address." }, 400);
+  }
+
+  if (!phone || phone.length > 20) {
+    return json({ error: "Enter a valid mobile number." }, 400);
+  }
+
+  if (!address || address.length > 1000) {
+    return json({ error: "Enter a valid residential address." }, 400);
+  }
+
+  if (notes.length > 2000) {
+    return json({ error: "Additional details are too long." }, 400);
+  }
+
+  const id = crypto.randomUUID();
+  const reference =
+    "TIN-" + new Date().getFullYear() + "-" +
+    crypto.randomUUID().slice(0, 8).toUpperCase();
+
+  const now = new Date().toISOString();
+
+  try {
+    await env.DB.prepare(`
+      INSERT INTO applications (
+        id,
+        reference,
+        user_id,
+        service,
+        service_label,
+        full_name,
+        nic,
+        email,
+        phone,
+        address,
+        notes,
+        status,
+        payment_status,
+        admin_note,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      reference,
+      user.id,
+      service,
+      serviceNames[service],
+      fullName,
+      nic,
+      email,
+      phone,
+      address,
+      notes,
+      "PENDING",
+      "NOT_SUBMITTED",
+      "",
+      now,
+      now
+    ).run();
+
+    return json({
+      success: true,
+      application_id: id,
+      reference: reference,
+      status: "PENDING",
+      payment_status: "NOT_SUBMITTED",
+      message: "Your application has been submitted successfully."
+    }, 201);
+
+  } catch (error) {
+    return json({
+      error: "Unable to save application. Please try again."
+    }, 500);
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      return json({
+        error: "Server error. Please try again later."
+      }, 500);
+    }
+  }
+};
