@@ -1,0 +1,458 @@
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type"
+};
+
+const SESSION_DAYS = 30;
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...cors,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store"
+    }
+  });
+}
+
+function randomToken(bytes = 32) {
+  const data = crypto.getRandomValues(new Uint8Array(bytes));
+  return Array.from(data, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hash(value) {
+  const result = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value)
+  );
+
+  return Array.from(new Uint8Array(result))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function initDB(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      google_id TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      picture TEXT DEFAULT '',
+      email_verified INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS customer_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_user
+    ON customer_sessions(user_id)
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_expiry
+    ON customer_sessions(expires_at)
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state TEXT PRIMARY KEY,
+      expires_at TEXT NOT NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_applications_user
+    ON applications(user_id)
+  `).run();
+}
+
+function validConfig(env) {
+  return !!(
+    env.GOOGLE_CLIENT_ID &&
+    env.GOOGLE_CLIENT_SECRET &&
+    env.GOOGLE_REDIRECT_URI &&
+    env.FRONTEND_URL
+  );
+}
+
+async function createSession(userId, env) {
+  const token = randomToken();
+  const now = new Date();
+  const expires = new Date(
+    now.getTime() + SESSION_DAYS * 86400000
+  ).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO customer_sessions
+    (id, user_id, token_hash, expires_at, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(
+    crypto.randomUUID(),
+    userId,
+    await hash(token),
+    expires,
+    now.toISOString()
+  ).run();
+
+  return token;
+}
+
+async function getUser(request, env) {
+  const authorization = request.headers.get("Authorization") || "";
+
+  if (!authorization.startsWith("Bearer ")) {
+    throw new Error("Please sign in using Google.");
+  }
+
+  const token = authorization.slice(7).trim();
+
+  if (!token || token.length > 200) {
+    throw new Error("Invalid login session.");
+  }
+
+  const tokenHash = await hash(token);
+  const now = new Date().toISOString();
+
+  const session = await env.DB.prepare(`
+    SELECT s.user_id, s.expires_at,
+           u.name, u.email, u.picture, u.google_id
+    FROM customer_sessions s
+    JOIN customers u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.expires_at > ?
+  `).bind(tokenHash, now).first();
+
+  if (!session) {
+    throw new Error("Login expired. Please sign in again.");
+  }
+
+  return {
+    id: session.user_id,
+    name: session.name,
+    email: session.email,
+    picture: session.picture,
+    google_id: session.google_id,
+    token_hash: tokenHash
+  };
+}
+
+async function googleLogin(request, env) {
+  if (!validConfig(env)) {
+    return json({ error: "Google OAuth configuration is incomplete." }, 500);
+  }
+
+  const state = randomToken();
+  const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO oauth_states (state, expires_at)
+    VALUES (?, ?)
+  `).bind(state, expires).run();
+
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+
+  url.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  url.searchParams.set("redirect_uri", env.GOOGLE_REDIRECT_URI);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("state", state);
+  url.searchParams.set("prompt", "select_account");
+
+  return Response.redirect(url.toString(), 302);
+}
+
+async function googleCallback(request, env) {
+  const url = new URL(request.url);
+
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+
+  const fail = message => Response.redirect(
+    env.FRONTEND_URL + "/?login_error=" +
+    encodeURIComponent(message) + "#login",
+    302
+  );
+
+  if (!code || !state) return fail("Google login was cancelled.");
+
+  const stored = await env.DB.prepare(`
+    SELECT state FROM oauth_states
+    WHERE state = ? AND expires_at > ?
+  `).bind(state, new Date().toISOString()).first();
+
+  await env.DB.prepare(
+    "DELETE FROM oauth_states WHERE state = ?"
+  ).bind(state).run();
+
+  if (!stored) return fail("Invalid or expired login request.");
+
+  const tokenResponse = await fetch(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: env.GOOGLE_REDIRECT_URI,
+        grant_type: "authorization_code"
+      })
+    }
+  );
+
+  const tokens = await tokenResponse.json();
+
+  if (!tokenResponse.ok || !tokens.access_token) {
+    return fail("Google authentication failed.");
+  }
+
+  const profileResponse = await fetch(
+    "https://openidconnect.googleapis.com/v1/userinfo",
+    {
+      headers: {
+        Authorization: "Bearer " + tokens.access_token
+      }
+    }
+  );
+
+  const profile = await profileResponse.json();
+
+  if (
+    !profileResponse.ok ||
+    !profile.sub ||
+    !profile.email ||
+    profile.email_verified !== true
+  ) {
+    return fail("A verified Google email is required.");
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id FROM customers WHERE google_id = ?
+  `).bind(profile.sub).first();
+
+  let userId = existing?.id;
+
+  if (!userId) {
+    const byEmail = await env.DB.prepare(`
+      SELECT id, google_id FROM customers WHERE email = ?
+    `).bind(profile.email.toLowerCase()).first();
+
+    if (byEmail && byEmail.google_id !== profile.sub) {
+      return fail("This email is already linked to another account.");
+    }
+
+    userId = byEmail?.id || crypto.randomUUID();
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO customers (
+      id, google_id, name, email, picture,
+      email_verified, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      email = excluded.email,
+      picture = excluded.picture,
+      email_verified = 1,
+      updated_at = excluded.updated_at
+  `).bind(
+    userId,
+    profile.sub,
+    profile.name || profile.email,
+    profile.email.toLowerCase(),
+    profile.picture || "",
+    new Date().toISOString(),
+    new Date().toISOString()
+  ).run();
+
+  const accessToken = await createSession(userId, env);
+
+  const destination = new URL(env.FRONTEND_URL);
+  destination.hash = "access_token=" + encodeURIComponent(accessToken);
+
+  return Response.redirect(destination.toString(), 302);
+}
+
+async function listApplications(user, env) {
+  const result = await env.DB.prepare(`
+    SELECT id, reference, service, service_label,
+           status, payment_status, admin_note,
+           created_at, updated_at
+    FROM applications
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+  `).bind(user.id).all();
+
+  const applications = result.results || [];
+
+  // Read payment records from the shared Bank Worker database.
+  let payments = [];
+
+  try {
+    const ids = applications.map(a => a.id);
+
+    if (ids.length) {
+      const placeholders = ids.map(() => "?").join(",");
+
+      const paymentResult = await env.DB.prepare(`
+        SELECT id, application_id, status, created_at
+        FROM payments
+        WHERE user_id = ?
+        AND application_id IN (${placeholders})
+        ORDER BY created_at DESC
+      `).bind(user.id, ...ids).all();
+
+      payments = paymentResult.results || [];
+    }
+  } catch (error) {
+    // Bank payment table may not exist until first payment submission.
+  }
+
+  for (const app of applications) {
+    const payment = payments.find(p => p.application_id === app.id);
+
+    if (payment) {
+      app.payment_status = payment.status;
+    }
+  }
+
+  return applications;
+}
+
+async function handle(request, env) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { headers: cors });
+  }
+
+  await initDB(env);
+
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  if (path === "/health") {
+    return json({ success: true, worker: "tin-application" });
+  }
+
+  if (path === "/auth/google" && request.method === "GET") {
+    return googleLogin(request, env);
+  }
+
+  if (path === "/auth/google/callback" && request.method === "GET") {
+    if (!validConfig(env)) {
+      return json({ error: "Google OAuth configuration incomplete." }, 500);
+    }
+
+    return googleCallback(request, env);
+  }
+
+  // Customer logout
+  if (path === "/auth/logout" && request.method === "POST") {
+    try {
+      const user = await getUser(request, env);
+
+      await env.DB.prepare(`
+        DELETE FROM customer_sessions WHERE token_hash = ?
+      `).bind(user.token_hash).run();
+
+      return json({ success: true, message: "Signed out successfully." });
+    } catch (error) {
+      return json({ success: true });
+    }
+  }
+
+  // All remaining API routes require customer authentication.
+  if (path.startsWith("/api/")) {
+    let user;
+
+    try {
+      user = await getUser(request, env);
+    } catch (error) {
+      return json({ error: error.message }, 401);
+    }
+
+    // Customer profile
+    if (path === "/api/me" && request.method === "GET") {
+      return json({
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          picture: user.picture
+        }
+      });
+    }
+
+    // Customer application list
+    if (path === "/api/applications" && request.method === "GET") {
+      try {
+        const applications = await listApplications(user, env);
+        return json({ applications });
+      } catch (error) {
+        return json({ error: "Unable to load applications." }, 500);
+      }
+    }
+
+    // Individual customer application
+    const match = path.match(/^\/api\/applications\/([^/]+)$/);
+
+    if (match && request.method === "GET") {
+      const id = decodeURIComponent(match[1]);
+
+      const application = await env.DB.prepare(`
+        SELECT id, reference, user_id, service,
+               service_label, full_name, nic, email,
+               phone, address, notes, status,
+               payment_status, admin_note,
+               created_at, updated_at
+        FROM applications
+        WHERE id = ? AND user_id = ?
+      `).bind(id, user.id).first();
+
+      if (!application) {
+        return json({ error: "Application not found." }, 404);
+      }
+
+      try {
+        const payment = await env.DB.prepare(`
+          SELECT status FROM payments
+          WHERE application_id = ? AND user_id = ?
+          ORDER BY created_at DESC LIMIT 1
+        `).bind(id, user.id).first();
+
+        if (payment) application.payment_status = payment.status;
+      } catch (error) {}
+
+      return json({ application });
+    }
+  }
+
+  return json({ error: "Endpoint not found." }, 404);
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      return json({
+        error: "Server error. Please check Worker configuration."
+      }, 500);
+    }
+  }
+};
