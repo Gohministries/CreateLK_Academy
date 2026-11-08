@@ -1,4 +1,4 @@
-
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -408,15 +408,13 @@ footer {
 const ADMIN_API =
   "https://eg-admin.createlk.workers.dev";
 
-const ACADEMY_API =
-  "https://eg-academy.createlk.workers.dev";
-
 const GOOGLE_CLIENT_ID =
   "582157960266-3r4k503a5a3oomo9nrau7l61aifavbqh.apps.googleusercontent.com";
 
 const TOKEN_KEY = "createlk_academy_token";
 
 let authToken = localStorage.getItem(TOKEN_KEY) || "";
+let loginInProgress = false;
 
 
 /* =====================================
@@ -474,6 +472,15 @@ function initializeGoogle() {
     client_id:GOOGLE_CLIENT_ID,
 
     callback: async response => {
+
+      if(!response.credential) {
+        showMessage(
+          "loginMessage",
+          "Google did not return a login credential."
+        );
+        return;
+      }
+
       await googleLogin(response.credential);
     }
   });
@@ -492,10 +499,20 @@ function initializeGoogle() {
 
 async function googleLogin(credential) {
 
+  if(loginInProgress) return;
+
+  loginInProgress=true;
+
+  clearMessage("loginMessage");
+
   try {
 
+    // IMPORTANT:
+    // Google login now goes through the ADMIN WORKER.
+    // Do not call the Academy Worker directly here.
+
     const response=await fetch(
-      ACADEMY_API+"/api/auth/google",
+      ADMIN_API+"/api/auth/google",
       {
         method:"POST",
         headers:{
@@ -505,10 +522,14 @@ async function googleLogin(credential) {
       }
     );
 
-    const data=await response.json();
+    const data=await response.json().catch(()=>({}));
 
     if(!response.ok) {
       throw new Error(data.error || "Google login failed.");
+    }
+
+    if(!data.token) {
+      throw new Error("The server did not return an authentication token.");
     }
 
     authToken=data.token;
@@ -519,10 +540,17 @@ async function googleLogin(credential) {
 
   } catch(error) {
 
+    authToken="";
+    localStorage.removeItem(TOKEN_KEY);
+
     showMessage(
       "loginMessage",
-      error.message
+      error.message || "Unable to sign in."
     );
+
+  } finally {
+
+    loginInProgress=false;
 
   }
 }
@@ -538,7 +566,14 @@ async function verifyAdmin() {
 
     const data=await api("/api/me");
 
-    if(!data.user || Number(data.user.is_admin)!==1) {
+    const isAdmin =
+      data.user &&
+      (
+        data.user.is_admin === true ||
+        Number(data.user.is_admin) === 1
+      );
+
+    if(!isAdmin) {
       throw new Error(
         "This Google account is not authorised as an administrator."
       );
@@ -547,7 +582,7 @@ async function verifyAdmin() {
     $("loginPanel").classList.add("hidden");
     $("dashboard").style.display="block";
 
-    $("adminEmail").textContent=data.user.email;
+    $("adminEmail").textContent=data.user.email || "";
 
     await refreshDashboard();
 
@@ -811,3 +846,4 @@ if(authToken) {
 
 </body>
 </html>
+```
