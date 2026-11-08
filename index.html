@@ -7,6 +7,7 @@
   <meta name="description" content="CreateLK Academy - Learn and practise English grammar with 1,000 MCQs across 20 categories.">
   <meta name="theme-color" content="#101b3d">
   <title>CreateLK Academy | English Grammar Practice</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <style>
     :root {
@@ -125,7 +126,7 @@
 
     .hero-content {
       display: grid;
-      grid-template-columns: 1.3fr 0.7fr;
+      grid-template-columns: 1fr;
       align-items: center;
       gap: 45px;
     }
@@ -175,22 +176,6 @@
     .btn-outline {
       border-color: white;
       color: white;
-    }
-
-    .hero-logo {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .hero-logo img {
-      width: min(330px, 100%);
-      max-height: 300px;
-      object-fit: contain;
-      background: white;
-      padding: 18px;
-      border-radius: 25px;
-      box-shadow: 0 15px 40px rgba(0,0,0,0.2);
     }
 
     /* STATISTICS */
@@ -525,16 +510,6 @@
       margin-bottom: 35px;
     }
 
-    .footer-brand img {
-      width: 65px;
-      height: 65px;
-      object-fit: contain;
-      background: white;
-      border-radius: 10px;
-      padding: 5px;
-      margin-bottom: 12px;
-    }
-
     .footer-brand h3 {
       margin-bottom: 10px;
     }
@@ -675,10 +650,6 @@
         justify-content: center;
       }
 
-      .hero-logo img {
-        width: 210px;
-      }
-
       .category-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
@@ -764,6 +735,7 @@
   <header>
     <div class="container navbar">
 
+      <!-- THE ONLY LOGO IMAGE: TOP LEFT -->
       <a href="index.html" class="logo">
         <img
           src="https://assets.createlk.com/CreateLK%20Academy%20Logo.png"
@@ -793,7 +765,7 @@
         <a href="legal/refund.html">Refund Policy</a>
         <a href="legal/payment.html">Payment Policy</a>
 
-        <a href="login.html" class="nav-login">Sign In</a>
+        <a href="#" class="nav-login google-signin-trigger" role="button">Sign In</a>
       </nav>
 
     </div>
@@ -821,17 +793,10 @@
               Start Practising
             </a>
 
-            <a href="login.html" class="btn btn-outline">
+            <a href="#" class="btn btn-outline google-signin-trigger" role="button">
               Sign In
             </a>
           </div>
-        </div>
-
-        <div class="hero-logo">
-          <img
-            src="https://assets.createlk.com/CreateLK%20Academy%20Logo.png"
-            alt="CreateLK Academy"
-          >
         </div>
 
       </div>
@@ -1011,12 +976,8 @@
 
       <div class="footer-grid">
 
+        <!-- NO DUPLICATE LOGO IN FOOTER -->
         <div class="footer-brand">
-          <img
-            src="https://assets.createlk.com/CreateLK%20Academy%20Logo.png"
-            alt="CreateLK Academy Logo"
-          >
-
           <h3>CreateLK Academy</h3>
 
           <p>
@@ -1029,7 +990,7 @@
           <h4>Quick Links</h4>
           <a href="index.html">Home</a>
           <a href="#categories">Grammar Categories</a>
-          <a href="login.html">Sign In</a>
+          <a href="#" class="google-signin-trigger" role="button">Sign In</a>
           <a href="premium.html">Premium Membership</a>
         </div>
 
@@ -1073,8 +1034,11 @@
   </a>
 
   <script>
-    // CORRECT CLOUDFLARE WORKER URL
+    // Cloudflare Worker API (backend only; never used as a page link)
     const API_BASE_URL = "https://eg-academy.createlk.workers.dev";
+    const GOOGLE_CLIENT_ID = "582157960266-3r4k503a5a3oomo9nrau7l61aifavbqh.apps.googleusercontent.com";
+    const AUTH_TOKEN_KEY = "createlk_academy_token";
+    let googlePromptReady = false;
 
     // MOBILE NAVIGATION
     const menuToggle = document.getElementById("menuToggle");
@@ -1082,7 +1046,6 @@
 
     menuToggle.addEventListener("click", () => {
       const isOpen = navLinks.classList.toggle("active");
-
       menuToggle.setAttribute("aria-expanded", String(isOpen));
       menuToggle.textContent = isOpen ? "✕" : "☰";
     });
@@ -1096,10 +1059,77 @@
     });
 
     // CURRENT YEAR
-    document.getElementById("currentYear").textContent =
-      new Date().getFullYear();
+    document.getElementById("currentYear").textContent = new Date().getFullYear();
 
-    // ESCAPE API TEXT
+    function getAuthToken() {
+      return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+    }
+
+    function updateSignInLabels(signedIn) {
+      document.querySelectorAll(".google-signin-trigger").forEach(link => {
+        link.textContent = signedIn ? "Signed In" : "Sign In";
+        link.setAttribute("aria-label", signedIn ? "Signed in with Google" : "Sign in with Google");
+      });
+    }
+
+    // Google Identity Services uses its account-selection prompt over this page.
+    function initializeGoogleSignIn() {
+      if (!window.google || !google.accounts || !google.accounts.id) return;
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredential,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+      googlePromptReady = true;
+    }
+
+    window.addEventListener("load", initializeGoogleSignIn);
+
+    document.querySelectorAll(".google-signin-trigger").forEach(link => {
+      link.addEventListener("click", event => {
+        event.preventDefault();
+        if (!googlePromptReady) initializeGoogleSignIn();
+        if (googlePromptReady) {
+          google.accounts.id.prompt(notification => {
+            if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+              console.warn("Google sign-in prompt was not displayed:", notification.getNotDisplayedReason?.());
+              alert("Google Sign-In could not open. Please allow Google sign-in popups and try again.");
+            }
+          });
+        } else {
+          alert("Google Sign-In is still loading. Please try again in a moment.");
+        }
+      });
+    });
+
+    async function handleGoogleCredential(googleResponse) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: googleResponse.credential })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success || !result.token) {
+          throw new Error(result.error || "Google sign-in failed.");
+        }
+
+        localStorage.setItem(AUTH_TOKEN_KEY, result.token);
+        updateSignInLabels(true);
+        await loadCategories();
+
+        alert(`Welcome to CreateLK Academy, ${result.user?.name || "Student"}!`);
+
+      } catch (error) {
+        console.error("Google login error:", error);
+        alert(error.message || "Unable to sign in. Please try again.");
+      }
+    }
+
+    // Escape text received from the API before inserting it into HTML.
     function escapeHTML(value) {
       return String(value).replace(/[&<>"']/g, character => ({
         "&": "&amp;",
@@ -1113,27 +1143,38 @@
     // LOAD CATEGORIES FROM CLOUDFLARE WORKER
     async function loadCategories() {
       const categoryGrid = document.getElementById("categoryGrid");
+      const token = getAuthToken();
+
+      if (!token) {
+        categoryGrid.innerHTML = `
+          <div class="loading-message">
+            Please sign in with Google to view and access the grammar categories.
+          </div>`;
+        return;
+      }
 
       categoryGrid.innerHTML = `
-        <div class="loading-message">
-          Loading grammar categories...
-        </div>
-      `;
+        <div class="loading-message">Loading grammar categories...</div>`;
 
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/categories`
-        );
+        const response = await fetch(`${API_BASE_URL}/api/categories`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+
+        if (response.status === 401) {
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          updateSignInLabels(false);
+          throw new Error("Your session has expired. Please sign in again.");
+        }
 
         if (!response.ok) {
           throw new Error("Unable to load categories.");
         }
 
         const result = await response.json();
-
-        const categories = Array.isArray(result)
-          ? result
-          : result.categories;
+        const categories = Array.isArray(result) ? result : result.categories;
 
         if (!Array.isArray(categories) || categories.length === 0) {
           throw new Error("No grammar categories are available.");
@@ -1148,17 +1189,12 @@
             category.is_free === "1";
 
           const categoryId = Number(category.id);
-
-          const title = escapeHTML(
-            category.title || "Grammar Category"
-          );
-
+          const title = escapeHTML(category.title || "Grammar Category");
           const description = escapeHTML(
             category.description || "Practise English grammar."
           );
 
           const count = Number(category.question_count);
-
           const questionText =
             Number.isFinite(count) && count > 0
               ? `${count} Questions`
@@ -1173,26 +1209,19 @@
             <p>${description}</p>
             <div class="category-footer">
               <span class="category-count">${questionText}</span>
-              <span class="category-status ${
-                isFree ? "" : "premium-status"
-              }">
+              <span class="category-status ${isFree ? "" : "premium-status"}">
                 ${isFree ? "FREE" : "PREMIUM"}
               </span>
-            </div>
-          `;
+            </div>`;
 
           card.addEventListener("click", () => {
             if (!Number.isInteger(categoryId) || categoryId < 1) {
               return;
             }
 
-            if (isFree) {
-              window.location.href =
-                `practice.html?category_id=${encodeURIComponent(categoryId)}`;
-            } else {
-              window.location.href =
-                `premium.html?category_id=${encodeURIComponent(categoryId)}`;
-            }
+            window.location.href = isFree
+              ? `practice.html?category_id=${encodeURIComponent(categoryId)}`
+              : `premium.html?category_id=${encodeURIComponent(categoryId)}`;
           });
 
           categoryGrid.appendChild(card);
@@ -1203,18 +1232,47 @@
 
         categoryGrid.innerHTML = `
           <div class="error-message">
-            <strong>Unable to load grammar categories.</strong>
-            <p>Please check your internet connection and try again.</p>
-            <button class="retry-btn" onclick="loadCategories()">
-              Try Again
-            </button>
-          </div>
-        `;
+            <strong>${escapeHTML(
+              error.message || "Unable to load grammar categories."
+            )}</strong>
+            <p>Please sign in or check your internet connection, then try again.</p>
+            <button class="retry-btn" onclick="loadCategories()">Try Again</button>
+          </div>`;
       }
     }
 
-    // START
-    loadCategories();
+    // Restore an existing login session, then load categories.
+    async function restoreSession() {
+      const token = getAuthToken();
+
+      if (!token) {
+        updateSignInLabels(false);
+        loadCategories();
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/me`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error("Session expired");
+        }
+
+        updateSignInLabels(true);
+        await loadCategories();
+
+      } catch (error) {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        updateSignInLabels(false);
+        loadCategories();
+      }
+    }
+
+    restoreSession();
   </script>
 
 </body>
