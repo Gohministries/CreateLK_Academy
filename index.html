@@ -1,4 +1,4 @@
-
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -595,8 +595,8 @@
             <span>Practice Questions</span>
           </div>
           <div class="stat">
-            <strong>24/7</strong>
-            <span>Online Learning</span>
+            <strong id="completedMcqProgress">0 / 1000</strong>
+            <span>Completed MCQs</span>
           </div>
         </div>
       </div>
@@ -778,6 +778,79 @@
   const PAYMENT_PENDING_KEY = "createlk_payment_pending";
 
   // --------------------------------------------------
+  // MCQ PROGRESS
+  // --------------------------------------------------
+
+  const MCQ_PROGRESS_LIMIT = 1000;
+  const MCQ_PROGRESS_PREFIX = "createlk_completed_mcqs_";
+
+  function getProgressStorageKey() {
+    if (!currentUser) {
+      return MCQ_PROGRESS_PREFIX + "guest";
+    }
+
+    // Keep progress separate for each signed-in account.
+    const accountIdentifier =
+      currentUser.id ||
+      currentUser.email ||
+      "default";
+
+    return MCQ_PROGRESS_PREFIX + String(accountIdentifier);
+  }
+
+  function getCompletedMcqs() {
+    try {
+      const saved = Number(
+        localStorage.getItem(getProgressStorageKey())
+      );
+
+      if (!Number.isFinite(saved) || saved < 0) {
+        return 0;
+      }
+
+      return Math.min(Math.floor(saved), MCQ_PROGRESS_LIMIT);
+    } catch (error) {
+      console.error("Could not read MCQ progress:", error);
+      return 0;
+    }
+  }
+
+  function updateMcqProgressDisplay() {
+    const progressElement = $("completedMcqProgress");
+
+    if (!progressElement) return;
+
+    const completed = getCompletedMcqs();
+
+    progressElement.textContent =
+      completed + " / " + MCQ_PROGRESS_LIMIT;
+  }
+
+  function recordCompletedMcq() {
+    const currentProgress = getCompletedMcqs();
+
+    if (currentProgress >= MCQ_PROGRESS_LIMIT) {
+      updateMcqProgressDisplay();
+      return;
+    }
+
+    const newProgress = currentProgress + 1;
+
+    try {
+      localStorage.setItem(
+        getProgressStorageKey(),
+        String(newProgress)
+      );
+    } catch (error) {
+      console.error("Could not save MCQ progress:", error);
+      showToast("Your answer was submitted, but progress could not be saved in this browser.");
+      return;
+    }
+
+    updateMcqProgressDisplay();
+  }
+
+  // --------------------------------------------------
   // STATE
   // --------------------------------------------------
 
@@ -874,6 +947,7 @@
         clearToken();
         currentUser = null;
         updateMembershipStatus();
+        updateMcqProgressDisplay();
       }
 
       throw new Error(data.error || "Something went wrong. Please try again.");
@@ -897,6 +971,7 @@
       status.textContent = "Guest";
       signIn.classList.remove("hidden");
       signOutButton.classList.add("hidden");
+      updateMcqProgressDisplay();
       return;
     }
 
@@ -909,6 +984,8 @@
 
     signIn.classList.add("hidden");
     signOutButton.classList.remove("hidden");
+
+    updateMcqProgressDisplay();
   }
 
   async function refreshCurrentUser() {
@@ -1294,6 +1371,10 @@
         })
       });
 
+      // Count only after the server successfully accepts the answer.
+      // Both correct and incorrect submitted answers count.
+      recordCompletedMcq();
+
       buttons.forEach(button => {
         const option = button.dataset.option;
 
@@ -1467,9 +1548,11 @@
   $("year").textContent = new Date().getFullYear();
 
   updateMembershipStatus();
+  updateMcqProgressDisplay();
   renderCategories();
   restoreSession();
 </script>
 
 </body>
 </html>
+```
