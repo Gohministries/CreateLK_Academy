@@ -1,10 +1,9 @@
-```html
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>CreateLK Academy | Admin Dashboard</title>
 
 <style>
@@ -89,6 +88,7 @@ h3 { font-size:16px; }
 .muted {
   color:var(--muted);
   font-size:13px;
+  line-height:1.6;
 }
 
 button {
@@ -438,9 +438,7 @@ footer {
           <tbody id="studentsTable">
 
             <tr>
-              <td colspan="4">
-                Search for a student.
-              </td>
+              <td colspan="4">Search for a student.</td>
             </tr>
 
           </tbody>
@@ -536,12 +534,9 @@ let requestInProgress = false;
 const $ = id => document.getElementById(id);
 
 function showMessage(id, text, type = "error") {
-
   const element = $(id);
-
   element.textContent = text;
   element.className = "message show " + type;
-
 }
 
 function clearMessage(id) {
@@ -549,20 +544,14 @@ function clearMessage(id) {
 }
 
 function setLoggedInView(user) {
-
   $("loginPanel").classList.add("hidden");
   $("dashboard").style.display = "block";
-
-  $("adminEmailDisplay").textContent =
-    user.email || "";
-
+  $("adminEmailDisplay").textContent = user.email || "";
 }
 
 function setLoggedOutView() {
-
   $("dashboard").style.display = "none";
   $("loginPanel").classList.remove("hidden");
-
 }
 
 
@@ -573,11 +562,9 @@ function setLoggedOutView() {
 async function api(path, options = {}) {
 
   const response = await fetch(ADMIN_API + path, {
-
     ...options,
 
     headers: {
-
       ...(options.body ? {
         "Content-Type": "application/json"
       } : {}),
@@ -587,9 +574,7 @@ async function api(path, options = {}) {
       } : {}),
 
       ...(options.headers || {})
-
     }
-
   });
 
   const data = await response.json().catch(() => ({}));
@@ -601,7 +586,6 @@ async function api(path, options = {}) {
   }
 
   return data;
-
 }
 
 
@@ -659,10 +643,7 @@ async function login(event) {
 
     authToken = data.token;
 
-    sessionStorage.setItem(
-      TOKEN_KEY,
-      authToken
-    );
+    sessionStorage.setItem(TOKEN_KEY, authToken);
 
     $("adminPassword").value = "";
 
@@ -689,7 +670,6 @@ async function login(event) {
     button.textContent = "Sign In";
 
   }
-
 }
 
 
@@ -732,9 +712,7 @@ async function verifyAdmin() {
     );
 
     return false;
-
   }
-
 }
 
 
@@ -761,13 +739,9 @@ async function refreshDashboard() {
 
   } catch (error) {
 
-    showMessage(
-      "searchMessage",
-      error.message
-    );
+    showMessage("searchMessage", error.message);
 
   }
-
 }
 
 
@@ -781,8 +755,7 @@ async function searchStudents(event) {
     event.preventDefault();
   }
 
-  const query =
-    $("searchInput").value.trim();
+  const query = $("searchInput").value.trim();
 
   if (query.length < 2) {
 
@@ -792,7 +765,6 @@ async function searchStudents(event) {
     );
 
     return;
-
   }
 
   $("studentsTable").innerHTML =
@@ -810,13 +782,11 @@ async function searchStudents(event) {
     renderStudents(data.users || []);
 
     if (!data.users || data.users.length === 0) {
-
       showMessage(
         "searchMessage",
         "No students found.",
         "error"
       );
-
     }
 
   } catch (error) {
@@ -824,13 +794,9 @@ async function searchStudents(event) {
     $("studentsTable").innerHTML =
       '<tr><td colspan="4">Unable to load students.</td></tr>';
 
-    showMessage(
-      "searchMessage",
-      error.message
-    );
+    showMessage("searchMessage", error.message);
 
   }
-
 }
 
 
@@ -856,7 +822,6 @@ function renderStudents(users) {
     tbody.appendChild(row);
 
     return;
-
   }
 
   users.forEach(user => {
@@ -874,8 +839,7 @@ function renderStudents(users) {
 
     const badge = document.createElement("span");
 
-    const isPremium =
-      Number(user.premium) === 1;
+    const isPremium = Number(user.premium) === 1;
 
     badge.className =
       "status " + (isPremium ? "premium" : "free");
@@ -894,7 +858,7 @@ function renderStudents(users) {
 
     expiry.textContent =
       expiryTimestamp > 0
-        ? new Date(expiryTimestamp).toLocaleDateString()
+        ? new Date(expiryTimestamp * 1000).toLocaleDateString()
         : "—";
 
     // ACTIONS
@@ -944,4 +908,175 @@ function renderStudents(users) {
         const deactivate = document.createElement("button");
 
         deactivate.className = "danger";
-        deactivate.textContent = "
+        deactivate.textContent = "Deactivate";
+
+        deactivate.onclick = () =>
+          managePremium(user.id, "deactivate");
+
+        buttons.append(
+          extend,
+          addDays,
+          deactivate
+        );
+      }
+
+      action.appendChild(buttons);
+    }
+
+    row.append(
+      email,
+      membership,
+      expiry,
+      action
+    );
+
+    tbody.appendChild(row);
+
+  });
+}
+
+
+/* =====================================
+   PREMIUM MANAGEMENT
+===================================== */
+
+async function managePremium(userId, action) {
+
+  let days = null;
+
+  const actionNames = {
+    activate: "Activate Premium",
+    extend: "Extend Premium",
+    add_days: "Add Days"
+  };
+
+  if (action === "deactivate") {
+
+    if (!confirm(
+      "Are you sure you want to deactivate this student's Premium membership?"
+    )) {
+      return;
+    }
+
+  } else {
+
+    const answer = prompt(
+      actionNames[action] +
+      "\n\nEnter the number of days:"
+    );
+
+    if (answer === null) return;
+
+    days = Number(answer);
+
+    if (
+      !Number.isInteger(days) ||
+      days < 1 ||
+      days > 3650
+    ) {
+      alert(
+        "Please enter a valid number of days (1–3650)."
+      );
+      return;
+    }
+
+    if (action === "activate") {
+
+      if (!confirm(
+        `Activate Premium for ${days} days? Confirm that payment has been verified.`
+      )) {
+        return;
+      }
+
+    } else {
+
+      if (!confirm(
+        `${actionNames[action]} by ${days} days?`
+      )) {
+        return;
+      }
+    }
+  }
+
+  try {
+
+    const result = await api(
+      "/api/admin/premium",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          user_id: userId,
+          action: action,
+          days: days
+        })
+      }
+    );
+
+    alert(
+      result.message ||
+      "Premium membership updated successfully."
+    );
+
+    await searchStudents();
+    await refreshDashboard();
+
+  } catch (error) {
+
+    alert(
+      error.message ||
+      "Unable to update membership."
+    );
+
+  }
+}
+
+
+/* =====================================
+   LOGOUT
+===================================== */
+
+function logout() {
+
+  authToken = "";
+
+  sessionStorage.removeItem(TOKEN_KEY);
+
+  $("adminPassword").value = "";
+  $("adminEmail").value = "";
+
+  clearMessage("loginMessage");
+
+  setLoggedOutView();
+
+}
+
+
+/* =====================================
+   EVENT LISTENERS
+===================================== */
+
+$("loginForm").addEventListener(
+  "submit",
+  login
+);
+
+$("searchForm").addEventListener(
+  "submit",
+  searchStudents
+);
+
+
+/* =====================================
+   STARTUP
+===================================== */
+
+if (authToken) {
+  verifyAdmin();
+}
+
+</script>
+
+</body>
+</html>
+```
