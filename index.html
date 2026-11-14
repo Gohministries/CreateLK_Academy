@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -277,7 +278,7 @@ body:not(.authenticated) #googleTitle{font-size:27px;line-height:1.25;letter-spa
 .login-benefits span{display:flex;align-items:center;gap:10px;color:#273957;font-size:13px;font-weight:600}
 .login-benefits b{display:grid;place-items:center;width:25px;height:25px;flex:0 0 25px;border-radius:8px;background:#e7efff;color:#285bb5}
 
-/* CENTERED GOOGLE BUTTON - ONE LINE */
+/* GOOGLE BUTTON */
 body:not(.authenticated) .google-area{
   display:flex;
   flex-direction:column;
@@ -326,15 +327,7 @@ body:not(.authenticated) .google-area{
   transform:none;
 }
 .google-g-icon{width:19px;height:19px;flex:0 0 19px}
-#googleButton{
-  display:none;
-  justify-content:center;
-  align-items:center;
-  width:100%;
-  margin:0 auto;
-}
-#googleButton.ready{display:flex}
-#googleButton>div{margin:0 auto!important;max-width:100%}
+#googleButton{display:none}
 #googleMessage{min-height:20px;text-align:center}
 .login-secure-note{margin:13px 0 0;color:#8792a5;font-size:11px}
 @keyframes loginCardIn{
@@ -520,15 +513,17 @@ body:not(.authenticated) .google-area{
 
     <div class="google-area">
       <button id="googleLoadButton" type="button" onclick="initializeGoogle()">
-        <svg class="google-g-icon" viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" transform="translate(0 5)"/>
+        <svg class="google-g-icon"
+             xmlns="http://www.w3.org/2000/svg"
+             viewBox="0 0 48 48"
+             aria-hidden="true">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/>
           <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.73 6C44.42 37.93 46.98 31.78 46.98 24.55Z"/>
-          <path fill="#FBBC05" d="M10.53 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.19a23.9 23.9 0 0 0 0 21.56l7.98-6.19Z" transform="translate(0 5)"/>
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.14 1.45-4.89 2.3-8.18 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" transform="translate(0 -5)"/>
+          <path fill="#FBBC05" d="M10.53 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.19a23.9 23.9 0 0 0 0 21.56l7.98-6.19Z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.14 1.45-4.89 2.3-8.18 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/>
         </svg>
         <span>Continue with Google</span>
       </button>
-      <div id="googleButton"></div>
     </div>
 
     <p id="googleMessage" style="font-size:13px;color:var(--muted);"></p>
@@ -571,7 +566,6 @@ body:not(.authenticated) .google-area{
 <script>
 // CONFIGURATION
 const API_BASE = "https://eg-academy.createlk.workers.dev";
-const GOOGLE_CLIENT_ID = "582157960266-3r4k503a5a3oomo9nrau7l61aifavbqh.apps.googleusercontent.com";
 const PAYHERE_DIRECT_LINK = "https://payhere.lk/pay/o1719226a";
 
 const TOKEN_KEY = "createlk_academy_token";
@@ -591,8 +585,6 @@ let questions = [];
 let currentCategory = null;
 let currentQuestionIndex = 0;
 let answerSubmitted = false;
-let googleInitialized = false;
-let googleScriptLoading = false;
 let toastTimer = null;
 
 // PROGRESS STORAGE
@@ -817,17 +809,13 @@ async function refreshCurrentUser() {
   return currentUser;
 }
 
-// GOOGLE SIGN-IN - LOAD ONLY AFTER BUTTON CLICK
+// GOOGLE SIGN-IN - DIRECT GOOGLE REDIRECT
 function openGoogleModal() {
   googleModal.classList.add("show");
 
-  if (currentUser) {
-    $("googleMessage").textContent =
-      "You are signed in as " + currentUser.email;
-  } else {
-    $("googleMessage").textContent = "";
-  }
-  // Google's library is not loaded until the visitor clicks the button.
+  $("googleMessage").textContent = currentUser
+    ? "You are signed in as " + currentUser.email
+    : "";
 }
 
 function closeGoogleModal() {
@@ -837,105 +825,83 @@ function closeGoogleModal() {
 }
 
 function initializeGoogle() {
-  if (googleInitialized || googleScriptLoading) return;
-
-  const loadButton = $("googleLoadButton");
+  const button = $("googleLoadButton");
   const message = $("googleMessage");
 
-  if (window.google?.accounts?.id) {
-    renderGoogleButton();
-    return;
-  }
+  if (!button) return;
 
-  googleScriptLoading = true;
-  loadButton.disabled = true;
-  loadButton.querySelector("span").textContent = "Loading Google Sign-in...";
+  button.disabled = true;
+  button.querySelector("span").textContent = "Redirecting to Google...";
   message.textContent = "Connecting securely to Google...";
 
-  const script = document.createElement("script");
-  script.src = "https://accounts.google.com/gsi/client";
-  script.async = true;
-
-  script.onload = function () {
-    googleScriptLoading = false;
-    renderGoogleButton();
-  };
-
-  script.onerror = function () {
-    googleScriptLoading = false;
-    loadButton.disabled = false;
-    loadButton.querySelector("span").textContent = "Try Google Sign-in Again";
-    message.textContent = "Unable to load Google Sign-in. Please check your connection and try again.";
-  };
-
-  document.head.appendChild(script);
+  window.location.href = API_BASE + "/auth/google";
 }
 
-function renderGoogleButton() {
-  if (!window.google?.accounts?.id || googleInitialized) return;
-
-  try {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleGoogleCredential
-    });
-
-    $("googleButton").innerHTML = "";
-    google.accounts.id.renderButton($("googleButton"), {
-      theme:"outline",
-      size:"large",
-      shape:"rectangular",
-      text:"signin_with",
-      width:260
-    });
-
-    googleInitialized = true;
-    $("googleButton").classList.add("ready");
-    $("googleLoadButton").classList.add("hidden");
-    $("googleMessage").textContent = "Google is ready. Select your account to continue.";
-  } catch (error) {
-    console.error("Google initialization error:", error);
-    $("googleLoadButton").disabled = false;
-    $("googleLoadButton").querySelector("span").textContent = "Try Google Sign-in Again";
-    $("googleMessage").textContent = "Google sign-in could not be initialized. Please try again.";
-  }
-}
-
-async function handleGoogleCredential(response) {
-  $("googleMessage").textContent = "Signing in...";
-
-  try {
-    const result = await fetch(API_BASE + "/api/auth/google", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({credential:response.credential})
-    });
-
-    const data = await result.json();
-    if (!result.ok) throw new Error(data.error || "Google sign-in failed.");
-
-    saveToken(data.token);
-    currentUser = data.user;
-    updateMembershipStatus();
-    googleModal.classList.remove("show");
-    showToast("Welcome to CreateLK Academy!");
-    await loadCategories();
-    await checkPendingPayment();
-  } catch (error) {
-    $("googleMessage").textContent = error.message;
-  }
-}
-
-async function signOut() {
-  clearToken();
-  currentUser = null;
-  updateMembershipStatus();
-  renderCategories();
-  showToast("You have signed out.");
-}
-
-// SESSION RESTORATION
+// SESSION RESTORATION AND GOOGLE OAUTH CALLBACK
 async function restoreSession() {
+  const params = new URLSearchParams(window.location.search);
+  const oauthCode = params.get("oauth_code");
+
+  if (oauthCode) {
+    // Remove the temporary OAuth code from the visible URL.
+    history.replaceState({}, document.title, window.location.pathname);
+
+    googleModal.classList.add("show");
+    $("googleMessage").textContent = "Completing your secure sign-in...";
+
+    try {
+      const result = await fetch(API_BASE + "/api/auth/exchange", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          code: oauthCode
+        })
+      });
+
+      let data;
+      try {
+        data = await result.json();
+      } catch {
+        data = {};
+      }
+
+      if (!result.ok || !data.success || !data.token || !data.user) {
+        throw new Error(data.error || "Google sign-in could not be completed.");
+      }
+
+      saveToken(data.token);
+      currentUser = data.user;
+
+      updateMembershipStatus();
+      googleModal.classList.remove("show");
+
+      showToast("Welcome to CreateLK Academy!");
+
+      await loadCategories();
+      await checkPendingPayment();
+
+      return;
+
+    } catch (error) {
+      console.error("OAuth exchange error:", error);
+
+      clearToken();
+      currentUser = null;
+      updateMembershipStatus();
+
+      googleModal.classList.add("show");
+      $("googleMessage").textContent = error.message;
+
+      const button = $("googleLoadButton");
+      button.disabled = false;
+      button.querySelector("span").textContent = "Continue with Google";
+
+      return;
+    }
+  }
+
   if (!getToken()) {
     currentUser = null;
     updateMembershipStatus();
@@ -947,13 +913,27 @@ async function restoreSession() {
     await refreshCurrentUser();
     await loadCategories();
     await checkPendingPayment();
+
   } catch (error) {
     console.error("Session restoration:", error);
+
     currentUser = null;
     clearToken();
+
     updateMembershipStatus();
     googleModal.classList.add("show");
   }
+}
+
+// SIGN OUT
+async function signOut() {
+  clearToken();
+  currentUser = null;
+  updateMembershipStatus();
+  categories = [];
+  renderCategories();
+  googleModal.classList.add("show");
+  showToast("You have signed out.");
 }
 
 // CATEGORY ACCESS
@@ -964,7 +944,9 @@ function isPremiumMember() {
 function isCategoryLocked(category) {
   if (isPremiumMember()) return false;
   if (typeof category.locked === "boolean") return category.locked;
-  return category.is_free !== true;
+
+  // Accept both boolean true and numeric 1 from D1.
+  return !(category.is_free === true || Number(category.is_free) === 1);
 }
 
 // CATEGORIES
@@ -1090,6 +1072,7 @@ async function openCategory(categoryId) {
     showToast("Please sign in to practise this category.");
     return;
   }
+
   await openQuestions(categoryId);
 }
 
@@ -1103,26 +1086,38 @@ async function openQuestions(categoryId) {
   questions = [];
 
   try {
-    const data = await apiRequest("/api/questions?category_id=" + encodeURIComponent(categoryId) + "&limit=50&offset=0");
+    const data = await apiRequest(
+      "/api/questions?category_id=" +
+      encodeURIComponent(categoryId) +
+      "&limit=50&offset=0"
+    );
+
     questions = data.questions || [];
+
     if (!questions.length) {
       $("questionContent").innerHTML = "<p>No questions are available in this category yet.</p>";
       return;
     }
+
     renderQuestion();
+
   } catch (error) {
     if (error.message.toLowerCase().includes("premium")) {
       closeQuestionModal();
       openPayment();
       return;
     }
-    $("questionContent").innerHTML = <div class="notice">${escapeHTML(error.message)}</div>;
+
+    // FIXED: Correct JavaScript template literal.
+    $("questionContent").innerHTML =
+      `<div class="notice">${escapeHTML(error.message)}</div>`;
   }
 }
 
 function renderQuestion() {
   const question = questions[currentQuestionIndex];
   if (!question) return;
+
   answerSubmitted = false;
   const total = questions.length;
   const current = currentQuestionIndex + 1;
@@ -1155,8 +1150,10 @@ function renderQuestion() {
 // ANSWER SUBMISSION
 async function selectAnswer(selectedOption) {
   if (answerSubmitted) return;
+
   const question = questions[currentQuestionIndex];
   if (!question) return;
+
   const buttons = document.querySelectorAll("#options .option");
   buttons.forEach(button => button.disabled = true);
   answerSubmitted = true;
@@ -1171,6 +1168,7 @@ async function selectAnswer(selectedOption) {
     });
 
     recordCompletedMcq(currentCategory.id, question.id);
+
     buttons.forEach(button => {
       const option = button.dataset.option;
       if (option === result.correct_option) button.classList.add("correct");
@@ -1184,7 +1182,9 @@ async function selectAnswer(selectedOption) {
       <p style="margin:6px 0 0;">Correct answer: <strong>${escapeHTML(result.correct_option)}</strong></p>
       <p style="margin:6px 0 0;">${escapeHTML(result.explanation || "Keep practising to improve your knowledge.")}</p>
     `;
+
     $("nextQuestionButton").disabled = false;
+
   } catch (error) {
     answerSubmitted = false;
     buttons.forEach(button => button.disabled = false);
@@ -1194,6 +1194,7 @@ async function selectAnswer(selectedOption) {
 
 function nextQuestion() {
   if (!answerSubmitted) return;
+
   if (currentQuestionIndex < questions.length - 1) {
     currentQuestionIndex++;
     renderQuestion();
@@ -1226,10 +1227,12 @@ function openPayment() {
     showToast("Please sign in before continuing.");
     return;
   }
+
   if (isPremiumMember()) {
     showToast("Your account already has Premium access.");
     return;
   }
+
   paymentModal.classList.add("show");
 }
 
@@ -1243,6 +1246,7 @@ function continueToPayHere() {
     openGoogleModal();
     return;
   }
+
   sessionStorage.setItem(PAYMENT_PENDING_KEY, "1");
   closePaymentModal();
   window.location.href = PAYHERE_DIRECT_LINK;
@@ -1250,15 +1254,19 @@ function continueToPayHere() {
 
 async function checkPendingPayment() {
   if (sessionStorage.getItem(PAYMENT_PENDING_KEY) !== "1") return;
+
   sessionStorage.removeItem(PAYMENT_PENDING_KEY);
+
   try {
     await refreshCurrentUser();
+
     if (isPremiumMember()) {
       showToast("Premium access is active on your account.");
       await loadCategories();
     } else {
       showToast("Payment verification may still be pending. Contact support with your receipt.");
     }
+
   } catch (error) {
     showToast("Please sign in again to check your membership.");
   }
@@ -1268,7 +1276,10 @@ async function checkPendingPayment() {
 function startLearning() {
   closeMobileMenu();
   $("categories").scrollIntoView({behavior:"smooth"});
-  if (!getToken()) setTimeout(openGoogleModal, 500);
+
+  if (!getToken()) {
+    setTimeout(openGoogleModal, 500);
+  }
 }
 
 // MODAL EVENTS
