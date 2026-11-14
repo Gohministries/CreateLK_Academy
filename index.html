@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -278,7 +277,7 @@ body:not(.authenticated) #googleTitle{font-size:27px;line-height:1.25;letter-spa
 .login-benefits span{display:flex;align-items:center;gap:10px;color:#273957;font-size:13px;font-weight:600}
 .login-benefits b{display:grid;place-items:center;width:25px;height:25px;flex:0 0 25px;border-radius:8px;background:#e7efff;color:#285bb5}
 
-/* GOOGLE REDIRECT BUTTON */
+/* CENTERED GOOGLE BUTTON - ONE LINE */
 body:not(.authenticated) .google-area{
   display:flex;
   flex-direction:column;
@@ -307,13 +306,36 @@ body:not(.authenticated) .google-area{
   font-weight:700;
   font-size:14px;
   white-space:nowrap;
+  flex-wrap:nowrap;
   box-shadow:0 3px 10px rgba(20,40,75,.06);
   transition:background .2s,box-shadow .2s,transform .2s;
 }
-#googleLoadButton span{white-space:nowrap;display:inline-block}
-#googleLoadButton:hover{background:#f8faff;box-shadow:0 5px 15px rgba(20,40,75,.1);transform:translateY(-1px)}
-#googleLoadButton:disabled{opacity:.65;cursor:wait;transform:none}
+#googleLoadButton span{
+  white-space:nowrap;
+  display:inline-block;
+  flex-shrink:0;
+}
+#googleLoadButton:hover{
+  background:#f8faff;
+  box-shadow:0 5px 15px rgba(20,40,75,.1);
+  transform:translateY(-1px);
+}
+#googleLoadButton:disabled{
+  opacity:.65;
+  cursor:wait;
+  transform:none;
+}
 .google-g-icon{width:19px;height:19px;flex:0 0 19px}
+#googleButton{
+  display:none;
+  justify-content:center;
+  align-items:center;
+  width:100%;
+  margin:0 auto;
+}
+#googleButton.ready{display:flex}
+#googleButton>div{margin:0 auto!important;max-width:100%}
+#googleMessage{min-height:20px;text-align:center}
 .login-secure-note{margin:13px 0 0;color:#8792a5;font-size:11px}
 @keyframes loginCardIn{
   from{opacity:0;transform:translateY(14px) scale(.985)}
@@ -497,15 +519,16 @@ body:not(.authenticated) .google-area{
     </div>
 
     <div class="google-area">
-      <button id="googleLoadButton" type="button" onclick="loginWithGoogle()">
+      <button id="googleLoadButton" type="button" onclick="initializeGoogle()">
         <svg class="google-g-icon" viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z"/>
-          <path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4.1 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z"/>
-          <path fill="#FBBC05" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 18l6.8-5.3Z"/>
-          <path fill="#EA4335" d="M24 12.1c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 6.1 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.2 11.4-8.2Z"/>
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" transform="translate(0 5)"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.73 6C44.42 37.93 46.98 31.78 46.98 24.55Z"/>
+          <path fill="#FBBC05" d="M10.53 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.19a23.9 23.9 0 0 0 0 21.56l7.98-6.19Z" transform="translate(0 5)"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.14 1.45-4.89 2.3-8.18 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" transform="translate(0 -5)"/>
         </svg>
         <span>Continue with Google</span>
       </button>
+      <div id="googleButton"></div>
     </div>
 
     <p id="googleMessage" style="font-size:13px;color:var(--muted);"></p>
@@ -568,6 +591,8 @@ let questions = [];
 let currentCategory = null;
 let currentQuestionIndex = 0;
 let answerSubmitted = false;
+let googleInitialized = false;
+let googleScriptLoading = false;
 let toastTimer = null;
 
 // PROGRESS STORAGE
@@ -792,7 +817,7 @@ async function refreshCurrentUser() {
   return currentUser;
 }
 
-// GOOGLE SIGN-IN - REDIRECT TO GOOGLE
+// GOOGLE SIGN-IN - LOAD ONLY AFTER BUTTON CLICK
 function openGoogleModal() {
   googleModal.classList.add("show");
 
@@ -801,10 +826,8 @@ function openGoogleModal() {
       "You are signed in as " + currentUser.email;
   } else {
     $("googleMessage").textContent = "";
-    const button = $("googleLoadButton");
-    button.disabled = false;
-    button.querySelector("span").textContent = "Continue with Google";
   }
+  // Google's library is not loaded until the visitor clicks the button.
 }
 
 function closeGoogleModal() {
@@ -813,48 +836,106 @@ function closeGoogleModal() {
   }
 }
 
-function loginWithGoogle() {
-  const button = $("googleLoadButton");
+function initializeGoogle() {
+  if (googleInitialized || googleScriptLoading) return;
+
+  const loadButton = $("googleLoadButton");
   const message = $("googleMessage");
 
-  if (button.disabled) return;
-
-  button.disabled = true;
-  button.querySelector("span").textContent = "Redirecting to Google...";
-  message.textContent = "Opening secure Google sign-in...";
-
-  // This endpoint must be implemented by the Cloudflare Worker.
-  window.location.assign(API_BASE + "/auth/google");
-}
-
-// Handle the token returned by the Worker after Google OAuth.
-// The Worker should redirect back to:
-// https://createlk.com/?login_token=YOUR_SESSION_TOKEN
-function handleOAuthReturn() {
-  const params = new URLSearchParams(window.location.search);
-  const loginToken = params.get("login_token");
-  const loginError = params.get("login_error");
-
-  if (loginError) {
-    history.replaceState({}, document.title, window.location.pathname);
-    $("googleMessage").textContent = "Google sign-in failed: " + loginError;
+  if (window.google?.accounts?.id) {
+    renderGoogleButton();
     return;
   }
 
-  if (!loginToken) return;
+  googleScriptLoading = true;
+  loadButton.disabled = true;
+  loadButton.querySelector("span").textContent = "Loading Google Sign-in...";
+  message.textContent = "Connecting securely to Google...";
 
-  saveToken(loginToken);
+  const script = document.createElement("script");
+  script.src = "https://accounts.google.com/gsi/client";
+  script.async = true;
 
-  // Remove the token from the visible URL immediately.
-  history.replaceState({}, document.title, window.location.pathname);
+  script.onload = function () {
+    googleScriptLoading = false;
+    renderGoogleButton();
+  };
 
-  $("googleMessage").textContent = "Finishing your sign-in...";
+  script.onerror = function () {
+    googleScriptLoading = false;
+    loadButton.disabled = false;
+    loadButton.querySelector("span").textContent = "Try Google Sign-in Again";
+    message.textContent = "Unable to load Google Sign-in. Please check your connection and try again.";
+  };
+
+  document.head.appendChild(script);
+}
+
+function renderGoogleButton() {
+  if (!window.google?.accounts?.id || googleInitialized) return;
+
+  try {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential
+    });
+
+    $("googleButton").innerHTML = "";
+    google.accounts.id.renderButton($("googleButton"), {
+      theme:"outline",
+      size:"large",
+      shape:"rectangular",
+      text:"signin_with",
+      width:260
+    });
+
+    googleInitialized = true;
+    $("googleButton").classList.add("ready");
+    $("googleLoadButton").classList.add("hidden");
+    $("googleMessage").textContent = "Google is ready. Select your account to continue.";
+  } catch (error) {
+    console.error("Google initialization error:", error);
+    $("googleLoadButton").disabled = false;
+    $("googleLoadButton").querySelector("span").textContent = "Try Google Sign-in Again";
+    $("googleMessage").textContent = "Google sign-in could not be initialized. Please try again.";
+  }
+}
+
+async function handleGoogleCredential(response) {
+  $("googleMessage").textContent = "Signing in...";
+
+  try {
+    const result = await fetch(API_BASE + "/api/auth/google", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({credential:response.credential})
+    });
+
+    const data = await result.json();
+    if (!result.ok) throw new Error(data.error || "Google sign-in failed.");
+
+    saveToken(data.token);
+    currentUser = data.user;
+    updateMembershipStatus();
+    googleModal.classList.remove("show");
+    showToast("Welcome to CreateLK Academy!");
+    await loadCategories();
+    await checkPendingPayment();
+  } catch (error) {
+    $("googleMessage").textContent = error.message;
+  }
+}
+
+async function signOut() {
+  clearToken();
+  currentUser = null;
+  updateMembershipStatus();
+  renderCategories();
+  showToast("You have signed out.");
 }
 
 // SESSION RESTORATION
 async function restoreSession() {
-  handleOAuthReturn();
-
   if (!getToken()) {
     currentUser = null;
     updateMembershipStatus();
@@ -864,7 +945,6 @@ async function restoreSession() {
 
   try {
     await refreshCurrentUser();
-    googleModal.classList.remove("show");
     await loadCategories();
     await checkPendingPayment();
   } catch (error) {
@@ -874,16 +954,6 @@ async function restoreSession() {
     updateMembershipStatus();
     googleModal.classList.add("show");
   }
-}
-
-async function signOut() {
-  clearToken();
-  currentUser = null;
-  updateMembershipStatus();
-  categories = [];
-  renderCategories();
-  googleModal.classList.add("show");
-  showToast("You have signed out.");
 }
 
 // CATEGORY ACCESS
@@ -1046,7 +1116,7 @@ async function openQuestions(categoryId) {
       openPayment();
       return;
     }
-    $("questionContent").innerHTML = `<div class="notice">${escapeHTML(error.message)}</div>`;
+    $("questionContent").innerHTML = <div class="notice">${escapeHTML(error.message)}</div>;
   }
 }
 
