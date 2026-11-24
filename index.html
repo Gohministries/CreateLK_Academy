@@ -184,6 +184,73 @@ header{
 .stat strong{display:block;font-size:25px}
 .stat span{font-size:11px;color:#d2dced}
 
+/* GUEST WELCOME SCREEN */
+.guest-actions{display:none}
+.member-actions{
+  display:flex;
+  justify-content:center;
+  flex-wrap:wrap;
+  gap:12px;
+}
+body.guest-mode #navLinks,
+body.guest-mode #membershipStatus,
+body.guest-mode #signOutButton,
+body.guest-mode #learning,
+body.guest-mode #subjects,
+body.guest-mode #premium,
+body.guest-mode #contact,
+body.guest-mode footer,
+body.guest-mode .whatsapp{
+  display:none!important;
+}
+body.guest-mode .navbar{
+  justify-content:space-between;
+}
+body.guest-mode .hero{
+  min-height:calc(100vh - 76px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:55px 0;
+}
+body.guest-mode .hero-content{
+  max-width:760px;
+}
+body.guest-mode .hero-buttons,
+body.guest-mode .stats{
+  display:none!important;
+}
+body.guest-mode .guest-actions{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-top:28px;
+}
+body.guest-mode .member-actions{
+  display:none;
+}
+.guest-support{
+  background:#25d366;
+  color:white;
+}
+@media(max-width:600px){
+  body.guest-mode .hero{
+    min-height:calc(100vh - 64px);
+    padding:40px 0;
+  }
+  body.guest-mode .hero h1{
+    font-size:34px;
+  }
+  body.guest-mode .guest-actions{
+    flex-direction:column;
+  }
+  body.guest-mode .guest-actions .btn{
+    width:100%;
+  }
+}
+
 section{padding:68px 0}
 .section-heading{
   margin:0 auto 32px;
@@ -546,7 +613,7 @@ footer{
 </style>
 </head>
 
-<body>
+<body class="guest-mode">
 
 <header>
   <div class="container navbar">
@@ -578,19 +645,39 @@ footer{
 
 <main>
 
-  <!-- HOME -->
+  <!-- HOME / GUEST WELCOME -->
   <section class="hero" id="home">
     <div class="container hero-content">
       <div class="eyebrow">Learn • Practise • Grow</div>
       <h1>Discover a World of <span>Learning.</span></h1>
       <p>
-        Explore different subjects, structured courses, interactive lessons,
-        educational videos, learning resources and quizzes — all in one place.
+        Welcome to CreateLK Academy. Sign in to explore structured courses,
+        interactive lessons, educational videos, learning resources and quizzes
+        — all in one place.
       </p>
-      <div class="hero-buttons">
+
+      <!-- Visible only to guests -->
+      <div class="guest-actions">
+        <button class="btn btn-gold" onclick="openLogin()">
+          Sign in with Google
+        </button>
+
+        <a
+          class="btn guest-support"
+          href="https://wa.me/94771190395?text=Hello%20CreateLK%20Academy%2C%20I%20need%20support."
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          WhatsApp Support
+        </a>
+      </div>
+
+      <!-- Visible only after login -->
+      <div class="member-actions">
         <button class="btn btn-gold" onclick="goToLearning()">Explore Learning Hub</button>
         <button class="btn btn-outline" onclick="goToSubjects()">Browse Subjects</button>
       </div>
+
       <div class="stats">
         <div class="stat">
           <strong id="subjectCount">—</strong>
@@ -986,14 +1073,23 @@ function isPremium(){
          currentUser.premium === "true";
 }
 
+/* IMPORTANT:
+   Guest mode hides the Academy sections.
+   A successful login removes guest-mode.
+*/
+
 function updateAccountUI(){
+  const loggedIn = !!currentUser;
+
+  document.body.classList.toggle("guest-mode",!loggedIn);
+
   $("membershipStatus").textContent =
-    !currentUser ? "Guest" : (isPremium() ? "Premium" : "Free");
+    !loggedIn ? "Guest" : (isPremium() ? "Premium" : "Free");
 
   $("membershipStatus").classList.toggle("premium",isPremium());
 
-  $("signInButton").classList.toggle("hidden",!!currentUser);
-  $("signOutButton").classList.toggle("hidden",!currentUser);
+  $("signInButton").classList.toggle("hidden",loggedIn);
+  $("signOutButton").classList.toggle("hidden",!loggedIn);
 }
 
 async function refreshUser(){
@@ -1031,6 +1127,10 @@ function googleLogin(){
   window.location.href = API_BASE + "/auth/google";
 }
 
+/* =====================================================
+   RESTORE SESSION AND GOOGLE LOGIN
+===================================================== */
+
 async function restoreSession(){
   const params = new URLSearchParams(location.search);
   const oauthCode = params.get("oauth_code");
@@ -1057,6 +1157,7 @@ async function restoreSession(){
       saveToken(data.token);
       currentUser = data.user;
 
+      // Show the complete Academy after successful login.
       updateAccountUI();
 
       $("loginModal").classList.remove("show");
@@ -1093,6 +1194,7 @@ async function restoreSession(){
     await refreshUser();
     await loadSubjects();
     await checkPendingPayment();
+
   }catch(error){
     clearToken();
     currentUser = null;
@@ -1100,10 +1202,15 @@ async function restoreSession(){
   }
 }
 
+/* =====================================================
+   SIGN OUT
+===================================================== */
+
 function signOut(){
   clearToken();
 
   currentUser = null;
+
   subjects = [];
   courses = [];
   lessons = [];
@@ -1111,10 +1218,28 @@ function signOut(){
   activeSubjectId = null;
   activeCourseId = null;
 
-  updateAccountUI();
-  renderSubjects();
+  currentLesson = null;
+  lessonQuestions = [];
 
+  updateAccountUI();
+
+  $("learningGrid").innerHTML = "";
+  $("subjectGrid").innerHTML = "";
   $("hubBreadcrumb").innerHTML = "";
+
+  $("hubSubjectSelect").value = "";
+  $("hubSearch").value = "";
+  $("subjectSearch").value = "";
+
+  $("subjectCount").textContent = "—";
+  $("courseCount").textContent = "—";
+
+  closeMenu();
+
+  window.scrollTo({
+    top:0,
+    behavior:"smooth"
+  });
 
   showToast("You have signed out.");
 }
@@ -1150,6 +1275,8 @@ function goToSubjects(){
 ===================================================== */
 
 async function loadSubjects(){
+  if(!currentUser) return;
+
   $("learningGrid").innerHTML =
     '<div class="empty">Loading subjects...</div>';
 
@@ -2081,8 +2208,10 @@ document.addEventListener("keydown",event => {
 
 $("year").textContent = new Date().getFullYear();
 
+// Start in guest mode immediately to prevent content flashing.
 updateAccountUI();
 
+// Restore a previously authenticated session or process Google login.
 restoreSession();
 
 </script>
