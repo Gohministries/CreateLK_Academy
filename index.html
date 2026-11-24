@@ -265,9 +265,7 @@ body.guest-mode #headerPremiumButton{
 
 /* GUEST AND MEMBER ACTIONS */
 
-.guest-actions{
-  display:none;
-}
+.guest-actions{display:none}
 
 .member-actions{
   display:flex;
@@ -289,14 +287,12 @@ body.guest-mode footer{
   display:none!important;
 }
 
-/* Keep Guest membership visible before login. */
-
 body.guest-mode .navbar{
   justify-content:space-between;
 }
 
 body.guest-mode .hero{
-  min-height:calc(100vh - 76px);
+  min-height:auto;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -396,7 +392,7 @@ body.guest-mode .member-actions{
 
 @media(max-width:600px){
   body.guest-mode .hero{
-    min-height:calc(100vh - 64px);
+    min-height:auto;
     padding:38px 0;
   }
 
@@ -418,25 +414,11 @@ body.guest-mode .member-actions{
     margin-top:28px;
   }
 
-  .guest-feature{
-    padding:12px;
-  }
-
-  .guest-feature h3{
-    font-size:12px;
-  }
-
-  .guest-feature p{
-    font-size:10px;
-  }
-
-  .guest-feature-icon{
-    font-size:23px;
-  }
-
-  .guest-journey{
-    padding:12px;
-  }
+  .guest-feature{padding:12px}
+  .guest-feature h3{font-size:12px}
+  .guest-feature p{font-size:10px}
+  .guest-feature-icon{font-size:23px}
+  .guest-journey{padding:12px}
 }
 
 section{padding:68px 0}
@@ -823,7 +805,7 @@ footer{
 
 #toast.show{display:block}
 
-/* ONE FLOATING WHATSAPP BUTTON */
+/* WHATSAPP */
 
 .whatsapp{
   position:fixed;
@@ -895,9 +877,7 @@ footer{
     gap:5px;
   }
 
-  .nav-actions{
-    gap:5px;
-  }
+  .nav-actions{gap:5px}
 
   .membership{
     font-size:9px;
@@ -1019,8 +999,6 @@ footer{
         Browse Subjects
       </button>
     </div>
-
-    <!-- GUEST LEARNING FEATURES -->
 
     <div class="guest-features">
 
@@ -1220,8 +1198,6 @@ footer{
   © <span id="year"></span> CreateLK Academy. All Rights Reserved.
 </footer>
 
-<!-- THE ONLY WHATSAPP BUTTON -->
-
 <a
   class="whatsapp"
   href="https://wa.me/94771190395?text=Hello%20CreateLK%20Academy%2C%20I%20need%20support."
@@ -1237,19 +1213,9 @@ footer{
 <!-- LOGIN MODAL -->
 
 <div class="modal-overlay" id="loginModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
 
-  <div
-    class="modal"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="loginTitle">
-
-    <button
-      class="close-modal"
-      onclick="closeLogin()"
-      aria-label="Close">
-      ×
-    </button>
+    <button class="close-modal" onclick="closeLogin()" aria-label="Close">×</button>
 
     <img
       class="modal-logo"
@@ -1276,11 +1242,7 @@ footer{
       Continue with Google
     </button>
 
-    <p
-      id="loginMessage"
-      style="font-size:13px;color:var(--muted)"
-      role="status">
-    </p>
+    <p id="loginMessage" style="font-size:13px;color:var(--muted)" role="status"></p>
 
   </div>
 </div>
@@ -1288,19 +1250,9 @@ footer{
 <!-- LESSON MODAL -->
 
 <div class="modal-overlay" id="lessonModal">
+  <div class="modal" style="width:min(1050px,100%)" role="dialog" aria-modal="true">
 
-  <div
-    class="modal"
-    style="width:min(1050px,100%)"
-    role="dialog"
-    aria-modal="true">
-
-    <button
-      class="close-modal"
-      onclick="closeLesson()"
-      aria-label="Close">
-      ×
-    </button>
+    <button class="close-modal" onclick="closeLesson()" aria-label="Close">×</button>
 
     <div id="lessonViewer">
       <p>Loading lesson...</p>
@@ -1312,18 +1264,9 @@ footer{
 <!-- PAYMENT MODAL -->
 
 <div class="modal-overlay" id="paymentModal">
+  <div class="modal" role="dialog" aria-modal="true">
 
-  <div
-    class="modal"
-    role="dialog"
-    aria-modal="true">
-
-    <button
-      class="close-modal"
-      onclick="closePayment()"
-      aria-label="Close">
-      ×
-    </button>
+    <button class="close-modal" onclick="closePayment()" aria-label="Close">×</button>
 
     <h2>Premium Membership</h2>
 
@@ -1352,11 +1295,7 @@ footer{
       <a href="payment.html" target="_blank">Payment</a> policies.
     </p>
 
-    <p
-      id="paymentMessage"
-      role="status"
-      style="font-size:13px">
-    </p>
+    <p id="paymentMessage" role="status" style="font-size:13px"></p>
 
   </div>
 </div>
@@ -1486,61 +1425,78 @@ async function apiRequest(path,options={}){
   return data;
 }
 
-/* ACCOUNT AND MEMBERSHIP */
+/* ACCOUNT AND DATABASE MEMBERSHIP */
 
-function isPremium(){
-  if(!currentUser) return false;
+/*
+  Membership source:
+  authenticated GET /api/me response only.
+
+  premium_expires_at:
+  - NULL / empty = Free
+  - Future expiry = Premium
+  - Expired date = Free
+
+  No client-side premium flag is trusted.
+*/
+
+function getPremiumExpiryTimestamp(){
+  if(!currentUser) return 0;
 
   const expiry = currentUser.premium_expires_at;
 
-  if(expiry !== undefined && expiry !== null && expiry !== ""){
-    let timestamp;
-
-    if(typeof expiry === "number" || /^\d+$/.test(String(expiry))){
-      timestamp = Number(expiry);
-
-      if(timestamp > 0 && timestamp < 100000000000){
-        timestamp *= 1000;
-      }
-    }else{
-      timestamp = new Date(expiry).getTime();
-    }
-
-    return Number.isFinite(timestamp) && timestamp > Date.now();
+  if(expiry === undefined || expiry === null || expiry === ""){
+    return 0;
   }
 
-  return currentUser.premium === true ||
-         currentUser.premium === 1 ||
-         currentUser.premium === "true";
+  let timestamp;
+
+  if(typeof expiry === "number" || /^\d+$/.test(String(expiry))){
+    timestamp = Number(expiry);
+
+    // Unix seconds to milliseconds.
+    if(timestamp > 0 && timestamp < 100000000000){
+      timestamp *= 1000;
+    }
+  }else{
+    timestamp = new Date(expiry).getTime();
+  }
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isPremium(){
+  return !!currentUser &&
+    getPremiumExpiryTimestamp() > Date.now();
 }
 
 function updateAccountUI(){
   const loggedIn = !!currentUser;
+  const premium = loggedIn && isPremium();
 
   document.body.classList.toggle("guest-mode",!loggedIn);
 
-  // Guest is shown before login.
-  // Free or Premium is shown only after login.
   $("membershipStatus").textContent =
-    !loggedIn ? "Guest" : (isPremium() ? "Premium" : "Free");
+    !loggedIn ? "Guest" : premium ? "Premium" : "Free";
 
-  $("membershipStatus").classList.toggle("premium",isPremium());
+  $("membershipStatus").classList.toggle("premium",premium);
 
   $("signInButton").classList.toggle("hidden",loggedIn);
   $("signOutButton").classList.toggle("hidden",!loggedIn);
 
-  // Premium header button is only visible after login.
-  $("headerPremiumButton").classList.toggle("hidden",!loggedIn);
+  // Header Premium button is only shown to active Premium accounts.
+  $("headerPremiumButton").classList.toggle("hidden",!premium);
 }
 
 async function refreshUser(){
   const data = await apiRequest("/api/me");
 
-  if(!data.user){
-    throw new Error("Could not load your account.");
+  if(!data.user || !data.user.id){
+    throw new Error("Your account could not be verified by the server.");
   }
 
+  // Always use the user record returned by the authenticated server.
   currentUser = data.user;
+
   updateAccountUI();
 
   return currentUser;
@@ -1587,14 +1543,14 @@ async function restoreSession(){
 
       const data = await response.json();
 
-      if(!response.ok || !data.success || !data.token || !data.user){
+      if(!response.ok || !data.success || !data.token){
         throw new Error(data.error || "Google sign-in failed.");
       }
 
       saveToken(data.token);
-      currentUser = data.user;
 
-      updateAccountUI();
+      // Verify membership using the database-backed account endpoint.
+      await refreshUser();
 
       $("loginModal").classList.remove("show");
 
@@ -1627,7 +1583,9 @@ async function restoreSession(){
   }
 
   try{
+    // Do not display Free or Premium until server verification succeeds.
     await refreshUser();
+
     await loadSubjects();
     await checkPendingPayment();
 
@@ -2436,6 +2394,7 @@ async function checkPendingPayment(){
   if(!pending) return;
 
   try{
+    // Re-fetch the database-backed account status.
     await refreshUser();
 
     if(isPremium()){
@@ -2477,11 +2436,11 @@ document.addEventListener("keydown",event => {
 
 $("year").textContent = new Date().getFullYear();
 
-// Always begin in guest mode. This prevents Academy content flashing
-// before the existing login session has been verified.
+// Begin in Guest mode until the server verifies an existing session.
+currentUser = null;
 updateAccountUI();
 
-// Restore an authenticated session or process Google OAuth callback.
+// Restore the session and retrieve actual membership from /api/me.
 restoreSession();
 
 </script>
