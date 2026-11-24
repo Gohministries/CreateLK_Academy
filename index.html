@@ -434,6 +434,84 @@ section{padding:55px 0}
   text-align:center;
 }
 
+/* SUBJECT SEARCH AND DROPDOWN */
+
+.subject-tools{
+  max-width:850px;
+  margin:0 auto 25px;
+  padding:20px;
+  border:1px solid var(--border);
+  border-radius:16px;
+  background:white;
+  box-shadow:0 7px 24px #10203b0a;
+}
+
+.subject-tools-heading{
+  font-size:14px;
+  font-weight:800;
+  color:var(--navy);
+  margin-bottom:13px;
+  text-align:left;
+}
+
+.subject-filter-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:13px;
+}
+
+.subject-field label{
+  display:block;
+  margin-bottom:7px;
+  font-size:12px;
+  font-weight:700;
+  color:var(--text);
+}
+
+.subject-field input,
+.subject-field select{
+  display:block;
+  width:100%;
+  min-width:0;
+  height:48px;
+  border:1px solid #d9e2f0;
+  border-radius:10px;
+  padding:0 13px;
+  background:#f9fbff;
+  color:var(--text);
+  outline:none;
+  font-size:13px;
+}
+
+.subject-field input:focus,
+.subject-field select:focus{
+  border-color:var(--blue);
+  box-shadow:0 0 0 3px #2458a618;
+}
+
+.subject-result-info{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:0 0 15px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.clear-filters{
+  border:0;
+  background:#edf3ff;
+  color:var(--blue);
+  padding:7px 11px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:700;
+}
+
+.clear-filters:hover{background:#dfeaff}
+
 /* BOTTOM LEARNING MESSAGE */
 
 .learning-footer{
@@ -449,22 +527,9 @@ section{padding:55px 0}
   border:1px solid #d39b2560;
 }
 
-.learning-footer-icon{
-  font-size:29px;
-  margin-bottom:5px;
-}
-
-.learning-footer h3{
-  color:#f5ce75;
-  font-size:21px;
-  margin:3px 0 7px;
-}
-
-.learning-footer p{
-  color:#e0e9f8;
-  font-size:13px;
-  margin:0;
-}
+.learning-footer-icon{font-size:29px;margin-bottom:5px}
+.learning-footer h3{color:#f5ce75;font-size:21px;margin:3px 0 7px}
+.learning-footer p{color:#e0e9f8;font-size:13px;margin:0}
 
 .learning-footer .learning-motto{
   display:inline-block;
@@ -786,6 +851,10 @@ footer{
   .modal{padding:24px 17px}
   .learning-footer{padding:23px 15px}
   .learning-footer h3{font-size:19px}
+  .subject-tools{padding:15px}
+  .subject-filter-grid{grid-template-columns:1fr}
+  .subject-tools-heading{font-size:13px}
+  .subject-field input,.subject-field select{height:46px}
   .whatsapp{width:54px;height:54px;right:14px;bottom:14px}
 }
 
@@ -932,7 +1001,7 @@ footer{
   </div>
 </section>
 
-<!-- LEARNING HUB: ALL SUBJECTS DISPLAY AUTOMATICALLY -->
+<!-- LEARNING HUB -->
 
 <section id="learning">
   <div class="container">
@@ -940,16 +1009,46 @@ footer{
     <div class="section-heading">
       <div class="eyebrow">Your learning journey</div>
       <h2>Learning Hub</h2>
-      <p>Explore all available subjects and choose what you would like to learn today.</p>
+      <p>Search, select and explore all available subjects. Choose what you would like to learn today.</p>
+    </div>
+
+    <!-- SEARCH AND DROPDOWN -->
+
+    <div class="subject-tools" id="subjectTools">
+      <div class="subject-tools-heading">🔎 Find Your Subject</div>
+
+      <div class="subject-filter-grid">
+        <div class="subject-field">
+          <label for="subjectSearch">Search Subjects</label>
+          <input
+            type="search"
+            id="subjectSearch"
+            placeholder="Type a subject name..."
+            autocomplete="off"
+            oninput="filterSubjects()">
+        </div>
+
+        <div class="subject-field">
+          <label for="subjectSelect">Choose a Subject</label>
+          <select id="subjectSelect" onchange="filterSubjects()">
+            <option value="">All Subjects</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div id="hubBreadcrumb" class="breadcrumb"></div>
 
+    <div class="subject-result-info" id="subjectResultInfo">
+      <span id="subjectResultCount">Loading subjects...</span>
+      <button class="clear-filters" type="button" onclick="clearSubjectFilters()">
+        Clear Filters ↺
+      </button>
+    </div>
+
     <div id="learningGrid" class="grid">
       <div class="empty">Loading your subjects...</div>
     </div>
-
-    <!-- BOTTOM MESSAGE -->
 
     <div class="learning-footer">
       <div class="learning-footer-icon">🎓</div>
@@ -1394,6 +1493,10 @@ function signOut(){
 
   $("subjectCount").textContent = "—";
   $("courseCount").textContent = "—";
+  $("subjectResultCount").textContent = "Sign in to view subjects.";
+
+  $("subjectSearch").value = "";
+  $("subjectSelect").innerHTML = '<option value="">All Subjects</option>';
 
   closeMenu();
   closeLogin();
@@ -1437,6 +1540,8 @@ async function loadSubjects(){
   $("learningGrid").innerHTML =
     '<div class="empty">Loading your subjects...</div>';
 
+  $("subjectResultCount").textContent = "Loading subjects...";
+
   try{
     const data = await apiRequest("/api/subjects");
 
@@ -1454,28 +1559,94 @@ async function loadSubjects(){
         <button class="btn btn-blue" onclick="loadSubjects()">Try again</button>
       </div>
     `;
+
+    $("subjectResultCount").textContent = "Unable to load subjects.";
   }
 }
 
-/* RENDER ALL SUBJECTS */
+/* POPULATE SUBJECT DROPDOWN */
 
-function renderSubjects(){
-  activeSubjectId = null;
-  activeCourseId = null;
+function renderSubjectDropdown(){
+  const select = $("subjectSelect");
+  const previousValue = select.value;
 
-  courses = [];
-  lessons = [];
+  select.innerHTML = '<option value="">All Subjects</option>';
 
-  $("hubBreadcrumb").innerHTML = "";
-  $("courseCount").textContent = "—";
+  subjects.forEach(subject => {
+    const option = document.createElement("option");
+    option.value = String(subject.id);
+    option.textContent = subject.title || subject.name || "Subject";
+    select.appendChild(option);
+  });
 
-  if(!subjects.length){
-    $("learningGrid").innerHTML =
-      '<div class="empty">No published subjects are available yet.</div>';
+  if(previousValue && subjects.some(
+    subject => String(subject.id) === previousValue
+  )){
+    select.value = previousValue;
+  }
+}
+
+/* SUBJECT FILTERING */
+
+function filterSubjects(){
+  if(activeSubjectId !== null || activeCourseId !== null){
     return;
   }
 
-  $("learningGrid").innerHTML = subjects.map(subject => {
+  const search = $("subjectSearch").value.trim().toLowerCase();
+  const selectedId = $("subjectSelect").value;
+
+  const filtered = subjects.filter(subject => {
+    const title = String(subject.title || subject.name || "").toLowerCase();
+    const description = String(subject.description || "").toLowerCase();
+
+    const matchesSearch =
+      !search ||
+      title.includes(search) ||
+      description.includes(search);
+
+    const matchesDropdown =
+      !selectedId || String(subject.id) === selectedId;
+
+    return matchesSearch && matchesDropdown;
+  });
+
+  renderSubjectCards(filtered);
+}
+
+function clearSubjectFilters(){
+  $("subjectSearch").value = "";
+  $("subjectSelect").value = "";
+
+  activeSubjectId = null;
+  activeCourseId = null;
+
+  renderSubjects();
+}
+
+/* RENDER SUBJECT CARDS */
+
+function renderSubjectCards(list){
+  const grid = $("learningGrid");
+
+  $("subjectResultCount").textContent =
+    "Showing " + list.length + " of " + subjects.length + " subjects";
+
+  if(!list.length){
+    grid.innerHTML = `
+      <div class="empty">
+        <div style="font-size:30px;margin-bottom:8px">🔎</div>
+        <strong>No matching subjects found.</strong>
+        <p>Try another search term or clear your filters.</p>
+        <button class="btn btn-blue" onclick="clearSubjectFilters()">
+          Show All Subjects
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = list.map(subject => {
     const id = Number(subject.id);
     const title = subject.title || subject.name || "Subject";
 
@@ -1509,6 +1680,22 @@ function renderSubjects(){
   }).join("");
 }
 
+/* RENDER ALL SUBJECTS */
+
+function renderSubjects(){
+  activeSubjectId = null;
+  activeCourseId = null;
+
+  courses = [];
+  lessons = [];
+
+  $("hubBreadcrumb").innerHTML = "";
+  $("courseCount").textContent = "—";
+
+  renderSubjectDropdown();
+  filterSubjects();
+}
+
 /* OPEN SUBJECT */
 
 async function openSubject(subjectId){
@@ -1523,6 +1710,9 @@ async function openSubject(subjectId){
 
   courses = [];
   lessons = [];
+
+  $("subjectTools").classList.add("hidden");
+  $("subjectResultInfo").classList.add("hidden");
 
   $("hubBreadcrumb").innerHTML = `
     <button class="btn btn-light" onclick="renderSubjects()">← All Subjects</button>
