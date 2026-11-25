@@ -199,6 +199,28 @@ section{padding:55px 0}
 
 .lesson-sidebar{background:white;border:1px solid var(--border);border-radius:15px;padding:18px;text-align:left}
 .resource-link{display:block;padding:11px;border:1px solid var(--border);border-radius:9px;margin:8px 0;color:var(--blue);font-size:13px}
+
+/* NON-CLICKABLE LESSON RESOURCE PHOTOS */
+.lesson-resource-photo{
+  margin:12px 0 18px;
+  width:100%;
+}
+.lesson-resource-photo img{
+  display:block;
+  width:100%;
+  max-width:100%;
+  height:auto;
+  object-fit:contain;
+  border-radius:10px;
+  pointer-events:none;
+  cursor:default;
+}
+.lesson-resource-photo p{
+  margin:6px 0;
+  font-size:12px;
+  color:var(--muted);
+}
+
 .question-option{display:block;width:100%;padding:13px;border:1px solid var(--border);background:white;border-radius:10px;margin:9px 0;text-align:left}
 .question-option:hover:not(:disabled){border-color:var(--blue);background:#edf3ff}
 .question-option.correct{background:#e8f7ef;border-color:var(--green)}
@@ -1156,7 +1178,7 @@ function safeVideoEmbed(url) {
   return "";
 }
 
-/* UPDATED: RENDER HTML LESSON CONTENT */
+/* LESSON CONTENT — PHOTOS DISPLAYED WITHOUT CLICKABLE LINKS */
 function renderLessonContent(resources) {
   const lesson = currentLesson || {};
   const title = lesson.title || "Lesson";
@@ -1167,47 +1189,104 @@ function renderLessonContent(resources) {
   let videoHTML = "";
 
   if (embed) {
-    videoHTML = `<iframe src="${escapeHTML(embed)}" title="Lesson video" loading="lazy" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    videoHTML = `
+      <iframe
+        src="${escapeHTML(embed)}"
+        title="Lesson video"
+        loading="lazy"
+        allowfullscreen
+        referrerpolicy="strict-origin-when-cross-origin">
+      </iframe>`;
   } else if (video) {
     try {
       const url = new URL(video);
       if (url.protocol === "https:") {
-        videoHTML = `<video controls playsinline preload="metadata" style="width:100%"><source src="${escapeHTML(url.href)}"></video>`;
+        videoHTML = `
+          <video controls playsinline preload="metadata" style="width:100%">
+            <source src="${escapeHTML(url.href)}">
+          </video>`;
       }
     } catch {}
   }
 
-  const resourcesHTML = resources.length
-    ? resources.map(resource => {
+  /* Identify image resources only */
+  const imageResources = resources.filter(resource => {
+    const resourceURL = resource.resource_url || "";
+
+    if (!resourceURL) return false;
+
+    const type = String(
+      resource.resource_type || resource.type || ""
+    ).toLowerCase();
+
+    const isImageType =
+      type.includes("image") ||
+      type.includes("photo") ||
+      type.includes("picture");
+
+    const isImageURL =
+      /\.(jpg|jpeg|png|gif|webp|avif|svg)(?:[?#].*)?$/i.test(resourceURL);
+
+    return isImageType || isImageURL;
+  });
+
+  /* Render images as ordinary non-clickable images */
+  const resourcesHTML = imageResources.length
+    ? imageResources.map(resource => {
         let url = "";
+
         try {
           const parsed = new URL(resource.resource_url);
-          if (parsed.protocol === "https:") url = parsed.href;
+
+          if (parsed.protocol === "https:") {
+            url = parsed.href;
+          }
         } catch {}
 
         if (!url) return "";
 
-        return `<a class="resource-link" href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">📎 ${escapeHTML(resource.title || resource.resource_type || "Open resource")}</a>`;
+        return `
+          <div class="lesson-resource-photo">
+            <img
+              src="${escapeHTML(url)}"
+              alt="${escapeHTML(resource.title || "Lesson photo")}"
+              loading="lazy"
+              decoding="async"
+              draggable="false">
+            ${resource.title
+              ? `<p>${escapeHTML(resource.title)}</p>`
+              : ""}
+          </div>`;
       }).join("")
-    : "<p>No additional resources for this lesson.</p>";
+    : "<p>No photos available for this lesson.</p>";
 
   $("lessonViewer").innerHTML = `
     <h2 style="text-align:left">${escapeHTML(title)}</h2>
-    <p style="text-align:left;color:var(--muted)">${escapeHTML(lesson.description || "")}</p>
-    ${videoHTML ? `<div style="margin:18px 0">${videoHTML}</div>` : ""}
+
+    <p style="text-align:left;color:var(--muted)">
+      ${escapeHTML(lesson.description || "")}
+    </p>
+
+    ${videoHTML ? `
+      <div style="margin:18px 0">
+        ${videoHTML}
+      </div>
+    ` : ""}
+
     <div class="lesson-layout">
       <article class="lesson-content">
         <h3>Lesson Content</h3>
         <div class="lesson-html-content">
           ${content}
         </div>
-        ${lesson.content_url ? `<p><a href="${escapeHTML(lesson.content_url)}" target="_blank" rel="noopener noreferrer">Open lesson material</a></p>` : ""}
       </article>
+
       <aside class="lesson-sidebar">
-        <h3>Learning Resources</h3>
+        <h3>Lesson Photos</h3>
         ${resourcesHTML}
       </aside>
     </div>
+
     <div id="lessonQuizArea" style="text-align:left;margin-top:25px"></div>`;
 
   renderLessonQuiz();
